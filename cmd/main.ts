@@ -1238,6 +1238,30 @@ async function cmdDown(argv: string[]): Promise<number> {
 async function cmdDestroy(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
+
+  // `--all` exists because cleaning up one directory at a time is no way to
+  // reclaim disk, and because a single mistake (moat in $HOME) can cost tens of
+  // gigabytes that the user needs a way to find and remove.
+  if (flag<boolean>(p, "all")) {
+    const envs = listEnvs()
+    if (envs.length === 0) {
+      log.info("no moat environments")
+      return 0
+    }
+    let freed = 0
+    for (const env of envs) {
+      const envState = readState(env)
+      const size = await rootfsSizeBytes(env)
+      if (envState?.pid && isRunning(envState.pid)) await stopSandbox(envState.pid)
+      if (destroyEnv(env.projectDir)) {
+        freed += size
+        log.info(`  removed ${env.id}  ${human(size)}  ${env.projectDir}`)
+      }
+    }
+    log.success(`destroyed ${envs.length} environment(s), about ${human(freed)}`)
+    return 0
+  }
+
   const state = readState(paths)
   if (state?.pid && isRunning(state.pid)) {
     if (!flag<boolean>(p, "yes")) {
@@ -1270,11 +1294,20 @@ async function cmdStatus(argv: string[]): Promise<number> {
         port: state.port,
         pid: state.pid,
         credential: state.credential?.expiresAt ?? null,
+        bytes: await rootfsSizeBytes(env),
       })
     }
     if (flag<boolean>(p, "json")) log.emit(rows)
     else if (rows.length === 0) log.info("no moat environments")
-    else for (const row of rows) log.info(`${row.status.padEnd(8)} ${row.id}  ${row.project}`)
+    else {
+      let total = 0
+      for (const row of rows) {
+        total += row.bytes
+        log.info(`${row.status.padEnd(8)} ${human(row.bytes).padStart(9)}  ${row.project}`)
+      }
+      log.info(`${"".padEnd(8)} ${human(total).padStart(9)}  total, across ${rows.length} environment(s)`)
+      log.info(`  ${log.dim("reclaim it with: moat destroy --all")}`)
+    }
     return 0
   }
 
