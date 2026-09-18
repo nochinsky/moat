@@ -4,19 +4,19 @@
 › 
 › › create a file and commit it
 
-  ⠧ bash  ⠇ bash  ⠏ bash  ✓ bash       pwd && ls -la && cat README.md                                                 144ms
+  ⠇ bash  ⠏ bash  ✓ bash       pwd && ls -la && cat README.md                                                 150ms
 
-  ⠋ thinking 1s  ⠋ write  ⠙ write  ✓ write      agent-output.txt                                                             +1 23ms
+  ⠋ thinking 1s  ⠙ thinking 1s  ⠙ write  ✓ write      agent-output.txt                                                             +1 22ms
 
-  ⠹ thinking 1s  ⠹ edit  ✓ edit       agent-output.txt                                                          +1 -1 28ms
+  ⠹ thinking 1s  ⠸ thinking 1s  ⠸ edit  ✓ edit       agent-output.txt                                                          +1 -1 26ms
 
-  ⠸ thinking 1s  ⠼ thinking 1s  ⠼ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agen…  25ms
+  ⠼ thinking 1s  ⠴ thinking 2s  ⠴ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agen…  21ms
 
-  ⠴ thinking 2s  ⠦ thinking 2s  ⠦ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the s…  36ms
+  ⠦ thinking 2s  ⠧ thinking 2s  ⠧ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the s…  25ms
 
-  ⠧ thinking 2s  ⠇ thinking 2s│   Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
+  ⠇ thinking 2s  ⠏ thinking 2s  ⠋ thinking 2s│   Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
 
-  ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 1.9s  6% of context  cost unknown
+  ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 2.0s  6% of context  cost unknown
 › › /apply
 
 ›   add     agent-output.txt
@@ -29,7 +29,7 @@
 
 
 --- on disk ---
-  ['agent-output.txt']
+  ['aaa.bin', 'agent-output.txt']
 
 --- checks ---
   pass  the agent worked
@@ -37,5 +37,7 @@
   pass  apply asked before writing
   pass  the file landed in the directory
   pass  the session stayed open
+  pass  a binary file did not stop the plan
+  pass  the binary file survived apply byte for byte
 
-5/5 checks passed
+7/7 checks passed

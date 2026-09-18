@@ -67,13 +67,31 @@ async function materialiseBaseline(p: EnvPaths): Promise<string | null> {
   const dir = path.join(p.dir, "baseline")
   fs.rmSync(dir, { recursive: true, force: true })
   fs.mkdirSync(dir, { recursive: true })
-  const tar = await run("git", ["-C", p.work, "archive", "--format=tar", "refs/moat/baseline"], {
-    env: SANITIZED_GIT_ENV,
-    allowFailure: true,
-  })
-  if (tar.code !== 0) return null
-  const extract = await run("tar", ["-xf", "-", "-C", dir], { input: tar.stdout, allowFailure: true })
-  return extract.code === 0 ? dir : null
+
+  // The archive goes through a *file*, never through this process.
+  //
+  // A tar archive is binary, and `run()` captures a child's stdout as a UTF-8
+  // string. Decoding a tar that way is lossy: any byte that is not valid UTF-8
+  // becomes U+FFFD, which re-encodes to *three* bytes, so the stream grows and
+  // every subsequent header is read from the wrong offset. tar then aborts
+  // partway through, leaving a baseline that is silently incomplete — and
+  // because the caller only checks the exit code, moat reported "nothing to
+  // apply" over the top of a tree it had failed to read. With a large enough
+  // archive the same corruption crashed the CLI outright, because writing the
+  // rest to a tar that had already exited raises EPIPE on its stdin.
+  const archive = path.join(p.dir, "baseline.tar")
+  try {
+    const tarred = await run(
+      "git",
+      ["-C", p.work, "archive", "--format=tar", `--output=${archive}`, "refs/moat/baseline"],
+      { env: SANITIZED_GIT_ENV, allowFailure: true },
+    )
+    if (tarred.code !== 0) return null
+    const extract = await run("tar", ["-xf", archive, "-C", dir], { allowFailure: true })
+    return extract.code === 0 ? dir : null
+  } finally {
+    fs.rmSync(archive, { force: true })
+  }
 }
 
 /** Every path the agent has touched, relative to the baseline. */

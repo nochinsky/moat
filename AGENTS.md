@@ -120,6 +120,20 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   in 1.18.31. The bundle refuses to *execute* anything outside the curated set
   instead. `moat tools` prints the gap. Do not "fix" this by hiding the gap.
 
+**Pipes and encodings**
+
+* `run()` in `lib/shell.ts` captures a child's stdout as a UTF-8 **string**. That
+  is wrong for anything binary. Piping a tar archive through it corrupted the
+  archive, because a byte that is not valid UTF-8 becomes U+FFFD and re-encodes
+  to three bytes — the stream grows, every later header is read from the wrong
+  offset, and tar stops partway. This silently broke `moat apply` on any project
+  containing a binary file. Binary data goes through a **file**, not through this
+  process.
+* A child that exits before its input is fully written closes the pipe, and Node
+  raises EPIPE on the stdin socket. With no `error` listener that is an unhandled
+  event and it kills the process. `run()` swallows EPIPE deliberately: the child's
+  exit code is the thing worth reporting.
+
 **DeepSeek**
 
 * models.dev prices are wrong for `deepseek-v4-pro`, and it has no notion of peak

@@ -20,6 +20,20 @@ def main() -> int:
     os.makedirs(PROJECT)
     assert not os.path.exists(os.path.join(PROJECT, ".git")), "fixture must not be a git repo"
 
+    # A binary file, named to sort before everything else. Both halves matter.
+    #
+    # The baseline is materialised by running `git archive` and unpacking it, and
+    # a tar archive is binary. Piping it through the process meant decoding it to
+    # a UTF-8 string and re-encoding it, which is lossy — a byte that is not
+    # valid UTF-8 becomes U+FFFD and re-encodes to three bytes, so the archive
+    # grows and every header after the damage is read from the wrong offset.
+    # tar then stops partway, and because only its exit code was checked, moat
+    # reported "nothing to apply" over a tree it had failed to read. A binary
+    # file is what triggers it; sorting first is what stops tar early enough to
+    # lose the files after it.
+    with open(os.path.join(PROJECT, "aaa.bin"), "wb") as fh:
+        fh.write(bytes(range(256)) * 400)
+
     mock = subprocess.Popen(
         ["node", os.path.join(REPO, "test", "mock-model.mjs"), "--port", str(PORT),
          "--script", os.path.join(REPO, "test", "scripts", "basic.json"),
@@ -70,12 +84,22 @@ def main() -> int:
     print(text)
 
     landed = sorted(os.listdir(PROJECT))
+    # The baseline must be a faithful copy of what was copied in, byte for byte.
+    # Reading it back through the text pipeline corrupted it silently, so this
+    # compares content rather than just checking the file is there.
+    binary = os.path.join(PROJECT, "aaa.bin")
+    with open(binary, "rb") as fh:
+        binary_intact = fh.read() == bytes(range(256)) * 400
     checks = [
         ("the agent worked", "agent-output.txt" in text),
         ("apply showed a plan", "add" in text and "change(s)" in text),
         ("apply asked before writing", "type \"yes\"" in text),
         ("the file landed in the directory", "agent-output.txt" in landed),
         ("the session stayed open", "/quit" in text),
+        # Regression: a binary file in the project used to break the baseline,
+        # which made apply report "nothing to apply" and quietly do nothing.
+        ("a binary file did not stop the plan", "nothing to apply" not in text),
+        ("the binary file survived apply byte for byte", binary_intact),
     ]
     print("\n--- on disk ---")
     print(" ", landed or "(empty)")
