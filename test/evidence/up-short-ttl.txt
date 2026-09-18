@@ -4,19 +4,21 @@
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
 profiles: everything requested is already installed
-copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+! the host project has changed since it was copied in, and the sandbox holds nothing that is not already on the host. Re-copying it now.
+→ copy-in: git clone --no-hardlinks
+✓ copy-in via git: 4 files, 0.2 KiB, digest 053dcb43c6f87e3f (dirty tree: 1 modified, 2 untracked)
 model: moat/mock-model
 ! injecting DeepSeek credential sha256:7726b438889c7f57 (ttl 6s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-19-32
-→ sandbox booted (pid 57658, port 38979); waiting for opencode serve
-✓ sandbox up, warm start 4.13s (image reused)
+agent branch: moat-session-2026-09-18-19-51
+→ sandbox booted (pid 62810, port 39277); waiting for opencode serve
+✓ sandbox up, warm start 4.20s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:38979  (basic auth user "opencode")
-  password   M7XFr9FXjtG1koY95Ay2hxfp0Gl6XVeJ
+  opencode   http://127.0.0.1:39277  (basic auth user "opencode")
+  password   7gu0aDQsx3yqipZHM-gIBqQKp8bYJ-im
   workspace  /work (inside the sandbox)
-  credential DeepSeek sha256:7726b438889c7f57 expires 2026-09-18T19:32:47.961Z
+  credential DeepSeek sha256:7726b438889c7f57 expires 2026-09-18T19:52:00.340Z
 
   next: moat attach   drive a session
         moat fetch    pull the agent's branch onto the host

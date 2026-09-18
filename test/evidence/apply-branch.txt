@@ -1,5 +1,8 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts apply main --name e2e-checkout
---- exit 1
+--- exit 0
 --- stdout ---
 --- stderr ---
-✗ nothing fetched at refs/moat/main. Run `moat fetch main` first.
+
+  add     agent-output.txt
+
+✓ applied 1 change(s) to /home/user/moat-demo/project

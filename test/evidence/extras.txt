@@ -11,16 +11,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting DeepSeek credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-19-32
-→ sandbox booted (pid 57224, port 42889); waiting for opencode serve
+agent branch: moat-session-2026-09-18-19-51
+→ sandbox booted (pid 62324, port 41239); waiting for opencode serve
 ✓ sandbox up, warm start 4.12s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:42889  (basic auth user "opencode")
-  password   wWILh3iRi26X-U8UXqo3NoS43mKVT6Vq
+  opencode   http://127.0.0.1:41239  (basic auth user "opencode")
+  password   JD3uHsHbbq6Oh8dCWtwiRe38zk1VUGkg
   workspace  /work (inside the sandbox)
-  credential DeepSeek sha256:7726b438889c7f57 expires 2026-09-18T23:32:18.673Z
+  credential DeepSeek sha256:7726b438889c7f57 expires 2026-09-18T23:51:30.886Z
 
   next: moat attach   drive a session
         moat fetch    pull the agent's branch onto the host
@@ -46,8 +46,8 @@ host-side proof that /work is excluded from snapshots:
 $ tar tzf <snapshot> | grep -c '^\./work'   # expect 0
 snapshot: /home/user/.moat/envs/18620c2c4f34/snapshots/before-extras.tar.gz
 entries under ./work : 0
-entries under ./root  : 4405
-total entries         : 5941
+entries under ./root  : 4401
+total entries         : 5937
 
 ==============================================================
 == B. moat restore rolls the rootfs back and preserves /work
@@ -56,7 +56,7 @@ total entries         : 5941
 --- exit 0
 --- stdout ---
 --- stderr ---
-stopped sandbox pid 57224 before restoring
+stopped sandbox pid 62324 before restoring
 ✓ restored rootfs snapshot before-extras (the project copy in /work was preserved)
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c echo 'in-sandbox /opt after restore:'; ls /opt; echo '--- /work preserved? ---'; ls /work; echo '--- agent commit still present? ---'; git -C /work log --oneline -1
 --- exit 0
@@ -69,7 +69,7 @@ agent-output.txt
 greet.sh
 notes.txt
 --- agent commit still present? ---
-527012f agent: add agent-output.txt from inside the sandbox
+34d6a4c agent: add agent-output.txt from inside the sandbox
 --- stderr ---
 
 ==============================================================
@@ -84,16 +84,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting DeepSeek credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-19-32
-→ sandbox booted (pid 57465, port 45329); waiting for opencode serve
-✓ sandbox up, warm start 4.14s (image reused)
+agent branch: moat-session-2026-09-18-19-51
+→ sandbox booted (pid 62586, port 36451); waiting for opencode serve
+✓ sandbox up, warm start 4.12s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:45329  (basic auth user "opencode")
-  password   f8TxwrlFYcT1R5NVeNO8NlReL4HReRRz
+  opencode   http://127.0.0.1:36451  (basic auth user "opencode")
+  password   be5QwF4UvBM2-aadNASLRUh7iHZUCgkf
   workspace  /work (inside the sandbox)
-  credential DeepSeek sha256:7726b438889c7f57 expires 2026-09-18T23:32:37.112Z
+  credential DeepSeek sha256:7726b438889c7f57 expires 2026-09-18T23:51:49.408Z
 
   next: moat attach   drive a session
         moat fetch    pull the agent's branch onto the host
@@ -102,25 +102,29 @@ agent branch: moat-session-2026-09-18-19-32
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-18-19-32:refs/moat/moat-session-2026-09-18-19-32
-✓ fetched moat-session-2026-09-18-19-32 -> refs/moat/moat-session-2026-09-18-19-32 (527012fffca1)
-  2 commit(s) reachable, HEAD 0600d90eadc3 -> 0600d90eadc3
-    527012fffca1  agent: add agent-output.txt from inside the sandbox
-    0600d90eadc3  initial demo project
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-18-19-51:refs/moat/moat-session-2026-09-18-19-51
+✓ fetched moat-session-2026-09-18-19-51 -> refs/moat/moat-session-2026-09-18-19-51 (34d6a4c6b74a)
+  2 commit(s) reachable, HEAD 72f5b2564b64 -> 72f5b2564b64
+    34d6a4c6b74a  agent: add agent-output.txt from inside the sandbox
+    72f5b2564b64  initial demo project
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-18-19-32
-  apply with:    moat apply moat-session-2026-09-18-19-32  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-18-19-51
+  apply with:    moat apply moat-session-2026-09-18-19-51  (or --checkout)
 --- $ node /home/user/Projects/moat/cmd/main.ts apply main --name e2e-checkout
---- exit 1
+--- exit 0
 --- stdout ---
 --- stderr ---
-✗ nothing fetched at refs/moat/main. Run `moat fetch main` first.
+
+  add     agent-output.txt
+
+✓ applied 1 change(s) to /home/user/moat-demo/project
 $ git -C /home/user/moat-demo/project branch --list 'e2e-checkout'
 $ git -C /home/user/moat-demo/project rev-parse HEAD   # unchanged: apply did not check anything out
-0600d90eadc3b6323c5c20f193f2838c480911c7
+72f5b2564b64ac6c213b812904b8960ced2b4b31
 $ git -C /home/user/moat-demo/project status --porcelain   # only the user's own pre-existing dirt
  M README.md
+?? agent-output.txt
 ?? notes.txt
 
 ==============================================================
@@ -130,11 +134,11 @@ $ git -C /home/user/moat-demo/project status --porcelain   # only the user's own
 --- exit 0
 --- stdout ---
 --- stderr ---
-url           http://127.0.0.1:45329
+url           http://127.0.0.1:36451
 username      opencode
-password      f8TxwrlFYcT1R5NVeNO8NlReL4HReRRz
+password      be5QwF4UvBM2-aadNASLRUh7iHZUCgkf
 directory     /work
-authorization Basic b3BlbmNvZGU6ZjhUeHdybEZZY1QxUjVOVmVOTzhObFJlTDRIUmVSUno=
+authorization Basic b3BlbmNvZGU6YmU1UXdGNFV2Qk0yLWFhZE5BU0xSVWg3aUhaVUNna2Y=
 
 ==============================================================
 == E. the injected credential is short-lived, and expiry is enforced
@@ -144,7 +148,7 @@ booting with --credential-ttl 6s and watching the sandbox stop on its own...
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 57465); the environment and its snapshots are kept
+✓ sandbox stopped (pid 62586); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts up --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL --credential-ttl 6s
@@ -153,19 +157,21 @@ booting with --credential-ttl 6s and watching the sandbox stop on its own...
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
 profiles: everything requested is already installed
-copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+! the host project has changed since it was copied in, and the sandbox holds nothing that is not already on the host. Re-copying it now.
+→ copy-in: git clone --no-hardlinks
+✓ copy-in via git: 4 files, 0.2 KiB, digest 053dcb43c6f87e3f (dirty tree: 1 modified, 2 untracked)
 model: moat/mock-model
 ! injecting DeepSeek credential sha256:7726b438889c7f57 (ttl 6s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-19-32
-→ sandbox booted (pid 57658, port 38979); waiting for opencode serve
-✓ sandbox up, warm start 4.13s (image reused)
+agent branch: moat-session-2026-09-18-19-51
+→ sandbox booted (pid 62810, port 39277); waiting for opencode serve
+✓ sandbox up, warm start 4.20s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:38979  (basic auth user "opencode")
-  password   M7XFr9FXjtG1koY95Ay2hxfp0Gl6XVeJ
+  opencode   http://127.0.0.1:39277  (basic auth user "opencode")
+  password   7gu0aDQsx3yqipZHM-gIBqQKp8bYJ-im
   workspace  /work (inside the sandbox)
-  credential DeepSeek sha256:7726b438889c7f57 expires 2026-09-18T19:32:47.961Z
+  credential DeepSeek sha256:7726b438889c7f57 expires 2026-09-18T19:52:00.340Z
 
   next: moat attach   drive a session
         moat fetch    pull the agent's branch onto the host
@@ -180,18 +186,18 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 opencode     1.18.31 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-18-19-32
+branch       moat-session-2026-09-18-19-51
 rootfs       380.9 MiB
 credential   DeepSeek sha256:7726b438889c7f57 expires in -10s (EXPIRED, the sandbox watchdog stops the agent)
 snapshots    before-extras, baseline
-branches     main, moat-session-2026-09-18-19-30, moat-session-2026-09-18-19-32*
+branches     main, moat-session-2026-09-18-19-51*
 
 --- sandbox log: the expiry notice ---
 $ grep -iE 'expired|stopping agent' $HOME/.moat/envs/*/logs/sandbox.log
 /home/user/.moat/envs/18620c2c4f34/logs/sandbox.log:[moat] agent exited with status 143
+/home/user/.moat/envs/18620c2c4f34/logs/sandbox.log:[moat] agent exited with status 143
 /home/user/.moat/envs/18620c2c4f34/logs/sandbox.log:[moat] injected credential expired (ttl=6s); stopping agent
 /home/user/.moat/envs/18620c2c4f34/logs/sandbox.log:[moat] agent exited with status 143
-/home/user/.moat/envs/bfa5f90d6f7d/logs/sandbox.log:[moat] agent exited with status 143
 
 $ moat status  -> status line above shows the box is stopped, which it did to itself
 
@@ -242,7 +248,24 @@ question flow exit: 0
 the exit code above is the project's own verdict on whatever is in the sandbox.
 
 ==============================================================
-== I. every claim about process state is reconciled against the live process table
+== I. bare moat in an empty, non-git directory: work, then apply, without leaving
+==============================================================
+the flow the tool exists for. A plain directory with nothing in it had no copy-out
+path at all before this: there is no host repository for git fetch to write into.
+  ['agent-output.txt']
+
+--- checks ---
+  pass  the agent worked
+  pass  apply showed a plan
+  pass  apply asked before writing
+  pass  the file landed in the directory
+  pass  the session stayed open
+
+5/5 checks passed
+apply flow exit: 0
+
+==============================================================
+== J. every claim about process state is reconciled against the live process table
 ==============================================================
 --- $ node /home/user/Projects/moat/cmd/main.ts status
 --- exit 0
@@ -253,11 +276,11 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 opencode     1.18.31 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-18-19-32
+branch       moat-session-2026-09-18-19-51
 rootfs       380.9 MiB
-credential   DeepSeek sha256:7726b438889c7f57 expires in -90s (EXPIRED, the sandbox watchdog stops the agent)
+credential   DeepSeek sha256:7726b438889c7f57 expires in -132s (EXPIRED, the sandbox watchdog stops the agent)
 snapshots    before-extras, baseline
-branches     main, moat-session-2026-09-18-19-30, moat-session-2026-09-18-19-32*
+branches     main, moat-session-2026-09-18-19-51*
 --- $ node /home/user/Projects/moat/cmd/main.ts down
 --- exit 0
 --- stdout ---

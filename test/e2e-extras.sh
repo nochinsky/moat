@@ -121,7 +121,15 @@ section "H. the project's own checks, run by moat against the agent's work"
 capture verify $MOAT verify
 echo "the exit code above is the project's own verdict on whatever is in the sandbox." | tee -a "$EVIDENCE/extras.txt"
 
-section "I. every claim about process state is reconciled against the live process table"
+section "I. bare moat in an empty, non-git directory: work, then apply, without leaving"
+echo "the flow the tool exists for. A plain directory with nothing in it had no copy-out" | tee -a "$EVIDENCE/extras.txt"
+echo "path at all before this: there is no host repository for git fetch to write into." | tee -a "$EVIDENCE/extras.txt"
+python3 "$REPO/test/repl-apply.py" > "$EVIDENCE/repl-apply.txt" 2>&1
+APPLY_RC=$?
+tail -10 "$EVIDENCE/repl-apply.txt" | tee -a "$EVIDENCE/extras.txt"
+echo "apply flow exit: $APPLY_RC" | tee -a "$EVIDENCE/extras.txt"
+
+section "J. every claim about process state is reconciled against the live process table"
 capture status-final $MOAT status
 capture down-final $MOAT down
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; fi

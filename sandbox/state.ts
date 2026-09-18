@@ -42,6 +42,8 @@ export type EnvState = {
   baselineDigest: string | null
   /** Fingerprint of the host project at copy-in time, to detect that it moved on. */
   baselineHostState: string | null
+  /** Commit in the sandbox repository holding exactly what was copied. */
+  baselineCommit: string | null
   credential: CredentialRecord | null
   snapshots: string[]
   /** Every boot records its measured cold-start breakdown for the record. */
@@ -68,6 +70,7 @@ export function initialState(p: EnvPaths, versions: { opencode: string; alpine: 
     pid: null,
     baselineDigest: null,
     baselineHostState: null,
+    baselineCommit: null,
     credential: null,
     snapshots: [],
     lastBootMs: null,

@@ -185,7 +185,8 @@ filesystem, no socket, no subprocess.
 
 | command | effect |
 | --- | --- |
-| `moat run "<task>"` | `up` when needed, then do the task and stream it. The entry point most people use |
+| `moat` | open a session in the current directory. The entry point |
+| `moat run "<task>"` | the same, non-interactively, for scripts |
 | `moat verify` | run the project's own checks against the sandbox, no model involved |
 | `moat take [branch]` | fetch the agent's branch, show its commits and diff, and offer to apply it |
 | `moat up [task]` | provision if needed, copy in, mint a credential, boot, wait for ready |
@@ -256,9 +257,16 @@ for every project, not just git ones.
 
    One refspec, forced, no tags. Only the branch the user asked for crosses the
    boundary.
-3. `moat apply <branch>` creates the local branch `moat/<branch>`, and only with
-   `--checkout` does it touch the working tree, and then only if the tree is
-   clean.
+3. `moat apply` merges the agent's work into the user's directory. It is a
+   three-way merge against `refs/moat/baseline`, the commit moat recorded at
+   copy-in holding exactly what was copied, so a file the user changed is never
+   overwritten by a file the agent changed. Overlapping edits leave the user's
+   file untouched and are reported. `--dry-run` plans without writing.
+
+This makes copy-out work for **any** directory, which the git-only version could
+not: a plain directory has no repository for `git fetch` to write into. The
+baseline commit is what supplies the missing third input, and it is recorded with
+a temporary index so neither the working tree nor the index is disturbed.
 
 Uncommitted work in the sandbox is in no ref, so no fetch can reach it. `moat
 fetch` reports it and names the files; `moat fetch --commit-worktree` commits it

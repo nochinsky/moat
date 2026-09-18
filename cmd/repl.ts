@@ -9,6 +9,7 @@ import type { EnvState } from "../sandbox/state.ts"
 import { SANITIZED_GIT_ENV } from "../sync/copyin.ts"
 import { fetchBranch, listSandboxBranches, sandboxWorktreeChanges, suggestBranch } from "../sync/copyout.ts"
 import { detectChecks } from "../lib/detect.ts"
+import { applyPlan, describePlan, planApply, type ApplyPlan } from "../sync/apply.ts"
 import { runChecks } from "../sandbox/checks.ts"
 import {
   authHeaders,
@@ -62,6 +63,9 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   // A question the agent asked, waiting for the user's next line. While this is
   // set, input is an answer rather than a new instruction.
   let pending: { requestID: string; questions: QuestionInfo[]; index: number; answers: string[][] } | null = null
+  // `/apply` shows the plan and waits for one confirmation line, so applying is
+  // never a single unconsidered keystroke.
+  let pendingApply: ApplyPlan | null = null
 
   const terminal = process.stdin.isTTY === true
   const rl = readline.createInterface({
@@ -444,6 +448,27 @@ exec /bin/bash -l
         say("back in moat")
       },
     },
+    apply: {
+      help: "merge the agent's work into your directory (asks first)",
+      run: async () => {
+        const plan = await planApply(options.paths)
+        if (plan.empty) return say("nothing to apply: your directory already matches the sandbox")
+        say("")
+        for (const line of describePlan(plan)) say(`  ${line}`)
+        for (const conflict of plan.conflicts) {
+          say(`  ${YELLOW}skip${RESET}    ${conflict.path}  ${DIM}${conflict.note ?? "conflict"}${RESET}`)
+        }
+        say("")
+        if (plan.conflicts.length > 0) {
+          say(`  ${YELLOW}${plan.conflicts.length} file(s) changed on both sides and cannot be merged.${RESET}`)
+          say(`  ${DIM}those are left exactly as they are; the rest can still go in${RESET}`)
+        }
+        pendingApply = plan
+        say(`  apply ${plan.changes.length - plan.conflicts.length} change(s) to ${options.paths.projectDir}?`)
+        say(`  ${DIM}type "yes" to apply, anything else to cancel${RESET}`)
+        prompt()
+      },
+    },
     verify: {
       help: "run the project's own tests against the agent's work",
       run: async () => {
@@ -471,6 +496,16 @@ exec /bin/bash -l
     if (text.length === 0) return prompt()
 
     // A question is waiting, so this line is the answer to it.
+    if (pendingApply) {
+      const plan = pendingApply
+      pendingApply = null
+      if (!/^y(es)?$/i.test(text)) return say("cancelled; nothing was written")
+      const result = await applyPlan(options.paths, plan)
+      say(`  ${GREEN}applied ${result.applied} change(s)${RESET} to ${options.paths.projectDir}`)
+      if (result.skipped.length > 0) say(`  ${YELLOW}left alone:${RESET} ${result.skipped.join(", ")}`)
+      return prompt()
+    }
+
     if (pending) {
       if (text === "/stop" || text === "/skip") {
         pending = null

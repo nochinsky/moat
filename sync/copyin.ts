@@ -231,9 +231,50 @@ async function finalize(p: EnvPaths, transport: "git" | "rsync"): Promise<CopyIn
 }
 
 /**
- * Give a non-git project a repository inside the sandbox, so that the copy-out
- * contract (agent commits, host fetches) holds for every project, not just git
- * ones. Runs on the host against files that live in the rootfs; needs no
+ * Record the exact state moat copied, as a commit, without touching the working
+ * tree or the index.
+ *
+ * This is the "base" of the three-way merge that makes applying safe: with it,
+ * moat can tell a file the user changed from a file the agent changed, and merge
+ * the two instead of overwriting one with the other. Without it, applying is a
+ * guess, and a guess that silently eats someone's edit.
+ *
+ * A temporary index is used so that neither `git add` nor a commit disturbs what
+ * the agent will see.
+ */
+export async function recordBaseline(p: EnvPaths): Promise<string | null> {
+  if (!(await isGitRepo(p.work))) return null
+  const indexPath = path.join(p.dir, "runtime", "baseline.index")
+  fs.mkdirSync(path.dirname(indexPath), { recursive: true })
+  fs.rmSync(indexPath, { force: true })
+
+  const env = {
+    ...SANITIZED_GIT_ENV,
+    GIT_INDEX_FILE: indexPath,
+    GIT_AUTHOR_NAME: "moat",
+    GIT_AUTHOR_EMAIL: "moat@localhost",
+    GIT_COMMITTER_NAME: "moat",
+    GIT_COMMITTER_EMAIL: "moat@localhost",
+  }
+  await run("git", ["-C", p.work, "read-tree", "HEAD"], { env, allowFailure: true })
+  await run("git", ["-C", p.work, "add", "-A"], { env })
+  const tree = await run("git", ["-C", p.work, "write-tree"], { env, allowFailure: true })
+  if (tree.code !== 0) return null
+  const commit = await run(
+    "git",
+    ["-C", p.work, "commit-tree", tree.stdout.trim(), "-m", "moat: state copied from the host"],
+    { env, allowFailure: true },
+  )
+  fs.rmSync(indexPath, { force: true })
+  if (commit.code !== 0) return null
+  const sha = commit.stdout.trim()
+  await run("git", ["-C", p.work, "update-ref", "refs/moat/baseline", sha], { env: SANITIZED_GIT_ENV })
+  return sha
+}
+
+/**
+ * Give a non-git project a repository inside the sandbox, so that every project
+ * has one. Runs on the host against files that live in the rootfs; needs no
  * privileges.
  */
 export async function ensureSandboxRepo(p: EnvPaths): Promise<void> {
@@ -242,5 +283,7 @@ export async function ensureSandboxRepo(p: EnvPaths): Promise<void> {
   const env = { ...SANITIZED_GIT_ENV, GIT_AUTHOR_NAME: "moat", GIT_AUTHOR_EMAIL: "moat@localhost", GIT_COMMITTER_NAME: "moat", GIT_COMMITTER_EMAIL: "moat@localhost" }
   await run("git", ["-C", p.work, "init", "--quiet", "-b", "main"], { env })
   await run("git", ["-C", p.work, "add", "-A"], { env })
-  await run("git", ["-C", p.work, "commit", "--quiet", "-m", "moat: initial copy-in"], { env })
+  // --allow-empty matters: typing `moat` in an empty directory is a use case, and
+  // an empty tree cannot be committed without it.
+  await run("git", ["-C", p.work, "commit", "--quiet", "--allow-empty", "-m", "moat: initial copy-in"], { env })
 }

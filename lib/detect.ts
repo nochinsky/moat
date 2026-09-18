@@ -161,3 +161,67 @@ export function detectChecks(projectDir: string): Check[] {
   // Tests first: that is the one that decides whether the work is any good.
   return checks.sort((a, b) => (a.kind === "test" ? -1 : 0) - (b.kind === "test" ? -1 : 0))
 }
+
+/**
+ * Refuse to copy a directory that is obviously the wrong one.
+ *
+ * `moat` on its own is meant to be typed anywhere, which means it will eventually
+ * be typed in `$HOME`, in `/`, or in a directory holding fifty gigabytes of
+ * video. Copying that into a sandbox is not a mistake anyone recovers from
+ * quickly, so it is caught before anything is provisioned.
+ */
+export type SizeWarning = { reason: string; detail: string } | null
+
+const MAX_FILES = 60_000
+const MAX_BYTES = 2 * 1024 * 1024 * 1024
+
+export function checkDirectoryIsSane(projectDir: string): SizeWarning {
+  const resolved = path.resolve(projectDir)
+  const home = process.env.HOME ? path.resolve(process.env.HOME) : null
+
+  if (resolved === "/") return { reason: "that is the root of the filesystem", detail: resolved }
+  if (home && resolved === home) {
+    return { reason: "that is your home directory", detail: resolved }
+  }
+  for (const system of ["/etc", "/usr", "/var", "/bin", "/sbin", "/lib", "/boot", "/proc", "/sys", "/dev"]) {
+    if (resolved === system || resolved.startsWith(`${system}/`)) {
+      return { reason: `that is inside ${system}, a system directory`, detail: resolved }
+    }
+  }
+
+  let files = 0
+  let bytes = 0
+  const walk = (dir: string, depth: number): boolean => {
+    if (depth > 12) return false
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return false
+    }
+    for (const entry of entries) {
+      if (entry.name === ".git" || entry.name === "node_modules") continue
+      const full = path.join(dir, entry.name)
+      try {
+        const stat = fs.lstatSync(full)
+        if (stat.isDirectory()) {
+          if (walk(full, depth + 1)) return true
+          continue
+        }
+        files += 1
+        bytes += stat.size
+        if (files > MAX_FILES || bytes > MAX_BYTES) return true
+      } catch {
+        /* unreadable entry */
+      }
+    }
+    return false
+  }
+  if (walk(resolved, 0)) {
+    return {
+      reason: `it holds more than ${Math.round(MAX_FILES / 1000)}k files or ${MAX_BYTES / 1024 ** 3} GB`,
+      detail: `counted at least ${files} files, ${(bytes / 1024 ** 2).toFixed(0)} MiB before stopping`,
+    }
+  }
+  return null
+}

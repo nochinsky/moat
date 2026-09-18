@@ -13,7 +13,7 @@ import { ALPINE_VERSION, CURATED_TOOLS, EXCLUDED_TOOLS, OPENCODE_VERSION, SANDBO
 import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, isDeepSeekHost } from "../lib/provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from "../sandbox/profiles.ts"
-import { detectChecks, detectProfiles } from "../lib/detect.ts"
+import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
 import { runChecks, summarise } from "../sandbox/checks.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import {
@@ -59,7 +59,7 @@ import {
   toSandboxEnv,
   type MintedCredential,
 } from "../secrets/broker.ts"
-import { copyIn, ensureSandboxRepo, hostState, isGitRepo, SANITIZED_GIT_ENV } from "../sync/copyin.ts"
+import { copyIn, ensureSandboxRepo, hostState, isGitRepo, recordBaseline, SANITIZED_GIT_ENV } from "../sync/copyin.ts"
 import {
   applyBranch,
   commitSandboxWorktree,
@@ -69,6 +69,7 @@ import {
   sandboxWorktreeChanges,
   suggestBranch,
 } from "../sync/copyout.ts"
+import { applyPlan, describePlan, planApply } from "../sync/apply.ts"
 import {
   connect,
   driveSession,
@@ -150,6 +151,9 @@ const SPEC: Spec = {
   "no-detect": "boolean",
   "no-follow": "boolean",
   "no-verify": "boolean",
+  "skip-conflicts": "boolean",
+  "dry-run": "boolean",
+  force: "boolean",
   quiet: "boolean",
   "keep": "boolean",
 }
@@ -343,6 +347,18 @@ async function cmdUp(argv: string[]): Promise<number> {
   const sync = flag<boolean>(p, "sync") ?? false
   const needsProvision = fresh || !envExists(paths) || !state
 
+  // `moat` on its own is typed anywhere, so the obvious wrong directories are
+  // caught before a byte is copied. This runs before provisioning, because
+  // discovering the mistake after unpacking a rootfs is a waste of a minute.
+  const warning = checkDirectoryIsSane(paths.projectDir)
+  if (warning && !flag<boolean>(p, "force")) {
+    log.fail(
+      `refusing to sandbox ${warning.detail}: ${warning.reason}.\n` +
+        "  moat copies the whole directory into the sandbox, so this is almost never what you want.\n" +
+        "  cd into the project you meant, or pass --force if you really do.",
+    )
+  }
+
   let profileRequest = (flag<string>(p, "profile") ?? process.env.MOAT_PROFILES ?? "").trim()
   if (!profileRequest && !state?.profiles?.length && !flag<boolean>(p, "no-detect")) {
     const detected = detectProfiles(paths.projectDir)
@@ -482,6 +498,11 @@ ${command}
     }
     const copied = await copyIn(paths)
     await ensureSandboxRepo(paths)
+    const baselineCommit = await recordBaseline(paths)
+    if (baselineCommit) log.debug(`baseline recorded at ${baselineCommit.slice(0, 12)}`)
+    // The agent branch is cut AFTER the baseline, so the baseline is always the
+    // common ancestor for a three-way merge.
+    state!.baselineCommit = baselineCommit
     state!.baselineDigest = copied.digest
     state!.baselineHostState = copied.hostState
     report.copyIn = copied
@@ -1142,14 +1163,51 @@ async function cmdApply(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   requireState(paths)
-  const branch = p._[0]
-  if (!branch) log.fail("usage: moat apply <branch> [--checkout] [--name <local-branch>]")
-  const result = await applyBranch(paths, branch, {
-    name: flag<string>(p, "name"),
-    checkout: flag<boolean>(p, "checkout") ?? false,
-  })
-  log.success(`branch ${result.branch} -> ${result.ref}`)
-  if (!flag<boolean>(p, "checkout")) log.info(`  checkout with: git checkout ${result.branch}`)
+
+  const plan = await planApply(paths)
+  if (plan.empty) {
+    log.info("nothing to apply: the directory already matches the sandbox")
+    return 0
+  }
+
+  if (!flag<boolean>(p, "json")) {
+    log.info("")
+    for (const line of describePlan(plan)) log.info(`  ${line}`)
+    for (const conflict of plan.conflicts) {
+      log.info(`  ${log.yellow("skip")}    ${conflict.path}  ${log.dim(conflict.note ?? "conflict")}`)
+    }
+    log.info("")
+  }
+
+  if (flag<boolean>(p, "dry-run")) {
+    if (flag<boolean>(p, "json")) log.emit(plan)
+    else log.info(`  ${plan.changes.length - plan.conflicts.length} change(s) ready, ${plan.conflicts.length} conflict(s). Nothing written (--dry-run).`)
+    return 0
+  }
+
+  // A conflict means moat cannot decide, so it stops rather than half-applying.
+  // That is the one place this tool refuses to guess.
+  if (plan.conflicts.length > 0 && !flag<boolean>(p, "skip-conflicts")) {
+    if (flag<boolean>(p, "json")) log.emit(plan)
+    else {
+      log.warn(
+        `${plan.conflicts.length} file(s) changed on both sides and could not be merged automatically. ` +
+          "Nothing has been written.",
+      )
+      log.info("")
+      log.info(`  the agent's version is in the sandbox:  moat exec -- cat /work/<path>`)
+      log.info(`  the baseline is recorded at refs/moat/baseline in the sandbox repository`)
+      log.info(`  to apply everything else and leave those alone:  moat apply --skip-conflicts`)
+    }
+    return 1
+  }
+
+  const result = await applyPlan(paths, plan)
+  if (flag<boolean>(p, "json")) log.emit({ ...plan, ...result })
+  else {
+    log.success(`applied ${result.applied} change(s) to ${paths.projectDir}`)
+    if (result.skipped.length > 0) log.warn(`left alone: ${result.skipped.join(", ")}`)
+  }
   return 0
 }
 
@@ -1325,7 +1383,13 @@ async function cmdDoctor(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const host = await probeHost()
   const paths = resolveEnv()
-  const out: Record<string, unknown> = { host }
+  const out: Record<string, unknown> = {
+    host,
+    credential: {
+      envVar: DEEPSEEK.envVar,
+      present: Boolean(process.env[DEEPSEEK.envVar] || process.env.MOAT_CREDENTIAL),
+    },
+  }
 
   if (!flag<boolean>(p, "json")) {
     log.info(`${log.bold("host")}`)
@@ -1339,10 +1403,21 @@ async function cmdDoctor(argv: string[]): Promise<number> {
     for (const problem of host.problems) log.info(`  ${log.red("problem")}   ${problem}`)
   }
 
+  if (!flag<boolean>(p, "json")) {
+    log.info("")
+    log.info(`${log.bold("credential")}`)
+    const hasKey = Boolean(process.env[DEEPSEEK.envVar] || process.env.MOAT_CREDENTIAL)
+    log.info(
+      hasKey
+        ? `  ${DEEPSEEK.envVar}  ${log.green("set")}`
+        : `  ${DEEPSEEK.envVar}  ${log.red("not set")}  ${log.dim(`the agent cannot call a model without it; export it, or pass --credential-env NAME`)}`,
+    )
+  }
+
   const state = readState(paths)
   if (!state) {
     log.info("")
-    log.info(`no environment for ${paths.projectDir}; run \`moat up\` to create one, then \`moat doctor\` again`)
+    log.info(`no environment for ${paths.projectDir} yet. Just run ${log.bold("moat")} in the directory you want to work in.`)
     if (flag<boolean>(p, "json")) log.emit(out)
     return host.problems.length === 0 ? 0 : 1
   }
@@ -1654,7 +1729,9 @@ Branches and history
   moat fetch [branch]    bring the agent's branch across into refs/moat/*
                          --commit-worktree  also commit anything left uncommitted
   moat take [branch]     fetch, show, and offer to apply
-  moat apply <branch>    create a local branch from a fetched ref (--checkout to switch)
+  moat apply             merge the agent's work into this directory
+                         --dry-run          show the plan, write nothing
+                         --skip-conflicts   apply what can be merged, leave the rest
 
 The environment
   moat up [task]         start it without a task; --profile, --fresh, --sync live here
@@ -1691,7 +1768,14 @@ async function main(): Promise<number> {
   const command = argv[0]
   const rest = argv.slice(1)
 
-  if (!command || command === "help" || command === "--help" || command === "-h") {
+  if (!command) {
+    // `moat` on its own is the product: open a session in whatever directory you
+    // are standing in. Piped or scripted, print help instead of hanging on stdin.
+    if (process.stdin.isTTY === true) return await cmdUp([])
+    process.stdout.write(HELP)
+    return 0
+  }
+  if (command === "help" || command === "--help" || command === "-h") {
     process.stdout.write(HELP)
     return 0
   }
