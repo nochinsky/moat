@@ -146,7 +146,8 @@ def main() -> int:
     threading.Thread(target=server.serve_forever, daemon=True).start()
     time.sleep(0.4)
 
-    boot = sh(MOAT + ["up", "--quiet", "--no-detect", "--model", MODEL, "--upstream", f"http://127.0.0.1:{PORT}/v1"], cwd=PROJECT)
+    # No --model and no --effort: whatever moat chooses on its own is the subject.
+    boot = sh(MOAT + ["up", "--quiet", "--no-detect", "--upstream", f"http://127.0.0.1:{PORT}/v1"], cwd=PROJECT)
     if boot.returncode != 0:
         print(boot.stdout, boot.stderr)
         server.shutdown()
@@ -165,6 +166,18 @@ def main() -> int:
     variants = api(directory, "/config/providers")
     provider = next((p for p in variants["providers"] if p["id"] == "deepseek"), None) if variants else None
     levels = sorted((provider or {}).get("models", {}).get(MODEL, {}).get("variants", {}).keys())
+
+    # What moat decided on its own, before anybody told it anything.
+    with open(os.path.join(directory, "state.json")) as fh:
+        booted = json.load(fh)
+    default_model = (booted.get("model") or "").split("/")[-1]
+    default_effort = booted.get("effort")
+
+    # One turn through moat's own one-shot path, so this measures the default
+    # rather than a variant this test passed in by hand.
+    before = len(CAPTURED)
+    sh(MOAT + ["run", "reply with exactly: ok"], cwd=PROJECT)
+    default_turns = CAPTURED[before:]
 
     question = "What is 8473 times 2916? Answer with just the number."
     for variant in ("max", "off"):
@@ -195,15 +208,32 @@ def main() -> int:
 
     saw_max = any(e["reasoning_effort"] == "max" and not e["thinking"] for e in sent)
     saw_off = any((e["thinking"] or {}).get("type") == "disabled" and not e["reasoning_effort"] for e in sent)
+    default_sent = [e for e in default_turns if e["tools"] > 0]
+
+    print("\n=== what moat chose with nothing configured ===")
+    print(f"  model={default_model!r} effort={default_effort!r}")
+    for entry in default_sent:
+        print(f"  -> reasoning_effort={entry['reasoning_effort']!r} model={entry['model']}")
 
     checks = [
         ("--upstream kept the DeepSeek catalog", provider is not None),
         ("the model still offers its reasoning levels", "max" in levels and "off" in levels),
+        # The project's chosen defaults, asserted on the wire rather than read
+        # back out of moat's own state file.
+        ("the default model is deepseek-flash", default_model == "deepseek-flash"),
+        ("the default effort is high", default_effort == "high"),
+        ("a default run sent reasoning_effort=high",
+         any(e["reasoning_effort"] == "high" for e in default_sent)),
+        ("a default run used the flash model on the wire",
+         bool(default_sent) and all(e["model"] == "deepseek-flash" for e in default_sent)),
         ("the proxy saw both turns", len(sent) >= 2),
         ("effort max went out as reasoning_effort=max", saw_max),
         ("thinking off went out as thinking.type=disabled", saw_off),
         ("thinking off did not also send an effort", not any(e["reasoning_effort"] and e["thinking"] for e in sent)),
-        ("the model name on the wire is DeepSeek's, not moat's", all(e["model"] == MODEL for e in sent)),
+        ("every model on the wire is a DeepSeek id, never a moat one",
+         bool(sent) and all(e["model"] and not e["model"].startswith("moat") for e in sent)),
+        ("the explicit turns used the model this test asked for",
+         all(e["model"] == MODEL for e in sent if e not in default_turns)),
     ]
     print("\n--- checks ---")
     failed = 0

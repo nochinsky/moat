@@ -992,18 +992,28 @@ async function driveTask(
   // The effort chosen in the REPL is a property of the environment, so a
   // one-shot `moat run` in the same project uses it too.
   const effectiveModelID = opts.modelID ?? modelID
-  let effort = opts.effort ?? state.effort ?? undefined
+  let effort: string | undefined = opts.effort ?? state.effort ?? DEEPSEEK.defaultEffort
   if (effort) {
     // opencode ignores an unknown variant rather than rejecting it, so a level
     // this model does not take would do nothing at all and look like it worked.
     // It is dropped rather than sent-and-ignored: sending it also records it on
     // the message, which reads as though the run happened at that level.
-    // A server that cannot answer is not worth failing over.
+    // A server that cannot answer is not worth failing over, hence the catch.
     const available = await modelVariants(client, providerID, effectiveModelID).catch((): string[] => [])
-    if (available.length > 0 && !available.includes(effort)) {
+    // A model with no declared levels takes none — every custom endpoint reached
+    // with --base-url, for instance. Sent anyway it would be ignored, so it is
+    // dropped without complaint unless the user asked for it by name.
+    const asked = opts.effort !== undefined
+    if (available.length === 0) {
+      if (asked) {
+        log.warn(`${providerID}/${effectiveModelID} declares no reasoning levels; ignoring --effort ${effort}`)
+      }
+      effort = undefined
+    } else if (!available.includes(effort)) {
+      const subject = asked ? `--effort ${effort}` : `the default effort "${effort}"`
       log.warn(
-        `--effort ${effort} is not one of ${available.join(", ")} for ${providerID}/${effectiveModelID}; ` +
-          `using the model's own default instead. (see: moat models, or /think inside a session)`,
+        `${subject} is not one of ${available.join(", ")} for ${providerID}/${effectiveModelID}; ` +
+          `running with the model's own default instead.`,
       )
       effort = undefined
     }

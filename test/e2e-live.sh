@@ -18,7 +18,7 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MOAT="node $REPO/cmd/main.ts"
-MODEL="${1:-deepseek-v4-pro}"
+MODEL="${1:-deepseek-flash}"   # the default; pass another id to test it
 PROFILE="${PROFILE:-node}"
 WORK="${MOAT_E2E_DIR:-$HOME/moat-demo}"
 PROJECT="$WORK/live-project"
