@@ -319,11 +319,18 @@ the agent can read and exfiltrate whatever it is given, and tells you to pass
 exchange for a conscious decision, which is the right trade for a tool that runs
 with no permission prompts and an open network, see §1.3.
 
-The provider endpoint and model come from `--provider-base-url` / `--model` or
-from the store entry. v0's bundle speaks the **OpenAI-compatible** protocol, so
-any compatible endpoint works (OpenAI, DeepSeek, Groq, OpenRouter, Ollama,
-llama.cpp, LiteLLM). An Anthropic-native provider block is a small, additive
-change (see `docs/UPSTREAM-CANDIDATES.md`).
+The endpoint and model come from `--base-url` / `--model`, or from the store
+entry. moat targets DeepSeek and nothing else: for DeepSeek it writes no provider
+block at all and lets opencode's models.dev catalog supply the base URL, context
+window and capabilities. There is no provider registry, no `--provider` flag and
+no inference of a provider from the environment.
+
+`--base-url` still points the bundle at **any OpenAI-compatible endpoint**
+(Ollama, llama.cpp, LiteLLM, a gateway), which is how the test suite runs against
+a local stub. It is an escape hatch rather than a provider system: moat then has
+to describe the model's limits itself instead of reading them from the catalog.
+`--upstream` is the narrower flag — same catalog definition, different address —
+for a DeepSeek-compatible gateway or a proxy you want to watch.
 
 ### 5.2 How it enters
 
@@ -632,9 +639,40 @@ interactive session was impossible unless opencode was also installed on the
 host. The sandbox already runs the server, so that dependency was never
 necessary.
 
-`test/repl-smoke.py` drives the CLI through a real pty and asserts on what comes
-back. Piping stdin is not a substitute: readline behaves differently without a
-terminal, and the live view is the whole point of the mode.
+The pty suites drive the CLI through a real terminal and assert on what comes
+back: `repl-smoke.py` (the session, the layout, the turn footer),
+`repl-questions.py`, `repl-apply.py`, `repl-controls.py` (model, effort, agent,
+undo) and `repl-effort.py` (against a real provider). Piping stdin is not a
+substitute: readline behaves differently without a terminal, and the live view is
+the whole point of the mode.
+
+#### The display has exactly one row it may rewrite
+
+The transcript is append-only. Once a line is written it is never touched again,
+which is what makes it safe to scroll and to copy out of. A running tool call is
+the single exception: it is drawn once, repainted while it runs, and replaced in
+place on completion, because printing `⠹ bash npm test` and then `✓ bash npm test
+2.1s` as two rows doubles the height of every turn for no information.
+
+That exception is only safe under two conditions, and both are load-bearing:
+
+* **The row never exceeds one terminal line.** A repaint erases the current line
+  and rewrites it; a row that wrapped onto a second line would leave the tail
+  behind. `toolLine` therefore takes the terminal width and truncates the title to
+  fit, and the truncation happens on plain text before any styling is added, so a
+  cut can never land inside an escape sequence.
+* **Nothing else is written while it is live.** Every other writer calls
+  `beginOutput()` first, which commits or erases the live row and clears the input
+  prompt off the line.
+
+`cmd/display.ts` holds the pure parts — markdown rendering, the tool row, the turn
+footer — so they can be tested by calling them, with no terminal, sandbox or model
+involved. Only the spinner, the input line and the cursor handling need a terminal,
+and those stay in `cmd/repl.ts`.
+
+The spinner appears only after a second of silence and is skipped entirely while
+the input line is non-empty, because stealing the line out from under someone
+mid-word is worse than a missing animation.
 
 #### Choosing the model, the effort and the agent
 
@@ -896,8 +934,9 @@ sandbox before doing so.
 
 * **No Windows path, no host path.** There is no flag that runs the agent
   outside the sandbox.
-* **No custom TUI.** `moat attach` (interactive) execs opencode's own `attach`
-  client. moat ships no UI of its own in v0.
+* **No opencode TUI.** moat does not exec opencode's own client and does not
+  depend on it being installed on the host. The interactive session is moat's
+  own (`cmd/repl.ts`), speaking the sandbox server's HTTP API; see §6b.5.
 * **No opencode fork, patch or vendored copy.** opencode is a pinned dependency
   (`opencode-ai@1.18.31`).
 * **No proxying of tools.** The agent loop, the tools and the filesystem live
