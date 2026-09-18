@@ -306,8 +306,14 @@ keys into the image. Never forward host env, SSH agent, or dotfiles.**
 2. `--credential-env NAME`, reads one named variable from the host,
 3. `~/.moat/credentials.json` (mode must be `0600`; moat refuses to read a
    group- or world-accessible credentials file),
-4. convention: **only moat-specific names**, `MOAT_CREDENTIAL` and
-   `MOAT_MOCK_CREDENTIAL`.
+4. `DEEPSEEK_API_KEY`, or `MOAT_CREDENTIAL` as an override.
+
+At a terminal, if none of those is present, moat asks for the key rather than
+explaining that one is missing: the input is hidden, the key is checked against
+the provider before it is saved, and it is written to `~/.moat/credentials.json`
+with mode 0600. A key that cannot be checked because the network is down is saved
+with a warning rather than refused, because a working key is not made invalid by
+a bad connection.
 
 **moat will not silently use `OPENAI_API_KEY` (or any other general-purpose
 provider key) from your environment.** It says the key is there, explains that

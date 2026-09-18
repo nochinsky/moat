@@ -129,7 +129,17 @@ APPLY_RC=$?
 tail -10 "$EVIDENCE/repl-apply.txt" | tee -a "$EVIDENCE/extras.txt"
 echo "apply flow exit: $APPLY_RC" | tee -a "$EVIDENCE/extras.txt"
 
-section "J. every claim about process state is reconciled against the live process table"
+section "J. first run with no key: it asks, checks, and saves"
+if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+  python3 "$REPO/test/onboard-smoke.py" > "$EVIDENCE/onboard.txt" 2>&1
+  ONBOARD_RC=$?
+  tail -10 "$EVIDENCE/onboard.txt" | tee -a "$EVIDENCE/extras.txt"
+  echo "onboarding exit: $ONBOARD_RC" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "skipped: needs DEEPSEEK_API_KEY to prove the accepted path (it refuses a fake key first)" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+section "K. every claim about process state is reconciled against the live process table"
 capture status-final $MOAT status
 capture down-final $MOAT down
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; fi

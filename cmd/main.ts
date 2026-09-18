@@ -50,6 +50,7 @@ import { serveEntryScript } from "../sandbox/serve.ts"
 import { installBundle } from "../bundle/install.ts"
 import { TOOL_PRESETS, type ToolPreset } from "../bundle/render.ts"
 import { runIsolationChecks, type IsolationReport } from "../sandbox/isolation.ts"
+import { onboard } from "../secrets/onboard.ts"
 import {
   DEFAULT_TTL_SECONDS,
   INJECTED_ENV_NAMES,
@@ -562,10 +563,27 @@ ${command}
       // block references as {env:MOAT_INJECTED_CREDENTIAL}.
       targetEnvVars: resolvedModel.native ? [DEEPSEEK.envVar] : [],
     })
+    if (!credential && interactive) {
+      // At a terminal, do not explain what is missing: ask for it. The key is
+      // checked against the provider before being saved, so a typo cannot turn
+      // into a confusing failure several steps later.
+      const key = await onboard()
+      if (key) {
+        credential = mint({
+          provider: provider.opencodeID,
+          baseUrl,
+          model: resolvedModel.modelID,
+          ttlSeconds,
+          targetEnvVars: resolvedModel.native ? [DEEPSEEK.envVar] : [],
+        })
+      }
+    }
+
     if (!credential) {
       log.warn(
-        `no ${DEEPSEEK.envVar} found, so the agent has no model to call. Export it, or pass ` +
-          `--credential-env NAME if it lives under a different name.`,
+        `no ${DEEPSEEK.envVar}, so the agent has no model to call.\n` +
+          `  export ${DEEPSEEK.envVar}=sk-...   then run moat again\n` +
+          `  or pass --credential-env NAME if it lives under a different name`,
       )
     } else {
       log.warn(credentialRiskNotice(credential))
@@ -631,8 +649,8 @@ ${command}
   if (task.length > 0 && !credential) {
     log.fail(
       `no ${DEEPSEEK.envVar}, so the agent has no model to call.\n` +
-        `  export ${DEEPSEEK.envVar}=sk-...   then  moat run "..."\n` +
-        `  if the key lives under another name:  moat run --credential-env THAT_NAME "..."\n` +
+        `  export ${DEEPSEEK.envVar}=sk-...   then run it again\n` +
+        "  or run `moat` with no arguments at a terminal and it will ask for the key\n" +
         "  or point at another OpenAI-compatible endpoint:  moat run --base-url http://localhost:11434/v1 --model llama3 \"...\"",
     )
   }
@@ -848,9 +866,9 @@ function printUpSummary(
     log.info(`  credential ${state.credential.provider} ${state.credential.fingerprint} expires ${state.credential.expiresAt}`)
   }
   log.info("")
-  log.info(`  next: ${log.bold("moat attach")}   ${log.dim("drive a session")}`)
-  log.info(`        ${log.bold("moat fetch")}    ${log.dim("pull the agent's branch onto the host")}`)
-  log.info(`        ${log.bold("moat down")}     ${log.dim("stop the sandbox (state is kept)")}`)
+  log.info(`  next: ${log.bold("moat")}         ${log.dim("open a session here and tell it what to do")}`)
+  log.info(`        ${log.bold("moat apply")}   ${log.dim("merge what it did into this directory")}`)
+  log.info(`        ${log.bold("moat down")}    ${log.dim("stop the sandbox (state and snapshots are kept)")}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -1443,7 +1461,7 @@ async function cmdDoctor(argv: string[]): Promise<number> {
     log.info(
       hasKey
         ? `  ${DEEPSEEK.envVar}  ${log.green("set")}`
-        : `  ${DEEPSEEK.envVar}  ${log.red("not set")}  ${log.dim(`the agent cannot call a model without it; export it, or pass --credential-env NAME`)}`,
+        : `  ${DEEPSEEK.envVar}  ${log.yellow("not set")}  ${log.dim("run `moat` at a terminal and it will ask for one")}`,
     )
   }
 
