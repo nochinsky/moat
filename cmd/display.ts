@@ -418,15 +418,21 @@ export function toolLine(call: ToolCallView, theme: Theme, width = 100): string 
   if (call.ms !== undefined && call.status !== "running") counts.push(theme.dim(formatDuration(call.ms)))
   const tail = counts.join(" ")
 
-  // "  " + mark + " " + padded name, then the title, then two spaces and the tail.
+  // "  " + mark + " " + padded name, then the title, then the tail flush right.
   const nameColumn = Math.max(TOOL_COLUMN, visibleWidth(call.tool))
-  const reserved = 2 + 1 + 1 + nameColumn + 1 + visibleWidth(tail) + (tail ? 2 : 0)
-  const room = width - reserved
+  const headWidth = 2 + 1 + 1 + nameColumn + 1
+  const tailWidth = visibleWidth(tail)
+  // The tail is the column you scan down — durations, and how much an edit
+  // changed — so it is right-aligned rather than left to trail the title at
+  // whatever column the title happened to end on.
+  const room = width - 1 - headWidth - tailWidth - (tail ? 2 : 0)
   const title = plainTitle === "" || room < 8 ? "" : truncateVisible(plainTitle, room)
 
   const head = `  ${mark} ${padTo(name, nameColumn)} `
-  const body = tail === "" ? `${head}${theme.dim(title)}` : `${head}${title}  ${tail}`
-  return body.trimEnd()
+  if (tail === "") return `${head}${theme.dim(title)}`.trimEnd()
+
+  const gap = " ".repeat(Math.max(2, room - visibleWidth(title) + 2))
+  return `${head}${theme.dim(title)}${gap}${tail}`.trimEnd()
 }
 
 /**
