@@ -185,7 +185,9 @@ filesystem, no socket, no subprocess.
 
 | command | effect |
 | --- | --- |
-| `moat up` | provision if needed, copy in, mint a credential, boot, wait for ready |
+| `moat run "<task>"` | `up` when needed, then do the task and stream it. The entry point most people use |
+| `moat take [branch]` | fetch the agent's branch, show its commits and diff, and offer to apply it |
+| `moat up [task]` | provision if needed, copy in, mint a credential, boot, wait for ready |
 | `moat attach [--prompt TEXT]` | attach the opencode client: interactive TUI, or drive one prompt. Reports tool calls as they happen; `--continue` resumes the last session |
 | `moat fetch [branch] [--all]` | `git fetch` the agent's branch from the sandbox into `refs/moat/*` |
 | `moat apply <branch> [--checkout]` | turn a fetched ref into a local branch (never automatic) |
@@ -400,6 +402,13 @@ already happened once. It declares:
 
 **Excluded (opencode built-ins that are not in the bundle):**
 `webfetch`, `websearch`, `question`, `skill`, `task`.
+
+Profiles are detected from the project when `--profile` is not given:
+`package.json` means node, `pyproject.toml`/`requirements.txt` python, `go.mod` go,
+`Cargo.toml` rust, a JVM build file java, a `Makefile`/`CMakeLists.txt` a C
+toolchain. A wrong guess costs a long package install, so detection is
+conservative: it adds a profile only when the project plainly asks for one, says
+what it detected and why, and `--no-detect` turns it off.
 
 `--tools extended` swaps in a wider set (`+ webfetch, + task`). Neither changes
 the security posture, `bash` and `curl` already reach the network, but both

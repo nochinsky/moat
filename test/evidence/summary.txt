@@ -29,11 +29,11 @@ isolation (14 checks)
   pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)
   pass  no host data mounts            13 mounts; none reference a host filesystem path
   pass  sandbox pid 1                  pid 1 is "sh", 4 visible processes
-  pass  own mount namespace            sandbox mnt:[4026532302] vs host mnt:[4026532219]
-  pass  own pid namespace              sandbox pid:[4026532305] vs host pid:[4026532221]
-  pass  own user namespace             sandbox user:[4026532301] vs host user:[4026531837]
-  pass  own uts namespace              sandbox uts:[4026532303] vs host uts:[4026532220]
-  pass  own ipc namespace              sandbox ipc:[4026532304] vs host ipc:[4026532208]
+  pass  own mount namespace            sandbox mnt:[4026532300] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532303] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532299] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532301] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532302] vs host ipc:[4026532208]
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
   pass  device nodes are the only host mounts 6 read-only device node bind(s): /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
 
@@ -41,7 +41,7 @@ exposures, measured, and NOT fixed in v0. Read these before trusting the box.
   expose  credential visible to the agent
           MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. The bundle blanks secret-looking names for shell commands, but the values remain in the opencode process environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token.
   expose  host loopback reachable
-          the sandbox connected to a service the host opened on 127.0.0.1:42197. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent.
+          the sandbox connected to a service the host opened on 127.0.0.1:36629. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent.
   expose  egress unrestricted
           the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it can read, including the project and the injected credential. Egress policy is v2.
   expose  shell env redaction (bundle)
@@ -83,13 +83,13 @@ mount table inside the sandbox
 {
   "project": "/home/user/moat-demo/project",
   "envId": "18620c2c4f34",
-  "provisionMs": 894,
+  "provisionMs": 883,
   "provisionFromImageCache": true,
   "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-c1ed4315e817.tar.gz",
   "provisionSteps": [
     {
       "name": "extract cached image",
-      "ms": 894
+      "ms": 883
     }
   ],
   "baselineSnapshot": {
@@ -99,7 +99,7 @@ mount table inside the sandbox
   },
   "copyIn": {
     "transport": "git",
-    "head": "4947966a5c34e5ead5f74caad46c174261884d06",
+    "head": "d8bc151026652e00ce37b30b733c9a721d2e2762",
     "branch": "main",
     "dirty": true,
     "trackedChanges": 1,
@@ -108,9 +108,9 @@ mount table inside the sandbox
     "files": 3,
     "bytes": 126,
     "suspectSecrets": [],
-    "hostState": "git:4947966a5c34e5ead5f74caad46c174261884d06:4f00b88b7e9318be"
+    "hostState": "git:d8bc151026652e00ce37b30b733c9a721d2e2762:4f00b88b7e9318be"
   },
-  "copyInMs": 42,
+  "copyInMs": 43,
   "provider": {
     "id": "local",
     "opencodeID": "moat",
@@ -141,15 +141,15 @@ mount table inside the sandbox
     "preset": "core"
   },
   "status": "running",
-  "port": 33641,
-  "pid": 37098,
-  "bootMs": 12422,
-  "totalMs": 13442,
+  "port": 33501,
+  "pid": 40584,
+  "bootMs": 8484,
+  "totalMs": 9503,
   "readyCheck": "GET /config -> 200",
   "credential": {
     "provider": "local",
     "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-18T22:13:20.959Z",
+    "expiresAt": "2026-09-18T22:21:29.453Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -166,16 +166,17 @@ mount table inside the sandbox
   ]
 }
 --- stderr ---
+no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-c1ed4315e817.tar.gz
-✓ image provisioned in 894ms (extract cached image 894ms)
+✓ image provisioned in 883ms (extract cached image 883ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 3 files, 0.1 KiB, digest c73dfe12c6e22b9f (dirty tree: 1 modified, 1 untracked)
 model: moat/mock-model
 ! injecting local credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a provider-scoped, spend-capped token, not a general-purpose key. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-18-13
-→ sandbox booted (pid 37098, port 33641); waiting for opencode serve
-cold start: totalMs=13442 provisionMs=894 bootMs=12422
+agent branch: moat-session-2026-09-18-18-21
+→ sandbox booted (pid 40584, port 33501); waiting for opencode serve
+cold start: totalMs=9503 provisionMs=883 bootMs=8484
 --- $ node /home/user/Projects/moat/cmd/main.ts status --json
 --- exit 0
 --- stdout ---
@@ -183,48 +184,48 @@ cold start: totalMs=13442 provisionMs=894 bootMs=12422
   "version": 1,
   "id": "18620c2c4f34",
   "projectDir": "/home/user/moat-demo/project",
-  "createdAt": "2026-09-18T18:13:20.876Z",
-  "lastUpAt": "2026-09-18T18:13:20.973Z",
+  "createdAt": "2026-09-18T18:21:29.365Z",
+  "lastUpAt": "2026-09-18T18:21:29.468Z",
   "status": "running",
   "opencodeVersion": "1.18.31",
   "alpineVersion": "3.21.4",
-  "port": 33641,
+  "port": 33501,
   "model": "moat/mock-model",
   "provider": "local",
   "providerBaseUrl": "http://127.0.0.1:5599/v1",
-  "branch": "moat-session-2026-09-18-18-13",
+  "branch": "moat-session-2026-09-18-18-21",
   "profiles": [],
-  "pid": 37098,
+  "pid": 40584,
   "baselineDigest": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158",
-  "baselineHostState": "git:4947966a5c34e5ead5f74caad46c174261884d06:4f00b88b7e9318be",
+  "baselineHostState": "git:d8bc151026652e00ce37b30b733c9a721d2e2762:4f00b88b7e9318be",
   "credential": {
     "provider": "local",
     "fingerprint": "sha256:7726b438889c7f57",
-    "mintedAt": "2026-09-18T18:13:20.959Z",
-    "expiresAt": "2026-09-18T22:13:20.959Z"
+    "mintedAt": "2026-09-18T18:21:29.453Z",
+    "expiresAt": "2026-09-18T22:21:29.453Z"
   },
   "snapshots": [
     "baseline"
   ],
-  "lastBootMs": 12422,
+  "lastBootMs": 8484,
   "envDir": "/home/user/.moat/envs/18620c2c4f34",
   "rootfsDir": "/home/user/.moat/envs/18620c2c4f34/rootfs",
   "running": true,
-  "url": "http://127.0.0.1:33641",
-  "rootfsBytes": 395298707,
+  "url": "http://127.0.0.1:33501",
+  "rootfsBytes": 395298708,
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "4947966a5c34e5ead5f74caad46c174261884d06",
+      "sha": "d8bc151026652e00ce37b30b733c9a721d2e2762",
       "subject": "initial demo project",
-      "committedAt": "2026-09-18T20:13:19+02:00",
+      "committedAt": "2026-09-18T20:21:27+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-18-18-13",
-      "sha": "4947966a5c34e5ead5f74caad46c174261884d06",
+      "name": "moat-session-2026-09-18-18-21",
+      "sha": "d8bc151026652e00ce37b30b733c9a721d2e2762",
       "subject": "initial demo project",
-      "committedAt": "2026-09-18T20:13:19+02:00",
+      "committedAt": "2026-09-18T20:21:27+02:00",
       "current": true
     }
   ]
@@ -257,11 +258,11 @@ isolation (14 checks)
   pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)
   pass  no host data mounts            13 mounts; none reference a host filesystem path
   pass  sandbox pid 1                  pid 1 is "sh", 4 visible processes
-  pass  own mount namespace            sandbox mnt:[4026532302] vs host mnt:[4026532219]
-  pass  own pid namespace              sandbox pid:[4026532305] vs host pid:[4026532221]
-  pass  own user namespace             sandbox user:[4026532301] vs host user:[4026531837]
-  pass  own uts namespace              sandbox uts:[4026532303] vs host uts:[4026532220]
-  pass  own ipc namespace              sandbox ipc:[4026532304] vs host ipc:[4026532208]
+  pass  own mount namespace            sandbox mnt:[4026532305] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532308] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532304] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532306] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532307] vs host ipc:[4026532208]
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
   pass  device nodes are the only host mounts 6 read-only device node bind(s): /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
 
@@ -269,397 +270,7 @@ exposures, measured, and NOT fixed in v0. Read these before trusting the box.
   expose  credential visible to the agent
           MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. The bundle blanks secret-looking names for shell commands, but the values remain in the opencode process environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token.
   expose  host loopback reachable
-          the sandbox connected to a service the host opened on 127.0.0.1:42817. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent.
-  expose  egress unrestricted
-          the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it can read, including the project and the injected credential. Egress policy is v2.
-  expose  shell env redaction (bundle)
-          the bundle blanks MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, OPENCODE_SERVER_PASSWORD for shell commands the agent writes. Speed bump only: the values are still in the opencode process environment and reachable via /proc/<pid>/environ. This record comes from the plugin running inside the box.
-
-  note  network namespace shared       sandbox and host share net:[4026531833]. The agent has the host's network position. Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md).
-
-mount table inside the sandbox
-  /dev/full||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/null||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/pts||devpts devpts rw,mode=620,ptmxmode=666
-  /dev/random||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/shm||tmpfs tmpfs rw,uid=1000,gid=1000
-  /dev/tty||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/urandom||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/zero||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
-  /proc||proc proc rw
-  /run||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
-  /tmp||tmpfs tmpfs rw,uid=1000,gid=1000
-  /||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered
---- $ node /home/user/Projects/moat/cmd/main.ts doctor --json
---- exit 0
---- stdout ---
-{
-  "host": {
-    "linux": true,
-    "wsl": true,
-    "virt": "wsl",
-    "userns": true,
-    "mountns": true,
-    "pidns": true,
-    "kvm": false,
-    "unshare": "/usr/bin/unshare",
-    "chroot": "/usr/bin/chroot",
-    "mount": "/usr/bin/mount",
-    "chown": false,
-    "problems": [],
-    "notes": [
-      "no usable /dev/kvm (present but not accessible to uid 1000 (mode 660, gid 991)): v1 microVM unavailable here; the v0 container path is the supported mode",
-      "mknod denied in userns (kernel policy): /dev nodes are bind-mounted read-only from the host's device nodes. No host *data* is mounted."
-    ]
-  },
-  "isolation": {
-    "checks": [
-      {
-        "name": "host project not reachable",
-        "ok": true,
-        "detail": "/home/user/moat-demo/project is absent inside the sandbox"
-      },
-      {
-        "name": "host home not reachable",
-        "ok": true,
-        "detail": "/home/user is absent inside the sandbox"
-      },
-      {
-        "name": "host canary unreadable",
-        "ok": true,
-        "detail": "/home/user/.moat/canary (mode 600, exists only on the host) is unreadable"
-      },
-      {
-        "name": "no host ssh directory",
-        "ok": true,
-        "detail": "host /home/user/.ssh absent; sandbox /root/.ssh absent"
-      },
-      {
-        "name": "no host env forwarded",
-        "ok": true,
-        "detail": "no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)"
-      },
-      {
-        "name": "no host data mounts",
-        "ok": true,
-        "detail": "13 mounts; none reference a host filesystem path"
-      },
-      {
-        "name": "sandbox pid 1",
-        "ok": true,
-        "detail": "pid 1 is \"sh\", 3 visible processes"
-      },
-      {
-        "name": "own mount namespace",
-        "ok": true,
-        "detail": "sandbox mnt:[4026532303] vs host mnt:[4026532219]"
-      },
-      {
-        "name": "own pid namespace",
-        "ok": true,
-        "detail": "sandbox pid:[4026532306] vs host pid:[4026532221]"
-      },
-      {
-        "name": "own user namespace",
-        "ok": true,
-        "detail": "sandbox user:[4026532302] vs host user:[4026531837]"
-      },
-      {
-        "name": "own uts namespace",
-        "ok": true,
-        "detail": "sandbox uts:[4026532304] vs host uts:[4026532220]"
-      },
-      {
-        "name": "own ipc namespace",
-        "ok": true,
-        "detail": "sandbox ipc:[4026532305] vs host ipc:[4026532208]"
-      },
-      {
-        "name": "uid mapping",
-        "ok": true,
-        "detail": "uid_map \"0 1000 1\", uid 0 inside is the calling user outside"
-      },
-      {
-        "kind": "exposure",
-        "name": "credential visible to the agent",
-        "ok": true,
-        "detail": "MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. The bundle blanks secret-looking names for shell commands, but the values remain in the opencode process environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token."
-      },
-      {
-        "kind": "exposure",
-        "name": "host loopback reachable",
-        "ok": true,
-        "detail": "the sandbox connected to a service the host opened on 127.0.0.1:42613. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent."
-      },
-      {
-        "kind": "exposure",
-        "name": "egress unrestricted",
-        "ok": true,
-        "detail": "the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it can read, including the project and the injected credential. Egress policy is v2."
-      },
-      {
-        "kind": "note",
-        "name": "network namespace shared",
-        "ok": true,
-        "detail": "sandbox and host share net:[4026531833]. The agent has the host's network position. Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md)."
-      },
-      {
-        "name": "device nodes are the only host mounts",
-        "ok": true,
-        "detail": "6 read-only device node bind(s): /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero"
-      },
-      {
-        "kind": "exposure",
-        "name": "shell env redaction (bundle)",
-        "ok": true,
-        "detail": "the bundle blanks MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, OPENCODE_SERVER_PASSWORD for shell commands the agent writes. Speed bump only: the values are still in the opencode process environment and reachable via /proc/<pid>/environ. This record comes from the plugin running inside the box."
-      }
-    ],
-    "mounts": [
-      "/dev/full||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev/null||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev/pts||devpts devpts rw,mode=620,ptmxmode=666",
-      "/dev/random||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev/shm||tmpfs tmpfs rw,uid=1000,gid=1000",
-      "/dev/tty||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev/urandom||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev/zero||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000",
-      "/proc||proc proc rw",
-      "/run||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000",
-      "/tmp||tmpfs tmpfs rw,uid=1000,gid=1000",
-      "/||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered"
-    ],
-    "envNames": [
-      "HOME",
-      "LANG",
-      "LC_ALL",
-      "MOAT_CREDENTIAL_EXPIRES_AT",
-      "MOAT_CREDENTIAL_FINGERPRINT",
-      "MOAT_CREDENTIAL_TTL_SECONDS",
-      "MOAT_INJECTED_CREDENTIAL",
-      "MOAT_MODEL",
-      "MOAT_MODEL_ID",
-      "MOAT_PROVIDER_BASE_URL",
-      "MOAT_SANDBOX",
-      "OPENCODE_SERVER_PASSWORD",
-      "PATH",
-      "PWD",
-      "SHLVL",
-      "TERM"
-    ],
-    "raw": "MOAT_ID=uid=0(root) gid=0(root) groups=0(root),65534(nobody)\nMOAT_ALPINE=3.21.4\nMOAT_PID_COUNT=3\nMOAT_PID1=sh\nMOAT_NS_MNT=mnt:[4026532303]\nMOAT_NS_PID=pid:[4026532306]\nMOAT_NS_USER=user:[4026532302]\nMOAT_NS_NET=net:[4026531833]\nMOAT_NS_UTS=uts:[4026532304]\nMOAT_NS_IPC=ipc:[4026532305]\nMOAT_UIDMAP= 0 1000 1\nMOAT_HOST_PROJECT=absent\nMOAT_HOST_HOME=absent\nMOAT_CANARY=unreadable\nMOAT_HOST_SSH=absent\nMOAT_ROOT_SSH=absent\nMOAT_ENV_B64=TU9BVF9QUk9WSURFUl9CQVNFX1VSTD1SRURBQ1RFRC1CWS1ET0NUT1IKU0hMVkw9MQpIT01FPS9yb290Ck1PQVRfQ1JFREVOVElBTF9FWFBJUkVTX0FUPVJFREFDVEVELUJZLURPQ1RPUgpNT0FUX0NSRURFTlRJQUxfVFRMX1NFQ09ORFM9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfTU9ERUw9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfU0FOREJPWD0xCk1PQVRfTU9ERUxfSUQ9UkVEQUNURUQtQlktRE9DVE9SClRFUk09ZHVtYgpQQVRIPS91c3IvbG9jYWwvc2JpbjovdXNyL2xvY2FsL2JpbjovdXNyL3NiaW46L3Vzci9iaW46L3NiaW46L2JpbgpPUEVOQ09ERV9TRVJWRVJfUEFTU1dPUkQ9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfQ1JFREVOVElBTF9GSU5HRVJQUklOVD1SRURBQ1RFRC1CWS1ET0NUT1IKTEFORz1DLlVURi04CkxDX0FMTD1DLlVURi04ClBXRD0vCk1PQVRfSU5KRUNURURfQ1JFREVOVElBTD1SRURBQ1RFRC1CWS1ET0NUT1IK\nMOAT_SECRET_ENV_NAMES=MOAT_CREDENTIAL_EXPIRES_AT,MOAT_CREDENTIAL_TTL_SECONDS,OPENCODE_SERVER_PASSWORD,MOAT_CREDENTIAL_FINGERPRINT,MOAT_INJECTED_CREDENTIAL,\nMOAT_HOST_LOOPBACK=REACHABLE\nMOAT_EGRESS_OPEN=yes\nMOAT_MOUNTS_B64=L3x8ZXh0NCAvZGV2L3NkZCBydyxkaXNjYXJkLGVycm9ycz1yZW1vdW50LXJvLGRhdGE9b3JkZXJlZAovcHJvY3x8cHJvYyBwcm9jIHJ3Ci9kZXZ8fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCi9kZXYvbnVsbHx8ZGV2dG1wZnMgbm9uZSBydyxzaXplPTM5NDU0MjRrLG5yX2lub2Rlcz05ODYzNTYsbW9kZT03NTUKL2Rldi96ZXJvfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L2Z1bGx8fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvcmFuZG9tfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L3VyYW5kb218fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvdHR5fHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L3B0c3x8ZGV2cHRzIGRldnB0cyBydyxtb2RlPTYyMCxwdG14bW9kZT02NjYKL2Rldi9zaG18fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi90bXB8fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi9ydW58fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCg==\n",
-    "hostNamespaces": {
-      "mnt": "mnt:[4026532219]",
-      "pid": "pid:[4026532221]",
-      "user": "user:[4026531837]",
-      "net": "net:[4026531833]",
-      "uts": "uts:[4026532220]",
-      "ipc": "ipc:[4026532208]"
-    }
-  }
-}
---- stderr ---
-→ running in-sandbox isolation checks
---- $ node /home/user/Projects/moat/cmd/main.ts tools
---- exit 0
---- stdout ---
---- stderr ---
-bundle (from the plugin's config-time record)
-  curated    read, write, edit, apply_patch, glob, grep, bash, todowrite
-  excluded   webfetch, websearch, question, skill, task
-  omissions confirmed by opencode: question, skill, webfetch, websearch, task
-
-registry (everything opencode knows about, NOT what the model sees)
-  + apply_patch
-  + bash
-  + edit
-  + glob
-  + grep
-  - invalid
-  + read
-  - skill
-  - task
-  + todowrite
-  - webfetch
-  - websearch
-  + write
-
-! opencode 1.18.31 cannot stop advertising: webfetch, skill, task. The bundle refuses to execute them (docs/UPSTREAM-CANDIDATES.md).
-
-==============================================================
-== 4. the agent completes a task needing bash + file edits, zero prompts
-==============================================================
-[mock-model] listening on http://127.0.0.1:5599/v1 (6 scripted steps)
-[mock-model] recording requests to /home/user/moat-demo/mock.jsonl
---- $ node /home/user/Projects/moat/cmd/main.ts attach --show-output --prompt Create and edit a note file in the project, then commit it. Report what you did.
---- exit 0
---- stdout ---
---- stderr ---
-[tool] bash (running) 
-[tool] bash (completed) pwd && ls -la && cat README.md
-[tool-output] /work
-total 24
-drwxr-xr-x  3 root root 4096 Sep 18 18:13 .
-drwxr-xr-x 22 root root 4096 Sep 18 18:13 ..
-drwxr-xr-x  7 root root 4096 Sep 18 18:13 .git
--rw-r--r--  1 root root   71 Sep 18 18:13 README.md
--rwxr-xr-x  1 root root   45 Sep 18 18:13 greet.sh
--rw-r--r--  1 root root   10 Sep 18 18:13 notes.txt
-# demo project
-
-A tiny project used to exercise moat.
-uncommitted line
-[tool] write (running) 
-[tool] write (completed) agent-output.txt
-[tool-output] Wrote file successfully.
-[tool] edit (running) 
-[tool] edit (completed) agent-output.txt
-[tool-output] Edit applied successfully.
-[tool] bash (running) 
-[tool] bash (completed) printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt
-[tool-output] 2 agent-output.txt
-written by the agent, inside the sandbox, via the edit tool
-line two
-[tool] bash (running) 
-[tool] bash (completed) git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && git log --oneline -1 && git rev-parse HEAD
-[tool-output] b7835d4 agent: add agent-output.txt from inside the sandbox
-b7835d45d55bf5f4b18b88a5f4f864fc5f79b526
-Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
-
-
-session ses_f4a46afcbffeI2p6aJ6gK2ePWn
-tools   bash:completed, write:completed, edit:completed, bash:completed, bash:completed
-
-inference requests observed : 6
-authorization header        : ['Bearer moat-e2e-scoped-credential-8c1d4e']
-advertised tool list        : ['bash', 'edit', 'glob', 'grep', 'read', 'skill', 'task', 'todowrite', 'webfetch', 'write']
-scripted steps executed     : [(0, 'bash'), (1, 'write'), (2, 'edit'), (3, 'bash'), (4, 'bash'), (5, 'text')]
-
---- audit log written by the bundle plugin INSIDE the sandbox ---
-{"phase": "config", "permission": {"question": "deny", "skill": "deny", "webfetch": "deny", "websearch": "deny", "task": "deny", "*": "allow"}, "toolOmissions": ["question", "skill", "webfetch", "websearch", "task"]}
-{"phase": "before", "tool": "bash", "args": "{\"command\":\"pwd && ls -la && cat README.md\"}"}
-{"phase": "before", "tool": "write", "args": "{\"filePath\":\"agent-output.txt\",\"content\":\"written by the agent, inside the sandbox\\n\"}"}
-{"phase": "before", "tool": "edit", "args": "{\"filePath\":\"agent-output.txt\",\"oldString\":\"inside the sandbox\",\"newString\":\"inside the sandbox, via the edit tool\"}"}
-{"phase": "before", "tool": "bash", "args": "{\"command\":\"printf 'line two\\\\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt\"}"}
-{"phase": "before", "tool": "bash", "args": "{\"command\":\"git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && git log --oneline -1 && git rev-parse HEAD\"}"}
-
-streaming: tool calls were reported as they started (not just at the end)
-permission requests raised: 0  (the file was never created, no permission.ask hook ever fired)
-
-==============================================================
-== 5. the agent cannot read a host credential (failed attempt, from the agent itself)
-==============================================================
-[mock-model] listening on http://127.0.0.1:5599/v1 (2 scripted steps)
-[mock-model] recording requests to /home/user/moat-demo/mock.jsonl
---- $ node /home/user/Projects/moat/cmd/main.ts attach --show-output --prompt Try to read the host's credentials and project directory, and report exactly what happens.
---- exit 0
---- stdout ---
---- stderr ---
-[tool] bash (running) 
-[tool] bash (completed) pwd && ls -la && cat README.md && echo '--- host access attempt ---' && for p in /home/user/.moat/canary /home/user/.ssh/id_ed25519 /home/user/.gitconfig /home/user/.aws/credentials /home/user/moat-demo/project/README.md; do if cat "$p" >/dev/null 2>&1; then echo "LEAK        $p"; else echo "blocked     $p"; fi; done; echo '--- host environment ---'; echo "AWS_SECRET_ACCESS_KEY=[${AWS_SECRET_ACCESS_KEY:-unset}] SSH_AUTH_SOCK=[${SSH_AUTH_SOCK:-unset}]"
-[tool-output] /work
-total 28
-drwxr-xr-x  3 root root 4096 Sep 18 18:13 .
-drwxr-xr-x 22 root root 4096 Sep 18 18:13 ..
-drwxr-xr-x  7 root root 4096 Sep 18 18:13 .git
--rw-r--r--  1 root root   71 Sep 18 18:13 README.md
--rw-r--r--  1 root root   69 Sep 18 18:13 agent-output.txt
--rwxr-xr-x  1 root root   45 Sep 18 18:13 greet.sh
--rw-r--r--  1 root root   10 Sep 18 18:13 notes.txt
-# demo project
-
-A tiny project used to exercise moat.
-uncommitted line
---- host access attempt ---
-blocked     /home/user/.moat/canary
-blocked     /home/user/.ssh/id_ed25519
-blocked     /home/user/.gitconfig
-blocked     /home/user/.aws/credentials
-blocked     /home/user/moat-demo/project/README.md
---- host environment ---
-AWS_SECRET_ACCESS_KEY=[unset] SSH_AUTH_SOCK=[unset]
-Attempted to read host-only credentials and paths from inside the sandbox; see the tool output above.
-
-
-session ses_f4a465eaaffeTEJ0mJCHFoY1Vo
-tools   bash:completed
-
-==============================================================
-== 6. the bundle refuses tools that are not in it
-==============================================================
-[mock-model] listening on http://127.0.0.1:5599/v1 (4 scripted steps)
-[mock-model] recording requests to /home/user/moat-demo/mock.jsonl
---- $ node /home/user/Projects/moat/cmd/main.ts attach --show-output --prompt Try an excluded tool, a write outside the workspace, and a read of a file inside the box.
---- exit 1
---- stdout ---
---- stderr ---
-[tool] webfetch (running) 
-[tool] webfetch (error) 
-[tool-error] moat: tool "webfetch" is not part of this sandbox's bundle. Available tools: read, write, edit, apply_patch, glob, grep, bash, todowrite.
-[tool] write (running) 
-[tool] write (error) 
-[tool-error] moat: refusing write.filePath outside the workspace: /etc/moat-escape-attempt. The workspace is /work; /tmp is also writable.
-[tool] read (running) 
-[tool] read (completed) ../etc/os-release
-[tool-output] <path>/etc/os-release</path>
-<type>file</type>
-<content>
-1: NAME="Alpine Linux"
-2: ID=alpine
-3: VERSION_ID=3.21.4
-4: PRETTY_NAME="Alpine Linux v3.21"
-5: HOME_URL="https://alpinelinux.org/"
-6: BUG_REPORT_URL="https://gitlab.alpinelinux.org/alpine/aports/-/issues"
-
-(End of file - total 6 lines)
-</content>
-Attempted an excluded tool and an out-of-workspace write; see the tool results above.
-
-
-session ses_f4a461bb8ffe05dOq0mauZE8jo
-tools   webfetch:error, write:error, read:completed
-
-==============================================================
-== 6b. what the agent can reach, re-measured after the bundle's redaction is live
-==============================================================
---- $ node /home/user/Projects/moat/cmd/main.ts doctor
---- exit 0
---- stdout ---
---- stderr ---
-host
-  platform   linux x64 wsl2 userns=yes kvm=no
-  unshare    /usr/bin/unshare
-  chroot     /usr/bin/chroot
-  user ns    available
-  pid ns     available
-  /dev/kvm   absent (v1 microVM path unavailable here)
-  note       no usable /dev/kvm (present but not accessible to uid 1000 (mode 660, gid 991)): v1 microVM unavailable here; the v0 container path is the supported mode
-  note       mknod denied in userns (kernel policy): /dev nodes are bind-mounted read-only from the host's device nodes. No host *data* is mounted.
-→ running in-sandbox isolation checks
-
-isolation (14 checks)
-  pass  host project not reachable     /home/user/moat-demo/project is absent inside the sandbox
-  pass  host home not reachable        /home/user is absent inside the sandbox
-  pass  host canary unreadable         /home/user/.moat/canary (mode 600, exists only on the host) is unreadable
-  pass  no host ssh directory          host /home/user/.ssh absent; sandbox /root/.ssh absent
-  pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)
-  pass  no host data mounts            13 mounts; none reference a host filesystem path
-  pass  sandbox pid 1                  pid 1 is "sh", 4 visible processes
-  pass  own mount namespace            sandbox mnt:[4026532300] vs host mnt:[4026532219]
-  pass  own pid namespace              sandbox pid:[4026532303] vs host pid:[4026532221]
-  pass  own user namespace             sandbox user:[4026532294] vs host user:[4026531837]
-  pass  own uts namespace              sandbox uts:[4026532301] vs host uts:[4026532220]
-  pass  own ipc namespace              sandbox ipc:[4026532302] vs host ipc:[4026532208]
-  pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
-  pass  device nodes are the only host mounts 6 read-only device node bind(s): /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
-
-exposures, measured, and NOT fixed in v0. Read these before trusting the box.
-  expose  credential visible to the agent
-          MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. The bundle blanks secret-looking names for shell commands, but the values remain in the opencode process environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token.
-  expose  host loopback reachable
-          the sandbox connected to a service the host opened on 127.0.0.1:32795. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent.
+          the sandbox connected to a service the host opened on 127.0.0.1:46505. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent.
   expose  egress unrestricted
           the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it can read, including the project and the injected credential. Egress policy is v2.
   expose  shell env redaction (bundle)
@@ -743,27 +354,27 @@ mount table inside the sandbox
       {
         "name": "own mount namespace",
         "ok": true,
-        "detail": "sandbox mnt:[4026532300] vs host mnt:[4026532219]"
+        "detail": "sandbox mnt:[4026532305] vs host mnt:[4026532219]"
       },
       {
         "name": "own pid namespace",
         "ok": true,
-        "detail": "sandbox pid:[4026532303] vs host pid:[4026532221]"
+        "detail": "sandbox pid:[4026532308] vs host pid:[4026532221]"
       },
       {
         "name": "own user namespace",
         "ok": true,
-        "detail": "sandbox user:[4026532294] vs host user:[4026531837]"
+        "detail": "sandbox user:[4026532304] vs host user:[4026531837]"
       },
       {
         "name": "own uts namespace",
         "ok": true,
-        "detail": "sandbox uts:[4026532301] vs host uts:[4026532220]"
+        "detail": "sandbox uts:[4026532306] vs host uts:[4026532220]"
       },
       {
         "name": "own ipc namespace",
         "ok": true,
-        "detail": "sandbox ipc:[4026532302] vs host ipc:[4026532208]"
+        "detail": "sandbox ipc:[4026532307] vs host ipc:[4026532208]"
       },
       {
         "name": "uid mapping",
@@ -780,7 +391,7 @@ mount table inside the sandbox
         "kind": "exposure",
         "name": "host loopback reachable",
         "ok": true,
-        "detail": "the sandbox connected to a service the host opened on 127.0.0.1:40861. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent."
+        "detail": "the sandbox connected to a service the host opened on 127.0.0.1:39881. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent."
       },
       {
         "kind": "exposure",
@@ -839,7 +450,394 @@ mount table inside the sandbox
       "SHLVL",
       "TERM"
     ],
-    "raw": "MOAT_ID=uid=0(root) gid=0(root) groups=0(root),65534(nobody)\nMOAT_ALPINE=3.21.4\nMOAT_PID_COUNT=4\nMOAT_PID1=sh\nMOAT_NS_MNT=mnt:[4026532300]\nMOAT_NS_PID=pid:[4026532303]\nMOAT_NS_USER=user:[4026532294]\nMOAT_NS_NET=net:[4026531833]\nMOAT_NS_UTS=uts:[4026532301]\nMOAT_NS_IPC=ipc:[4026532302]\nMOAT_UIDMAP= 0 1000 1\nMOAT_HOST_PROJECT=absent\nMOAT_HOST_HOME=absent\nMOAT_CANARY=unreadable\nMOAT_HOST_SSH=absent\nMOAT_ROOT_SSH=absent\nMOAT_ENV_B64=TU9BVF9QUk9WSURFUl9CQVNFX1VSTD1SRURBQ1RFRC1CWS1ET0NUT1IKU0hMVkw9MQpIT01FPS9yb290Ck1PQVRfQ1JFREVOVElBTF9FWFBJUkVTX0FUPVJFREFDVEVELUJZLURPQ1RPUgpNT0FUX0NSRURFTlRJQUxfVFRMX1NFQ09ORFM9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfTU9ERUw9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfU0FOREJPWD0xCk1PQVRfTU9ERUxfSUQ9UkVEQUNURUQtQlktRE9DVE9SClRFUk09ZHVtYgpQQVRIPS91c3IvbG9jYWwvc2JpbjovdXNyL2xvY2FsL2JpbjovdXNyL3NiaW46L3Vzci9iaW46L3NiaW46L2JpbgpPUEVOQ09ERV9TRVJWRVJfUEFTU1dPUkQ9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfQ1JFREVOVElBTF9GSU5HRVJQUklOVD1SRURBQ1RFRC1CWS1ET0NUT1IKTEFORz1DLlVURi04CkxDX0FMTD1DLlVURi04ClBXRD0vCk1PQVRfSU5KRUNURURfQ1JFREVOVElBTD1SRURBQ1RFRC1CWS1ET0NUT1IK\nMOAT_SECRET_ENV_NAMES=MOAT_CREDENTIAL_EXPIRES_AT,MOAT_CREDENTIAL_TTL_SECONDS,OPENCODE_SERVER_PASSWORD,MOAT_CREDENTIAL_FINGERPRINT,MOAT_INJECTED_CREDENTIAL,\nMOAT_HOST_LOOPBACK=REACHABLE\nMOAT_EGRESS_OPEN=yes\nMOAT_MOUNTS_B64=L3x8ZXh0NCAvZGV2L3NkZCBydyxkaXNjYXJkLGVycm9ycz1yZW1vdW50LXJvLGRhdGE9b3JkZXJlZAovcHJvY3x8cHJvYyBwcm9jIHJ3Ci9kZXZ8fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCi9kZXYvbnVsbHx8ZGV2dG1wZnMgbm9uZSBydyxzaXplPTM5NDU0MjRrLG5yX2lub2Rlcz05ODYzNTYsbW9kZT03NTUKL2Rldi96ZXJvfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L2Z1bGx8fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvcmFuZG9tfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L3VyYW5kb218fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvdHR5fHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L3B0c3x8ZGV2cHRzIGRldnB0cyBydyxtb2RlPTYyMCxwdG14bW9kZT02NjYKL2Rldi9zaG18fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi90bXB8fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi9ydW58fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCg==\n",
+    "raw": "MOAT_ID=uid=0(root) gid=0(root) groups=0(root),65534(nobody)\nMOAT_ALPINE=3.21.4\nMOAT_PID_COUNT=4\nMOAT_PID1=sh\nMOAT_NS_MNT=mnt:[4026532305]\nMOAT_NS_PID=pid:[4026532308]\nMOAT_NS_USER=user:[4026532304]\nMOAT_NS_NET=net:[4026531833]\nMOAT_NS_UTS=uts:[4026532306]\nMOAT_NS_IPC=ipc:[4026532307]\nMOAT_UIDMAP= 0 1000 1\nMOAT_HOST_PROJECT=absent\nMOAT_HOST_HOME=absent\nMOAT_CANARY=unreadable\nMOAT_HOST_SSH=absent\nMOAT_ROOT_SSH=absent\nMOAT_ENV_B64=TU9BVF9QUk9WSURFUl9CQVNFX1VSTD1SRURBQ1RFRC1CWS1ET0NUT1IKU0hMVkw9MQpIT01FPS9yb290Ck1PQVRfQ1JFREVOVElBTF9FWFBJUkVTX0FUPVJFREFDVEVELUJZLURPQ1RPUgpNT0FUX0NSRURFTlRJQUxfVFRMX1NFQ09ORFM9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfTU9ERUw9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfU0FOREJPWD0xCk1PQVRfTU9ERUxfSUQ9UkVEQUNURUQtQlktRE9DVE9SClRFUk09ZHVtYgpQQVRIPS91c3IvbG9jYWwvc2JpbjovdXNyL2xvY2FsL2JpbjovdXNyL3NiaW46L3Vzci9iaW46L3NiaW46L2JpbgpPUEVOQ09ERV9TRVJWRVJfUEFTU1dPUkQ9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfQ1JFREVOVElBTF9GSU5HRVJQUklOVD1SRURBQ1RFRC1CWS1ET0NUT1IKTEFORz1DLlVURi04CkxDX0FMTD1DLlVURi04ClBXRD0vCk1PQVRfSU5KRUNURURfQ1JFREVOVElBTD1SRURBQ1RFRC1CWS1ET0NUT1IK\nMOAT_SECRET_ENV_NAMES=MOAT_CREDENTIAL_EXPIRES_AT,MOAT_CREDENTIAL_TTL_SECONDS,OPENCODE_SERVER_PASSWORD,MOAT_CREDENTIAL_FINGERPRINT,MOAT_INJECTED_CREDENTIAL,\nMOAT_HOST_LOOPBACK=REACHABLE\nMOAT_EGRESS_OPEN=yes\nMOAT_MOUNTS_B64=L3x8ZXh0NCAvZGV2L3NkZCBydyxkaXNjYXJkLGVycm9ycz1yZW1vdW50LXJvLGRhdGE9b3JkZXJlZAovcHJvY3x8cHJvYyBwcm9jIHJ3Ci9kZXZ8fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCi9kZXYvbnVsbHx8ZGV2dG1wZnMgbm9uZSBydyxzaXplPTM5NDU0MjRrLG5yX2lub2Rlcz05ODYzNTYsbW9kZT03NTUKL2Rldi96ZXJvfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L2Z1bGx8fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvcmFuZG9tfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L3VyYW5kb218fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvdHR5fHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L3B0c3x8ZGV2cHRzIGRldnB0cyBydyxtb2RlPTYyMCxwdG14bW9kZT02NjYKL2Rldi9zaG18fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi90bXB8fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi9ydW58fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCg==\n",
+    "hostNamespaces": {
+      "mnt": "mnt:[4026532219]",
+      "pid": "pid:[4026532221]",
+      "user": "user:[4026531837]",
+      "net": "net:[4026531833]",
+      "uts": "uts:[4026532220]",
+      "ipc": "ipc:[4026532208]"
+    }
+  }
+}
+--- stderr ---
+→ running in-sandbox isolation checks
+--- $ node /home/user/Projects/moat/cmd/main.ts tools
+--- exit 0
+--- stdout ---
+--- stderr ---
+bundle (from the plugin's config-time record)
+  curated    read, write, edit, apply_patch, glob, grep, bash, todowrite
+  excluded   webfetch, websearch, question, skill, task
+  omissions confirmed by opencode: question, skill, webfetch, websearch, task
+
+registry (everything opencode knows about, NOT what the model sees)
+  + apply_patch
+  + bash
+  + edit
+  + glob
+  + grep
+  - invalid
+  + read
+  - skill
+  - task
+  + todowrite
+  - webfetch
+  - websearch
+  + write
+
+! opencode 1.18.31 cannot stop advertising: webfetch, skill, task. The bundle refuses to execute them (docs/UPSTREAM-CANDIDATES.md).
+
+==============================================================
+== 4. the agent completes a task needing bash + file edits, zero prompts
+==============================================================
+[mock-model] listening on http://127.0.0.1:5599/v1 (6 scripted steps)
+[mock-model] recording requests to /home/user/moat-demo/mock.jsonl
+--- $ node /home/user/Projects/moat/cmd/main.ts attach --show-output --prompt Create and edit a note file in the project, then commit it. Report what you did.
+--- exit 0
+--- stdout ---
+--- stderr ---
+[tool] bash (running) 
+[tool] bash (completed) pwd && ls -la && cat README.md
+[tool-output] /work
+total 24
+drwxr-xr-x  3 root root 4096 Sep 18 18:21 .
+drwxr-xr-x 22 root root 4096 Sep 18 18:21 ..
+drwxr-xr-x  7 root root 4096 Sep 18 18:21 .git
+-rw-r--r--  1 root root   71 Sep 18 18:21 README.md
+-rwxr-xr-x  1 root root   45 Sep 18 18:21 greet.sh
+-rw-r--r--  1 root root   10 Sep 18 18:21 notes.txt
+# demo project
+
+A tiny project used to exercise moat.
+uncommitted line
+[tool] write (running) 
+[tool] write (completed) agent-output.txt
+[tool-output] Wrote file successfully.
+[tool] edit (running) 
+[tool] edit (completed) agent-output.txt
+[tool-output] Edit applied successfully.
+[tool] bash (running) 
+[tool] bash (completed) printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt
+[tool-output] 2 agent-output.txt
+written by the agent, inside the sandbox, via the edit tool
+line two
+[tool] bash (running) 
+[tool] bash (completed) git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && git log --oneline -1 && git rev-parse HEAD
+[tool-output] 146c428 agent: add agent-output.txt from inside the sandbox
+146c4283d1272c51ebdd85d42a1d6437adec08de
+Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
+
+
+session ses_f4a3f4ae4ffeSo1q1NPQCCpJlZ   5 tool call(s)
+
+inference requests observed : 6
+authorization header        : ['Bearer moat-e2e-scoped-credential-8c1d4e']
+advertised tool list        : ['bash', 'edit', 'glob', 'grep', 'read', 'skill', 'task', 'todowrite', 'webfetch', 'write']
+scripted steps executed     : [(0, 'bash'), (1, 'write'), (2, 'edit'), (3, 'bash'), (4, 'bash'), (5, 'text')]
+
+--- audit log written by the bundle plugin INSIDE the sandbox ---
+{"phase": "config", "permission": {"question": "deny", "skill": "deny", "webfetch": "deny", "websearch": "deny", "task": "deny", "*": "allow"}, "toolOmissions": ["question", "skill", "webfetch", "websearch", "task"]}
+{"phase": "before", "tool": "bash", "args": "{\"command\":\"pwd && ls -la && cat README.md\"}"}
+{"phase": "before", "tool": "write", "args": "{\"filePath\":\"agent-output.txt\",\"content\":\"written by the agent, inside the sandbox\\n\"}"}
+{"phase": "before", "tool": "edit", "args": "{\"filePath\":\"agent-output.txt\",\"oldString\":\"inside the sandbox\",\"newString\":\"inside the sandbox, via the edit tool\"}"}
+{"phase": "before", "tool": "bash", "args": "{\"command\":\"printf 'line two\\\\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt\"}"}
+{"phase": "before", "tool": "bash", "args": "{\"command\":\"git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && git log --oneline -1 && git rev-parse HEAD\"}"}
+
+streaming: tool calls were reported as they started (not just at the end)
+permission requests raised: 0  (the file was never created, no permission.ask hook ever fired)
+
+==============================================================
+== 5. the agent cannot read a host credential (failed attempt, from the agent itself)
+==============================================================
+[mock-model] listening on http://127.0.0.1:5599/v1 (2 scripted steps)
+[mock-model] recording requests to /home/user/moat-demo/mock.jsonl
+--- $ node /home/user/Projects/moat/cmd/main.ts attach --show-output --prompt Try to read the host's credentials and project directory, and report exactly what happens.
+--- exit 0
+--- stdout ---
+--- stderr ---
+[tool] bash (running) 
+[tool] bash (completed) pwd && ls -la && cat README.md && echo '--- host access attempt ---' && for p in /home/user/.moat/canary /home/user/.ssh/id_ed25519 /home/user/.gitconfig /home/user/.aws/credentials /home/user/moat-demo/project/README.md; do if cat "$p" >/dev/null 2>&1; then echo "LEAK        $p"; else echo "blocked     $p"; fi; done; echo '--- host environment ---'; echo "AWS_SECRET_ACCESS_KEY=[${AWS_SECRET_ACCESS_KEY:-unset}] SSH_AUTH_SOCK=[${SSH_AUTH_SOCK:-unset}]"
+[tool-output] /work
+total 28
+drwxr-xr-x  3 root root 4096 Sep 18 18:21 .
+drwxr-xr-x 22 root root 4096 Sep 18 18:21 ..
+drwxr-xr-x  7 root root 4096 Sep 18 18:21 .git
+-rw-r--r--  1 root root   71 Sep 18 18:21 README.md
+-rw-r--r--  1 root root   69 Sep 18 18:21 agent-output.txt
+-rwxr-xr-x  1 root root   45 Sep 18 18:21 greet.sh
+-rw-r--r--  1 root root   10 Sep 18 18:21 notes.txt
+# demo project
+
+A tiny project used to exercise moat.
+uncommitted line
+--- host access attempt ---
+blocked     /home/user/.moat/canary
+blocked     /home/user/.ssh/id_ed25519
+blocked     /home/user/.gitconfig
+blocked     /home/user/.aws/credentials
+blocked     /home/user/moat-demo/project/README.md
+--- host environment ---
+AWS_SECRET_ACCESS_KEY=[unset] SSH_AUTH_SOCK=[unset]
+Attempted to read host-only credentials and paths from inside the sandbox; see the tool output above.
+
+
+session ses_f4a3ef8c7ffe7uJokEpS622LbS   1 tool call(s)
+
+==============================================================
+== 6. the bundle refuses tools that are not in it
+==============================================================
+[mock-model] listening on http://127.0.0.1:5599/v1 (4 scripted steps)
+[mock-model] recording requests to /home/user/moat-demo/mock.jsonl
+--- $ node /home/user/Projects/moat/cmd/main.ts attach --show-output --prompt Try an excluded tool, a write outside the workspace, and a read of a file inside the box.
+--- exit 1
+--- stdout ---
+--- stderr ---
+[tool] webfetch (running) 
+[tool] webfetch (error) 
+[tool-error] moat: tool "webfetch" is not part of this sandbox's bundle. Available tools: read, write, edit, apply_patch, glob, grep, bash, todowrite.
+[tool] write (running) 
+[tool] write (error) 
+[tool-error] moat: refusing write.filePath outside the workspace: /etc/moat-escape-attempt. The workspace is /work; /tmp is also writable.
+[tool] read (running) 
+[tool] read (completed) ../etc/os-release
+[tool-output] <path>/etc/os-release</path>
+<type>file</type>
+<content>
+1: NAME="Alpine Linux"
+2: ID=alpine
+3: VERSION_ID=3.21.4
+4: PRETTY_NAME="Alpine Linux v3.21"
+5: HOME_URL="https://alpinelinux.org/"
+6: BUG_REPORT_URL="https://gitlab.alpinelinux.org/alpine/aports/-/issues"
+
+(End of file - total 6 lines)
+</content>
+Attempted an excluded tool and an out-of-workspace write; see the tool results above.
+
+
+session ses_f4a3eb600ffe3j7qb5Rplu2cku   3 tool call(s), 2 failed
+
+==============================================================
+== 6b. what the agent can reach, re-measured after the bundle's redaction is live
+==============================================================
+--- $ node /home/user/Projects/moat/cmd/main.ts doctor
+--- exit 0
+--- stdout ---
+--- stderr ---
+host
+  platform   linux x64 wsl2 userns=yes kvm=no
+  unshare    /usr/bin/unshare
+  chroot     /usr/bin/chroot
+  user ns    available
+  pid ns     available
+  /dev/kvm   absent (v1 microVM path unavailable here)
+  note       no usable /dev/kvm (present but not accessible to uid 1000 (mode 660, gid 991)): v1 microVM unavailable here; the v0 container path is the supported mode
+  note       mknod denied in userns (kernel policy): /dev nodes are bind-mounted read-only from the host's device nodes. No host *data* is mounted.
+→ running in-sandbox isolation checks
+
+isolation (14 checks)
+  pass  host project not reachable     /home/user/moat-demo/project is absent inside the sandbox
+  pass  host home not reachable        /home/user is absent inside the sandbox
+  pass  host canary unreadable         /home/user/.moat/canary (mode 600, exists only on the host) is unreadable
+  pass  no host ssh directory          host /home/user/.ssh absent; sandbox /root/.ssh absent
+  pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)
+  pass  no host data mounts            13 mounts; none reference a host filesystem path
+  pass  sandbox pid 1                  pid 1 is "sh", 4 visible processes
+  pass  own mount namespace            sandbox mnt:[4026532305] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532308] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532304] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532306] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532307] vs host ipc:[4026532208]
+  pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
+  pass  device nodes are the only host mounts 6 read-only device node bind(s): /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
+
+exposures, measured, and NOT fixed in v0. Read these before trusting the box.
+  expose  credential visible to the agent
+          MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. The bundle blanks secret-looking names for shell commands, but the values remain in the opencode process environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token.
+  expose  host loopback reachable
+          the sandbox connected to a service the host opened on 127.0.0.1:40009. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent.
+  expose  egress unrestricted
+          the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it can read, including the project and the injected credential. Egress policy is v2.
+  expose  shell env redaction (bundle)
+          the bundle blanks MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, OPENCODE_SERVER_PASSWORD for shell commands the agent writes. Speed bump only: the values are still in the opencode process environment and reachable via /proc/<pid>/environ. This record comes from the plugin running inside the box.
+
+  note  network namespace shared       sandbox and host share net:[4026531833]. The agent has the host's network position. Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md).
+
+mount table inside the sandbox
+  /dev/full||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/null||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/pts||devpts devpts rw,mode=620,ptmxmode=666
+  /dev/random||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/shm||tmpfs tmpfs rw,uid=1000,gid=1000
+  /dev/tty||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/urandom||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/zero||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
+  /proc||proc proc rw
+  /run||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
+  /tmp||tmpfs tmpfs rw,uid=1000,gid=1000
+  /||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered
+--- $ node /home/user/Projects/moat/cmd/main.ts doctor --json
+--- exit 0
+--- stdout ---
+{
+  "host": {
+    "linux": true,
+    "wsl": true,
+    "virt": "wsl",
+    "userns": true,
+    "mountns": true,
+    "pidns": true,
+    "kvm": false,
+    "unshare": "/usr/bin/unshare",
+    "chroot": "/usr/bin/chroot",
+    "mount": "/usr/bin/mount",
+    "chown": false,
+    "problems": [],
+    "notes": [
+      "no usable /dev/kvm (present but not accessible to uid 1000 (mode 660, gid 991)): v1 microVM unavailable here; the v0 container path is the supported mode",
+      "mknod denied in userns (kernel policy): /dev nodes are bind-mounted read-only from the host's device nodes. No host *data* is mounted."
+    ]
+  },
+  "isolation": {
+    "checks": [
+      {
+        "name": "host project not reachable",
+        "ok": true,
+        "detail": "/home/user/moat-demo/project is absent inside the sandbox"
+      },
+      {
+        "name": "host home not reachable",
+        "ok": true,
+        "detail": "/home/user is absent inside the sandbox"
+      },
+      {
+        "name": "host canary unreadable",
+        "ok": true,
+        "detail": "/home/user/.moat/canary (mode 600, exists only on the host) is unreadable"
+      },
+      {
+        "name": "no host ssh directory",
+        "ok": true,
+        "detail": "host /home/user/.ssh absent; sandbox /root/.ssh absent"
+      },
+      {
+        "name": "no host env forwarded",
+        "ok": true,
+        "detail": "no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)"
+      },
+      {
+        "name": "no host data mounts",
+        "ok": true,
+        "detail": "13 mounts; none reference a host filesystem path"
+      },
+      {
+        "name": "sandbox pid 1",
+        "ok": true,
+        "detail": "pid 1 is \"sh\", 4 visible processes"
+      },
+      {
+        "name": "own mount namespace",
+        "ok": true,
+        "detail": "sandbox mnt:[4026532305] vs host mnt:[4026532219]"
+      },
+      {
+        "name": "own pid namespace",
+        "ok": true,
+        "detail": "sandbox pid:[4026532308] vs host pid:[4026532221]"
+      },
+      {
+        "name": "own user namespace",
+        "ok": true,
+        "detail": "sandbox user:[4026532304] vs host user:[4026531837]"
+      },
+      {
+        "name": "own uts namespace",
+        "ok": true,
+        "detail": "sandbox uts:[4026532306] vs host uts:[4026532220]"
+      },
+      {
+        "name": "own ipc namespace",
+        "ok": true,
+        "detail": "sandbox ipc:[4026532307] vs host ipc:[4026532208]"
+      },
+      {
+        "name": "uid mapping",
+        "ok": true,
+        "detail": "uid_map \"0 1000 1\", uid 0 inside is the calling user outside"
+      },
+      {
+        "kind": "exposure",
+        "name": "credential visible to the agent",
+        "ok": true,
+        "detail": "MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. The bundle blanks secret-looking names for shell commands, but the values remain in the opencode process environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token."
+      },
+      {
+        "kind": "exposure",
+        "name": "host loopback reachable",
+        "ok": true,
+        "detail": "the sandbox connected to a service the host opened on 127.0.0.1:33709. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent."
+      },
+      {
+        "kind": "exposure",
+        "name": "egress unrestricted",
+        "ok": true,
+        "detail": "the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it can read, including the project and the injected credential. Egress policy is v2."
+      },
+      {
+        "kind": "note",
+        "name": "network namespace shared",
+        "ok": true,
+        "detail": "sandbox and host share net:[4026531833]. The agent has the host's network position. Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md)."
+      },
+      {
+        "name": "device nodes are the only host mounts",
+        "ok": true,
+        "detail": "6 read-only device node bind(s): /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero"
+      },
+      {
+        "kind": "exposure",
+        "name": "shell env redaction (bundle)",
+        "ok": true,
+        "detail": "the bundle blanks MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, OPENCODE_SERVER_PASSWORD for shell commands the agent writes. Speed bump only: the values are still in the opencode process environment and reachable via /proc/<pid>/environ. This record comes from the plugin running inside the box."
+      }
+    ],
+    "mounts": [
+      "/dev/full||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/null||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/pts||devpts devpts rw,mode=620,ptmxmode=666",
+      "/dev/random||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/shm||tmpfs tmpfs rw,uid=1000,gid=1000",
+      "/dev/tty||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/urandom||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/zero||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000",
+      "/proc||proc proc rw",
+      "/run||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000",
+      "/tmp||tmpfs tmpfs rw,uid=1000,gid=1000",
+      "/||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered"
+    ],
+    "envNames": [
+      "HOME",
+      "LANG",
+      "LC_ALL",
+      "MOAT_CREDENTIAL_EXPIRES_AT",
+      "MOAT_CREDENTIAL_FINGERPRINT",
+      "MOAT_CREDENTIAL_TTL_SECONDS",
+      "MOAT_INJECTED_CREDENTIAL",
+      "MOAT_MODEL",
+      "MOAT_MODEL_ID",
+      "MOAT_PROVIDER_BASE_URL",
+      "MOAT_SANDBOX",
+      "OPENCODE_SERVER_PASSWORD",
+      "PATH",
+      "PWD",
+      "SHLVL",
+      "TERM"
+    ],
+    "raw": "MOAT_ID=uid=0(root) gid=0(root) groups=0(root),65534(nobody)\nMOAT_ALPINE=3.21.4\nMOAT_PID_COUNT=4\nMOAT_PID1=sh\nMOAT_NS_MNT=mnt:[4026532305]\nMOAT_NS_PID=pid:[4026532308]\nMOAT_NS_USER=user:[4026532304]\nMOAT_NS_NET=net:[4026531833]\nMOAT_NS_UTS=uts:[4026532306]\nMOAT_NS_IPC=ipc:[4026532307]\nMOAT_UIDMAP= 0 1000 1\nMOAT_HOST_PROJECT=absent\nMOAT_HOST_HOME=absent\nMOAT_CANARY=unreadable\nMOAT_HOST_SSH=absent\nMOAT_ROOT_SSH=absent\nMOAT_ENV_B64=TU9BVF9QUk9WSURFUl9CQVNFX1VSTD1SRURBQ1RFRC1CWS1ET0NUT1IKU0hMVkw9MQpIT01FPS9yb290Ck1PQVRfQ1JFREVOVElBTF9FWFBJUkVTX0FUPVJFREFDVEVELUJZLURPQ1RPUgpNT0FUX0NSRURFTlRJQUxfVFRMX1NFQ09ORFM9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfTU9ERUw9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfU0FOREJPWD0xCk1PQVRfTU9ERUxfSUQ9UkVEQUNURUQtQlktRE9DVE9SClRFUk09ZHVtYgpQQVRIPS91c3IvbG9jYWwvc2JpbjovdXNyL2xvY2FsL2JpbjovdXNyL3NiaW46L3Vzci9iaW46L3NiaW46L2JpbgpPUEVOQ09ERV9TRVJWRVJfUEFTU1dPUkQ9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfQ1JFREVOVElBTF9GSU5HRVJQUklOVD1SRURBQ1RFRC1CWS1ET0NUT1IKTEFORz1DLlVURi04CkxDX0FMTD1DLlVURi04ClBXRD0vCk1PQVRfSU5KRUNURURfQ1JFREVOVElBTD1SRURBQ1RFRC1CWS1ET0NUT1IK\nMOAT_SECRET_ENV_NAMES=MOAT_CREDENTIAL_EXPIRES_AT,MOAT_CREDENTIAL_TTL_SECONDS,OPENCODE_SERVER_PASSWORD,MOAT_CREDENTIAL_FINGERPRINT,MOAT_INJECTED_CREDENTIAL,\nMOAT_HOST_LOOPBACK=REACHABLE\nMOAT_EGRESS_OPEN=yes\nMOAT_MOUNTS_B64=L3x8ZXh0NCAvZGV2L3NkZCBydyxkaXNjYXJkLGVycm9ycz1yZW1vdW50LXJvLGRhdGE9b3JkZXJlZAovcHJvY3x8cHJvYyBwcm9jIHJ3Ci9kZXZ8fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCi9kZXYvbnVsbHx8ZGV2dG1wZnMgbm9uZSBydyxzaXplPTM5NDU0MjRrLG5yX2lub2Rlcz05ODYzNTYsbW9kZT03NTUKL2Rldi96ZXJvfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L2Z1bGx8fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvcmFuZG9tfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L3VyYW5kb218fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvdHR5fHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L3B0c3x8ZGV2cHRzIGRldnB0cyBydyxtb2RlPTYyMCxwdG14bW9kZT02NjYKL2Rldi9zaG18fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi90bXB8fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi9ydW58fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCg==\n",
     "hostNamespaces": {
       "mnt": "mnt:[4026532219]",
       "pid": "pid:[4026532221]",
@@ -905,9 +903,9 @@ mount table inside the sandbox
     "MOAT_INJECTED_CREDENTIAL",
     "OPENCODE_SERVER_PASSWORD"
   ],
-  "opencodeServer": "http://127.0.0.1:33641/",
+  "opencodeServer": "http://127.0.0.1:33501/",
   "caveat": "The bundle blanks secret-looking variables in the shell environment the agent's commands inherit, but the values remain in the opencode process environment and are readable from inside the sandbox via /proc/<pid>/environ by any process running as the same uid. The control that matters is at the provider: a short-lived, spend-capped, narrowly scoped token.",
-  "writtenAt": "2026-09-18T18:13:33.374Z"
+  "writtenAt": "2026-09-18T18:21:37.930Z"
 }
 
 ==============================================================
@@ -915,40 +913,40 @@ mount table inside the sandbox
 ==============================================================
  M README.md
 ?? notes.txt
-host HEAD before fetch: 4947966a5c34e5ead5f74caad46c174261884d06
+host HEAD before fetch: d8bc151026652e00ce37b30b733c9a721d2e2762
 --- $ node /home/user/Projects/moat/cmd/main.ts fetch
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-18-18-13:refs/moat/moat-session-2026-09-18-18-13
-✓ fetched moat-session-2026-09-18-18-13 -> refs/moat/moat-session-2026-09-18-18-13 (b7835d45d55b)
-  2 commit(s) reachable, HEAD 4947966a5c34 -> 4947966a5c34
-    b7835d45d55b  agent: add agent-output.txt from inside the sandbox
-    4947966a5c34  initial demo project
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-18-18-21:refs/moat/moat-session-2026-09-18-18-21
+✓ fetched moat-session-2026-09-18-18-21 -> refs/moat/moat-session-2026-09-18-18-21 (146c4283d127)
+  2 commit(s) reachable, HEAD d8bc15102665 -> d8bc15102665
+    146c4283d127  agent: add agent-output.txt from inside the sandbox
+    d8bc15102665  initial demo project
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-18-18-13
-  apply with:    moat apply moat-session-2026-09-18-18-13  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-18-18-21
+  apply with:    moat apply moat-session-2026-09-18-18-21  (or --checkout)
 --- $ node /home/user/Projects/moat/cmd/main.ts fetch --json
 --- exit 0
 --- stdout ---
 {
   "fetched": [
     {
-      "branch": "moat-session-2026-09-18-18-13",
-      "hostRef": "refs/moat/moat-session-2026-09-18-18-13",
-      "sha": "b7835d45d55bf5f4b18b88a5f4f864fc5f79b526",
+      "branch": "moat-session-2026-09-18-18-21",
+      "hostRef": "refs/moat/moat-session-2026-09-18-18-21",
+      "sha": "146c4283d1272c51ebdd85d42a1d6437adec08de",
       "commits": 2,
-      "headBefore": "4947966a5c34e5ead5f74caad46c174261884d06",
-      "headAfter": "4947966a5c34e5ead5f74caad46c174261884d06",
+      "headBefore": "d8bc151026652e00ce37b30b733c9a721d2e2762",
+      "headAfter": "d8bc151026652e00ce37b30b733c9a721d2e2762",
       "worktreeUntouched": true,
       "commitsFetched": [
         {
-          "sha": "b7835d45d55bf5f4b18b88a5f4f864fc5f79b526",
+          "sha": "146c4283d1272c51ebdd85d42a1d6437adec08de",
           "subject": "agent: add agent-output.txt from inside the sandbox"
         },
         {
-          "sha": "4947966a5c34e5ead5f74caad46c174261884d06",
+          "sha": "d8bc151026652e00ce37b30b733c9a721d2e2762",
           "subject": "initial demo project"
         }
       ]
@@ -959,14 +957,14 @@ host HEAD before fetch: 4947966a5c34e5ead5f74caad46c174261884d06
   "projectDigestAfter": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158"
 }
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-18-18-13:refs/moat/moat-session-2026-09-18-18-13
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-18-18-21:refs/moat/moat-session-2026-09-18-18-21
 
 --- git log on the host, for the fetched ref only ---
 
 --- host working tree after fetch (must be unchanged) ---
  M README.md
 ?? notes.txt
-host HEAD after fetch: 4947966a5c34e5ead5f74caad46c174261884d06
+host HEAD after fetch: d8bc151026652e00ce37b30b733c9a721d2e2762
 files the agent produced now visible on the host (via the fetched ref):
 
 ==============================================================
@@ -1006,13 +1004,13 @@ installing a package inside the sandbox via its own package manager (apk)...
 --- jq --version ---
 jq-1.7.1
 --- marker ---
-persisted-at-1789755272
+persisted-at-1789755756
 --- stderr ---
 --- $ node /home/user/Projects/moat/cmd/main.ts down
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 37098); the environment and its snapshots are kept
+✓ sandbox stopped (pid 40584); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts status
@@ -1024,11 +1022,11 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 opencode     1.18.31 / alpine 3.21.4
 model        moat/mock-model (local)
-branch       moat-session-2026-09-18-18-13
+branch       moat-session-2026-09-18-18-21
 rootfs       380.9 MiB
-credential   local sha256:7726b438889c7f57 expires in 14317s
+credential   local sha256:7726b438889c7f57 expires in 14321s
 snapshots    baseline
-branches     main, moat-session-2026-09-18-18-13*
+branches     main, moat-session-2026-09-18-18-21*
 
 booting again (warm start) and checking whether jq is still installed...
 --- $ node /home/user/Projects/moat/cmd/main.ts up --json --model mock-model --provider-base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
@@ -1041,7 +1039,7 @@ booting again (warm start) and checking whether jq is still installed...
     "installed": [],
     "ms": 101
   },
-  "copyInMs": 10,
+  "copyInMs": 11,
   "provider": {
     "id": "local",
     "opencodeID": "moat",
@@ -1072,15 +1070,15 @@ booting again (warm start) and checking whether jq is still installed...
     "preset": "core"
   },
   "status": "running",
-  "port": 41895,
-  "pid": 38339,
-  "bootMs": 1417,
-  "totalMs": 1614,
+  "port": 43383,
+  "pid": 41862,
+  "bootMs": 3909,
+  "totalMs": 4105,
   "readyCheck": "GET /config -> 200",
   "credential": {
     "provider": "local",
     "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-18T22:14:44.117Z",
+    "expiresAt": "2026-09-18T22:22:48.345Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -1097,18 +1095,19 @@ booting again (warm start) and checking whether jq is still installed...
   ]
 }
 --- stderr ---
+no project manifest found; booting with the base image only (see `moat profiles`)
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting local credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a provider-scoped, spend-capped token, not a general-purpose key. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-18-14
-→ sandbox booted (pid 38339, port 41895); waiting for opencode serve
-warm start: totalMs=1614 bootMs=1417
+agent branch: moat-session-2026-09-18-18-22
+→ sandbox booted (pid 41862, port 43383); waiting for opencode serve
+warm start: totalMs=4105 bootMs=3909
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c echo '--- marker (proof the rootfs persisted) ---'; cat /opt/moat-marker; echo '--- jq (proof the install persisted) ---'; jq --version 2>&1 | head -1
 --- exit 0
 --- stdout ---
 --- marker (proof the rootfs persisted) ---
-persisted-at-1789755272
+persisted-at-1789755756
 --- jq (proof the install persisted) ---
 jq-1.7.1
 --- stderr ---
@@ -1120,7 +1119,7 @@ jq-1.7.1
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 38339); the environment and its snapshots are kept
+✓ sandbox stopped (pid 41862); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts status
@@ -1132,10 +1131,10 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 opencode     1.18.31 / alpine 3.21.4
 model        moat/mock-model (local)
-branch       moat-session-2026-09-18-18-14
+branch       moat-session-2026-09-18-18-22
 rootfs       380.9 MiB
-credential   local sha256:7726b438889c7f57 expires in 14398s
+credential   local sha256:7726b438889c7f57 expires in 14396s
 snapshots    baseline
-branches     main, moat-session-2026-09-18-18-13, moat-session-2026-09-18-18-14*
+branches     main, moat-session-2026-09-18-18-21, moat-session-2026-09-18-18-22*
 
 evidence written to /home/user/Projects/moat/test/evidence/

@@ -13,6 +13,7 @@ import { ALPINE_VERSION, CURATED_TOOLS, EXCLUDED_TOOLS, OPENCODE_VERSION, SANDBO
 import { describeProviders, findProvider, providerIds, type ProviderSpec } from "../lib/providers.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from "../sandbox/profiles.ts"
+import { detectProfiles, detectProviderFromEnv } from "../lib/detect.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import {
   envExists,
@@ -138,6 +139,8 @@ const SPEC: Spec = {
   timeout: "number",
   "show-output": "boolean",
   "commit-worktree": "boolean",
+  "no-detect": "boolean",
+  "keep": "boolean",
 }
 
 function flag<T>(p: Parsed, key: string): T | undefined {
@@ -207,12 +210,21 @@ function ms(value: number): string {
  * infers the provider from it, but only from the names the provider actually
  * uses, and it says which one it picked rather than doing it silently.
  */
-function resolveProvider(p: Parsed): ProviderSpec {
+function resolveProvider(p: Parsed, state?: EnvState | null): ProviderSpec {
   const explicit = flag<string>(p, "provider")
   // A custom base URL only means anything for a custom endpoint, so it implies
   // `local` rather than silently pairing with whatever provider key happens to
   // be exported.
   if (!explicit && flag<string>(p, "provider-base-url")) return findProvider("local")!
+  if (!explicit && !detectProviderFromEnv() && state?.provider) {
+    // Nothing new exported, but this environment already knows what it used.
+    // Typing the provider once should be enough.
+    const remembered = findProvider(state.provider)
+    if (remembered) {
+      log.debug(`provider: ${remembered.id} (remembered from this environment)`)
+      return remembered
+    }
+  }
   if (explicit) {
     const found = findProvider(explicit)
     if (!found) {
@@ -220,12 +232,10 @@ function resolveProvider(p: Parsed): ProviderSpec {
     }
     return found!
   }
-  for (const candidate of PROVIDERS_ORDER) {
-    const spec = findProvider(candidate)!
-    if (spec.envVars.some((name) => process.env[name])) {
-      log.info(`provider: ${spec.id} (inferred from ${spec.envVars.find((n) => process.env[n])})`)
-      return spec
-    }
+  const detected = detectProviderFromEnv()
+  if (detected) {
+    log.debug(`provider: ${detected.provider} (from ${detected.envVar})`)
+    return findProvider(detected.provider)!
   }
   // A custom endpoint with no credential yet still needs a provider shell.
   return findProvider("local")!
@@ -315,12 +325,26 @@ async function cmdUp(argv: string[]): Promise<number> {
   const report: Record<string, unknown> = { project: paths.projectDir, envId: paths.id }
 
   let state = readState(paths)
+  // Read the task once, before anything can return early. A task given to a
+  // running sandbox used to be dropped on the floor by the reuse path below.
+  const task = p._.join(" ").trim()
+
   const fresh = flag<boolean>(p, "fresh") ?? false
   const sync = flag<boolean>(p, "sync") ?? false
   const needsProvision = fresh || !envExists(paths) || !state
 
-  const requestedProfiles = (flag<string>(p, "profile") ?? process.env.MOAT_PROFILES ?? "").trim()
-  const resolvedProfiles = resolveProfiles(requestedProfiles ? [requestedProfiles] : [])
+  let profileRequest = (flag<string>(p, "profile") ?? process.env.MOAT_PROFILES ?? "").trim()
+  if (!profileRequest && !state?.profiles?.length && !flag<boolean>(p, "no-detect")) {
+    const detected = detectProfiles(paths.projectDir)
+    if (detected.profiles.length > 0) {
+      profileRequest = detected.profiles.join(",")
+      log.info(`detected: ${detected.reasons.join(", ")}`)
+      log.info(`          adding profile(s) ${detected.profiles.join(", ")}; use --no-detect or --profile to override`)
+    } else if (detected.uncertain) {
+      log.info("no project manifest found; booting with the base image only (see `moat profiles`)")
+    }
+  }
+  const resolvedProfiles = resolveProfiles(profileRequest ? [profileRequest] : [])
   if (resolvedProfiles.unknown.length > 0) {
     log.fail(`unknown --profile: ${resolvedProfiles.unknown.join(", ")}.\n\n${describeProfiles()}`)
   }
@@ -350,6 +374,20 @@ async function cmdUp(argv: string[]): Promise<number> {
     const password = readPassword(paths)!
     const ready = await waitForServer(state!, password, { timeoutMs: 15000 })
     if (ready.ok) {
+      if (task.length > 0) {
+        const result = await driveTask(state!, password, task, {
+          continueLast: flag<boolean>(p, "continue") ?? false,
+          agent: flag<string>(p, "agent"),
+          showOutput: flag<boolean>(p, "show-output") ?? false,
+          timeoutSeconds: flag<number>(p, "timeout"),
+        })
+        if (json) log.emit(result)
+        else {
+          printTaskResult(result)
+          printNextStep(paths, result.errors.length > 0 ? "the task reported errors" : null)
+        }
+        return result.errors.length > 0 ? 1 : 0
+      }
       if (json) log.emit({ ...report, status: "already-running", ...state })
       else printUpSummary(paths, state!, password, { coldStart: 0, reused: true, provisioned: false })
       return 0
@@ -452,7 +490,7 @@ ${command}
 
   // --- provider, model, catalog ---------------------------------------------
   const catalog = flag<boolean>(p, "refresh") ? await loadCatalog({ refresh: true }) : await loadCatalog()
-  const provider = resolveProvider(p)
+  const provider = resolveProvider(p, state)
   const baseUrl = flag<string>(p, "provider-base-url") ?? provider.baseUrl
   const resolvedModel = await resolveModel(provider, flag<string>(p, "model"), catalog, { baseUrl })
   const toolPreset = resolveToolPreset(p)
@@ -542,6 +580,20 @@ ${command}
   })
   report.bundle = { curated: bundleManifest.curated, excluded: bundleManifest.excluded, preset: bundleManifest.preset }
 
+  // Fail before booting, not after. Asking for a task with no model means the
+  // box starts, the turn errors immediately, and the user is left reading a
+  // session id. Cheaper to say so now.
+  if (task.length > 0 && !credential) {
+    log.fail(
+      "no credential, so the agent has no model to call. Either:\n" +
+        `  export ZHIPU_API_KEY=...     then  moat run --provider zai "..."\n` +
+        `  export DEEPSEEK_API_KEY=...  then  moat run --provider deepseek "..."\n` +
+        `  export OPENAI_API_KEY=...    then  moat run --provider openai "..."\n` +
+        `  or name one explicitly:      moat run --credential-env MY_KEY "..."\n` +
+        "  or point at any OpenAI-compatible endpoint:  moat run --provider-base-url http://localhost:11434/v1 --model llama3 \"...\"",
+    )
+  }
+
   // --- boot -----------------------------------------------------------------
   const port = flag<number>(p, "port") ?? (await freePort())
   const password = randomPassword()
@@ -596,6 +648,23 @@ ${command}
 
   state.lastBootMs = bootMs
   writeState(paths, state)
+
+  // `moat up "fix the tests"` and `moat run "fix the tests"` are the same thing:
+  // bringing up a box you are not going to use is not a step worth having.
+  if (task.length > 0) {
+    const result = await driveTask(state, password, task, {
+      continueLast: flag<boolean>(p, "continue") ?? false,
+      agent: flag<string>(p, "agent"),
+      showOutput: flag<boolean>(p, "show-output") ?? false,
+      timeoutSeconds: flag<number>(p, "timeout"),
+    })
+    if (json) log.emit(result)
+    else {
+      printTaskResult(result)
+      printNextStep(paths, result.errors.length > 0 ? "the task reported errors" : null)
+    }
+    return result.errors.length > 0 ? 1 : 0
+  }
 
   report.status = "running"
   report.port = port
@@ -684,6 +753,21 @@ async function countUnfetched(paths: EnvPaths): Promise<number> {
   return Number.parseInt(count.stdout.trim(), 10) || 0
 }
 
+/**
+ * What to do next, said once, at the end of whatever just happened.
+ *
+ * Every command that changes state ends here, so the user never has to hold the
+ * lifecycle in their head to know their next move.
+ */
+function printNextStep(paths: EnvPaths, problem: string | null): void {
+  log.info("")
+  if (problem) log.info(`${log.yellow("!")} ${problem}`)
+  log.info(`  ${log.bold("moat take")}    ${log.dim("review and apply what the agent did")}`)
+  log.info(`  ${log.bold("moat run")}     ${log.dim('give it another task, e.g. moat run "add tests"')}`)
+  log.info(`  ${log.bold("moat down")}    ${log.dim("stop the box; nothing is lost")}`)
+  log.info(`  ${log.dim(`(project ${paths.projectDir})`)}`)
+}
+
 function printUpSummary(
   paths: EnvPaths,
   state: EnvState,
@@ -749,11 +833,45 @@ async function cmdAttach(argv: string[]): Promise<number> {
     return code
   }
 
+  const result = await driveTask(state, password, prompt, {
+    sessionID: flag<string>(p, "session"),
+    continueLast: flag<boolean>(p, "continue") ?? false,
+    agent: flag<string>(p, "agent"),
+    modelID: flag<string>(p, "model-id"),
+    showOutput: flag<boolean>(p, "show-output") ?? false,
+    timeoutSeconds: flag<number>(p, "timeout"),
+  })
+
+  if (flag<boolean>(p, "json")) log.emit(result)
+  else printTaskResult(result)
+  return result.errors.length > 0 ? 1 : 0
+}
+
+/**
+ * Run one prompt inside a running sandbox and report it as it happens.
+ *
+ * Shared by `moat attach --prompt` and `moat run`, which is the whole point:
+ * "start the box" and "do this task" are the same operation with one step
+ * skipped, so they should not be two commands the user has to discover.
+ */
+async function driveTask(
+  state: EnvState,
+  password: string,
+  prompt: string,
+  opts: {
+    sessionID?: string
+    continueLast?: boolean
+    agent?: string
+    modelID?: string
+    showOutput?: boolean
+    timeoutSeconds?: number
+  },
+): Promise<Awaited<ReturnType<typeof driveSession>>> {
   const client = await connect(state, password, SANDBOX_WORKDIR)
-  // Sessions live in the rootfs, so they survive `moat down` / `moat up`. `--continue`
-  // picks the most recent one instead of starting fresh.
-  let sessionID = flag<string>(p, "session")
-  if (!sessionID && flag<boolean>(p, "continue")) {
+
+  // Sessions live in the rootfs, so they survive `moat down` / `moat up`.
+  let sessionID = opts.sessionID
+  if (!sessionID && opts.continueLast) {
     const sessions = await listSessions(client)
     if (sessions.length > 0) {
       sessionID = sessions[0]!.id
@@ -762,35 +880,36 @@ async function cmdAttach(argv: string[]): Promise<number> {
       log.warn("--continue given but this environment has no sessions yet; starting a new one")
     }
   }
+
   const modelRef = state.model ?? "moat/model"
   const [providerID = "moat", ...rest] = modelRef.split("/")
-  const modelID = flag<string>(p, "model-id") ?? rest.join("/") ?? "model"
 
   let wrote = false
   const result = await driveSession(client, {
     sessionID,
     prompt,
     providerID,
-    modelID,
-    agent: flag<string>(p, "agent"),
+    modelID: opts.modelID ?? rest.join("/") ?? "model",
+    agent: opts.agent,
     onEvent: (line) => process.stderr.write(`${line}\n`),
     onDelta: (chunk) => {
       wrote = true
       process.stderr.write(chunk)
     },
-    showOutput: flag<boolean>(p, "show-output") ?? false,
-    timeoutMs: (flag<number>(p, "timeout") ?? 2700) * 1000,
+    showOutput: opts.showOutput,
+    timeoutMs: (opts.timeoutSeconds ?? 2700) * 1000,
   })
   if (wrote) process.stderr.write("\n")
+  return result
+}
 
-  if (flag<boolean>(p, "json")) {
-    log.emit(result)
-  } else {
-    log.info("")
-    log.info(`${log.dim("session")} ${result.sessionID}`)
-    log.info(`${log.dim("tools")}   ${result.toolCalls.map((t) => `${t.tool}:${t.status}`).join(", ") || "none"}`)
-  }
-  return result.errors.length > 0 ? 1 : 0
+function printTaskResult(result: { sessionID: string; toolCalls: { tool: string; status: string }[] }): void {
+  const failed = result.toolCalls.filter((t) => t.status === "error").length
+  log.info("")
+  log.info(
+    `${log.dim("session")} ${result.sessionID}   ` +
+      `${result.toolCalls.length} tool call(s)${failed > 0 ? log.red(`, ${failed} failed`) : ""}`,
+  )
 }
 
 async function ensureHostOpencode(): Promise<string | null> {
@@ -880,6 +999,52 @@ async function cmdFetch(argv: string[]): Promise<number> {
   log.info(`  inspect with:  git log ${results[0]!.hostRef}`)
   log.info(`  apply with:    moat apply ${results[0]!.branch}${log.dim("  (or --checkout)")}`)
   return worktreeUntouched ? 0 : 1
+}
+
+/**
+ * The one command most people actually want after an agent has worked:
+ * bring the branch across, show what is in it, and stop.
+ *
+ * `moat fetch` + `git log` + `moat apply` is three commands and two concepts.
+ * This is the same thing with the defaults filled in, and it still refuses to
+ * touch the working tree unless asked.
+ */
+async function cmdTake(argv: string[]): Promise<number> {
+  const p = parse(argv, SPEC)
+  const paths = resolveEnv()
+  requireState(paths)
+  if (!isGitRepo(paths.projectDir)) log.fail(`${paths.projectDir} is not a git repository; nothing to take into`)
+
+  const branches = await listSandboxBranches(paths)
+  if (branches.length === 0) log.fail("the agent has not committed anything yet")
+  const target = p._[0] ?? (await suggestBranch(paths))
+  if (!target) log.fail("could not work out which branch to take; name one explicitly")
+
+  const before = hashTree(paths.projectDir)
+  const result = await fetchBranch(paths, target)
+  const after = hashTree(paths.projectDir)
+
+  log.info("")
+  log.info(`${log.bold(target)}  ${result.commits} commit(s), ${result.sha.slice(0, 12)}`)
+  for (const commit of result.commitsFetched.slice(0, 15)) {
+    log.info(`  ${log.dim(commit.sha.slice(0, 10))}  ${commit.subject}`)
+  }
+
+  const changed = await run("git", ["-C", paths.projectDir, "diff", "--stat", result.headBefore ?? "HEAD", result.hostRef], {
+    env: SANITIZED_GIT_ENV,
+    allowFailure: true,
+  })
+  if (changed.stdout.trim()) {
+    log.info("")
+    log.info(changed.stdout.trimEnd())
+  }
+
+  log.info("")
+  log.info(`  your working tree is ${before.digest === after.digest ? log.green("untouched") : log.red("CHANGED")}`)
+  log.info(`  review:  git log ${result.hostRef}`)
+  log.info(`  accept:  moat apply ${target} --checkout`)
+  log.info(`  reject:  git update-ref -d ${result.hostRef}`)
+  return before.digest === after.digest ? 0 : 1
 }
 
 async function cmdApply(argv: string[]): Promise<number> {
@@ -1378,46 +1543,56 @@ function readBundleReport(paths: EnvPaths): {
 // dispatch
 // ---------------------------------------------------------------------------
 
-const HELP = `moat, run an AI coding agent in a disposable sandbox. The host is never touched.
+const HELP = `moat — run an AI coding agent in a disposable sandbox. Your machine is never touched.
 
 Usage: moat <command> [options]
 
-  up                     boot the sandbox, copy the project in, start opencode serve
-  attach [--prompt TEXT] attach the opencode client (interactive, or drive one prompt)
-                         --show-output  also print each tool's output
-                         --continue     resume the most recent session
-  fetch [branch]         git fetch the agent's branch from the sandbox into refs/moat/*
-                         --commit-worktree  also commit anything left uncommitted in the box
-  apply <branch>         turn a fetched ref into a local branch (--checkout to switch)
-  status [--all]         show environment state
-  down                   stop the sandbox (environment and snapshots are kept)
-  destroy [--yes]        delete the environment for this project
-  snapshot [name]        snapshot the rootfs (never the project)
-  restore <name>         restore a rootfs snapshot
-  exec -- <cmd> [args]   run one command inside the sandbox
-  shell                  open a shell inside the sandbox
-  models [provider]      what the model catalog offers, with context windows
-  profiles               toolchain profiles the sandbox can be given
-  doctor                 check host support and measure the exposures
-  tools                  list the tools the server advertises
-  env                    print connection details (url/credentials)
-  logs [sandbox|audit]   tail a log
+  moat run "<task>"      boot if needed, do the task, stream the work
+  moat take              review what the agent did, and apply it if you want
+  moat down              stop the sandbox; nothing is lost
+  moat status            what is running, on which model, with how much time left
 
-Common options:
+That is the whole loop. Everything below exists but you should not need it.
+
+Attaching to a running box
+  moat run "<task>"      give it another task
+  moat attach            open opencode's own TUI against the running box
+  moat shell             a plain shell inside the sandbox
+  moat exec -- <cmd>     run one command inside the sandbox
+
+Branches and history
+  moat fetch [branch]    bring the agent's branch across into refs/moat/*
+                         --commit-worktree  also commit anything left uncommitted
+  moat take [branch]     fetch, show, and offer to apply
+  moat apply <branch>    create a local branch from a fetched ref (--checkout to switch)
+
+The environment
+  moat up [task]         start it without a task; --profile, --fresh, --sync live here
+  moat profiles          toolchain profiles the sandbox can be given
+  moat models [provider] what the model catalog offers, with context windows
+  moat destroy           delete this project's environment and snapshots
+  moat snapshot [name]   save the rootfs; moat restore <name> brings it back
+
+Diagnostics
+  moat doctor            host support, 14 isolation checks, and the measured exposures
+  moat tools             the declared tools, and what opencode actually offers
+  moat env               connection details (url, password, auth header)
+  moat logs [sandbox|audit]
+  moat version
+
+Options that apply to up/run
+  --provider NAME        zai | deepseek | openai | anthropic | openrouter | groq | moonshot | local
+  --model ID             default per provider; see: moat models
+  --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full
+                         (auto-detected from the project if you do not say)
+  --no-detect            do not guess a profile from the project
+  --tools core|extended  core = 8 coding tools (default); extended adds webfetch + subagents
+  --provider-base-url URL  any OpenAI-compatible endpoint, e.g. Ollama
+  --credential-env NAME  host env var holding the key   --credential-ttl 4h
+  --continue             continue the last session instead of starting a new one
+  --show-output          print each tool's output as it runs
   --json                 machine-readable output on stdout
   --verbose              verbose diagnostics on stderr
-
-up options:
-  --provider NAME        zai | deepseek | openai | anthropic | openrouter | groq | moonshot | local
-  --model ID             model id (default per provider; see: moat models)
-  --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full  (comma separated)
-  --tools core|extended  core = 8 coding tools (default); extended adds webfetch + subagents
-  --provider-base-url URL  a custom OpenAI-compatible endpoint (uses --provider local)
-  --credential-env NAME  host env var holding the key   --credential-ttl 4h
-  --credential VALUE     literal key (discouraged)      --no-credential
-  --port N               fixed port                     --fresh   rebuild the image
-  --sync                 re-copy the project (discards sandbox commits)
-  --refresh              refresh the models.dev catalog
 
 Docs: docs/SPEC.md, docs/VERIFICATION.md
 `
@@ -1447,6 +1622,11 @@ async function main(): Promise<number> {
         return await cmdFetch(rest)
       case "apply":
         return await cmdApply(rest)
+      case "take":
+        return await cmdTake(rest)
+      case "run":
+        // `moat run "task"` is `moat up "task"`. Same code, friendlier name.
+        return await cmdUp(rest)
       case "down":
         return await cmdDown(rest)
       case "destroy":

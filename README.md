@@ -46,26 +46,17 @@ refuses to run.
 
 ```bash
 cd ~/code/my-project
-
-# GLM (Z.AI)
-export ZHIPU_API_KEY=...
-moat up --provider zai --model glm-4.6 --profile node
-
-# DeepSeek
-export DEEPSEEK_API_KEY=...
-moat up --provider deepseek --model deepseek-v4-pro --profile node,python
-
-# OpenAI
-export OPENAI_API_KEY=...
-moat up --provider openai --model gpt-5.4 --profile full
-
-moat attach --prompt "add a CHANGELOG, run the test suite, and commit it"
-moat fetch                       # the agent's branch lands in refs/moat/*; your tree is untouched
-moat apply <branch> --checkout   # an explicit, separate second step
+export DEEPSEEK_API_KEY=sk-...        # or ZHIPU_API_KEY, or OPENAI_API_KEY
+moat run "add a CHANGELOG, run the test suite, and commit it"
+moat take                             # review it, then apply it if you like it
 moat down
 ```
 
-`moat models` shows what a provider actually offers, with real context windows.
+That is the whole loop. The first run picks the provider from whichever key you
+exported and detects the toolchain from the project; later runs only need the
+task. `moat models` shows what a provider actually offers, with real context
+windows, and `moat run --provider zai --model glm-4.6` overrides the defaults
+when you want something specific.
 
 ## Providers
 
@@ -107,21 +98,54 @@ and test against it instead of a mock. State lives in the rootfs and persists.
 
 ## Commands
 
+Four of them matter. The rest exist so you never have to reach for anything else.
+
+```
+moat run "<task>"     boot if needed, do the task, stream the work
+moat take             review what the agent did, and apply it if you want
+moat down             stop the sandbox; nothing is lost
+moat status           what is running, on which model, with how much time left
+```
+
+`moat run` reads the project and picks the toolchain itself: `package.json` means
+the node profile, `pyproject.toml` means python, `go.mod` means go, a `Makefile`
+means a C toolchain. It also remembers the provider and model from the last run,
+so you type the flags once and then not again.
+
+```
+$ cd ~/code/some-project
+$ export DEEPSEEK_API_KEY=sk-...
+$ moat run "the tests are failing, fix them and commit"
+  detected: package.json -> node
+  ✓ image provisioned in 8.0s
+  ✓ copy-in via git: 42 files
+  model: deepseek/deepseek-v4-pro (context 1M, out 384k)
+  [tool] bash (running) npm test
+  [tool] bash (completed) npm test
+  ...
+$ moat take
+  moat-session-2026-09-18-18-20  2 commit(s), b63eb2d9665e
+    b63eb2d9  fix slugify whitespace handling
+    5806abcd  initial commit
+
+   src/slugify.js | 7 ++++++-
+   1 file changed, 7 insertions(+)
+
+    your working tree is untouched
+    accept:  moat apply moat-session-2026-09-18-18-20 --checkout
+    reject:  git update-ref -d refs/moat/moat-session-2026-09-18-18-20
+```
+
+Everything else, roughly grouped:
+
 | | |
 | --- | --- |
-| `moat up` | provision if needed, copy in, mint a credential, boot, wait for ready |
-| `moat attach [--prompt TEXT]` | drive a session; `--continue` resumes the last one; `--show-output` prints tool output |
-| `moat fetch [branch]` | `git fetch` the agent's branch from the sandbox into `refs/moat/*` |
-| `moat apply <branch> [--checkout]` | turn a fetched ref into a local branch |
-| `moat status [--all]` | state, endpoint, model, branch, profiles, credential expiry |
-| `moat down` / `moat destroy` | stop (keep everything) / delete the environment |
-| `moat snapshot` / `moat restore` | rootfs snapshots, never the project |
-| `moat exec -- <cmd>` / `moat shell` | run one command / open a shell inside the sandbox |
-| `moat models [provider]` | what the catalog offers, with context windows |
-| `moat profiles` | toolchain profiles and base packages |
-| `moat doctor` | host probe, 14 isolation assertions, and the measured exposures |
-| `moat tools` | the bundle, the registry, and the measured gap between them |
-| `moat env` / `moat logs` | connection details / tail a log |
+| **Attaching** | `moat attach` opens opencode's own TUI against the running box; `moat shell` gives a plain shell inside it; `moat exec -- <cmd>` runs one command; `--continue` on `run` resumes the last session instead of starting a new one |
+| **Branches** | `moat fetch [branch]` (add `--commit-worktree` to include work the agent left uncommitted); `moat apply <branch> [--checkout]` |
+| **Environment** | `moat up [task]` starts a box without a task; `moat profiles`; `moat models [provider]`; `moat destroy`; `moat snapshot` / `moat restore` |
+| **Diagnostics** | `moat doctor` (host support, 14 isolation checks, and the measured exposures); `moat tools`; `moat env`; `moat logs` |
+
+Run `moat --help` for the full list with the flags.
 
 ## How it works
 
