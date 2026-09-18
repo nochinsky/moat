@@ -1131,6 +1131,89 @@ renames it to `filePath`. The first version of the guard checked `path`, matched
 nothing, and confined nothing — a bug that produced no error and no log line, and
 was only caught because the failure was exercised deliberately.
 
+### H. Model, reasoning effort, and the interactive stream
+
+Three separate claims, each with its own evidence.
+
+**The effort control is real, not cosmetic.** moat sends opencode's `variant` on
+the prompt. opencode maps `model.variants[variant]` into the provider options it
+merges into the request (`session/llm/request.ts`), which for
+`@ai-sdk/openai-compatible` is `{ reasoningEffort: <level> }`
+(`provider/transform.ts`). The levels are read from the server rather than
+hardcoded, because they differ per model:
+
+```
+$ curl -s -H "$AUTH" $BASE/config/providers | ...
+  deepseek-v4-flash-vision-exp     ["low","high","max"]
+  deepseek-v4-flash                ["low","high","max"]
+  deepseek-v4-pro                  ["high","max"]
+  deepseek-flash                   ["low","high","max"]
+```
+
+`deepseek-v4-pro` genuinely has no `low` or `medium`: the API answers `422
+unknown variant` for values outside the set, which is why moat offers only what
+the server reports.
+
+The end-to-end check reads the level back off the sandbox's **own** server, not
+from moat's output:
+
+```
+$ python3 test/repl-effort.py
+  pass  /model reported this model's effort levels
+  pass  /think max was accepted
+  pass  /think refused a level that does not exist
+  pass  the chosen effort reached the server
+
+server recorded variant for the turn: 'max'
+```
+
+What this does *not* show: that a given level changes the answer to any
+particular prompt. Across three identical one-shot prompts (`default`, `high`,
+`max`) all three were correct and the reasoning-token counts were 13, 0 and 17 —
+one sample each. The control plane is verified; the effect size is model
+behaviour and is not claimed.
+
+**Assistant text was never displayed.** Until this was fixed, `moat`'s
+interactive session rendered tool calls and nothing else: the live view waited
+for a `delta` field on `message.part.updated`, and opencode 1.18.31 does not put
+one there. Deltas arrive as a separate event, `message.part.delta`, which
+carries a `partID` but not the part's kind:
+
+```
+{"type":"message.part.delta","properties":{"messageID":"msg_…","partID":"prt_…","field":"text","delta":"Hello"}}
+```
+
+Both the interactive view and the non-interactive `moat run` stream were
+affected, so a turn looked hung until it ended and then printed nothing. The fix
+catalogues part kinds from the `message.part.updated` events that precede each
+delta and message roles from `message.updated`; event order for this was checked
+on a live server, where an assistant `message.updated` always precedes that
+message's first delta. Verified through a pty:
+
+```
+› say hello in three words
+│ Hello from opencode.
+› /thinking
+showing reasoning (/thinking to hide)
+› How many times does the letter r appear in strawberry? Reply with just the number.
+│ thinking The word "strawberry" contains the letter r three times.
+│ 3
+```
+
+**A key saved by onboarding was never reused.** `moat`'s onboarding wrote the
+credential to `~/.moat/credentials.json` under `deepseek`, but `moat up` asked
+the broker for it under the human label `DeepSeek`, so the lookup missed and the
+next run reported "no DEEPSEEK_API_KEY" — and, at a terminal, asked for the key
+again. Fixed on both sides (the id is passed, and the broker falls back to the
+ids it writes), verified by rebooting an environment with no key in the
+environment at all:
+
+```
+$ moat up
+! injecting deepseek credential sha256:e493a50d942e2a4f (ttl 14400s) as DEEPSEEK_API_KEY.
+  credential deepseek sha256:e493a50d942e2a4f expires 2026-09-19T00:16:25.853Z
+```
+
 ---
 
 ## Requirement-by-requirement
@@ -1187,9 +1270,10 @@ Listed so that absence is not mistaken for success.
 | v1 (microVM on KVM): boot time, image size, delta vs v0 | `/dev/kvm` is present but not accessible to this user (mode 660, gid 991, not a member). v1 is a separate phase and is not claimed here. |
 | v2 (egress rules, credential revocation, spend caps, concurrent sandboxes) | explicitly gated on v0 *and* v1 passing. |
 | Model quality, as opposed to model reachability | a real DeepSeek session is verified above. That is one task, one model, one run — a smoke test with teeth, not a benchmark. |
-| A real session on `zai` or `openai` | their wiring is verified at the config and protocol level (see "The harness"), and `test/e2e-live.sh` takes them as arguments, but no key for either was available for an actual inference call. |
+| That a reasoning-effort level changes any particular answer | the level provably reaches the provider (see "Secondary claims" H). Whether `max` answers better than `default` is model behaviour, and one sample per level shows nothing. |
+| Non-DeepSeek providers | moat is DeepSeek-only by design; `--base-url` exists for a gateway or a local model and is exercised against a stub, but no second hosted provider was wired up or called. |
 | The `countUnfetched` / host-drift logic under adversarial git states | both branches were exercised (drift with unpreserved sandbox commits → warning; drift with everything already fetched → automatic re-copy), but not things like a rebased sandbox branch or a detached host HEAD. |
 | The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |
-| `moat attach` with no `--prompt` (the interactive opencode TUI) | needs a TTY; it execs `opencode attach <url> --password …`, which is opencode's own client and was not driven interactively here. The same connection path is exercised by every `--prompt` run. |
+| `/undo`, `/redo` and `/compact` against a real model | the calls are exercised against the stub and the server accepts them, but summarisation is model-driven and the stub cannot summarise: it answers `/compact` by trying to call a tool, which the server rejects with `Tool call not allowed while generating summary`. |
 | Network isolation | not attempted in v0; it is the top risk in the report and is disclosed on every `moat doctor` run. |
 | Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), but a reboot mid-session was not staged. |

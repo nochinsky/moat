@@ -1,0 +1,55 @@
+
+› moat · deepseek/deepseek-v4-pro · /home/user/moat-demo/effort
+› type a task and press enter. /help for commands, ctrl-c to interrupt.
+› 
+› › /model
+
+›      1. deepseek/deepseek-flash                1M ctx · reasoning  effort: low high max
+›      2. deepseek/deepseek-v4-flash             1M ctx · reasoning  effort: low high max
+›      3. deepseek/deepseek-v4-flash-vision-exp  1M ctx · reasoning  effort: low high max
+›   ›  4. deepseek/deepseek-v4-pro               1M ctx · reasoning  effort: high max
+› 
+›   switch with /model <number or name>
+› › /think
+
+›     high
+›     max
+›   › default (whatever the model does on its own)
+› 
+›   set with /think <level>
+› › /think max
+effort is now max (applies to the next message)
+› › /status
+
+›   project     /home/user/moat-demo/effort
+›   endpoint    http://127.0.0.1:33303
+›   model       deepseek/deepseek-v4-pro  (effort max)
+›   agent       default
+›   thinking    hidden
+›   branch      moat-session-2026-09-18-21-17
+›   session     none yet
+›   profiles    base only
+›   credential  14378s left
+› 
+› › /think not-a-level
+"not-a-level" is not one of high, max for deepseek/deepseek-v4-pro
+› › /thinking
+showing reasoning (/thinking to hide)
+› › reply with exactly: ok
+│ ok
+› /quit
+
+
+server recorded variant for the turn: 'max'
+
+--- checks ---
+  pass  /model listed the DeepSeek models
+  pass  /model reported this model's effort levels
+  pass  /think listed the levels
+  pass  /think max was accepted
+  pass  /status showed the effort
+  pass  /think refused a level that does not exist
+  pass  /thinking toggled
+  pass  the chosen effort reached the server
+
+8/8 checks passed

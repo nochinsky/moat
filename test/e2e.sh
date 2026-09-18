@@ -29,6 +29,25 @@ CANARY="$HOME/.moat/canary"
 mkdir -p "$EVIDENCE"
 : > "$EVIDENCE/summary.txt"
 
+# Evidence is committed to a public repository, so the machine it was produced on
+# is scrubbed out of it. What matters is the behaviour being shown, not whose
+# home directory it ran in; without this the recorded proof publishes a username.
+scrub() {
+  sed -e "s|$HOME|/home/user|g" -e "s|${USER:-$(id -un)}|user|g"
+}
+
+# Last word. Inline scrubbing cannot cover output that arrives through a child
+# process, a log file or a command substitution nobody thought about, and a
+# single missed pipe publishes the machine's paths in a public repository. So
+# every evidence file gets one final pass before the suite reports.
+scrub_evidence() {
+  local f
+  for f in "$EVIDENCE"/*.txt; do
+    [ -f "$f" ] || continue
+    sed -i -e "s|$HOME|/home/user|g" -e "s|${USER:-$(id -un)}|user|g" "$f"
+  done
+}
+
 section() {
   echo "" | tee -a "$EVIDENCE/summary.txt"
   echo "==============================================================" | tee -a "$EVIDENCE/summary.txt"
@@ -48,7 +67,7 @@ capture() {
     cat "$EVIDENCE/$name.out"
     echo "--- stderr ---"
     cat "$EVIDENCE/$name.err"
-  } > "$EVIDENCE/$name.txt"
+  } | scrub > "$EVIDENCE/$name.txt"
   cat "$EVIDENCE/$name.txt" | tee -a "$EVIDENCE/summary.txt"
 }
 
@@ -294,4 +313,5 @@ rm -f "$CANARY"
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; fi
 
 echo "" | tee -a "$EVIDENCE/summary.txt"
+scrub_evidence
 echo "evidence written to $EVIDENCE/" | tee -a "$EVIDENCE/summary.txt"

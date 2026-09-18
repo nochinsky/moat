@@ -95,7 +95,8 @@ DeepSeek  env=DEEPSEEK_API_KEY  https://api.deepseek.com
 ```
 
 `--model <id>` picks a different one. The environment remembers it, so you set it
-once.
+once. `--effort low|medium|high|max` sets the reasoning effort for a one-off run;
+inside a session, `/think` does the same thing.
 
 **`--base-url`** points the agent at any OpenAI-compatible endpoint instead, which
 is how moat's own tests run against a local stub and how you would use a gateway
@@ -164,15 +165,50 @@ $ moat run "the tests are failing, fix them"
 
 | command | |
 | --- | --- |
+| `/model` | list the models, and switch: `/model deepseek-v4-flash` |
+| `/think` | the reasoning effort of the current model: `/think high` |
+| `/thinking` | show or hide the model's reasoning as it streams |
+| `/agent` | list the agents, and switch: `/agent plan` |
+| `/verbose` | show or hide each tool's output |
+| `/compact` | summarise the session so far, to free up context |
+| `/undo`, `/redo` | roll back the last message, and put it back |
 | `/help` | the command list |
 | `/stop` | abort the turn the agent is running |
 | `/verify` | run the project's own tests against the agent's work |
 | `/diff` | everything the agent has changed since it started |
 | `/take` | bring its branch onto the host and show it |
-| `/status` | model, branch, session, credential time left |
+| `/status` | model, effort, agent, branch, session, credential time left |
 | `/sessions`, `/use <id>`, `/new` | move between sessions |
 | `/shell` | a shell inside the sandbox; ctrl-d comes back |
 | `/quit` | leave; the sandbox keeps running |
+
+`/model` and `/think` read their options from the server rather than from a list
+moat keeps, so you are only ever offered a model that exists and a reasoning
+level that model actually accepts. DeepSeek's models are reasoning models, and
+they do not all take the same levels:
+
+```
+› /model
+
+     1. deepseek/deepseek-flash                1M ctx · reasoning  effort: low high max
+     2. deepseek/deepseek-v4-flash             1M ctx · reasoning  effort: low high max
+     3. deepseek/deepseek-v4-flash-vision-exp  1M ctx · reasoning  effort: low high max
+  ›  4. deepseek/deepseek-v4-pro               1M ctx · reasoning  effort: high max
+
+  switch with /model <number or name>
+
+› /think
+
+    high
+  › max
+    default (whatever the model does on its own)
+
+  set with /think <level>, or /think default to clear
+```
+
+Both are remembered per project, so the next `moat` (and `moat run`) in that
+directory starts on the same model and effort. Leaving effort unset lets the
+model decide for itself.
 
 Piping `moat run` output somewhere keeps it non-interactive, so scripts are
 unaffected. `--no-follow` forces that even at a terminal.

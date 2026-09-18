@@ -26,6 +26,17 @@ export type EnvState = {
   port: number | null
   /** The full `provider/model` string opencode was given. */
   model: string | null
+  /**
+   * Reasoning effort for that model (`low`, `medium`, `high`, `max`), or null
+   * for whatever the provider defaults to.
+   *
+   * This is opencode's "variant": sent as `reasoning_effort` on the request.
+   * Not every model accepts every level, so it is stored per environment next
+   * to the model it was chosen for.
+   */
+  effort: string | null
+  /** Named opencode agent the session defaults to (`build`, `plan`, …), if chosen. */
+  agent: string | null
   /** The provider's short id (`zai`, `deepseek`, `openai`, …). */
   provider: string | null
   /** Host-visible base URL of the injected provider (no credential in it). */
@@ -62,6 +73,8 @@ export function initialState(p: EnvPaths, versions: { opencode: string; alpine: 
     alpineVersion: versions.alpine,
     port: null,
     model: null,
+    effort: null,
+    agent: null,
     provider: null,
     providerBaseUrl: null,
     branch: null,
@@ -80,7 +93,12 @@ export function initialState(p: EnvPaths, versions: { opencode: string; alpine: 
 export function readState(p: EnvPaths): EnvState | null {
   if (!fs.existsSync(p.state)) return null
   try {
-    return JSON.parse(fs.readFileSync(p.state, "utf8")) as EnvState
+    const raw = JSON.parse(fs.readFileSync(p.state, "utf8")) as EnvState
+    // Environments written before these fields existed are otherwise valid; fill
+    // them in rather than making every reader defend against undefined.
+    if (raw.effort === undefined) raw.effort = null
+    if (raw.agent === undefined) raw.agent = null
+    return raw
   } catch {
     return null
   }

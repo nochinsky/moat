@@ -1,0 +1,107 @@
+
+› moat · moat/mock-model · /home/user/moat-demo/controls
+› type a task and press enter. /help for commands, ctrl-c to interrupt.
+› 
+› › /status
+
+›   project     /home/user/moat-demo/controls
+›   endpoint    http://127.0.0.1:38057
+›   model       moat/mock-model
+›   agent       default
+›   thinking    hidden
+›   branch      moat-session-2026-09-18-21-16
+›   session     none yet
+›   profiles    node
+›   credential  14387s left
+› 
+› › /model
+
+›   ›  1. moat/mock-model       128k ctx
+› 
+›   switch with /model <number or name>
+› › /think
+moat/mock-model does not expose reasoning effort levels; there is nothing to set.
+› › /think high
+moat/mock-model does not expose reasoning effort levels; there is nothing to set.
+› › /status
+
+›   project     /home/user/moat-demo/controls
+›   endpoint    http://127.0.0.1:38057
+›   model       moat/mock-model
+›   agent       default
+›   thinking    hidden
+›   branch      moat-session-2026-09-18-21-16
+›   session     none yet
+›   profiles    node
+›   credential  14378s left
+› 
+› › /think bogus
+moat/mock-model does not expose reasoning effort levels; there is nothing to set.
+› › /thinking
+showing reasoning (/thinking to hide)
+› › /thinking
+hiding reasoning
+› › /verbose
+showing tool output
+› › /verbose
+hiding tool output
+› › /agent
+
+›     build        The default agent. Executes tools based on configured permissions.
+›     compaction   
+›     plan         Plan mode. Disallows all edit tools.
+›     summary      
+›     title        
+›   › default
+› 
+›   switch with /agent <name>
+› › fix the failing tests
+  · bash      
+›   ✓ bash      pwd && ls -la && cat README.md
+›   · write     
+›   ✓ write     agent-output.txt
+›   · edit      
+›   ✓ edit      agent-output.txt
+›   · bash      
+›   ✓ bash      printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt
+›   · bash      
+›   ✓ bash      git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && gi
+› │ Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
+› /undo
+undone  (/redo to put it back)
+› › /redo
+restored
+› › /compact
+compacting...
+› session error: {"name":"UnknownError","data":{"message":"Tool call not allowed while generating summary: bash"}}
+› › compacted
+› › › /status
+
+›   project     /home/user/moat-demo/controls
+›   endpoint    http://127.0.0.1:38057
+›   model       moat/mock-model
+›   agent       default
+›   thinking    hidden
+›   branch      moat-session-2026-09-18-21-16
+›   session     ses_f499f1456ffeGRHk8PHmJ7FJdp
+›   profiles    node
+›   credential  14325s left
+› 
+› › /quit
+
+
+--- checks ---
+  pass  banner names the model
+  pass  /status reports model and effort rows
+  pass  /model listed the current model
+  pass  /think says so when a model has no levels
+  pass  /thinking toggled both ways
+  pass  /verbose toggled both ways
+  pass  /agent listed agents
+  pass  the turn still ran and streamed tool calls
+  pass  /undo reported a result
+  pass  /redo reported a result
+  pass  /compact reported a result
+  pass  /help lists the new commands
+
+12/12 checks passed

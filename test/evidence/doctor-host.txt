@@ -13,6 +13,6 @@ host
   note       mknod denied in userns (kernel policy): /dev nodes are bind-mounted read-only from the host's device nodes. No host *data* is mounted.
 
 credential
-  DEEPSEEK_API_KEY  not set  run `moat` at a terminal and it will ask for one
+  DEEPSEEK_API_KEY  set
 
 no environment for /home/user/moat-demo/project yet. Just run moat in the directory you want to work in.

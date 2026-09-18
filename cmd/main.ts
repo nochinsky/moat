@@ -75,6 +75,7 @@ import {
   connect,
   driveSession,
   listSessions,
+  modelVariants,
   toolIds,
   waitForServer,
   authHeaders,
@@ -122,6 +123,7 @@ const SPEC: Spec = {
   json: "boolean",
   verbose: "boolean",
   model: "string",
+  effort: "string",
   profile: "string",
   profiles: "boolean",
   tools: "string",
@@ -405,6 +407,7 @@ async function cmdUp(argv: string[]): Promise<number> {
         const result = await driveTask(state!, password, task, {
           continueLast: flag<boolean>(p, "continue") ?? false,
           agent: flag<string>(p, "agent"),
+          effort: flag<string>(p, "effort"),
           showOutput: flag<boolean>(p, "show-output") ?? false,
           timeoutSeconds: flag<number>(p, "timeout"),
         })
@@ -554,7 +557,9 @@ ${command}
     credential = mint({
       literal: flag<string>(p, "credential"),
       envName: flag<string>(p, "credential-env"),
-      provider: DEEPSEEK.label,
+      // The provider *id*, not its label: this is the key the credential store
+      // is indexed by, and what `onboard` writes.
+      provider: provider.opencodeID,
       baseUrl,
       model: resolvedModel.modelID,
       ttlSeconds,
@@ -729,6 +734,7 @@ ${command}
     const result = await driveTask(state, password, task, {
       continueLast: flag<boolean>(p, "continue") ?? false,
       agent: flag<string>(p, "agent"),
+      effort: flag<string>(p, "effort"),
       showOutput: flag<boolean>(p, "show-output") ?? false,
       timeoutSeconds: flag<number>(p, "timeout"),
     })
@@ -900,6 +906,7 @@ async function cmdAttach(argv: string[]): Promise<number> {
     continueLast: flag<boolean>(p, "continue") ?? false,
     agent: flag<string>(p, "agent"),
     modelID: flag<string>(p, "model-id"),
+    effort: flag<string>(p, "effort"),
     showOutput: flag<boolean>(p, "show-output") ?? false,
     timeoutSeconds: flag<number>(p, "timeout"),
   })
@@ -925,6 +932,8 @@ async function driveTask(
     continueLast?: boolean
     agent?: string
     modelID?: string
+    /** Reasoning effort; falls back to the environment's stored choice. */
+    effort?: string
     showOutput?: boolean
     timeoutSeconds?: number
   },
@@ -943,16 +952,39 @@ async function driveTask(
     }
   }
 
-  const modelRef = state.model ?? "moat/model"
-  const [providerID = "moat", ...rest] = modelRef.split("/")
+  const modelRef = state.model ?? `${DEEPSEEK.opencodeID}/${DEEPSEEK.defaultModel}`
+  const slash = modelRef.indexOf("/")
+  const providerID = slash === -1 ? DEEPSEEK.opencodeID : modelRef.slice(0, slash)
+  const modelID = slash === -1 ? modelRef : modelRef.slice(slash + 1)
+
+  // The effort chosen in the REPL is a property of the environment, so a
+  // one-shot `moat run` in the same project uses it too.
+  const effectiveModelID = opts.modelID ?? modelID
+  let effort = opts.effort ?? state.effort ?? undefined
+  if (effort) {
+    // opencode ignores an unknown variant rather than rejecting it, so a level
+    // this model does not take would do nothing at all and look like it worked.
+    // It is dropped rather than sent-and-ignored: sending it also records it on
+    // the message, which reads as though the run happened at that level.
+    // A server that cannot answer is not worth failing over.
+    const available = await modelVariants(client, providerID, effectiveModelID).catch((): string[] => [])
+    if (available.length > 0 && !available.includes(effort)) {
+      log.warn(
+        `--effort ${effort} is not one of ${available.join(", ")} for ${providerID}/${effectiveModelID}; ` +
+          `using the model's own default instead. (see: moat models, or /think inside a session)`,
+      )
+      effort = undefined
+    }
+  }
 
   let wrote = false
   const result = await driveSession(client, {
     sessionID,
     prompt,
     providerID,
-    modelID: opts.modelID ?? rest.join("/") ?? "model",
-    agent: opts.agent,
+    modelID: effectiveModelID,
+    agent: opts.agent ?? state.agent ?? undefined,
+    variant: effort,
     onEvent: (line) => process.stderr.write(`${line}\n`),
     onDelta: (chunk) => {
       wrote = true
@@ -1800,6 +1832,9 @@ Diagnostics
 
 Options that apply to up/run
   --model ID             DeepSeek model id; see: moat models
+  --effort LEVEL         reasoning effort: low, medium, high or max.
+                         Not every model takes every level; inside a session
+                         /model and /think show what the current one accepts.
   --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project

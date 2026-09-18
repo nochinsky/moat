@@ -6,7 +6,7 @@
   "envId": "18620c2c4f34",
   "profileInstall": {
     "installed": [],
-    "ms": 104
+    "ms": 107
   },
   "copyInMs": 11,
   "provider": {
@@ -38,15 +38,15 @@
     "preset": "core"
   },
   "status": "running",
-  "port": 36871,
-  "pid": 67222,
-  "bootMs": 3926,
+  "port": 34483,
+  "pid": 97066,
+  "bootMs": 3921,
   "totalMs": 4125,
   "readyCheck": "GET /config -> 200",
   "credential": {
-    "provider": "DeepSeek",
+    "provider": "moat",
     "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-19T00:03:42.506Z",
+    "expiresAt": "2026-09-19T01:12:58.533Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -67,6 +67,6 @@ no project manifest found; booting with the base image only (see `moat profiles`
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
-! injecting DeepSeek credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-20-03
-→ sandbox booted (pid 67222, port 36871); waiting for opencode serve
+! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-18-21-12
+→ sandbox booted (pid 97066, port 34483); waiting for opencode serve

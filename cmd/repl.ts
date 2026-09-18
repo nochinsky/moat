@@ -4,8 +4,9 @@ import * as log from "../lib/log.ts"
 import { hashTree } from "../lib/hash.ts"
 import type { EnvPaths } from "../lib/paths.ts"
 import { SANDBOX_WORKDIR } from "../lib/pins.ts"
+import { DEEPSEEK } from "../lib/provider.ts"
 import { run } from "../lib/shell.ts"
-import type { EnvState } from "../sandbox/state.ts"
+import { readState, writeState, type EnvState } from "../sandbox/state.ts"
 import { SANITIZED_GIT_ENV } from "../sync/copyin.ts"
 import { fetchBranch, listSandboxBranches, sandboxWorktreeChanges, suggestBranch } from "../sync/copyout.ts"
 import { detectChecks } from "../lib/detect.ts"
@@ -14,10 +15,19 @@ import { runChecks } from "../sandbox/checks.ts"
 import {
   authHeaders,
   baseUrl,
+  compact,
   connect,
+  lastUserMessageID,
+  listAgents,
+  listModels,
   listSessions,
+  promptBody,
+  modelVariants,
   replyToQuestion,
+  revert,
+  unrevert,
   type Client,
+  type ModelChoice,
   type QuestionInfo,
 } from "./client.ts"
 
@@ -50,6 +60,7 @@ const BOLD = "\u001b[1m"
 const GREEN = "\u001b[32m"
 const RED = "\u001b[31m"
 const YELLOW = "\u001b[33m"
+const CYAN = "\u001b[36m"
 const RESET = "\u001b[0m"
 
 export async function runRepl(options: ReplOptions): Promise<number> {
@@ -58,6 +69,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   let sessionID = options.sessionID ?? (await newestSession(client))
   let busy = false
   let typing = false // an assistant text block is open on the current line
+  let block: "text" | "thought" | null = null
   let exitCode = 0
   let closed = false
   // A question the agent asked, waiting for the user's next line. While this is
@@ -66,6 +78,43 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   // `/apply` shows the plan and waits for one confirmation line, so applying is
   // never a single unconsidered keystroke.
   let pendingApply: ApplyPlan | null = null
+
+  // --- what the next prompt will use -----------------------------------------
+  // The model is the one this environment was booted with; the reasoning effort
+  // and agent are remembered across restarts, because re-picking them every
+  // time you open a session is the kind of friction that makes a tool annoying.
+  let modelRef = options.state.model ?? `${DEEPSEEK.opencodeID}/${DEEPSEEK.defaultModel}`
+  let effort = options.state.effort ?? null
+  let agent = options.state.agent ?? undefined
+  // Reasoning is streamed but hidden by default: it is long, and most of the
+  // time you want the answer. `/thinking` turns it on.
+  let showThinking = false
+  let verbose = options.showOutput ?? false
+
+  /**
+   * Write a change back to the environment so the next `moat` in here sees it.
+   *
+   * Read-modify-write rather than a blind save of the snapshot this session
+   * started with: `moat up` in another terminal may have rewritten the same
+   * file since, and clobbering its fields with stale ones would be a lie.
+   */
+  const persist = (patch: Partial<Pick<EnvState, "model" | "effort" | "agent">>): void => {
+    try {
+      const current = readState(options.paths) ?? options.state
+      Object.assign(current, patch)
+      writeState(options.paths, current)
+      options.state = current
+    } catch {
+      // A read-only state file must not take the session down with it.
+      Object.assign(options.state, patch)
+    }
+  }
+
+  const splitModel = (ref: string): { providerID: string; modelID: string } => {
+    const slash = ref.indexOf("/")
+    if (slash === -1) return { providerID: DEEPSEEK.opencodeID, modelID: ref }
+    return { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) }
+  }
 
   const terminal = process.stdin.isTTY === true
   const rl = readline.createInterface({
@@ -82,6 +131,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
       process.stdout.write("\n")
       typing = false
     }
+    block = null
     if (terminal) {
       readline.clearLine(process.stdout, 0)
       readline.cursorTo(process.stdout, 0)
@@ -90,18 +140,34 @@ export async function runRepl(options: ReplOptions): Promise<number> {
     if (terminal && !closed) rl.prompt(true)
   }
 
-  /** Append streamed assistant text to the open line. */
-  const stream = (chunk: string): void => {
-    if (!typing) {
+  /**
+   * Append streamed output to the open block.
+   *
+   * Assistant text and reasoning share the transport, so the block tracks which
+   * kind is open: switching between them closes one and opens the other rather
+   * than running the two together on one line.
+   */
+  const streamBlock = (kind: "text" | "thought", chunk: string): void => {
+    if (block !== kind) {
+      if (block !== null) process.stdout.write("\n")
       if (terminal) {
         readline.clearLine(process.stdout, 0)
         readline.cursorTo(process.stdout, 0)
       }
-      process.stdout.write(`${DIM}\u2502${RESET} `)
-      typing = true
+      process.stdout.write(kind === "text" ? `${DIM}\u2502${RESET} ` : `${DIM}${CYAN}\u2502 thinking${RESET} `)
+      block = kind
+      if (kind === "thought") typing = false
     }
-    process.stdout.write(chunk.replace(/\n(?!$)/g, `\n${DIM}\u2502${RESET} `))
+    const prefix = kind === "text" ? `\n${DIM}\u2502${RESET} ` : `\n${DIM}${CYAN}\u2502${RESET} `
+    process.stdout.write(chunk.replace(/\n(?!$)/g, prefix))
+    typing = true
   }
+
+  /** Append streamed assistant text to the open line. */
+  const stream = (chunk: string): void => streamBlock("text", chunk)
+
+  /** Append streamed reasoning. Dimmed and marked so it is never mistaken for the answer. */
+  const streamThought = (chunk: string): void => streamBlock("thought", chunk)
 
   const askQuestion = (request: { id: string; questions: QuestionInfo[] }): void => {
     if (terminal) {
@@ -186,6 +252,14 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   const subscription = await client.event.subscribe({ signal: controller.signal })
 
   const toolStatus = new Map<string, string>()
+  // Streaming text arrives as `message.part.delta`, which carries only a part
+  // id — not whether that part is the answer, the model's reasoning, or the
+  // user's own prompt echoed back. So the parts are catalogued from the
+  // `message.part.updated` events that precede them, and the message ids from
+  // `message.updated`. Verified against a live server: an assistant
+  // `message.updated` always arrives before that message's first delta.
+  const partKind = new Map<string, string>()
+  const assistantMessages = new Set<string>()
   const startView = (async () => {
     try {
       for await (const event of subscription.stream) {
@@ -193,16 +267,31 @@ export async function runRepl(options: ReplOptions): Promise<number> {
         const props = e.properties ?? {}
         if (props.sessionID && props.sessionID !== sessionID) continue
 
+        if (e.type === "message.updated") {
+          const info = props.info as { id?: string; role?: string } | undefined
+          if (info?.role === "assistant" && info.id) assistantMessages.add(info.id)
+          continue
+        }
+
+        // The actual stream. Without this the answer never appears: the
+        // `delta` field is not carried on `message.part.updated`, so waiting
+        // for it there means printing nothing at all until the turn ends.
+        if (e.type === "message.part.delta") {
+          const { partID, messageID, delta } = props as { partID?: string; messageID?: string; delta?: string }
+          if (typeof delta !== "string" || delta.length === 0) continue
+          if (messageID && !assistantMessages.has(messageID)) continue
+          const kind = partID ? partKind.get(partID) : undefined
+          if (kind === "text") stream(delta)
+          else if (kind === "reasoning" && showThinking) streamThought(delta)
+          continue
+        }
+
         if (e.type === "message.part.updated") {
           const part = props.part as
-            | { type?: string; text?: string; tool?: string; callID?: string; state?: Record<string, unknown> }
+            | { id?: string; type?: string; text?: string; tool?: string; callID?: string; state?: Record<string, unknown> }
             | undefined
           if (!part) continue
-
-          if (part.type === "text" && typeof props.delta === "string") {
-            stream(props.delta)
-            continue
-          }
+          if (part.id && part.type) partKind.set(part.id, part.type)
 
           if (part.type === "tool" && part.tool) {
             const status = String(part.state?.status ?? "")
@@ -216,7 +305,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
               busy = true
             } else if (status === "completed") {
               say(`  ${GREEN}\u2713${RESET} ${part.tool.padEnd(9)} ${title}`)
-              if (options.showOutput) {
+              if (verbose) {
                 const out = String(part.state?.output ?? "").trimEnd()
                 for (const line of out.split("\n").slice(0, 12)) say(`      ${DIM}${line}${RESET}`)
               }
@@ -251,6 +340,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
             process.stdout.write("\n")
             typing = false
           }
+          block = null
           busy = false
           prompt()
           continue
@@ -270,15 +360,14 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   // ---------------------------------------------------------------------------
   const send = async (text: string): Promise<void> => {
     if (!sessionID) sessionID = await createSession(client)
-    const [providerID = "moat", ...rest] = (options.state.model ?? "moat/model").split("/")
+    const { providerID, modelID } = splitModel(modelRef)
     busy = true
     try {
       await client.session.promptAsync({
         path: { id: sessionID },
-        body: {
-          model: { providerID, modelID: rest.join("/") || "model" },
-          parts: [{ type: "text", text }],
-        },
+        // `effort` is opencode's "variant"; see `promptBody` for why it does not
+        // appear in the SDK's own body type.
+        body: promptBody({ prompt: text, providerID, modelID, agent, variant: effort ?? undefined }),
       })
     } catch (error) {
       busy = false
@@ -377,19 +466,185 @@ export async function runRepl(options: ReplOptions): Promise<number> {
       },
     },
     status: {
-      help: "model, branch, session and credential time left",
+      help: "model, effort, branch, session and credential time left",
       run: () => {
         const expires = options.state.credential?.expiresAt
         const left = expires ? Math.round((new Date(expires).getTime() - Date.now()) / 1000) : null
         say("")
         say(`  project     ${options.paths.projectDir}`)
         say(`  endpoint    ${baseUrl(options.state)}`)
-        say(`  model       ${options.state.model ?? "unknown"}`)
+        say(`  model       ${modelRef}${effort ? `  ${DIM}(effort ${effort})${RESET}` : ""}`)
+        say(`  agent       ${agent ?? `${DIM}default${RESET}`}`)
+        say(`  thinking    ${showThinking ? "shown" : `${DIM}hidden${RESET}`}`)
         say(`  branch      ${options.state.branch ?? "unknown"}`)
         say(`  session     ${sessionID ?? "none yet"}`)
         say(`  profiles    ${options.state.profiles?.join(", ") || "base only"}`)
         if (left !== null) say(`  credential  ${left > 0 ? `${left}s left` : `${RED}expired${RESET}`}`)
         say("")
+      },
+    },
+    model: {
+      help: "show or change the model: /model [name]",
+      run: async (args) => {
+        const models = await listModels(client)
+        if (models.length === 0) return say("the server reported no models; is the credential still valid?")
+        const wanted = args.trim()
+
+        if (wanted === "") {
+          say("")
+          // Width from the data, so a long id cannot push the columns apart.
+          const width = Math.max(...models.map((m) => `${m.providerID}/${m.id}`.length), 20)
+          models.forEach((m, index) => {
+            const ref = `${m.providerID}/${m.id}`
+            const mark = ref === modelRef ? `${GREEN}\u203a${RESET}` : " "
+            const effortNote = m.variants.length > 0 ? `  ${DIM}effort: ${m.variants.join(" ")}${RESET}` : ""
+            say(`  ${mark} ${String(index + 1).padStart(2)}. ${ref.padEnd(width)}  ${DIM}${formatContext(m)}${RESET}${effortNote}`)
+          })
+          say("")
+          if (effort) say(`  ${DIM}effort for this session: ${effort}${RESET}`)
+          say(`  switch with ${BOLD}/model <number or name>${RESET}`)
+          return
+        }
+
+        const byNumber = /^\d+$/.test(wanted) ? models[Number(wanted) - 1] : undefined
+        const chosen =
+          byNumber ??
+          models.find((m) => `${m.providerID}/${m.id}` === wanted) ??
+          models.find((m) => m.id === wanted) ??
+          models.find((m) => m.id.toLowerCase().includes(wanted.toLowerCase()))
+
+        if (!chosen) return say(`no model matches "${wanted}". ${BOLD}/model${RESET} lists them.`)
+
+        modelRef = `${chosen.providerID}/${chosen.id}`
+        // An effort the new model does not have would be ignored silently, which
+        // is worse than dropping it: say so.
+        let dropped: string | null = null
+        if (effort && !chosen.variants.includes(effort)) {
+          dropped = effort
+          effort = null
+        }
+        persist({ model: modelRef, effort })
+        say(`model is now ${BOLD}${modelRef}${RESET}`)
+        if (dropped) {
+          say(`  ${YELLOW}effort "${dropped}" is not available on this model, so it was cleared${RESET}`)
+          if (chosen.variants.length > 0) say(`  ${DIM}this model takes: ${chosen.variants.join(", ")}  (/think <level>)${RESET}`)
+        }
+        say(`  ${DIM}takes effect on the next message${RESET}`)
+      },
+    },
+    think: {
+      help: "reasoning effort: /think [level]",
+      run: async (args) => {
+        const { providerID, modelID } = splitModel(modelRef)
+        const levels = await modelVariants(client, providerID, modelID)
+        const wanted = args.trim().toLowerCase()
+
+        if (levels.length === 0) {
+          return say(`${modelRef} does not expose reasoning effort levels; there is nothing to set.`)
+        }
+
+        if (wanted === "") {
+          say("")
+          for (const level of levels) {
+            const mark = level === effort ? `${GREEN}\u203a${RESET}` : " "
+            say(`  ${mark} ${BOLD}${level}${RESET}`)
+          }
+          const mark = effort === null ? `${GREEN}\u203a${RESET}` : " "
+          say(`  ${mark} ${DIM}default (whatever the model does on its own)${RESET}`)
+          say("")
+          say(`  set with ${BOLD}/think <level>${RESET}${effort ? `, or ${BOLD}/think default${RESET} to clear` : ""}`)
+          return
+        }
+
+        if (wanted === "default" || wanted === "off" || wanted === "none") {
+          effort = null
+          persist({ effort })
+          return say(`effort cleared; ${modelRef} will use its own default`)
+        }
+
+        if (!levels.includes(wanted)) {
+          return say(`"${wanted}" is not one of ${levels.join(", ")} for ${modelRef}`)
+        }
+
+        effort = wanted
+        persist({ effort })
+        say(`effort is now ${BOLD}${wanted}${RESET} ${DIM}(applies to the next message)${RESET}`)
+      },
+    },
+    thinking: {
+      help: "show or hide the model's reasoning as it streams",
+      run: () => {
+        showThinking = !showThinking
+        say(showThinking ? `showing reasoning ${DIM}(/thinking to hide)${RESET}` : "hiding reasoning")
+      },
+    },
+    agent: {
+      help: "show or change the agent: /agent [name]",
+      run: async (args) => {
+        const agents = await listAgents(client)
+        const primaries = agents.filter((a) => a.mode !== "subagent")
+        const wanted = args.trim()
+
+        if (wanted === "") {
+          if (primaries.length === 0) return say("the server reported no agents")
+          say("")
+          for (const a of primaries) {
+            const mark = a.name === agent ? `${GREEN}\u203a${RESET}` : " "
+            say(`  ${mark} ${BOLD}${a.name.padEnd(12)}${RESET} ${DIM}${(a.description ?? "").slice(0, 70)}${RESET}`)
+          }
+          const mark = agent === undefined ? `${GREEN}\u203a${RESET}` : " "
+          say(`  ${mark} ${DIM}default${RESET}`)
+          say("")
+          say(`  switch with ${BOLD}/agent <name>${RESET}`)
+          return
+        }
+
+        if (wanted === "default" || wanted === "off") {
+          agent = undefined
+          persist({ agent: null })
+          return say("using the default agent")
+        }
+
+        const chosen = primaries.find((a) => a.name === wanted) ?? primaries.find((a) => a.name.startsWith(wanted))
+        if (!chosen) return say(`no agent named "${wanted}". ${BOLD}/agent${RESET} lists them.`)
+        agent = chosen.name
+        persist({ agent })
+        say(`agent is now ${BOLD}${chosen.name}${RESET} ${DIM}(applies to the next message)${RESET}`)
+      },
+    },
+    compact: {
+      help: "summarise the session so far, to free up context",
+      run: async () => {
+        if (!sessionID) return say("nothing to compact yet")
+        const { providerID, modelID } = splitModel(modelRef)
+        say("compacting...")
+        const ok = await compact(client, sessionID, providerID, modelID)
+        say(ok ? `${GREEN}compacted${RESET}` : `${RED}compaction failed${RESET}`)
+      },
+    },
+    undo: {
+      help: "roll the conversation back to before your last message",
+      run: async () => {
+        if (!sessionID) return say("nothing to undo yet")
+        const messageID = await lastUserMessageID(client, sessionID)
+        if (!messageID) return say("no messages to undo")
+        const ok = await revert(client, sessionID, messageID)
+        say(ok ? `${GREEN}undone${RESET}  ${DIM}(/redo to put it back)${RESET}` : `${RED}could not undo${RESET}`)
+      },
+    },
+    redo: {
+      help: "put back a turn removed with /undo",
+      run: async () => {
+        if (!sessionID) return say("nothing to redo")
+        const ok = await unrevert(client, sessionID)
+        say(ok ? `${GREEN}restored${RESET}` : `${RED}nothing to restore${RESET}`)
+      },
+    },
+    verbose: {
+      help: "show or hide tool output",
+      run: () => {
+        verbose = !verbose
+        say(verbose ? "showing tool output" : "hiding tool output")
       },
     },
     sessions: {
@@ -554,8 +809,9 @@ exec /bin/bash -l
   })
 
   // ---------------------------------------------------------------------------
+  const effortLabel = effort ? ` \u00b7 effort ${effort}` : ""
   say("")
-  say(`${BOLD}moat${RESET} ${DIM}\u00b7 ${options.state.model ?? "no model"} \u00b7 ${options.paths.projectDir}${RESET}`)
+  say(`${BOLD}moat${RESET} ${DIM}\u00b7 ${modelRef}${effortLabel} \u00b7 ${options.paths.projectDir}${RESET}`)
   say(`${DIM}type a task and press enter. /help for commands, ctrl-c to interrupt.${RESET}`)
   say("")
   prompt()
@@ -573,6 +829,20 @@ exec /bin/bash -l
 async function newestSession(client: Client): Promise<string | undefined> {
   const sessions = await listSessions(client)
   return sessions[0]?.id
+}
+
+/** `1000000` is unreadable; `1M` is not. */
+function formatContext(model: ModelChoice): string {
+  const tokens = (n: number): string => {
+    if (n >= 1_000_000) return `${Math.round(n / 100_000) / 10}M`
+    if (n >= 1_000) return `${Math.round(n / 1_000)}k`
+    return String(n)
+  }
+  const parts: string[] = []
+  if (model.context > 0) parts.push(`${tokens(model.context)} ctx`)
+  if (!model.toolCall) parts.push("no tools")
+  if (model.reasoning) parts.push("reasoning")
+  return parts.join(" · ")
 }
 
 async function createSession(client: Client): Promise<string> {
