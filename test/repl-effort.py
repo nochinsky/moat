@@ -45,6 +45,7 @@ PROJECT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.expandus
 TIMEOUT = float(os.environ.get("REPL_TIMEOUT", "300"))
 MODEL = os.environ.get("EFFORT_MODEL", "deepseek-v4-pro")
 MOAT = ["node", os.path.join(REPO, "cmd", "main.ts")]
+QUESTION = "How many times does the letter r appear in strawberry? Answer with just the number."
 
 
 def sh(cmd, **kw):
@@ -88,16 +89,19 @@ def api(directory: str, path: str):
         return json.loads(response.read())
 
 
-def assistant_variant(directory: str) -> str | None:
-    """The reasoning level the server recorded for the newest assistant message."""
-    sessions = api(directory, "/session")
-    for session in sessions:
-        messages = api(directory, f"/session/{session['id']}/message")
-        for message in reversed(messages):
+def assistant_messages(directory: str) -> list[dict]:
+    """Every assistant message, in the order the server lists them."""
+    found = []
+    for session in api(directory, "/session"):
+        for message in api(directory, f"/session/{session['id']}/message"):
             info = message.get("info") or {}
             if info.get("role") == "assistant":
-                return info.get("variant")
-    return None
+                found.append({"info": info, "parts": message.get("parts") or []})
+    return found
+
+
+def reasoning_chars(message: dict) -> int:
+    return sum(len(p.get("text") or "") for p in message["parts"] if p.get("type") == "reasoning")
 
 
 def main() -> int:
@@ -151,7 +155,15 @@ def main() -> int:
         send("/status\n", 2.0)
         send("/think not-a-level\n", 2.0)
         send("/thinking\n", 1.0)
-        send("reply with exactly: ok\n", 40.0)
+        # A question that actually requires working out, asked identically both
+        # ways. A trivial prompt can be answered without any reasoning at all,
+        # which would make the comparison below meaningless rather than false.
+        send(f"{QUESTION}\n", 60.0)
+        # Thinking is on by default in DeepSeek and its effort scale has no
+        # "off": turning it off is a separate documented parameter. moat exposes
+        # it as a variant, so it should be offered and it should work.
+        send("/think off\n", 2.0)
+        send(f"{QUESTION}\n", 60.0)
         send("/quit\n", 1.0)
     finally:
         try:
@@ -167,8 +179,18 @@ def main() -> int:
     text = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", output.decode("utf-8", "replace"))
     print(text)
 
-    recorded = assistant_variant(directory)
+    messages = assistant_messages(directory)
+    recorded = messages[0]["info"].get("variant") if messages else None
     print(f"\nserver recorded variant for the turn: {recorded!r}")
+
+    # The `off` turn is the newest: it must carry the variant, and it must have
+    # produced no reasoning at all. The first turn establishes that this model
+    # does reason, so the second one is a real comparison and not a coincidence.
+    off_turn = next((m for m in messages if m["info"].get("variant") == "off"), None)
+    reasoned = [m for m in messages if m["info"].get("variant") != "off"]
+    off_reasoning = reasoning_chars(off_turn) if off_turn else -1
+    baseline_reasoning = sum(reasoning_chars(m) for m in reasoned)
+    print(f"reasoning characters: with thinking {baseline_reasoning}, with thinking off {off_reasoning}")
 
     checks = [
         ("/model listed the DeepSeek models", "deepseek/" in text and MODEL in text),
@@ -179,7 +201,16 @@ def main() -> int:
         ("/think refused a level that does not exist", "is not one of" in text),
         ("/thinking toggled", "showing reasoning" in text),
         ("the chosen effort reached the server", recorded == "max"),
+        ("/think offered the documented off switch", "off" in text and "thinking is now" not in text),
+        ("/think off was accepted", "effort is now off" in text),
+        ("thinking off reached the server", off_turn is not None),
+        ("thinking off produced no reasoning", off_reasoning == 0),
     ]
+    # Deliberately not asserted here: that thinking *on* produces reasoning. It
+    # is model behaviour, not plumbing — the same question with the same effort
+    # reasoned once and answered from memory the next time, which briefly looked
+    # like the effort was being dropped. test/wire-effort.py settles that
+    # question by reading the request body instead of the model's mood.
     print("\n--- checks ---")
     failed = 0
     for name, ok in checks:

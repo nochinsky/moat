@@ -1,4 +1,5 @@
 import { BUNDLE_CONFIG, BUNDLE_DIR, BUNDLE_PLUGIN, SANDBOX_WORKDIR } from "../lib/pins.ts"
+import { DEEPSEEK } from "../lib/provider.ts"
 
 /**
  * The opencode config is *rendered per boot*, not shipped static.
@@ -74,7 +75,24 @@ export type RenderInput = {
    */
   provider: { opencodeID: string; npm: string; native: boolean }
   modelID: string
+  /**
+   * Every model id the provider defines. The thinking variant is declared for
+   * all of them, not just `modelID`: `/model` switches at runtime, and a
+   * variant declared for one model only would vanish on a switch.
+   */
+  modelIDs?: string[]
   baseUrl: string
+  /**
+   * Send this provider's traffic somewhere other than its real endpoint, while
+   * keeping everything the catalog says about it — context window, price,
+   * reasoning levels, tool support.
+   *
+   * `--base-url` cannot express this: it switches to a custom provider, which
+   * means moat has to describe the model itself and loses the catalog. A
+   * DeepSeek-compatible gateway, or a proxy recording what actually goes
+   * upstream, wants the real definition with a different address.
+   */
+  upstream?: string
   preset: ToolPreset
   /** From the models.dev catalog, when it is known. */
   modelMeta?: { context?: number; output?: number; toolCall?: boolean; reasoning?: boolean; attachment?: boolean }
@@ -144,6 +162,31 @@ export function renderBundle(input: RenderInput): RenderedBundle {
             },
           },
         },
+      },
+    }
+  }
+
+  // DeepSeek thinking is on by default and cannot be turned off through the
+  // reasoning-effort numbers: the documented control is a separate parameter,
+  // `{"thinking": {"type": "disabled"}}`, and the effort scale has no "off"
+  // value (its weakest tier still thinks). opencode has no per-request field
+  // for that, but it does merge variants declared here over the ones it
+  // computes itself (packages/opencode/src/provider/provider.ts:1572), and a
+  // variant is exactly a bag of provider options applied to one request. So
+  // "off" becomes a variant, it shows up in `GET /config/providers` like any
+  // other, and `/think off` needs no special case anywhere.
+  //
+  // Only the variants are declared, never the whole model, so every other
+  // property — base URL, context window, cost, tool support — still comes from
+  // the models.dev catalog rather than being restated here.
+  if (native && input.provider.opencodeID === DEEPSEEK.opencodeID) {
+    const ids = [...new Set([input.modelID, ...(input.modelIDs ?? [])])]
+    config.provider = {
+      [DEEPSEEK.opencodeID]: {
+        models: Object.fromEntries(ids.map((id) => [id, { variants: { off: { thinking: { type: "disabled" } } } }])),
+        ...(input.upstream
+          ? { options: { baseURL: input.upstream, apiKey: `{env:${DEEPSEEK.envVar}}` } }
+          : {}),
       },
     }
   }

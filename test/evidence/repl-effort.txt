@@ -4,14 +4,16 @@
 › 
 › › /model
 
-›      1. deepseek/deepseek-flash                1M ctx · reasoning  effort: low high max
-›      2. deepseek/deepseek-v4-flash             1M ctx · reasoning  effort: low high max
-›      3. deepseek/deepseek-v4-flash-vision-exp  1M ctx · reasoning  effort: low high max
-›   ›  4. deepseek/deepseek-v4-pro               1M ctx · reasoning  effort: high max
+›      1. deepseek/deepseek-flash                1M ctx · reasoning  effort: off low high max
+›      2. deepseek/deepseek-v4-flash             1M ctx · reasoning  effort: off low high max  retired name
+›      3. deepseek/deepseek-v4-flash-vision-exp  1M ctx · reasoning  effort: off low high max  retired name
+›   ›  4. deepseek/deepseek-v4-pro               1M ctx · reasoning  effort: off high max
 › 
+›   retired names still work but are served by the current flash model
 ›   switch with /model <number or name>
 › › /think
 
+›     off  answer without thinking
 ›     high
 ›     max
 ›   › default (whatever the model does on its own)
@@ -22,25 +24,37 @@ effort is now max (applies to the next message)
 › › /status
 
 ›   project     /home/user/moat-demo/effort
-›   endpoint    http://127.0.0.1:33303
+›   endpoint    http://127.0.0.1:44507
 ›   model       deepseek/deepseek-v4-pro  (effort max)
 ›   agent       default
 ›   thinking    hidden
-›   branch      moat-session-2026-09-18-21-17
+›   branch      moat-session-2026-09-18-22-05
 ›   session     none yet
 ›   profiles    base only
-›   credential  14378s left
+›   credential  14377s left
 › 
 › › /think not-a-level
-"not-a-level" is not one of high, max for deepseek/deepseek-v4-pro
+"not-a-level" is not one of off, high, max for deepseek/deepseek-v4-pro
 › › /thinking
 showing reasoning (/thinking to hide)
-› › reply with exactly: ok
-│ ok
-› /quit
+› › How many times does the letter r appear in strawberry? Answer with just the number.
+
+  ⠋ thinking 1s  ⠙ thinking 1s  ⠹ thinking 1s  ⠸ thinking 1s  ⠼ thinking 1s  ⠴ thinking 2s  ⠦ thinking 2s  ⠧ thinking 2s  ⠇ thinking 2s  ⠏ thinking 2s  ⠋ thinking 2s  ⠙ thinking 2s  ⠹ thinking 2s  ⠸ thinking 2s  ⠼ thinking 2s  ⠴ thinking 3s  ⠦ thinking 3s  ⠧ thinking 3s  ⠇ thinking 3s│   3
+│ thinking   The word "strawberry" - s-t-r-a-w-b-e-r-r-y. Letters: s, t, r, a, w, b, e, r, r, y. The letter r appears at position 3, and positions 8, 9. So 3 times.
+
+  ─ 8.8k in · 2.3k cached · 2 out · 63 reasoning · 0 tools · 2.9s  <1% of context  $0.0045 off-peak
+› › /think off
+effort is now off (applies to the next message)
+› › How many times does the letter r appear in strawberry? Answer with just the number.
+
+  ⠇ thinking 1s  ⠏ thinking 1s  ⠋ thinking 1s  ⠙ thinking 1s  ⠹ thinking 1s  ⠸ thinking 2s  ⠼ thinking 2s  ⠴ thinking 2s  ⠦ thinking 2s  ⠧ thinking 2s│   3
+
+  ─ 8.7k in · 2.2k cached · 1 out · 0 tools · 1.9s  <1% of context  $0.0044 off-peak
+› › /quit
 
 
 server recorded variant for the turn: 'max'
+reasoning characters: with thinking 151, with thinking off 0
 
 --- checks ---
   pass  /model listed the DeepSeek models
@@ -51,5 +65,9 @@ server recorded variant for the turn: 'max'
   pass  /think refused a level that does not exist
   pass  /thinking toggled
   pass  the chosen effort reached the server
+  pass  /think offered the documented off switch
+  pass  /think off was accepted
+  pass  thinking off reached the server
+  pass  thinking off produced no reasoning
 
-8/8 checks passed
+12/12 checks passed

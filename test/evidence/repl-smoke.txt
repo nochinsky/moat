@@ -5,30 +5,33 @@
 › › /status
 
 ›   project     /home/user/moat-demo/slugkit
-›   endpoint    http://127.0.0.1:32927
+›   endpoint    http://127.0.0.1:38613
 ›   model       moat/mock-model
 ›   agent       default
 ›   thinking    hidden
-›   branch      moat-session-2026-09-18-21-13
+›   branch      moat-session-2026-09-18-22-01
 ›   session     none yet
 ›   profiles    node
-›   credential  14389s left
+›   credential  14385s left
 › 
 › › fix the failing tests and commit it
-  · bash      
-›   ✓ bash      pwd && ls -la && cat README.md
-›   · write     
-›   ✓ write     agent-output.txt
-›   · edit      
-›   ✓ edit      agent-output.txt
-›   · bash      
-›   ✓ bash      printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt
-›   · bash      
-›   ✓ bash      git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && gi
-› │ Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
-› /diff
 
-›   1165d7f agent: add agent-output.txt from inside the sandbox
+  ⠇ bash  ⠏ bash  ⠋ bash  ✓ bash       pwd && ls -la && cat README.md  147ms
+
+  ⠙ thinking 1s  ⠹ thinking 1s  ⠹ write  ✓ write      agent-output.txt  +1 21ms
+
+  ⠸ thinking 1s  ⠼ thinking 1s  ⠼ edit  ✓ edit       agent-output.txt  +1 -1 30ms
+
+  ⠴ thinking 2s  ⠦ thinking 2s  ⠦ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent…  39ms
+
+  ⠧ thinking 2s  ⠇ thinking 2s  ⠇ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sa…  27ms
+
+  ⠏ thinking 2s  ⠋ thinking 2s  ⠙ thinking 2s│   Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
+
+  ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 2.1s  6% of context  cost unknown
+› › /diff
+
+›   d91a6ef agent: add agent-output.txt from inside the sandbox
 › 
 ›    agent-output.txt | 2 ++
 ›    1 file changed, 2 insertions(+)
@@ -67,8 +70,12 @@
   pass  /status printed the environment
   pass  agent activity streamed live
   pass  the model's answer was displayed
+  pass  a turn summary was printed
+  pass  an unpriced model says cost unknown
+  pass  tool calls show elapsed time
+  pass  an edit reports lines added and removed
   pass  /diff reported the agent's work
   pass  /help listed the commands
   pass  commands still worked after the turn
 
-7/7 checks passed
+11/11 checks passed

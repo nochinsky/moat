@@ -95,8 +95,13 @@ DeepSeek  env=DEEPSEEK_API_KEY  https://api.deepseek.com
 ```
 
 `--model <id>` picks a different one. The environment remembers it, so you set it
-once. `--effort low|medium|high|max` sets the reasoning effort for a one-off run;
-inside a session, `/think` does the same thing.
+once. `--effort low|medium|high|max|off` sets the reasoning effort for a one-off
+run; inside a session, `/think` does the same thing.
+
+`--upstream URL` keeps DeepSeek's definition — context window, price, reasoning
+levels — and sends the traffic somewhere else. That is the flag for a gateway, or
+for a proxy you want to watch. It is not `--base-url`: that one *replaces* the
+provider, which means moat has to describe the model itself.
 
 **`--base-url`** points the agent at any OpenAI-compatible endpoint instead, which
 is how moat's own tests run against a local stub and how you would use a gateway
@@ -190,15 +195,16 @@ they do not all take the same levels:
 ```
 › /model
 
-     1. deepseek/deepseek-flash                1M ctx · reasoning  effort: low high max
-     2. deepseek/deepseek-v4-flash             1M ctx · reasoning  effort: low high max
-     3. deepseek/deepseek-v4-flash-vision-exp  1M ctx · reasoning  effort: low high max
-  ›  4. deepseek/deepseek-v4-pro               1M ctx · reasoning  effort: high max
+     1. deepseek/deepseek-flash                1M ctx · reasoning  effort: off low high max
+     2. deepseek/deepseek-v4-flash             1M ctx · reasoning  effort: off low high max  retired name
+     3. deepseek/deepseek-v4-flash-vision-exp  1M ctx · reasoning  effort: off low high max  retired name
+  ›  4. deepseek/deepseek-v4-pro               1M ctx · reasoning  effort: off high max
 
   switch with /model <number or name>
 
 › /think
 
+    off  answer without thinking
     high
   › max
     default (whatever the model does on its own)
@@ -206,9 +212,52 @@ they do not all take the same levels:
   set with /think <level>, or /think default to clear
 ```
 
+Two of those four are names DeepSeek has retired: they still work, but the
+requests are served by the current Flash model and billed at its price, so moat
+says so rather than presenting four live models. `/think off` turns thinking off
+entirely, which is a different thing from `low` — DeepSeek's effort scale has no
+"off" in it, and the weakest level still thinks.
+
 Both are remembered per project, so the next `moat` (and `moat run`) in that
 directory starts on the same model and effort. Leaving effort unset lets the
 model decide for itself.
+
+### What a turn looks like
+
+```
+› add a test for the empty string
+
+  ✓ read       src/slugify.js                                            0.4s
+  ✓ edit       src/slugify.js  +3 -1                                     0.7s
+  ✓ bash       npm test                                                  2.1s
+│   Added a case for `""` and made the pattern tolerate it.
+│
+│   ┌─ js
+│   │ return input.trim().replace(/\s+/g, "-")
+│   └─
+
+  ─ 8.9k in · 2.3k cached · 61 out · 6 tools · 3.6s  1% of context  $0.0044 off-peak
+```
+
+Each tool call is one row that updates in place — it starts as a spinner and ends
+with its elapsed time, rather than printing twice. A file change shows how many
+lines it added and removed. The answer is rendered as markdown.
+
+The footer is the honest accounting, and it is deliberately more detailed than a
+single number:
+
+- **in** counts the whole prompt; **cached** is the part DeepSeek served from its
+  context cache, which costs about thirty times less, so the split is the
+  difference between a cheap turn and an expensive one.
+- **reasoning** is listed separately because those tokens are billed at the
+  output rate and are otherwise invisible.
+- **peak / off-peak** is named because the identical turn costs twice as much
+  during DeepSeek's peak hours (01:00–04:00 and 06:00–10:00 UTC, Mon–Fri).
+
+The prices come from DeepSeek's published table, not from the model catalog
+opencode bills against — that catalog has `deepseek-v4-pro` at roughly a third of
+its real price and no notion of peak hours at all. A model with no published
+price says `cost unknown` rather than showing a number moat made up.
 
 Piping `moat run` output somewhere keeps it non-interactive, so scripts are
 unaffected. `--no-follow` forces that even at a terminal.

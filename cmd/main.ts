@@ -132,6 +132,7 @@ const SPEC: Spec = {
   "list-models": "boolean",
   "model-id": "string",
   "base-url": "string",
+  upstream: "string",
   credential: "string",
   "credential-env": "string",
   "credential-ttl": "string",
@@ -221,7 +222,16 @@ function ms(value: number): string {
 // provider, model and profile resolution
 // ---------------------------------------------------------------------------
 
-type ResolvedProvider = { opencodeID: string; label: string; npm: string; baseUrl: string; native: boolean; modelID: string }
+type ResolvedProvider = {
+  opencodeID: string
+  label: string
+  npm: string
+  baseUrl: string
+  /** Where traffic really goes, when it is not the catalog's own endpoint. */
+  upstream?: string
+  native: boolean
+  modelID: string
+}
 
 /**
  * DeepSeek, or whatever `--base-url` points at.
@@ -231,12 +241,17 @@ type ResolvedProvider = { opencodeID: string; label: string; npm: string; baseUr
  */
 function resolveProvider(p: Parsed, state?: EnvState | null): ResolvedProvider {
   const custom = flag<string>(p, "base-url")
+  const upstream = flag<string>(p, "upstream")
+  if (custom && upstream) {
+    log.fail("--base-url and --upstream are different things. --base-url replaces the provider; --upstream keeps it and moves its address.")
+  }
   if (custom) {
     return {
       opencodeID: CUSTOM_ENDPOINT.opencodeID,
       label: CUSTOM_ENDPOINT.label,
       npm: CUSTOM_ENDPOINT.npm,
       baseUrl: custom.replace(/\/+$/, ""),
+      upstream: undefined,
       native: false,
       modelID: flag<string>(p, "model") ?? state?.model?.split("/").pop() ?? DEEPSEEK.defaultModel,
     }
@@ -248,7 +263,8 @@ function resolveProvider(p: Parsed, state?: EnvState | null): ResolvedProvider {
       opencodeID: DEEPSEEK.opencodeID,
       label: DEEPSEEK.label,
       npm: DEEPSEEK.npm,
-      baseUrl: DEEPSEEK.baseUrl,
+      baseUrl: upstream?.replace(/\/+$/, "") ?? DEEPSEEK.baseUrl,
+      upstream: upstream?.replace(/\/+$/, ""),
       native: true,
       modelID: state.model.slice(DEEPSEEK.opencodeID.length + 1),
     }
@@ -257,7 +273,8 @@ function resolveProvider(p: Parsed, state?: EnvState | null): ResolvedProvider {
     opencodeID: DEEPSEEK.opencodeID,
     label: DEEPSEEK.label,
     npm: DEEPSEEK.npm,
-    baseUrl: DEEPSEEK.baseUrl,
+    baseUrl: upstream?.replace(/\/+$/, "") ?? DEEPSEEK.baseUrl,
+    upstream: upstream?.replace(/\/+$/, ""),
     native: true,
     modelID: flag<string>(p, "model") ?? DEEPSEEK.defaultModel,
   }
@@ -268,6 +285,8 @@ type ResolvedModel = {
   modelID: string
   model: string
   native: boolean
+  /** Every model id the provider defines, for declaring per-model config. */
+  modelIDs: string[]
   meta: { context?: number; output?: number; toolCall?: boolean; reasoning?: boolean; attachment?: boolean } | undefined
 }
 
@@ -295,6 +314,17 @@ async function resolveModel(provider: ResolvedProvider, catalog: Catalog | null)
     modelID,
     model: `${providerID}/${modelID}`,
     native: useNative,
+    /**
+     * Every model id this provider defines, so the bundle can declare its
+     * variants for all of them and not just the one being booted. `/model`
+     * switches between them at runtime, and a variant declared only for the
+     * boot model would silently disappear after a switch.
+     *
+     * The chosen model is always included: for a custom endpoint there is no
+     * catalog entry to enumerate, and for a native model the catalog may not
+     * know the id the user asked for.
+     */
+    modelIDs: [...new Set([modelID, ...(catalogProvider?.models.map((m) => m.id) ?? [])])],
     meta: known
       ? {
           context: known.context,
@@ -630,7 +660,9 @@ ${command}
     render: {
       provider,
       modelID: resolvedModel.modelID,
+      modelIDs: resolvedModel.modelIDs,
       baseUrl,
+      upstream: provider.upstream,
       preset: toolPreset,
       modelMeta: resolvedModel.meta,
     },
@@ -1840,6 +1872,9 @@ Options that apply to up/run
   --no-detect            do not guess a profile from the project
   --tools core|extended  core = 8 coding tools (default); extended adds webfetch + subagents
   --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek
+  --upstream URL         keep DeepSeek but send its traffic elsewhere (a gateway,
+                         or a proxy you are inspecting). Unlike --base-url this
+                         keeps the catalog: context window, price, effort levels.
   --credential-env NAME  host env var holding the key   --credential-ttl 4h
   --continue             continue the last session instead of starting a new one
   --show-output          print each tool's output as it runs

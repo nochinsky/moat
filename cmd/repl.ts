@@ -12,6 +12,21 @@ import { fetchBranch, listSandboxBranches, sandboxWorktreeChanges, suggestBranch
 import { detectChecks } from "../lib/detect.ts"
 import { applyPlan, describePlan, planApply, type ApplyPlan } from "../sync/apply.ts"
 import { runChecks } from "../sandbox/checks.ts"
+import { computeCost, describeRate, isRetiredModel, usageOf } from "../lib/pricing.ts"
+import {
+  AnswerRenderer,
+  colourEnabled,
+  editDiff,
+  formatError,
+  makeTheme,
+  outputLines,
+  spinnerFrame,
+  stripAnsi,
+  toolLine,
+  turnSummaryLine,
+  type ToolCallView,
+  type TurnSummary,
+} from "./display.ts"
 import {
   authHeaders,
   baseUrl,
@@ -55,13 +70,31 @@ export type ReplOptions = {
   sessionID?: string
 }
 
-const DIM = "\u001b[2m"
-const BOLD = "\u001b[1m"
-const GREEN = "\u001b[32m"
-const RED = "\u001b[31m"
-const YELLOW = "\u001b[33m"
-const CYAN = "\u001b[36m"
-const RESET = "\u001b[0m"
+/**
+ * Colour, decided once.
+ *
+ * These are plain strings rather than the theme's functions because most of
+ * this file builds lines by interpolation, where nested calls read badly. They
+ * are derived from `makeTheme` so the decision itself — NO_COLOR, FORCE_COLOR,
+ * TERM=dumb, not a terminal — is made in exactly one place, and the codes match
+ * the ones `cmd/display.ts` emits. `DIM` is bright black (90), not faint (2):
+ * faint renders as nothing at all in a number of terminals, which silently
+ * loses every piece of secondary information in the session.
+ */
+const theme = makeTheme(colourEnabled())
+const COLOUR = theme.enabled
+const BOLD = COLOUR ? "\u001b[1m" : ""
+const DIM = COLOUR ? "\u001b[90m" : ""
+const GREEN = COLOUR ? "\u001b[32m" : ""
+const RED = COLOUR ? "\u001b[31m" : ""
+const YELLOW = COLOUR ? "\u001b[33m" : ""
+const RESET = COLOUR ? "\u001b[0m" : ""
+
+/** How wide the terminal is, with a sane guess when it will not say. */
+function terminalWidth(): number {
+  const columns = process.stdout.columns
+  return typeof columns === "number" && columns > 20 ? columns : 100
+}
 
 export async function runRepl(options: ReplOptions): Promise<number> {
   const client = await connect(options.state, options.password, SANDBOX_WORKDIR)
@@ -69,7 +102,6 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   let sessionID = options.sessionID ?? (await newestSession(client))
   let busy = false
   let typing = false // an assistant text block is open on the current line
-  let block: "text" | "thought" | null = null
   let exitCode = 0
   let closed = false
   // A question the agent asked, waiting for the user's next line. While this is
@@ -125,55 +157,169 @@ export async function runRepl(options: ReplOptions): Promise<number> {
     historySize: 200,
   })
 
+  /**
+   * The one row that may be rewritten in place.
+   *
+   * Everything else moat prints is committed to scrollback and never touched
+   * again, which is what makes the transcript safe to scroll and copy. A running
+   * tool call is the exception: it starts as `⠹ bash npm test` and ends as
+   * `✓ bash npm test 2.1s`, and printing those as two rows doubles the height of
+   * every turn for no information. So the running row is retained, repainted
+   * while it runs, and replaced in place on completion.
+   *
+   * The kind matters when it comes time to clear it. A finished tool row is part
+   * of the record and is kept; a "thinking" row is a transient stand-in and is
+   * erased, because leaving it behind would litter the transcript with a line
+   * that says nothing once the answer has arrived.
+   *
+   * Repainting is only safe because such a row is kept to one terminal line —
+   * see the width argument to `toolLine` — and because nothing else is written
+   * while it is live.
+   */
+  let live: { text: string; kind: "tool" | "thinking" } | null = null
+  /** True while readline's `› ` prompt occupies the current line. */
+  let promptShowing = false
+
+  /** Print the live row, or repaint it if one is already showing. */
+  const drawLive = (text: string, kind: "tool" | "thinking"): void => {
+    if (!terminal) {
+      if (live === null) process.stdout.write(`${text}\n`)
+      live = { text, kind }
+      return
+    }
+    if (live === null) process.stdout.write("\n")
+    else {
+      readline.clearLine(process.stdout, 0)
+      readline.cursorTo(process.stdout, 0)
+    }
+    process.stdout.write(text)
+    live = { text, kind }
+    promptShowing = false
+  }
+
+  /**
+   * Get the current line ready for output, once.
+   *
+   * Called at the moment something is actually about to be written, never in
+   * anticipation of it. That distinction is the whole point: the token stream
+   * arrives in tiny fragments that the renderer buffers until a line is
+   * complete, so clearing on every fragment would blank the spinner and leave
+   * nothing in its place for as long as it takes the line to finish.
+   *
+   * Also idempotent, so a caller may invoke it before each write without
+   * clearing the line it just wrote.
+   */
+  const beginOutput = (): void => {
+    if (live) {
+      const kind = live.kind
+      live = null
+      if (terminal) {
+        readline.clearLine(process.stdout, 0)
+        readline.cursorTo(process.stdout, 0)
+        // A tool row is worth keeping, so end its line rather than erasing it.
+        if (kind === "tool") process.stdout.write("\n")
+      }
+      promptShowing = false
+    }
+    if (promptShowing && terminal) {
+      readline.clearLine(process.stdout, 0)
+      readline.cursorTo(process.stdout, 0)
+      promptShowing = false
+    }
+  }
+
+  /** Draw the live row, or replace it if one is already showing. */
+  const commitLive = (text: string, kind: "tool" | "thinking" = "tool"): void => {
+    drawLive(text, kind)
+    if (live) live.text = text
+    if (kind === "tool") {
+      live = null
+      if (terminal) process.stdout.write("\n")
+    }
+  }
+
   /** Write a complete line without trampling whatever the user is typing. */
   const say = (text: string): void => {
+    beginOutput()
     if (typing) {
       process.stdout.write("\n")
       typing = false
     }
-    block = null
-    if (terminal) {
-      readline.clearLine(process.stdout, 0)
-      readline.cursorTo(process.stdout, 0)
-    }
     process.stdout.write(`${text}\n`)
-    if (terminal && !closed) rl.prompt(true)
+    prompt()
   }
 
   /**
-   * Append streamed output to the open block.
+   * Streamed output, rendered a line at a time.
    *
-   * Assistant text and reasoning share the transport, so the block tracks which
-   * kind is open: switching between them closes one and opens the other rather
-   * than running the two together on one line.
+   * The renderer owns the markdown and the gutter and decides when a line is
+   * ready; this only gets the terminal into a state where writing is safe, and
+   * only at the moment there is something to write.
    */
-  const streamBlock = (kind: "text" | "thought", chunk: string): void => {
-    if (block !== kind) {
-      if (block !== null) process.stdout.write("\n")
-      if (terminal) {
-        readline.clearLine(process.stdout, 0)
-        readline.cursorTo(process.stdout, 0)
-      }
-      process.stdout.write(kind === "text" ? `${DIM}\u2502${RESET} ` : `${DIM}${CYAN}\u2502 thinking${RESET} `)
-      block = kind
-      if (kind === "thought") typing = false
-    }
-    const prefix = kind === "text" ? `\n${DIM}\u2502${RESET} ` : `\n${DIM}${CYAN}\u2502${RESET} `
-    process.stdout.write(chunk.replace(/\n(?!$)/g, prefix))
+  const sink = (text: string): void => {
+    beginOutput()
+    process.stdout.write(text)
     typing = true
   }
+  const answer = new AnswerRenderer(theme, sink)
+  const reasoning = new AnswerRenderer(theme, sink, theme.thoughtGutter)
 
-  /** Append streamed assistant text to the open line. */
-  const stream = (chunk: string): void => streamBlock("text", chunk)
+  /** Append streamed assistant text. */
+  const stream = (chunk: string): void => answer.push(chunk)
 
   /** Append streamed reasoning. Dimmed and marked so it is never mistaken for the answer. */
-  const streamThought = (chunk: string): void => streamBlock("thought", chunk)
+  const streamThought = (chunk: string): void => reasoning.push(chunk)
+
+  /** Close whichever block is open, so the next thing starts on its own line. */
+  const endBlocks = (): void => {
+    answer.flush()
+    reasoning.flush()
+    if (typing) {
+      process.stdout.write("\n")
+      typing = false
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // the busy indicator
+  // ---------------------------------------------------------------------------
+  // One interval, running only while a turn is in flight, driving whichever row
+  // is live: the running tool call if there is one, otherwise a "thinking" row
+  // so a long silent turn does not look like a hang. Both are repainted in
+  // place, and the thinking row is skipped entirely while the user has typed
+  // something, because stealing the input line out from under someone mid-word
+  // is far worse than a missing animation.
+  let tick = 0
+  let turnStarted = 0
+  let spinner: NodeJS.Timeout | null = null
+
+  const paint = (): void => {
+    tick++
+    const frame = spinnerFrame(tick)
+    if (activeTool) {
+      activeTool.spinner = frame
+      drawLive(toolLine(activeTool, theme, terminalWidth()), "tool")
+      return
+    }
+    if (rl.line !== "") return
+    const elapsed = Date.now() - turnStarted
+    if (elapsed < 1000) return
+    drawLive(`  ${DIM}${frame} thinking ${Math.round(elapsed / 1000)}s${RESET}`, "thinking")
+  }
+
+  const startSpinner = (): void => {
+    if (!terminal || spinner) return
+    spinner = setInterval(paint, 100)
+  }
+
+  const stopSpinner = (): void => {
+    if (!spinner) return
+    clearInterval(spinner)
+    spinner = null
+  }
 
   const askQuestion = (request: { id: string; questions: QuestionInfo[] }): void => {
-    if (terminal) {
-      readline.clearLine(process.stdout, 0)
-      readline.cursorTo(process.stdout, 0)
-    }
+    beginOutput()
     pending = { requestID: request.id, questions: request.questions, index: 0, answers: [] }
     renderQuestion()
   }
@@ -242,7 +388,9 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   }
 
   const prompt = (): void => {
-    if (terminal && !closed) rl.prompt(true)
+    if (!terminal || closed) return
+    rl.prompt(true)
+    promptShowing = true
   }
 
   // ---------------------------------------------------------------------------
@@ -252,6 +400,53 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   const subscription = await client.event.subscribe({ signal: controller.signal })
 
   const toolStatus = new Map<string, string>()
+  /** When each call started, for the elapsed time shown when it finishes. */
+  const startedAt = new Map<string, number>()
+  /** The call currently occupying the live row, if any. */
+  let activeTool: (ToolCallView & { status: string }) | null = null
+  /**
+   * Token and cost totals for the turn in flight, keyed by message id.
+   *
+   * `message.updated` fires repeatedly for the same message as its usage grows,
+   * so this is a map and not a counter — summing the events would multiply the
+   * turn's cost several times over.
+   */
+  let turnUsage = new Map<string, { tokens: unknown; at: number }>()
+  let contextLimit: number | undefined
+
+  const costOfTurn = (): TurnSummary => {
+    let prompt = 0
+    let cached = 0
+    let output = 0
+    let reasoningTokens = 0
+    let usd = 0
+    let known = true
+    const { providerID, modelID } = splitModel(modelRef)
+    void providerID
+    for (const entry of turnUsage.values()) {
+      const usage = usageOf(entry.tokens)
+      prompt += usage.input
+      cached += usage.cacheRead
+      output += usage.output
+      reasoningTokens += usage.reasoning
+      const cost = computeCost(modelID, usage, new Date(entry.at))
+      if (!cost.known) known = false
+      usd += cost.usd
+    }
+    return {
+      promptTokens: prompt + cached,
+      cachedTokens: cached,
+      outputTokens: output,
+      reasoningTokens,
+      usd,
+      costKnown: known && turnUsage.size > 0,
+      peak: describeRate() === "peak",
+      tools: toolStatus.size,
+      failed: [...toolStatus.values()].filter((s) => s === "error").length,
+      ms: turnStarted > 0 ? Date.now() - turnStarted : 0,
+      contextLimit,
+    }
+  }
   // Streaming text arrives as `message.part.delta`, which carries only a part
   // id — not whether that part is the answer, the model's reasoning, or the
   // user's own prompt echoed back. So the parts are catalogued from the
@@ -268,8 +463,15 @@ export async function runRepl(options: ReplOptions): Promise<number> {
         if (props.sessionID && props.sessionID !== sessionID) continue
 
         if (e.type === "message.updated") {
-          const info = props.info as { id?: string; role?: string } | undefined
-          if (info?.role === "assistant" && info.id) assistantMessages.add(info.id)
+          const info = props.info as
+            | { id?: string; role?: string; tokens?: unknown; time?: { created?: number; completed?: number } }
+            | undefined
+          if (info?.role === "assistant" && info.id) {
+            assistantMessages.add(info.id)
+            // Billed tokens, not an estimate: these are what the provider
+            // reported for the message, so the turn total is the real one.
+            turnUsage.set(info.id, { tokens: info.tokens, at: info.time?.completed ?? Date.now() })
+          }
           continue
         }
 
@@ -299,20 +501,53 @@ export async function runRepl(options: ReplOptions): Promise<number> {
             const key = part.callID ?? part.tool
             if (toolStatus.get(key) === status) continue
             toolStatus.set(key, status)
-            const title = String(part.state?.title ?? "").split("\n")[0]?.slice(0, 90) ?? ""
+            const title = stripAnsi(String(part.state?.title ?? "")).split("\n")[0] ?? ""
+
             if (status === "running") {
-              say(`  ${DIM}\u00b7 ${part.tool.padEnd(9)}${RESET} ${DIM}${title}${RESET}`)
+              // Retain the row and repaint it; see `live`.
+              activeTool = { tool: part.tool, status, title, spinner: spinnerFrame(tick) }
+              startedAt.set(key, Date.now())
+              drawLive(toolLine(activeTool, theme, terminalWidth()), "tool")
               busy = true
-            } else if (status === "completed") {
-              say(`  ${GREEN}\u2713${RESET} ${part.tool.padEnd(9)} ${title}`)
+              continue
+            }
+
+            const begin = startedAt.get(key)
+            const view = activeTool && activeTool.tool === part.tool
+              ? activeTool
+              : { tool: part.tool, status, title }
+            view.status = status
+            view.title = title
+            if (begin !== undefined) view.ms = Date.now() - begin
+
+            // Show what an edit actually did, rather than just its filename.
+            const input = part.state?.input as { filePath?: string; oldString?: string; newString?: string; content?: string } | undefined
+            if (status === "completed" && input && (part.tool === "edit" || part.tool === "write")) {
+              const diff = editDiff(
+                part.tool === "write" ? "" : input.oldString,
+                part.tool === "write" ? input.content : input.newString,
+                theme,
+              )
+              view.added = diff.added
+              view.removed = diff.removed
               if (verbose) {
-                const out = String(part.state?.output ?? "").trimEnd()
-                for (const line of out.split("\n").slice(0, 12)) say(`      ${DIM}${line}${RESET}`)
+                commitLive(toolLine(view, theme, terminalWidth()))
+                for (const line of diff.lines) say(line)
+                activeTool = null
+                continue
               }
-            } else if (status === "error") {
-              say(`  ${RED}\u2717${RESET} ${part.tool.padEnd(9)} ${title}`)
-              say(`      ${RED}${String(part.state?.error ?? "").split("\n")[0]}${RESET}`)
+            }
+
+            commitLive(toolLine(view, theme, terminalWidth()))
+            activeTool = null
+
+            if (status === "error") {
+              const detail = stripAnsi(formatError(part.state?.error ?? part.state?.output))
+              say(`      ${RED}${detail.split("\n")[0] ?? "failed"}${RESET}`)
               exitCode = 1
+            } else if (verbose) {
+              const out = stripAnsi(String(part.state?.output ?? ""))
+              if (out.trim() !== "") for (const line of outputLines(out, theme)) say(line)
             }
           }
           continue
@@ -336,18 +571,25 @@ export async function runRepl(options: ReplOptions): Promise<number> {
         }
 
         if (e.type === "session.idle") {
-          if (typing) {
-            process.stdout.write("\n")
-            typing = false
+          stopSpinner()
+          endBlocks()
+          // Commit a running row that never reported a finish, rather than
+          // leaving it on screen looking like it is still going.
+          if (activeTool) {
+            commitLive(toolLine({ ...activeTool, status: "completed" }, theme, terminalWidth()))
+            activeTool = null
           }
-          block = null
           busy = false
+          const summary = costOfTurn()
+          if (summary.tools > 0 || summary.outputTokens > 0) say(turnSummaryLine(summary, theme))
           prompt()
           continue
         }
 
         if (e.type === "session.error") {
-          say(`${RED}session error:${RESET} ${JSON.stringify(props.error ?? props).slice(0, 300)}`)
+          stopSpinner()
+          endBlocks()
+          say(`${RED}session error:${RESET} ${stripAnsi(formatError(props.error ?? props)).slice(0, 300)}`)
           busy = false
         }
       }
@@ -361,7 +603,16 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   const send = async (text: string): Promise<void> => {
     if (!sessionID) sessionID = await createSession(client)
     const { providerID, modelID } = splitModel(modelRef)
+    // A turn's numbers are per-turn, so everything that accumulates is reset
+    // here rather than at the end, so a turn that never reports idle cannot
+    // leak its totals into the next one.
+    turnUsage = new Map()
+    toolStatus.clear()
+    startedAt.clear()
+    activeTool = null
+    turnStarted = Date.now()
     busy = true
+    startSpinner()
     try {
       await client.session.promptAsync({
         path: { id: sessionID },
@@ -370,8 +621,24 @@ export async function runRepl(options: ReplOptions): Promise<number> {
         body: promptBody({ prompt: text, providerID, modelID, agent, variant: effort ?? undefined }),
       })
     } catch (error) {
+      stopSpinner()
       busy = false
       say(`${RED}could not send:${RESET} ${(error as Error).message}`)
+    }
+  }
+
+  /**
+   * The context window of the current model, for the usage proportion in the
+   * turn summary. Fetched once and refreshed when the model changes; a failure
+   * here is not worth reporting, the summary simply omits the proportion.
+   */
+  const refreshContextLimit = async (): Promise<void> => {
+    try {
+      const { providerID, modelID } = splitModel(modelRef)
+      const models = await listModels(client)
+      contextLimit = models.find((m) => m.providerID === providerID && m.id === modelID)?.context || undefined
+    } catch {
+      contextLimit = undefined
     }
   }
 
@@ -498,10 +765,16 @@ export async function runRepl(options: ReplOptions): Promise<number> {
             const ref = `${m.providerID}/${m.id}`
             const mark = ref === modelRef ? `${GREEN}\u203a${RESET}` : " "
             const effortNote = m.variants.length > 0 ? `  ${DIM}effort: ${m.variants.join(" ")}${RESET}` : ""
-            say(`  ${mark} ${String(index + 1).padStart(2)}. ${ref.padEnd(width)}  ${DIM}${formatContext(m)}${RESET}${effortNote}`)
+            // DeepSeek still accepts the old names but has retired the models
+            // behind them: requests go to the current Flash model and are billed
+            // at its price. Listing them as though they were four live models
+            // would be a quiet lie, so they are marked.
+            const retired = isRetiredModel(m.id) ? `  ${YELLOW}retired name${RESET}` : ""
+            say(`  ${mark} ${String(index + 1).padStart(2)}. ${ref.padEnd(width)}  ${DIM}${formatContext(m)}${RESET}${effortNote}${retired}`)
           })
           say("")
           if (effort) say(`  ${DIM}effort for this session: ${effort}${RESET}`)
+          say(`  ${DIM}retired names still work but are served by the current flash model${RESET}`)
           say(`  switch with ${BOLD}/model <number or name>${RESET}`)
           return
         }
@@ -524,6 +797,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
           effort = null
         }
         persist({ model: modelRef, effort })
+        await refreshContextLimit()
         say(`model is now ${BOLD}${modelRef}${RESET}`)
         if (dropped) {
           say(`  ${YELLOW}effort "${dropped}" is not available on this model, so it was cleared${RESET}`)
@@ -547,7 +821,8 @@ export async function runRepl(options: ReplOptions): Promise<number> {
           say("")
           for (const level of levels) {
             const mark = level === effort ? `${GREEN}\u203a${RESET}` : " "
-            say(`  ${mark} ${BOLD}${level}${RESET}`)
+            const note = level === "off" ? `  ${DIM}answer without thinking${RESET}` : ""
+            say(`  ${mark} ${BOLD}${level}${RESET}${note}`)
           }
           const mark = effort === null ? `${GREEN}\u203a${RESET}` : " "
           say(`  ${mark} ${DIM}default (whatever the model does on its own)${RESET}`)
@@ -556,7 +831,11 @@ export async function runRepl(options: ReplOptions): Promise<number> {
           return
         }
 
-        if (wanted === "default" || wanted === "off" || wanted === "none") {
+        // Only `default` clears. `off` used to be an alias for this, from before
+        // moat exposed DeepSeek's thinking switch; it is now a real level meaning
+        // "do not think at all", and treating it as "unset" silently turned the
+        // one setting a user would reach for into the opposite of itself.
+        if (wanted === "default") {
           effort = null
           persist({ effort })
           return say(`effort cleared; ${modelRef} will use its own default`)
@@ -805,10 +1084,14 @@ exec /bin/bash -l
   })
   rl.on("close", () => {
     closed = true
+    stopSpinner()
     controller.abort()
   })
 
   // ---------------------------------------------------------------------------
+  // Learn the context window before the banner, so the first turn summary can
+  // show how full the window is.
+  await refreshContextLimit()
   const effortLabel = effort ? ` \u00b7 effort ${effort}` : ""
   say("")
   say(`${BOLD}moat${RESET} ${DIM}\u00b7 ${modelRef}${effortLabel} \u00b7 ${options.paths.projectDir}${RESET}`)

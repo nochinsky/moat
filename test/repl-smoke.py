@@ -147,6 +147,16 @@ def main() -> int:
         # tool calls and none of the answers, which is exactly what happened
         # here for a while without any test noticing.
         ("the model's answer was displayed", "Task complete" in text),
+        # The turn footer is the honest summary: billed tokens, elapsed time and
+        # what it cost. A model with no published price must say so rather than
+        # print a number it made up, which is what `cost unknown` is.
+        ("a turn summary was printed",
+         re.search(r"\u2500 .*\bin\b.*\bout\b.*tool", text) is not None),
+        ("an unpriced model says cost unknown", "cost unknown" in text),
+        # Every tool row carries its own elapsed time, and a file change says how
+        # much changed — the two things you scan a transcript for.
+        ("tool calls show elapsed time", re.search(r"(bash|write|edit|read)\s+.*\d+ms", text) is not None),
+        ("an edit reports lines added and removed", re.search(r"\+\d+ -\d+", text) is not None),
         ("/diff reported the agent's work", "agent-output.txt" in text or "nothing changed yet" in text),
         ("/help listed the commands", "/stop" in text and "/take" in text and "/shell" in text),
         ("commands still worked after the turn", "/help" in text and "/shell" in text),

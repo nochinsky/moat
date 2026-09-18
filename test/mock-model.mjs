@@ -46,7 +46,7 @@ function record(entry) {
   fs.appendFileSync(recordPath, `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`)
 }
 
-function sseChunk(response, delta, finish = null) {
+function sseChunk(response, delta, finish = null, usage = null) {
   const payload = {
     id: "chatcmpl-moat",
     object: "chat.completion.chunk",
@@ -54,6 +54,12 @@ function sseChunk(response, delta, finish = null) {
     model: modelName,
     choices: [{ index: 0, delta, finish_reason: finish }],
   }
+  // A final chunk carrying `usage` and no choices is how the OpenAI streaming
+  // format reports token accounting, and it is what opencode reads to fill in a
+  // message's token counts. Without it the stub reports zero tokens for every
+  // turn, so moat's cost and context display could not be tested at all — the
+  // real provider always reports this.
+  if (usage) payload.usage = usage
   response.write(`data: ${JSON.stringify(payload)}\n\n`)
 }
 
@@ -165,6 +171,18 @@ const server = http.createServer(async (req, res) => {
     sseChunk(res, {}, "stop")
   }
 
+  // Indicative counts, scaled by the request so the numbers are not constant:
+  // enough for the display to have something real to reconcile against.
+  const promptTokens = 900 + (body.messages ?? []).length * 40
+  const completionTokens = step.tool ? 24 : Math.max(6, String(step.text ?? "").length >> 2)
+  sseChunk(res, {}, null, {
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: promptTokens + completionTokens,
+    prompt_cache_hit_tokens: Math.floor(promptTokens / 3),
+    prompt_cache_miss_tokens: promptTokens - Math.floor(promptTokens / 3),
+    completion_tokens_details: { reasoning_tokens: step.tool ? 8 : 0 },
+  })
   res.write(`data: [DONE]\n\n`)
   res.end()
 })
