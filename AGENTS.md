@@ -1,0 +1,174 @@
+# Working on moat
+
+Read this before changing anything. Most of the design here is load-bearing, and
+several constraints are not obvious from the code.
+
+## The idea
+
+moat runs an AI coding agent inside a disposable Linux sandbox. The agent gets a
+copy of the project, a package manager, an open network, and no permission
+prompts. Everything it can break is inside the box. Your machine holds the only
+copy that matters, and nothing crosses back until you say so.
+
+That is the whole product: **autonomy without prompts**, bought by making the
+blast radius a box instead of a home directory.
+
+It is deliberately not a confidentiality boundary. The agent has to read the
+project to work on it and has to read the key to call the model, so it has both,
+and with egress open it can send both anywhere. Every claim in the docs is written
+to keep that distinction visible rather than to paper over it. If you find
+yourself writing "secure" or "safe" without a qualifier, stop.
+
+The direction of travel is a production-ready harness: something you would hand to
+a colleague. It is not there yet — see *Where this is going*.
+
+## Invariants
+
+Breaking any of these breaks the product, not a feature.
+
+1. **The host filesystem is never mounted into the sandbox.** The project is
+   copied (`git clone --no-hardlinks`), never bind-mounted. The only host
+   mounts are six read-only device nodes. `moat doctor` prints the mount table.
+2. **No credential ever reaches the image.** It is passed as an environment
+   variable to the sandbox process, and `bundle/install.ts` refuses to install a
+   bundle containing something that looks like a literal key.
+3. **`permission: {"*": "allow"}` and nothing else.** No deny rules, ever.
+   `bundle/render.ts` asserts this before a config can reach a boot, and the
+   plugin re-checks it inside the box.
+4. **Copy-out is explicit.** `moat fetch` writes one ref; `moat apply` is a
+   separate command. The host tree is provably unchanged until the user says so.
+5. **No host environment, SSH agent or dotfiles are forwarded.** `moat doctor`
+   diffs the sandbox environment against the host's on every run.
+6. **The agent loop, its tools and the filesystem live inside the box.** The host
+   is an HTTP client of the server in the sandbox. Nothing is proxied.
+7. **No container runtime.** `unshare` + `mount` + `chroot` directly. No Docker,
+   no podman, no daemon. This is a constraint, not an accident.
+8. **One provider.** DeepSeek. No provider registry, no `--provider`, no
+   inference of a provider from the environment. `--base-url` is an escape hatch
+   for an OpenAI-compatible endpoint, not the beginning of a provider system.
+
+## Layout
+
+```
+cmd/main.ts      the CLI; all UX lives here
+cmd/repl.ts      the interactive session
+cmd/client.ts    the HTTP client for the sandbox's server
+cmd/display.ts   markdown, tool rows, the turn footer — pure functions
+sandbox/         rootfs, namespaces, profiles, snapshots, isolation checks
+sync/            copy-in and copy-out, and the three-way apply
+secrets/         the credential broker and first-run onboarding
+bundle/          the rendered opencode config, the plugin, the agent brief
+lib/             provider, models.dev catalog, pricing, host probe, hashing
+test/            the model stub, the pty suites, and the evidence they write
+docs/            SPEC (the contract), VERIFICATION (the evidence),
+                 UPSTREAM-CANDIDATES (opencode changes moat would like)
+```
+
+## Running it
+
+`node` 22.18+ strips TypeScript types natively, so there is no build step. `moat`
+is wired with `npm link` and runs the source directly.
+
+```bash
+bash test/e2e.sh          # acceptance criteria, ~4 min, no API key
+bash test/e2e-extras.sh   # snapshots, apply, credential expiry, the pty suites
+DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
+```
+
+Raw output lands in `test/evidence/`, which is committed and quoted by
+`docs/VERIFICATION.md`. Regenerate it by running the suites; do not hand-edit it.
+
+**CI cannot run the sandbox suite.** GitHub's hosted runners cannot create
+unprivileged user namespaces — `max_user_namespaces` is fine and AppArmor can be
+lifted, but `unshare` is killed by the runner's own confinement. The workflow
+reports that as a warning rather than pretending a suite ran. Run the suites
+locally before pushing anything that touches `sandbox/`.
+
+## Traps
+
+Things that cost real time. Each of these was hit and diagnosed once already.
+
+**Namespaces**
+
+* `mknod` is denied inside a user namespace. Device nodes are bind-mounted
+  read-only from the host instead — those six binds are the only host mounts.
+* `devpts` fails with `EINVAL` if you pass `gid=5`, because that gid is not mapped
+  in a single-id userns.
+* `/proc/self/ns/mount` does not exist. The symlink is `mnt`.
+* PID 1 ignores default signal dispositions, so a watchdog cannot `kill -TERM 1`.
+  The agent runs as a child and the watchdog signals that pid.
+
+**opencode 1.18.31**
+
+* The model-facing argument for file tools is `filePath`, not `path`. opencode's
+  internal schemas say `path`; the schema it shows the model renames it. A guard
+  checking the wrong spelling matches nothing and confines nothing, silently.
+* Streamed text arrives as `message.part.delta`, **not** as a `delta` field on
+  `message.part.updated`. Reading the wrong one renders tool calls and no answers.
+* An unknown reasoning variant is *ignored*, not rejected. Never hardcode the
+  levels: read them from `GET /config/providers` per model.
+* `GET /config/providers` returns a `default` field that is opencode's own notion
+  of the provider's preferred model and has nothing to do with moat's config. The
+  effective model is `model` in `GET /config`.
+* The `shell.env` hook is an overlay, so `delete`ing a key does nothing. Secret
+  names are overridden to `""` instead.
+* Plugin hook names are `permission.ask` (not `permission.asked`). Verified
+  against `packages/plugin/src/index.ts`, not from memory.
+* The bundle is reinstalled on **every** boot. A cached image serving a stale
+  plugin is a bug that already happened once.
+* Requirement 4 — advertising exactly the curated tool set — is **not achievable**
+  in 1.18.31. The bundle refuses to *execute* anything outside the curated set
+  instead. `moat tools` prints the gap. Do not "fix" this by hiding the gap.
+
+**DeepSeek**
+
+* models.dev prices are wrong for `deepseek-v4-pro`, and it has no notion of peak
+  hours, which double every rate. `lib/pricing.ts` holds the published table.
+* In opencode's token accounting, `input` is the cache-**miss** count and
+  `cache.read` is the hit count. `reasoning` is billed at the output rate as a
+  field separate from `output`.
+* `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are retired names served
+  by the current Flash model. `deepseek-flash` is the current name.
+
+**This codebase**
+
+* Node's type stripping cannot desugar TypeScript parameter properties
+  (`constructor(private readonly x: T)`). Use plain fields. `tsconfig` sets
+  `erasableSyntaxOnly`, so this fails at typecheck.
+* The published SDK's generated types lag the server in several places
+  (`variant` on the prompt body, `variants` on a model). Return such objects from
+  a function rather than writing them as inline literals, and TypeScript stops
+  complaining — it only rejects unknown properties on fresh literals.
+
+## What is verified, and what is not
+
+`docs/VERIFICATION.md` is the authority, and it is deliberately organised so that
+absence is not mistaken for success. Read its closing table before claiming
+anything works.
+
+Two rules the suite follows, worth preserving:
+
+* **Assert on the thing, not on moat's account of the thing.** `test/wire-effort.py`
+  reads the actual request body through a recording proxy rather than asking
+  opencode which variant it recorded.
+* **A check that cannot fail is not a check.** When adding a regression guard,
+  reintroduce the bug and watch it fail before trusting it.
+
+## Where this is going
+
+Not built, in rough order of how much they matter:
+
+* **Egress policy.** The network is currently open. This is the largest remaining
+  exposure and the reason the docs say the key must be disposable.
+* **Provider-side credential scoping** — short-lived, spend-capped tokens minted
+  per boot, instead of borrowing a long-lived key.
+* **Cost ceilings.** The turn footer reports what a turn cost; nothing stops it.
+* **v1: a microVM.** The current isolation is namespaces, which is v0. `/dev/kvm`
+  exists on this host but is not accessible to the user.
+* **Exact tool advertisement**, which needs an upstream change (see
+  `docs/UPSTREAM-CANDIDATES.md`).
+
+If you are picking this up: the sandbox, the copy-in/copy-out and the credential
+broker are the parts that matter and they are done. The agent runtime is
+opencode's, reached through thirteen HTTP calls. Treat that boundary as the seam
+to change things at.

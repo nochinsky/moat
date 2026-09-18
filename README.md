@@ -187,6 +187,8 @@ the result before showing it to you. No model is involved in that verdict.
   that produced it and its real output.
 - [`docs/UPSTREAM-CANDIDATES.md`](docs/UPSTREAM-CANDIDATES.md) — the opencode
   changes moat would like. Not applied.
+- [`AGENTS.md`](AGENTS.md) — for anyone working on moat itself: the invariants, the
+  layout, the traps, and what is deliberately not built yet.
 
 ## Development
 

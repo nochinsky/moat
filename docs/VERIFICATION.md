@@ -161,7 +161,7 @@ eventually leak.
 ## Criterion 1, `moat up` boots the environment, clones the repo in, and starts `opencode serve` inside it
 
 ```
-$ moat up --json --model mock-model --provider-base-url http://127.0.0.1:5599/v1 \
+$ moat up --json --model mock-model --base-url http://127.0.0.1:5599/v1 \
         --credential-env MOAT_MOCK_CREDENTIAL
 ```
 
@@ -796,73 +796,85 @@ These are the checks that the harness is *wired* correctly; the model quality is
 the provider's business, and no API key exists on this host, so what is verified
 here is configuration, resolution and capability — never a claim about a model.
 
-### Provider resolution and rendering
+### Model and provider resolution
+
+moat targets one provider, so there is nothing to resolve and no `--provider`
+flag. For DeepSeek it writes no provider block at all: opencode's models.dev
+catalog supplies the base URL, the npm SDK, the context window and the
+capabilities. What moat does write is the model choice, the curated tool list,
+and one extra reasoning variant (§6b.5):
 
 ```
-$ moat up --provider zai --model glm-4.6 --credential-env MOAT_MOCK_CREDENTIAL
-model: zai/glm-4.6 (context 205k, out 131k)
-! injecting zai credential sha256:66d9505ad62f60eb (ttl 14400s) as ZHIPU_API_KEY. The agent can read
-  this value and, with the network open, exfiltrate it. Use a provider-scoped, spend-capped token.
-agent branch: moat-session-2026-09-18-17-09
-✓ sandbox up, warm start 4.15s (image reused)
-```
-
-The context window came from the models.dev catalog, not from moat. The rendered
-config contains **no provider block at all**, because opencode already knows z.ai:
-
-```json
-$ cat <rootfs>/usr/local/share/moat/opencode.json
+$ cat <env>/rootfs/usr/local/share/moat/opencode.json
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "zai/glm-4.6",
-  "small_model": "zai/glm-4.6",
+  "model": "deepseek/deepseek-flash",
+  "small_model": "deepseek/deepseek-flash",
   "share": "disabled",
   "autoupdate": false,
   "permission": { "*": "allow" },
-  "tools": { "question": false, "skill": false, "webfetch": false, "websearch": false, "task": false },
-  "enabled_providers": ["zai"],
-  "plugin": ["/usr/local/share/moat/plugin/moat-bundle.mjs"]
+  "tools": { "skill": false, "webfetch": false, "websearch": false, "task": false },
+  "enabled_providers": [ "deepseek" ],
+  "plugin": [ "/usr/local/share/moat/plugin/moat-bundle.mjs" ],
+  "provider": {
+    "deepseek": {
+      "models": {
+        "deepseek-flash": {
+          "variants": { "off": { "thinking": { "type": "disabled" } } }
+        }
+      }
+    }
+  }
 }
 ```
 
-And opencode accepts it — queried from the host over the authenticated API:
+Read back from the running server, over the authenticated API:
 
 ```
-opencode sees model     : zai/glm-4.6
-opencode sees providers : ['zai']
-opencode sees omitted   : ['question', 'skill', 'task', 'webfetch', 'websearch']
-provider catalog loaded : ['zai']
-zai models known        : 16 -> glm-4.7, glm-4.5-air, glm-4.6, glm-4.6v, glm-5.2, glm-4.5-flash
-glm-4.6 entry           : {"id": "glm-4.6", "name": "GLM-4.6", "limit": {"context": 204800, "output": 131072}}
+$ curl -s -H "$AUTH" $BASE/config
+model      : deepseek/deepseek-flash
+small_model: deepseek/deepseek-flash
+share      : disabled
+tools      : {"skill":false,"webfetch":false,"websearch":false,"task":false}
+
+$ curl -s -H "$AUTH" $BASE/config/providers
+providers loaded  : ["deepseek"]
+model entry       : {"id":"deepseek-flash","name":"DeepSeek V4.1 Flash",
+                     "limit":{"context":1000000,"output":384000},
+                     "api":"@ai-sdk/openai-compatible"}
+reasoning levels  : ["low","high","max","off"]
+models known      : 4 -> deepseek-v4-flash-vision-exp, deepseek-v4-flash,
+                         deepseek-v4-pro, deepseek-flash
 ```
 
-`moat models` reads the same catalog live:
+Every number there comes from the catalog rather than from moat — the 1M context,
+the 384k output ceiling, the npm SDK, the reasoning levels. That is what makes
+"moat does not describe DeepSeek to opencode" checkable instead of merely
+claimed, and it is why a new model in the catalog needs no change here.
+
+Two traps in that output, both of which cost time to work out:
+
+* `GET /config/providers` also returns `default: {"deepseek": "deepseek-v4-pro"}`.
+  That is opencode's own idea of the provider's preferred model and has nothing to
+  do with moat. The effective model is `model` in `GET /config`. Chasing `default`
+  leads nowhere.
+* `reasoning levels` includes `off`, which is **moat's** addition rather than the
+  catalog's. Everything else in that line is models.dev's.
+
+The credential is injected under the name the provider expects
+(`DEEPSEEK_API_KEY`) rather than moat's own, so opencode's native definition finds
+it without a provider block referencing `{env:MOAT_INJECTED_CREDENTIAL}`. That is
+what the boot line records:
 
 ```
-$ moat models zai
-
-Z.AI (GLM)  (--provider zai)  env=ZHIPU_API_KEY
-  endpoint https://api.z.ai/api/paas/v4
-  model                                  context  output  tools
-  glm-5.2                                   1M    131k  yes
-  glm-5.3                                   1M    131k  yes
- *glm-4.6                                 205k    131k  yes
-  glm-4.7-flashx                          200k    131k  yes
-  glm-4.5-air                             131k     98k  yes
-  * = moat's default. Usage: moat up --provider zai --model <id>
+model: deepseek/deepseek-flash (context 1M, out 384k)
+! injecting deepseek credential sha256:e493a50d942e2a4f (ttl 14400s) as DEEPSEEK_API_KEY.
 ```
-
-The same path was exercised for `deepseek` (endpoint `api.deepseek.com`, models
-`deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-flash`) and for `openai`
-(48 models). **Not verified: an actual inference call to any of them**, because
-this host has no key for any provider. What is verified is that moat resolves the
-model, writes a config opencode accepts, injects the credential under the right
-variable name, and that opencode loads the provider with the correct metadata.
 
 ### Toolchain profiles
 
 ```
-$ moat up --profile node,python --provider local --provider-base-url … --model mock-model
+$ moat up --profile node,python --base-url http://127.0.0.1:5599/v1 --model mock-model
 ✓ installed 20 package(s) for profile(s) node, python
 
 $ moat exec -- /bin/sh -c 'node --version; npm --version; python3 --version; uv --version'
@@ -925,7 +937,7 @@ no punctuation handling, no accent transliteration. The sandbox was booted with
 `--profile node` and the real provider:
 
 ```
-$ moat up --provider deepseek --model deepseek-v4-pro --profile node --credential-env DEEPSEEK_API_KEY
+$ moat up --model deepseek-v4-pro --profile node --credential-env DEEPSEEK_API_KEY
 model: deepseek/deepseek-v4-pro (context 1M, out 384k)
 agent branch: moat-session-2026-09-18-17-50
 ✓ sandbox up, cold start 48.61s (image built)
