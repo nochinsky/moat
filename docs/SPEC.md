@@ -689,6 +689,26 @@ opencode's own arithmetic: `input` is the cache-*miss* count, `cache.read` the
 cache-hit count, and `reasoning` is billed at the output rate as a field separate
 from `output`.
 
+**The defaults are stated, not implied.** moat runs `deepseek-flash` at `high`
+reasoning. Both are DeepSeek's own defaults, so this is not moat imposing an
+opinion; it is moat saying which model it will use rather than leaving it to
+whatever the catalog happens to list first. `high` is also the level the
+`/think` menu marks, and what `/think default` returns to — "default" meaning
+moat's default, not "unset", so there is one answer to what a fresh environment
+will do.
+
+`deepseek-flash` rather than `deepseek-v4-flash`: DeepSeek retired the versioned
+names, so requests for them are served by the current DeepSeek-V4.1-Flash at the
+Flash price. Both work today and are the same model at the same price, so the
+current name costs nothing and will not break when the old ones stop being
+accepted.
+
+The effort is stored per environment and checked against the model in use, at
+startup and again on every `/model`. A model that does not take the level — a
+custom endpoint reached with `--base-url` has no levels at all — silently gets
+none rather than carrying a setting that does nothing while `/status` reports it
+as active. A model that has levels but not this one says so.
+
 **Two of the four catalogue models are retired names.** DeepSeek still accepts
 `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, but serves them with the
 current Flash model and bills at its price. moat marks them in `/model` and

@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { envPaths, envsDir, type EnvPaths } from "../lib/paths.ts"
+import { DEEPSEEK } from "../lib/provider.ts"
 
 export type EnvStatus = "provisioning" | "stopped" | "running"
 
@@ -27,12 +28,13 @@ export type EnvState = {
   /** The full `provider/model` string opencode was given. */
   model: string | null
   /**
-   * Reasoning effort for that model (`low`, `medium`, `high`, `max`), or null
-   * for whatever the provider defaults to.
+   * Reasoning effort for that model (`off`, `low`, `high`, `max`), or null for
+   * the built-in default.
    *
-   * This is opencode's "variant": sent as `reasoning_effort` on the request.
-   * Not every model accepts every level, so it is stored per environment next
-   * to the model it was chosen for.
+   * This is opencode's "variant": sent as `reasoning_effort` on the request, or
+   * as `thinking: {type: disabled}` for `off`. Not every model accepts every
+   * level, so it is stored per environment next to the model it was chosen for,
+   * and it is checked against that model's levels before it is sent.
    */
   effort: string | null
   /** Named opencode agent the session defaults to (`build`, `plan`, …), if chosen. */
@@ -73,7 +75,7 @@ export function initialState(p: EnvPaths, versions: { opencode: string; alpine: 
     alpineVersion: versions.alpine,
     port: null,
     model: null,
-    effort: null,
+    effort: DEEPSEEK.defaultEffort,
     agent: null,
     provider: null,
     providerBaseUrl: null,
@@ -95,8 +97,10 @@ export function readState(p: EnvPaths): EnvState | null {
   try {
     const raw = JSON.parse(fs.readFileSync(p.state, "utf8")) as EnvState
     // Environments written before these fields existed are otherwise valid; fill
-    // them in rather than making every reader defend against undefined.
-    if (raw.effort === undefined) raw.effort = null
+    // them in rather than making every reader defend against undefined. An
+    // environment with no recorded effort gets the default rather than "unset",
+    // so it behaves the same as one created today.
+    if (raw.effort === undefined) raw.effort = DEEPSEEK.defaultEffort
     if (raw.agent === undefined) raw.agent = null
     return raw
   } catch {

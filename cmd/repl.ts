@@ -116,7 +116,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   // and agent are remembered across restarts, because re-picking them every
   // time you open a session is the kind of friction that makes a tool annoying.
   let modelRef = options.state.model ?? `${DEEPSEEK.opencodeID}/${DEEPSEEK.defaultModel}`
-  let effort = options.state.effort ?? null
+  let effort: string | null = options.state.effort ?? DEEPSEEK.defaultEffort
   let agent = options.state.agent ?? undefined
   // Reasoning is streamed but hidden by default: it is long, and most of the
   // time you want the answer. `/thinking` turns it on.
@@ -413,6 +413,8 @@ export async function runRepl(options: ReplOptions): Promise<number> {
    */
   let turnUsage = new Map<string, { tokens: unknown; at: number }>()
   let contextLimit: number | undefined
+  /** Reasoning levels the current model accepts, as the server reports them. */
+  let modelLevels: string[] = []
 
   const costOfTurn = (): TurnSummary => {
     let prompt = 0
@@ -632,13 +634,44 @@ export async function runRepl(options: ReplOptions): Promise<number> {
    * turn summary. Fetched once and refreshed when the model changes; a failure
    * here is not worth reporting, the summary simply omits the proportion.
    */
-  const refreshContextLimit = async (): Promise<void> => {
+  /**
+   * Learn what the current model is, once, and check the effort against it.
+   *
+   * Two things come back from the same call: the context window for the turn
+   * summary, and the reasoning levels this model actually accepts. The second
+   * matters because moat now starts with an effort chosen for it — `high` — and
+   * a custom endpoint, or a model that simply has no levels, would otherwise
+   * carry a setting that does nothing while `/status` reported it as active.
+   *
+   * Runs at startup and again on every `/model`, so switching is checked the
+   * same way booting is.
+   */
+  const refreshModelInfo = async (): Promise<void> => {
     try {
       const { providerID, modelID } = splitModel(modelRef)
       const models = await listModels(client)
-      contextLimit = models.find((m) => m.providerID === providerID && m.id === modelID)?.context || undefined
+      const model = models.find((m) => m.providerID === providerID && m.id === modelID)
+      contextLimit = model?.context || undefined
+      modelLevels = model?.variants ?? []
     } catch {
       contextLimit = undefined
+      modelLevels = []
+    }
+    if (!effort) return
+    if (modelLevels.includes(effort)) return
+
+    const dropped = effort
+    effort = null
+    persist({ effort })
+    // Silent when the model has no levels at all — a custom endpoint reached
+    // with --base-url, where there is no effort concept to have an opinion
+    // about and the notice would be noise on every startup. Only worth saying
+    // when the model does have levels and this one is not among them.
+    if (modelLevels.length > 0) {
+      say(
+        `  ${YELLOW}${modelRef} does not take "${dropped}", so moat will not set an effort.${RESET}` +
+          `  ${DIM}this model takes: ${modelLevels.join(", ")}${RESET}`,
+      )
     }
   }
 
@@ -797,7 +830,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
           effort = null
         }
         persist({ model: modelRef, effort })
-        await refreshContextLimit()
+        await refreshModelInfo()
         say(`model is now ${BOLD}${modelRef}${RESET}`)
         if (dropped) {
           say(`  ${YELLOW}effort "${dropped}" is not available on this model, so it was cleared${RESET}`)
@@ -821,13 +854,17 @@ export async function runRepl(options: ReplOptions): Promise<number> {
           say("")
           for (const level of levels) {
             const mark = level === effort ? `${GREEN}\u203a${RESET}` : " "
-            const note = level === "off" ? `  ${DIM}answer without thinking${RESET}` : ""
+            const notes: string[] = []
+            if (level === "off") notes.push("answer without thinking")
+            if (level === DEEPSEEK.defaultEffort) notes.push("moat's default")
+            const note = notes.length > 0 ? `  ${DIM}${notes.join("; ")}${RESET}` : ""
             say(`  ${mark} ${BOLD}${level}${RESET}${note}`)
           }
-          const mark = effort === null ? `${GREEN}\u203a${RESET}` : " "
-          say(`  ${mark} ${DIM}default (whatever the model does on its own)${RESET}`)
           say("")
-          say(`  set with ${BOLD}/think <level>${RESET}${effort ? `, or ${BOLD}/think default${RESET} to clear` : ""}`)
+          const hint = effort === DEEPSEEK.defaultEffort
+            ? `  set with ${BOLD}/think <level>${RESET}`
+            : `  set with ${BOLD}/think <level>${RESET}, or ${BOLD}/think default${RESET} to go back to ${DEEPSEEK.defaultEffort}`
+          say(hint)
           return
         }
 
@@ -836,9 +873,9 @@ export async function runRepl(options: ReplOptions): Promise<number> {
         // "do not think at all", and treating it as "unset" silently turned the
         // one setting a user would reach for into the opposite of itself.
         if (wanted === "default") {
-          effort = null
+          effort = DEEPSEEK.defaultEffort
           persist({ effort })
-          return say(`effort cleared; ${modelRef} will use its own default`)
+          return say(`effort is back to moat's default, ${BOLD}${DEEPSEEK.defaultEffort}${RESET}`)
         }
 
         if (!levels.includes(wanted)) {
@@ -1091,7 +1128,7 @@ exec /bin/bash -l
   // ---------------------------------------------------------------------------
   // Learn the context window before the banner, so the first turn summary can
   // show how full the window is.
-  await refreshContextLimit()
+  await refreshModelInfo()
   const effortLabel = effort ? ` \u00b7 effort ${effort}` : ""
   say("")
   say(`${BOLD}moat${RESET} ${DIM}\u00b7 ${modelRef}${effortLabel} \u00b7 ${options.paths.projectDir}${RESET}`)

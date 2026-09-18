@@ -106,13 +106,22 @@ DeepSeek  env=DEEPSEEK_API_KEY  https://api.deepseek.com
   model                          context  output  tools
   deepseek-v4-flash-vision-exp      1M    384k  yes
   deepseek-v4-flash                 1M    384k  yes
- *deepseek-v4-pro                   1M    384k  yes
-  deepseek-flash                    1M    384k  yes
+  deepseek-v4-pro                   1M    384k  yes
+ *deepseek-flash                    1M    384k  yes
+
+  * = default. Override with: moat run --model <id> "..."
 ```
 
-`--model <id>` picks one and the environment remembers it. `--effort` sets how
-hard it reasons for a single run; `/think` does the same inside a session, and
-`/think off` turns thinking off entirely.
+`deepseek-flash` at `high` reasoning is the default, and the environment
+remembers whatever you change it to. Two of those four are retired names:
+DeepSeek still accepts them, but serves them with the current Flash model at the
+Flash price, which is what `deepseek-flash` names directly — so that is the one
+moat uses.
+
+`--model <id>` picks a model and `--effort <level>` sets how hard it reasons for
+a single run. Inside a session, `/model` and `/think` do the same thing, and
+`/think off` turns thinking off entirely — which is not the same as `low`, since
+the weakest level on DeepSeek's scale still thinks.
 
 `--upstream URL` keeps DeepSeek's definition and sends the traffic somewhere else,
 for a gateway or a proxy you want to watch. `--base-url URL` instead points at any
