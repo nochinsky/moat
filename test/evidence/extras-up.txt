@@ -6,17 +6,17 @@ no project manifest found; booting with the base image only (see `moat profiles`
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
-! injecting DeepSeek credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-20-03
-→ sandbox booted (pid 67426, port 44399); waiting for opencode serve
+! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-18-21-13
+→ sandbox booted (pid 97331, port 33681); waiting for opencode serve
 ✓ sandbox up, warm start 4.12s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:44399  (basic auth user "opencode")
-  password   I9m9aD1d9_wDOyRnjOPVGhV1azqTUx8-
+  opencode   http://127.0.0.1:33681  (basic auth user "opencode")
+  password   jUIIqNMdn6t1izH8Cdk6M8rUkLnkPxp3
   workspace  /work (inside the sandbox)
-  credential DeepSeek sha256:7726b438889c7f57 expires 2026-09-19T00:03:47.288Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-19T01:13:03.446Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

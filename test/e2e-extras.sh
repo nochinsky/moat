@@ -27,7 +27,26 @@ section() {
     echo "=============================================================="
     echo "== $1"
     echo "=============================================================="
-  } | tee -a "$EVIDENCE/extras.txt"
+  } | scrub | tee -a "$EVIDENCE/extras.txt"
+}
+
+# Evidence is committed to a public repository, so the machine it was produced on
+# is scrubbed out of it. What matters is the behaviour being shown, not whose
+# home directory it ran in; without this the recorded proof publishes a username.
+scrub() {
+  sed -e "s|$HOME|/home/user|g" -e "s|${USER:-$(id -un)}|user|g"
+}
+
+# Last word. Inline scrubbing cannot cover output that arrives through a child
+# process, a log file or a command substitution nobody thought about, and a
+# single missed pipe publishes the machine's paths in a public repository. So
+# every evidence file gets one final pass before the suite reports.
+scrub_evidence() {
+  local f
+  for f in "$EVIDENCE"/*.txt; do
+    [ -f "$f" ] || continue
+    sed -i -e "s|$HOME|/home/user|g" -e "s|${USER:-$(id -un)}|user|g" "$f"
+  done
 }
 
 capture() {
@@ -40,7 +59,7 @@ capture() {
     cat "$EVIDENCE/$name.out"
     echo "--- stderr ---"
     cat "$EVIDENCE/$name.err"
-  } > "$EVIDENCE/$name.txt"
+  } | scrub > "$EVIDENCE/$name.txt"
   cat "$EVIDENCE/$name.txt" | tee -a "$EVIDENCE/extras.txt"
 }
 
@@ -63,7 +82,7 @@ echo "host-side proof that /work is excluded from snapshots:" | tee -a "$EVIDENC
   echo "entries under ./work : $(tar tzf "$SNAP" | grep -c '^\./work' || true)"
   echo "entries under ./root  : $(tar tzf "$SNAP" | grep -c '^\./root' || true)"
   echo "total entries         : $(tar tzf "$SNAP" | wc -l)"
-} | tee -a "$EVIDENCE/extras.txt"
+} | scrub | tee -a "$EVIDENCE/extras.txt"
 
 section "B. moat restore rolls the rootfs back and preserves /work"
 capture snapshot-restore $MOAT restore before-extras --yes
@@ -80,7 +99,7 @@ capture apply-branch $MOAT apply main --name e2e-checkout
   git -C "$PROJECT" rev-parse HEAD
   echo "\$ git -C $PROJECT status --porcelain   # only the user's own pre-existing dirt"
   git -C "$PROJECT" status --porcelain
-} | tee -a "$EVIDENCE/extras.txt"
+} | scrub | tee -a "$EVIDENCE/extras.txt"
 
 section "D. moat env reports the connection details"
 capture env-details $MOAT env
@@ -99,12 +118,12 @@ echo "--- sandbox log: the expiry notice ---" | tee -a "$EVIDENCE/extras.txt"
   grep -iE "expired|stopping agent|agent exited" "$HOME"/.moat/envs/*/logs/sandbox.log | tail -4
   echo ""
   echo "\$ moat status  -> status line above shows the box is stopped, which it did to itself"
-} | tee -a "$EVIDENCE/extras.txt"
+} | scrub | tee -a "$EVIDENCE/extras.txt"
 
 section "F. the interactive CLI, driven through a real pty"
 echo "an interactive session cannot be checked by piping stdin, so this allocates a pty," | tee -a "$EVIDENCE/extras.txt"
 echo "types at it, and reads what comes back. It starts its own stub and its own sandbox." | tee -a "$EVIDENCE/extras.txt"
-python3 "$REPO/test/repl-smoke.py" > "$EVIDENCE/repl-smoke.txt" 2>&1
+python3 "$REPO/test/repl-smoke.py" 2>&1 | scrub > "$EVIDENCE/repl-smoke.txt"
 REPL_RC=$?
 tail -12 "$EVIDENCE/repl-smoke.txt" | tee -a "$EVIDENCE/extras.txt"
 echo "repl smoke exit: $REPL_RC" | tee -a "$EVIDENCE/extras.txt"
@@ -112,7 +131,7 @@ echo "repl smoke exit: $REPL_RC" | tee -a "$EVIDENCE/extras.txt"
 section "G. the agent can ask a question when someone is there to answer"
 echo "only in interactive mode: an unattended question has no answer, so batch runs end the" | tee -a "$EVIDENCE/extras.txt"
 echo "turn and say so rather than stalling until the timeout." | tee -a "$EVIDENCE/extras.txt"
-python3 "$REPO/test/repl-questions.py" > "$EVIDENCE/repl-questions.txt" 2>&1
+python3 "$REPO/test/repl-questions.py" 2>&1 | scrub > "$EVIDENCE/repl-questions.txt"
 QUESTION_RC=$?
 tail -8 "$EVIDENCE/repl-questions.txt" | tee -a "$EVIDENCE/extras.txt"
 echo "question flow exit: $QUESTION_RC" | tee -a "$EVIDENCE/extras.txt"
@@ -124,7 +143,7 @@ echo "the exit code above is the project's own verdict on whatever is in the san
 section "I. bare moat in an empty, non-git directory: work, then apply, without leaving"
 echo "the flow the tool exists for. A plain directory with nothing in it had no copy-out" | tee -a "$EVIDENCE/extras.txt"
 echo "path at all before this: there is no host repository for git fetch to write into." | tee -a "$EVIDENCE/extras.txt"
-python3 "$REPO/test/repl-apply.py" > "$EVIDENCE/repl-apply.txt" 2>&1
+python3 "$REPO/test/repl-apply.py" 2>&1 | scrub > "$EVIDENCE/repl-apply.txt"
 APPLY_RC=$?
 tail -10 "$EVIDENCE/repl-apply.txt" | tee -a "$EVIDENCE/extras.txt"
 echo "apply flow exit: $APPLY_RC" | tee -a "$EVIDENCE/extras.txt"
@@ -139,9 +158,34 @@ else
   echo "skipped: needs DEEPSEEK_API_KEY to prove the accepted path (it refuses a fake key first)" | tee -a "$EVIDENCE/extras.txt"
 fi
 
-section "K. every claim about process state is reconciled against the live process table"
+section "K. model, reasoning effort and the other session controls"
+echo "the choices opencode exposes that moat surfaces: pick a model, pick a reasoning" | tee -a "$EVIDENCE/extras.txt"
+echo "level, pick an agent, compact, undo. Driven through a pty against the stub, so it" | tee -a "$EVIDENCE/extras.txt"
+echo "checks moat's plumbing rather than any model's behaviour." | tee -a "$EVIDENCE/extras.txt"
+python3 "$REPO/test/repl-controls.py" 2>&1 | scrub > "$EVIDENCE/repl-controls.txt"
+CONTROLS_RC=$?
+tail -16 "$EVIDENCE/repl-controls.txt" | tee -a "$EVIDENCE/extras.txt"
+echo "controls exit: $CONTROLS_RC" | tee -a "$EVIDENCE/extras.txt"
+
+section "L. the reasoning level chosen in the CLI reaches the provider"
+if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+  echo "needs a real model: a stub reached through --base-url has no catalog metadata, so" | tee -a "$EVIDENCE/extras.txt"
+  echo "it honestly has no effort levels to offer. The check reads the level the sandbox's" | tee -a "$EVIDENCE/extras.txt"
+  echo "own server recorded on the assistant message, not moat's claim about itself." | tee -a "$EVIDENCE/extras.txt"
+  python3 "$REPO/test/repl-effort.py" 2>&1 | scrub > "$EVIDENCE/repl-effort.txt"
+  EFFORT_RC=$?
+  tail -12 "$EVIDENCE/repl-effort.txt" | tee -a "$EVIDENCE/extras.txt"
+  echo "effort exit: $EFFORT_RC" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "skipped: needs DEEPSEEK_API_KEY (it spends a few tokens on a real turn)" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+section "M. every claim about process state is reconciled against the live process table"
 capture status-final $MOAT status
 capture down-final $MOAT down
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; fi
 echo "" | tee -a "$EVIDENCE/extras.txt"
+# After the last write, not before it: this closing line names $EVIDENCE, so
+# scrubbing first would leave exactly one unscrubbed path behind.
 echo "extras evidence written to $EVIDENCE/extras.txt" | tee -a "$EVIDENCE/extras.txt"
+scrub_evidence

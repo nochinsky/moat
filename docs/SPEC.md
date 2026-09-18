@@ -639,6 +639,43 @@ necessary.
 back. Piping stdin is not a substitute: readline behaves differently without a
 terminal, and the live view is the whole point of the mode.
 
+#### Choosing the model, the effort and the agent
+
+The session carries opencode's own settings, so moat is not a reduced client:
+`/model`, `/think`, `/agent`, `/compact`, `/undo`, `/redo` and `/verbose` are all
+thin calls to operations the server already has. Two of them need a decision
+worth recording.
+
+**The options are read from the server, never hardcoded.** `GET
+/config/providers` returns every model with the reasoning levels that model
+accepts, and those differ per model — `deepseek-v4-pro` takes `high` and `max`,
+the flash models also take `low`. An unknown variant is *ignored* rather than
+rejected, so a hardcoded list would fail silently and a wrong level would look
+like a working one. `/model` and `/think` therefore offer exactly what the server
+reports.
+
+**The choice is persisted per environment.** `model`, `effort` and `agent` live in
+the environment's `state.json`, so `/think high` applies to the next `moat run` in
+that directory too. Switching to a model that does not accept the current effort
+clears it and says so, rather than carrying a level that will be dropped.
+
+The effort travels as opencode's `variant` field on the prompt. It is absent from
+the published SDK's generated request type, so moat widens the type at the call
+site; the server accepts it and records it on the assistant message, which is how
+the path is verified rather than assumed. For DeepSeek it reaches the provider as
+`reasoning_effort`.
+
+#### Streamed text arrives on its own event
+
+The live view reads `message.part.delta`, not `message.part.updated`. opencode
+1.18.31 does not put a `delta` on the latter; it sends deltas as a separate event
+carrying a `partID` and no kind. Waiting for `delta` on the update event means
+rendering nothing at all, which is what moat did until this was caught: tool
+lines appeared, the model's answers never did. Part kinds are catalogued from the
+`message.part.updated` events that precede each delta, and message roles from
+`message.updated` — verified on a live server, where an assistant
+`message.updated` always arrives before that message's first delta.
+
 ### 6b.6 Checking the work
 
 An agent reporting that the tests pass is a claim, not evidence. moat finds the

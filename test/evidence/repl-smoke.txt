@@ -2,19 +2,19 @@
 › moat · moat/mock-model · /home/user/moat-demo/slugkit
 › type a task and press enter. /help for commands, ctrl-c to interrupt.
 › 
-› › /status
-
+› › /status
 
 ›   project     /home/user/moat-demo/slugkit
-›   endpoint    http://127.0.0.1:34683
+›   endpoint    http://127.0.0.1:32927
 ›   model       moat/mock-model
-›   branch      moat-session-2026-09-18-20-04
+›   agent       default
+›   thinking    hidden
+›   branch      moat-session-2026-09-18-21-13
 ›   session     none yet
 ›   profiles    node
-›   credential  14387s left
+›   credential  14389s left
 › 
-› › fix the failing tests and commit it
-
+› › fix the failing tests and commit it
   · bash      
 ›   ✓ bash      pwd && ls -la && cat README.md
 ›   · write     
@@ -25,16 +25,15 @@
 ›   ✓ bash      printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt
 ›   · bash      
 ›   ✓ bash      git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && gi
-› › /diff
+› │ Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
+› /diff
 
-
-›   9a7837f agent: add agent-output.txt from inside the sandbox
+›   1165d7f agent: add agent-output.txt from inside the sandbox
 › 
 ›    agent-output.txt | 2 ++
 ›    1 file changed, 2 insertions(+)
 › 
-› › /help
-
+› › /help
 
 ›   type anything to send it to the agent. It queues if the agent is mid-turn.
 › 
@@ -42,7 +41,15 @@
 ›   /stop      abort the turn the agent is running
 ›   /diff      everything the agent has changed since it started
 ›   /take      bring the agent's branch onto the host and show it
-›   /status    model, branch, session and credential time left
+›   /status    model, effort, branch, session and credential time left
+›   /model     show or change the model: /model [name]
+›   /think     reasoning effort: /think [level]
+›   /thinking  show or hide the model's reasoning as it streams
+›   /agent     show or change the agent: /agent [name]
+›   /compact   summarise the session so far, to free up context
+›   /undo      roll the conversation back to before your last message
+›   /redo      put back a turn removed with /undo
+›   /verbose   show or hide tool output
 ›   /sessions  list past sessions in this environment
 ›   /use       switch to another session: /use <id>
 ›   /new       start a fresh session
@@ -52,16 +59,16 @@
 ›   /quit      leave (the sandbox keeps running)
 ›   /exit      leave (the sandbox keeps running)
 › 
-› › /quit
-
+› › /quit
 
 
 --- checks ---
   pass  banner and prompt
   pass  /status printed the environment
   pass  agent activity streamed live
+  pass  the model's answer was displayed
   pass  /diff reported the agent's work
   pass  /help listed the commands
   pass  commands still worked after the turn
 
-6/6 checks passed
+7/7 checks passed

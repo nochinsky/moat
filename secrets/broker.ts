@@ -3,6 +3,7 @@ import os from "node:os"
 
 import { fingerprint } from "../lib/hash.ts"
 import { credentialsFile } from "../lib/paths.ts"
+import { DEEPSEEK } from "../lib/provider.ts"
 
 /**
  * The credential axiom, in code.
@@ -137,8 +138,18 @@ export function findCredential(opts: MintOptions): { provider: string; credentia
   }
 
   const store = readStore()
-  if (opts.provider && store[opts.provider]) {
-    return { provider: opts.provider, credential: store[opts.provider], source: `${credentialsFile()}#${opts.provider}` }
+  const keys = Object.keys(store)
+  if (keys.length > 0) {
+    // The named provider wins. Otherwise fall back to the ids moat itself writes
+    // (`onboard` stores under `deepseek`), and only then to "there is exactly one
+    // key here, so it must be the one". Without this a key saved by `moat`'s own
+    // onboarding is never found again, because the boot path asks for the
+    // provider by a different name than the one it was stored under.
+    const candidates = [opts.provider, DEEPSEEK.opencodeID, "moat"].filter((k): k is string => Boolean(k))
+    const hit = candidates.find((k) => store[k]) ?? (keys.length === 1 ? keys[0]! : undefined)
+    if (hit) {
+      return { provider: opts.provider ?? hit, credential: store[hit]!, source: `${credentialsFile()}#${hit}` }
+    }
   }
 
   for (const name of AUTO_ENV) {

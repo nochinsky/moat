@@ -93,6 +93,8 @@ export async function driveSession(
     providerID: string
     modelID: string
     agent?: string
+    /** Reasoning effort. Must be one this model actually offers; see modelVariants(). */
+    variant?: string
     onEvent?: (line: string) => void
     /** Raw text fragments, written without a trailing newline. */
     onDelta?: (text: string) => void
@@ -129,6 +131,7 @@ async function createSession(client: Client): Promise<string> {
 }
 
 type Part = {
+  id?: string
   sessionID?: string
   messageID?: string
   type?: string
@@ -138,10 +141,38 @@ type Part = {
   state?: { status?: string; title?: string; input?: unknown; output?: string; error?: string }
 }
 
-function promptBody(input: { prompt: string; providerID: string; modelID: string; agent?: string }) {
+/**
+ * Build a prompt body.
+ *
+ * Exported so the interactive session builds its prompts the same way the
+ * one-shot paths do, rather than each call site re-deriving the shape and
+ * reaching for its own cast to get past the SDK's older generated types.
+ */
+export function promptBody(input: {
+  prompt: string
+  providerID: string
+  modelID: string
+  agent?: string
+  /**
+   * opencode's "variant": a provider-specific reasoning effort. The server
+   * accepts this (`session/prompt.ts` declares `variant` optional on the prompt
+   * input) but the published SDK's generated types lag behind. Returning this
+   * object from a function is what keeps that from being a type error —
+   * TypeScript rejects unknown properties only on fresh literals.
+   *
+   * For DeepSeek it reaches the provider as `reasoning_effort`. Which levels
+   * exist is a property of the model, not of moat: the server publishes the
+   * exact map at `GET /config/providers`, and that is what `modelVariants()`
+   * reads. An unknown variant is ignored rather than rejected, so offering a
+   * level the model does not have would fail silently — hence discovery, never
+   * a hardcoded list.
+   */
+  variant?: string
+}) {
   return {
     model: { providerID: input.providerID, modelID: input.modelID },
     agent: input.agent,
+    variant: input.variant,
     parts: [{ type: "text" as const, text: input.prompt }],
   }
 }
@@ -163,6 +194,7 @@ async function driveStreaming(
     providerID: string
     modelID: string
     agent?: string
+    variant?: string
     onEvent?: (line: string) => void
     onDelta?: (text: string) => void
     showOutput?: boolean
@@ -181,6 +213,9 @@ async function driveStreaming(
   // The event stream carries the user's own prompt as a text part too. Only
   // assistant message ids are streamed, or the prompt echoes back at you.
   const assistantMessages = new Set<string>()
+  // Deltas identify their part only by id, so the kind of each part is recorded
+  // as the `message.part.updated` events go by.
+  const partKind = new Map<string, string>()
 
   const endText = () => {
     if (midText) {
@@ -189,7 +224,10 @@ async function driveStreaming(
     }
   }
 
-  await client.session.promptAsync({ path: { id: sessionID }, body: promptBody(input) })
+  await client.session.promptAsync({
+    path: { id: sessionID },
+    body: promptBody(input),
+  })
 
   const iterator = subscription.stream[Symbol.asyncIterator]()
   let pending = iterator.next()
@@ -235,21 +273,26 @@ async function driveStreaming(
         continue
       }
 
+      if (event.type === "message.part.delta") {
+        // This is where streamed text actually arrives. `message.part.updated`
+        // does not carry `delta`, so anyone waiting for it there prints nothing
+        // until the turn is over.
+        const partID = properties.partID as string | undefined
+        const messageID = properties.messageID as string | undefined
+        const delta = properties.delta
+        if (typeof delta !== "string" || delta.length === 0) continue
+        if (messageID && !assistantMessages.has(messageID)) continue
+        if (partID && partKind.get(partID) !== "text") continue
+        text += delta
+        midText = true
+        input.onDelta?.(delta)
+        continue
+      }
+
       if (event.type === "message.part.updated") {
         const part = properties.part as Part | undefined
         if (!part || (part.sessionID && part.sessionID !== sessionID)) continue
-
-        if (part.type === "text") {
-          if (part.messageID && !assistantMessages.has(part.messageID)) continue
-          const delta = typeof properties.delta === "string" ? properties.delta : undefined
-          const chunk = delta ?? part.text ?? ""
-          if (chunk) {
-            text += chunk
-            midText = true
-            input.onDelta?.(chunk)
-          }
-          continue
-        }
+        if (part.id && part.type) partKind.set(part.id, part.type)
 
         if (part.type === "tool" && part.tool) {
           const status = part.state?.status ?? "unknown"
@@ -305,7 +348,7 @@ async function driveStreaming(
 async function driveBlocking(
   client: Client,
   sessionID: string,
-  input: { prompt: string; providerID: string; modelID: string; agent?: string; onEvent?: (line: string) => void; onDelta?: (text: string) => void; showOutput?: boolean; timeoutMs?: number },
+  input: { prompt: string; providerID: string; modelID: string; agent?: string; variant?: string; onEvent?: (line: string) => void; onDelta?: (text: string) => void; showOutput?: boolean; timeoutMs?: number },
 ): Promise<SessionResult> {
   const errors: string[] = []
   const response = await client.session.prompt({ path: { id: sessionID }, body: promptBody(input) })
@@ -372,6 +415,132 @@ export function describeConnection(state: EnvState, password: string): string {
     `password ${password}`,
     `dir      /work`,
   ].join("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Models and agents
+//
+// Both come from the server rather than from a list moat keeps. The server is
+// the thing that will actually run the request, so it is the only authority on
+// which models exist, what they cost, and which reasoning levels each one
+// accepts. Reading them means moat never offers a choice that silently does
+// nothing.
+//
+// The published SDK's `Model` type has no `variants` field, though the server
+// sends one — verified against a live server, which reported
+// `deepseek-v4-pro -> {high, max}` and `deepseek-flash -> {low, high, max}`.
+// Rather than hardcode that, moat reads it.
+// ---------------------------------------------------------------------------
+
+export type ModelChoice = {
+  providerID: string
+  id: string
+  name: string
+  /** Reasoning levels this exact model accepts, weakest first. May be empty. */
+  variants: string[]
+  context: number
+  output: number
+  reasoning: boolean
+  toolCall: boolean
+}
+
+type RawModel = {
+  id?: string
+  name?: string
+  variants?: Record<string, unknown>
+  capabilities?: { reasoning?: boolean; toolcall?: boolean }
+  limit?: { context?: number; output?: number }
+}
+
+type RawProvider = { id?: string; models?: Record<string, RawModel> }
+
+export async function listModels(client: Client): Promise<ModelChoice[]> {
+  const response = await client.config.providers()
+  const body = response.data as unknown as { providers?: RawProvider[] } | undefined
+  const choices: ModelChoice[] = []
+  for (const provider of body?.providers ?? []) {
+    for (const [key, model] of Object.entries(provider.models ?? {})) {
+      const id = model.id ?? key
+      choices.push({
+        providerID: provider.id ?? "unknown",
+        id,
+        name: model.name ?? id,
+        variants: orderVariants(Object.keys(model.variants ?? {})),
+        context: model.limit?.context ?? 0,
+        output: model.limit?.output ?? 0,
+        reasoning: model.capabilities?.reasoning === true,
+        toolCall: model.capabilities?.toolcall !== false,
+      })
+    }
+  }
+  return choices.sort((a, b) => a.providerID.localeCompare(b.providerID) || a.id.localeCompare(b.id))
+}
+
+/**
+ * Effort levels, weakest first.
+ *
+ * The server hands them over in its own (alphabetical) order, which reads as
+ * noise in a menu. This is the ranking the levels actually mean; anything
+ * unrecognised keeps its place at the end.
+ */
+const EFFORT_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+function orderVariants(names: string[]): string[] {
+  return [...names].sort((a, b) => {
+    const ai = EFFORT_ORDER.indexOf(a)
+    const bi = EFFORT_ORDER.indexOf(b)
+    if (ai === -1 && bi === -1) return a.localeCompare(b)
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
+  })
+}
+
+export async function modelVariants(client: Client, providerID: string, modelID: string): Promise<string[]> {
+  const models = await listModels(client)
+  return models.find((m) => m.providerID === providerID && m.id === modelID)?.variants ?? []
+}
+
+export type AgentChoice = { name: string; description?: string; mode?: string }
+
+export async function listAgents(client: Client): Promise<AgentChoice[]> {
+  const response = await client.app.agents()
+  const data = response.data as unknown as AgentChoice[] | undefined
+  return (data ?? []).map((a) => ({ name: a.name, description: a.description, mode: a.mode }))
+}
+
+// ---------------------------------------------------------------------------
+// Session controls
+//
+// opencode's own operations, present in the SDK and simply never surfaced by
+// moat until now: compaction, and undoing the last turn.
+// ---------------------------------------------------------------------------
+
+export async function compact(client: Client, sessionID: string, providerID: string, modelID: string): Promise<boolean> {
+  const response = await client.session.summarize({ path: { id: sessionID }, body: { providerID, modelID } })
+  return !response.error
+}
+
+/** `messageID` is required by the route; pass the user message to roll back to. */
+export async function revert(client: Client, sessionID: string, messageID: string): Promise<boolean> {
+  const response = await client.session.revert({ path: { id: sessionID }, body: { messageID } })
+  return !response.error
+}
+
+export async function unrevert(client: Client, sessionID: string): Promise<boolean> {
+  const response = await client.session.unrevert({ path: { id: sessionID } })
+  return !response.error
+}
+
+/** The most recent user message id, which is what "undo the last turn" means. */
+export async function lastUserMessageID(client: Client, sessionID: string): Promise<string | undefined> {
+  const response = await client.session.messages({ path: { id: sessionID } })
+  const messages = (response.data ?? []) as unknown as { info?: { id?: string; role?: string } }[]
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const info = messages[i]?.info
+    if (info?.role === "user" && info.id) return info.id
+  }
+  return undefined
 }
 
 export { log }
