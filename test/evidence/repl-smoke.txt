@@ -6,12 +6,12 @@
 
 
 ›   project     /home/user/moat-demo/slugkit
-›   endpoint    http://127.0.0.1:43333
+›   endpoint    http://127.0.0.1:34683
 ›   model       moat/mock-model
-›   branch      moat-session-2026-09-18-19-52
+›   branch      moat-session-2026-09-18-20-04
 ›   session     none yet
 ›   profiles    node
-›   credential  14389s left
+›   credential  14387s left
 › 
 › › fix the failing tests and commit it
 
@@ -28,7 +28,7 @@
 › › /diff
 
 
-›   eac1903 agent: add agent-output.txt from inside the sandbox
+›   9a7837f agent: add agent-output.txt from inside the sandbox
 › 
 ›    agent-output.txt | 2 ++
 ›    1 file changed, 2 insertions(+)

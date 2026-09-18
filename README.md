@@ -39,6 +39,24 @@ npm link                 # puts `moat` on your PATH
 moat doctor              # checks the host can support it, and shows the exposures
 ```
 
+Then, the first time you run `moat`, it asks for your DeepSeek key, checks it
+against the API, and saves it to `~/.moat/credentials.json` (mode 600):
+
+```
+$ moat
+moat needs a DeepSeek API key.
+  Get one at https://platform.deepseek.com/api_keys
+  It will be saved to ~/.moat/credentials.json (mode 600) and sent only to https://api.deepseek.com.
+
+  DEEPSEEK_API_KEY: ****
+  checking...
+  ✓ key accepted (deepseek-flash, deepseek-v4-pro), saved
+```
+
+The key is never echoed, and it is checked *before* being saved, so a typo cannot
+turn into a confusing failure further along. If you would rather not store it,
+`export DEEPSEEK_API_KEY=...` and moat uses that instead.
+
 Requirements: **Linux** (WSL2 works via the container path), **Node 22.18+**, and
 **unprivileged user namespaces**. No root, no Docker, no podman, no sudo. There is
 no "run on the host" mode. If the host cannot support the sandbox, `moat`

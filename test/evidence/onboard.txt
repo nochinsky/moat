@@ -1,0 +1,43 @@
+no project manifest found; booting with the base image only (see `moat profiles`)
+sk-definitely-not-a-real-key
+profiles: everything requested is already installed
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+model: deepseek/deepseek-v4-pro (context 1M, out 384k)
+
+moat needs a DeepSeek API key.
+  Get one at https://platform.deepseek.com/api_keys
+  It will be saved to /home/user/.moat/credentials.json (mode 600) and sent only to https://api.deepseek.com.
+
+  DEEPSEEK_API_KEY: ****************************
+  checking...
+                    
+! the provider rejected it. Try again.
+  DEEPSEEK_API_KEY: ***********************************
+  checking...
+                    
+✓ key accepted (deepseek-flash, deepseek-v4-pro), saved to /home/user/.moat/credentials.json
+! injecting deepseek credential sha256:958000a25972310b (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-18-20-07
+→ sandbox booted (pid 69056, port 36899); waiting for opencode serve
+✓ sandbox up, warm start 10.65s (image reused)
+
+  project    /home/user/moat-demo/onboard-demo
+  env        /home/user/.moat/envs/a5b7670da9ae
+  opencode   http://127.0.0.1:36899  (basic auth user "opencode")
+  password   ZJBVy13banRyuaAvnz5FVD7c1crOSLiC
+  workspace  /work (inside the sandbox)
+  credential deepseek sha256:958000a25972310b expires 2026-09-19T00:07:28.375Z
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)
+^C
+--- checks ---
+  pass  it asked for the key
+  pass  the key was not echoed
+  pass  the bad key was rejected
+  pass  the good key was accepted
+  pass  it was saved
+  pass  saved mode is 600
+
+6/6 checks passed  (saved mode 0o600)
