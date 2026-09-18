@@ -2,7 +2,7 @@
 --- exit 0
 --- stdout ---
 --- marker (proof the rootfs persisted) ---
-persisted-at-1789768843
+persisted-at-1789769946
 --- jq (proof the install persisted) ---
 jq-1.7.1
 --- stderr ---

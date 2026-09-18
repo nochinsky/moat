@@ -225,23 +225,39 @@ model decide for itself.
 ### What a turn looks like
 
 ```
-› add a test for the empty string
+› the tests are failing. Fix slugify so they pass, and commit it.
 
-  ✓ read       src/slugify.js                                            0.4s
-  ✓ edit       src/slugify.js  +3 -1                                     0.7s
-  ✓ bash       npm test                                                  2.1s
-│   Added a case for `""` and made the pattern tolerate it.
-│
-│   ┌─ js
-│   │ return input.trim().replace(/\s+/g, "-")
-│   └─
+  ✓ bash       git status && git log --oneline -5                                             155ms
+  ✓ grep       slugify                                                                         65ms
+  ✓ read       src/slugify.js                                                                  11ms
+  ✓ read       test/slugify.test.js                                                            18ms
+  ✓ edit       src/slugify.js                                                            +1 -1 21ms
+  ✓ bash       npm test                                                                       273ms
+  ✓ bash       git add src/slugify.js && git commit -m "Fix slugify to collapse whitespace a…  32ms
+│   Fixed src/slugify.js:2 to trim and collapse whitespace, tests pass (2/2), committed.
 
-  ─ 8.9k in · 2.3k cached · 61 out · 6 tools · 3.6s  1% of context  $0.0044 off-peak
+  ─ 57k in · 50k cached · 462 out · 44 reasoning · 8 tools · 12s  6% of context  $0.0070 off-peak
 ```
 
 Each tool call is one row that updates in place — it starts as a spinner and ends
-with its elapsed time, rather than printing twice. A file change shows how many
-lines it added and removed. The answer is rendered as markdown.
+with its elapsed time, rather than printing a start line and then a result line.
+A file change shows how many lines it added and removed, and a title too long for
+the terminal is truncated rather than allowed to wrap, which is what makes the
+repaint safe. The answer is rendered as markdown, including code blocks:
+
+```
+│   Here is the fix:
+│
+│   ┌─ js
+│   │ export function slugify(input) {
+│   │   return input.trim().replace(/\s+/g, "-")
+│   │ }
+│   └─
+```
+
+The spinner appears only after a second of silence and is skipped while you are
+typing, because stealing the input line out from under someone mid-word is worse
+than a missing animation.
 
 The footer is the honest accounting, and it is deliberately more detailed than a
 single number:
