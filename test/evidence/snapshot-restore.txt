@@ -1,0 +1,6 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts restore before-extras --yes
+--- exit 0
+--- stdout ---
+--- stderr ---
+stopped sandbox pid 26721 before restoring
+✓ restored rootfs snapshot before-extras (the project copy in /work was preserved)

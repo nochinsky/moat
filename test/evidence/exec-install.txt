@@ -1,0 +1,8 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c echo persisted-at-$(date -u +%s) > /opt/moat-marker; n=0; until apk add --no-cache jq >/tmp/apk.log 2>&1; do n=$((n+1)); [ $n -ge 4 ] && break; sleep 3; done; echo '--- jq --version ---'; jq --version 2>&1 | head -1; echo '--- marker ---'; cat /opt/moat-marker
+--- exit 0
+--- stdout ---
+--- jq --version ---
+jq-1.7.1
+--- marker ---
+persisted-at-1789752891
+--- stderr ---

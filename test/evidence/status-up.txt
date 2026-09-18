@@ -1,0 +1,53 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts status --json
+--- exit 0
+--- stdout ---
+{
+  "version": 1,
+  "id": "18620c2c4f34",
+  "projectDir": "/home/user/moat-demo/project",
+  "createdAt": "2026-09-18T17:34:30.248Z",
+  "lastUpAt": "2026-09-18T17:34:30.340Z",
+  "status": "running",
+  "opencodeVersion": "1.18.31",
+  "alpineVersion": "3.21.4",
+  "port": 40565,
+  "model": "moat/mock-model",
+  "provider": "local",
+  "providerBaseUrl": "http://127.0.0.1:5599/v1",
+  "branch": "moat-session-2026-09-18-17-34",
+  "profiles": [],
+  "pid": 27470,
+  "baselineDigest": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158",
+  "credential": {
+    "provider": "local",
+    "fingerprint": "sha256:7726b438889c7f57",
+    "mintedAt": "2026-09-18T17:34:30.326Z",
+    "expiresAt": "2026-09-18T21:34:30.326Z"
+  },
+  "snapshots": [
+    "baseline"
+  ],
+  "lastBootMs": 8381,
+  "envDir": "/home/user/.moat/envs/18620c2c4f34",
+  "rootfsDir": "/home/user/.moat/envs/18620c2c4f34/rootfs",
+  "running": true,
+  "url": "http://127.0.0.1:40565",
+  "rootfsBytes": 395298755,
+  "sandboxBranches": [
+    {
+      "name": "main",
+      "sha": "7fa6da1562627a55d8aee87c9fe40350f0b98189",
+      "subject": "initial demo project",
+      "committedAt": "2026-09-18T19:34:28+02:00",
+      "current": false
+    },
+    {
+      "name": "moat-session-2026-09-18-17-34",
+      "sha": "7fa6da1562627a55d8aee87c9fe40350f0b98189",
+      "subject": "initial demo project",
+      "committedAt": "2026-09-18T19:34:28+02:00",
+      "current": true
+    }
+  ]
+}
+--- stderr ---

@@ -1,0 +1,13 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c echo 'in-sandbox /opt after restore:'; ls /opt; echo '--- /work preserved? ---'; ls /work; echo '--- agent commit still present? ---'; git -C /work log --oneline -1
+--- exit 0
+--- stdout ---
+in-sandbox /opt after restore:
+moat-marker
+--- /work preserved? ---
+README.md
+agent-output.txt
+greet.sh
+notes.txt
+--- agent commit still present? ---
+9764bca agent: add agent-output.txt from inside the sandbox
+--- stderr ---

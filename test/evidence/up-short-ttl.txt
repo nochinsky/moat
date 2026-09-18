@@ -1,0 +1,22 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --model mock-model --provider-base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL --credential-ttl 6s
+--- exit 0
+--- stdout ---
+--- stderr ---
+profiles: everything requested is already installed
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+model: moat/mock-model
+! injecting local credential sha256:7726b438889c7f57 (ttl 6s). The agent can read this value and, with the network open, exfiltrate it. Use a provider-scoped, spend-capped token — not a general-purpose key. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-18-17-34
+→ sandbox booted (pid 27173, port 40179); waiting for opencode serve
+✓ sandbox up — warm start 4.10s (image reused)
+
+  project    /home/user/moat-demo/project
+  env        /home/user/.moat/envs/18620c2c4f34
+  opencode   http://127.0.0.1:40179  (basic auth user "opencode")
+  password   WE3NC8GpGYKSHtZiB4VpEzK2lcD4kCeW
+  workspace  /work (inside the sandbox)
+  credential local sha256:7726b438889c7f57 expires 2026-09-18T17:34:27.890Z
+
+  next: moat attach   drive a session
+        moat fetch    pull the agent's branch onto the host
+        moat down     stop the sandbox (state is kept)

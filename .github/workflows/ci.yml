@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: typecheck, build, CLI smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm install --no-audit --no-fund
+      - name: typecheck
+        run: npm run typecheck
+      - name: build (plain JS into dist/, for consumers who want it)
+        run: npm run build
+      - name: CLI smoke test
+        run: |
+          ./cmd/main.ts version
+          ./cmd/main.ts --help
+          node dist/cmd/main.js version
+      - name: host capability probe (must not crash on a host without namespaces)
+        run: ./cmd/main.ts doctor --json || true
+
+  sandbox:
+    name: sandbox end-to-end
+    runs-on: ubuntu-latest
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm install --no-audit --no-fund
+      - name: can this runner create unprivileged user namespaces?
+        id: userns
+        run: |
+          if unshare --user --map-root-user --mount sh -c 'mount -t tmpfs none /tmp/.probe' 2>/dev/null; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "user namespaces: available"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "user namespaces: NOT available on this runner."
+            echo "moat has no host fallback by design, so the sandbox suite is skipped."
+            echo "This is reported rather than silently passing."
+          fi
+      - name: list the toolchain profiles
+        run: ./cmd/main.ts profiles
+      - name: model catalog (network)
+        run: ./cmd/main.ts models deepseek
+      - name: full acceptance suite
+        if: steps.userns.outputs.available == 'true'
+        run: bash test/e2e.sh
+      - name: secondary suite (snapshots, apply, credential expiry)
+        if: steps.userns.outputs.available == 'true'
+        run: bash test/e2e-extras.sh
+      - name: upload evidence
+        if: always() && steps.userns.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence
+          path: test/evidence/
+          if-no-files-found: warn

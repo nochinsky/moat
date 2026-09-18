@@ -1,0 +1,171 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts doctor --json
+--- exit 0
+--- stdout ---
+{
+  "host": {
+    "linux": true,
+    "wsl": true,
+    "virt": "wsl",
+    "userns": true,
+    "mountns": true,
+    "pidns": true,
+    "kvm": false,
+    "unshare": "/usr/bin/unshare",
+    "chroot": "/usr/bin/chroot",
+    "mount": "/usr/bin/mount",
+    "chown": false,
+    "problems": [],
+    "notes": [
+      "no usable /dev/kvm (present but not accessible to uid 1000 (mode 660, gid 991)): v1 microVM unavailable here; the v0 container path is the supported mode",
+      "mknod denied in userns (kernel policy): /dev nodes are bind-mounted read-only from the host's device nodes. No host *data* is mounted."
+    ]
+  },
+  "isolation": {
+    "checks": [
+      {
+        "name": "host project not reachable",
+        "ok": true,
+        "detail": "/home/user/moat-demo/project is absent inside the sandbox"
+      },
+      {
+        "name": "host home not reachable",
+        "ok": true,
+        "detail": "/home/user is absent inside the sandbox"
+      },
+      {
+        "name": "host canary unreadable",
+        "ok": true,
+        "detail": "/home/user/.moat/canary (mode 600, exists only on the host) is unreadable"
+      },
+      {
+        "name": "no host ssh directory",
+        "ok": true,
+        "detail": "host /home/user/.ssh absent; sandbox /root/.ssh absent"
+      },
+      {
+        "name": "no host env forwarded",
+        "ok": true,
+        "detail": "no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential — disclosed below)"
+      },
+      {
+        "name": "no host data mounts",
+        "ok": true,
+        "detail": "13 mounts; none reference a host filesystem path"
+      },
+      {
+        "name": "sandbox pid 1",
+        "ok": true,
+        "detail": "pid 1 is \"sh\", 4 visible processes"
+      },
+      {
+        "name": "own mount namespace",
+        "ok": true,
+        "detail": "sandbox mnt:[4026532237] vs host mnt:[4026532219]"
+      },
+      {
+        "name": "own pid namespace",
+        "ok": true,
+        "detail": "sandbox pid:[4026532240] vs host pid:[4026532221]"
+      },
+      {
+        "name": "own user namespace",
+        "ok": true,
+        "detail": "sandbox user:[4026532236] vs host user:[4026531837]"
+      },
+      {
+        "name": "own uts namespace",
+        "ok": true,
+        "detail": "sandbox uts:[4026532238] vs host uts:[4026532220]"
+      },
+      {
+        "name": "own ipc namespace",
+        "ok": true,
+        "detail": "sandbox ipc:[4026532239] vs host ipc:[4026532208]"
+      },
+      {
+        "name": "uid mapping",
+        "ok": true,
+        "detail": "uid_map \"0 1000 1\" — uid 0 inside is the calling user outside"
+      },
+      {
+        "kind": "exposure",
+        "name": "credential visible to the agent",
+        "ok": true,
+        "detail": "MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. The bundle blanks secret-looking names for shell commands, but the values remain in the opencode process environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token."
+      },
+      {
+        "kind": "exposure",
+        "name": "host loopback reachable",
+        "ok": true,
+        "detail": "the sandbox connected to a service the host opened on 127.0.0.1:36715. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent."
+      },
+      {
+        "kind": "exposure",
+        "name": "egress unrestricted",
+        "ok": true,
+        "detail": "the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it can read, including the project and the injected credential. Egress policy is v2."
+      },
+      {
+        "kind": "note",
+        "name": "network namespace shared",
+        "ok": true,
+        "detail": "sandbox and host share net:[4026531833]. The agent has the host's network position. Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md)."
+      },
+      {
+        "name": "device nodes are the only host mounts",
+        "ok": true,
+        "detail": "6 read-only device node bind(s): /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero"
+      },
+      {
+        "kind": "exposure",
+        "name": "shell env redaction (bundle)",
+        "ok": true,
+        "detail": "the bundle blanks MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, OPENCODE_SERVER_PASSWORD for shell commands the agent writes. Speed bump only: the values are still in the opencode process environment and reachable via /proc/<pid>/environ. This record comes from the plugin running inside the box."
+      }
+    ],
+    "mounts": [
+      "/dev/full||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/null||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/pts||devpts devpts rw,mode=620,ptmxmode=666",
+      "/dev/random||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/shm||tmpfs tmpfs rw,uid=1000,gid=1000",
+      "/dev/tty||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/urandom||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/zero||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000",
+      "/proc||proc proc rw",
+      "/run||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000",
+      "/tmp||tmpfs tmpfs rw,uid=1000,gid=1000",
+      "/||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered"
+    ],
+    "envNames": [
+      "HOME",
+      "LANG",
+      "LC_ALL",
+      "MOAT_CREDENTIAL_EXPIRES_AT",
+      "MOAT_CREDENTIAL_FINGERPRINT",
+      "MOAT_CREDENTIAL_TTL_SECONDS",
+      "MOAT_INJECTED_CREDENTIAL",
+      "MOAT_MODEL",
+      "MOAT_MODEL_ID",
+      "MOAT_PROVIDER_BASE_URL",
+      "MOAT_SANDBOX",
+      "OPENCODE_SERVER_PASSWORD",
+      "PATH",
+      "PWD",
+      "SHLVL",
+      "TERM"
+    ],
+    "raw": "MOAT_ID=uid=0(root) gid=0(root) groups=0(root),65534(nobody)\nMOAT_ALPINE=3.21.4\nMOAT_PID_COUNT=4\nMOAT_PID1=sh\nMOAT_NS_MNT=mnt:[4026532237]\nMOAT_NS_PID=pid:[4026532240]\nMOAT_NS_USER=user:[4026532236]\nMOAT_NS_NET=net:[4026531833]\nMOAT_NS_UTS=uts:[4026532238]\nMOAT_NS_IPC=ipc:[4026532239]\nMOAT_UIDMAP= 0 1000 1\nMOAT_HOST_PROJECT=absent\nMOAT_HOST_HOME=absent\nMOAT_CANARY=unreadable\nMOAT_HOST_SSH=absent\nMOAT_ROOT_SSH=absent\nMOAT_ENV_B64=TU9BVF9QUk9WSURFUl9CQVNFX1VSTD1SRURBQ1RFRC1CWS1ET0NUT1IKU0hMVkw9MQpIT01FPS9yb290Ck1PQVRfQ1JFREVOVElBTF9FWFBJUkVTX0FUPVJFREFDVEVELUJZLURPQ1RPUgpNT0FUX0NSRURFTlRJQUxfVFRMX1NFQ09ORFM9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfTU9ERUw9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfU0FOREJPWD0xCk1PQVRfTU9ERUxfSUQ9UkVEQUNURUQtQlktRE9DVE9SClRFUk09ZHVtYgpQQVRIPS91c3IvbG9jYWwvc2JpbjovdXNyL2xvY2FsL2JpbjovdXNyL3NiaW46L3Vzci9iaW46L3NiaW46L2JpbgpPUEVOQ09ERV9TRVJWRVJfUEFTU1dPUkQ9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfQ1JFREVOVElBTF9GSU5HRVJQUklOVD1SRURBQ1RFRC1CWS1ET0NUT1IKTEFORz1DLlVURi04CkxDX0FMTD1DLlVURi04ClBXRD0vCk1PQVRfSU5KRUNURURfQ1JFREVOVElBTD1SRURBQ1RFRC1CWS1ET0NUT1IK\nMOAT_SECRET_ENV_NAMES=MOAT_CREDENTIAL_EXPIRES_AT,MOAT_CREDENTIAL_TTL_SECONDS,OPENCODE_SERVER_PASSWORD,MOAT_CREDENTIAL_FINGERPRINT,MOAT_INJECTED_CREDENTIAL,\nMOAT_HOST_LOOPBACK=REACHABLE\nMOAT_EGRESS_OPEN=yes\nMOAT_MOUNTS_B64=L3x8ZXh0NCAvZGV2L3NkZCBydyxkaXNjYXJkLGVycm9ycz1yZW1vdW50LXJvLGRhdGE9b3JkZXJlZAovcHJvY3x8cHJvYyBwcm9jIHJ3Ci9kZXZ8fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCi9kZXYvbnVsbHx8ZGV2dG1wZnMgbm9uZSBydyxzaXplPTM5NDU0MjRrLG5yX2lub2Rlcz05ODYzNTYsbW9kZT03NTUKL2Rldi96ZXJvfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L2Z1bGx8fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvcmFuZG9tfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L3VyYW5kb218fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvdHR5fHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L3B0c3x8ZGV2cHRzIGRldnB0cyBydyxtb2RlPTYyMCxwdG14bW9kZT02NjYKL2Rldi9zaG18fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi90bXB8fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi9ydW58fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCg==\n",
+    "hostNamespaces": {
+      "mnt": "mnt:[4026532219]",
+      "pid": "pid:[4026532221]",
+      "user": "user:[4026531837]",
+      "net": "net:[4026531833]",
+      "uts": "uts:[4026532220]",
+      "ipc": "ipc:[4026532208]"
+    }
+  }
+}
+--- stderr ---
+→ running in-sandbox isolation checks

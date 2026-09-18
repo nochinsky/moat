@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+#
+# moat verification, part 2: claims that are not in the main acceptance list
+# but are made in docs/SPEC.md and the README, so they get the same
+# treatment, a command, its real output, and no adjectives.
+#
+# Covers: rootfs snapshots and restore, `moat apply` (the explicit second step of
+# copy-out), `moat env`, and credential expiry enforcement.
+#
+# Usage: bash test/e2e-extras.sh   (run after test/e2e.sh, in the same fixture)
+set -uo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MOAT="node $REPO/cmd/main.ts"
+WORK="${MOAT_E2E_DIR:-$HOME/moat-demo}"
+PROJECT="$WORK/project"
+EVIDENCE="$REPO/test/evidence"
+MOCK_PORT="${MOCK_PORT:-5599}"
+MOCK_PIDFILE="$WORK/mock.pid"
+CREDENTIAL="moat-e2e-scoped-credential-8c1d4e"
+
+mkdir -p "$EVIDENCE"
+
+section() {
+  {
+    echo ""
+    echo "=============================================================="
+    echo "== $1"
+    echo "=============================================================="
+  } | tee -a "$EVIDENCE/extras.txt"
+}
+
+capture() {
+  local name="$1"; shift
+  {
+    echo "--- \$ $*"
+    "$@" > "$EVIDENCE/$name.out" 2> "$EVIDENCE/$name.err"
+    echo "--- exit $?"
+    echo "--- stdout ---"
+    cat "$EVIDENCE/$name.out"
+    echo "--- stderr ---"
+    cat "$EVIDENCE/$name.err"
+  } > "$EVIDENCE/$name.txt"
+  cat "$EVIDENCE/$name.txt" | tee -a "$EVIDENCE/extras.txt"
+}
+
+: > "$EVIDENCE/extras.txt"
+cd "$PROJECT"
+export MOAT_MOCK_CREDENTIAL="$CREDENTIAL"
+
+section "boot the fixture environment"
+capture extras-up $MOAT up --model mock-model --provider-base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+
+section "A. snapshots capture the rootfs and never the project"
+capture snapshot-take $MOAT snapshot before-extras
+capture exec-mark $MOAT exec -- /bin/sh -c "echo MARKER-ADDED-AFTER-SNAPSHOT > /opt/moat-extra; echo 'in-sandbox /opt now contains:'; ls /opt"
+echo "" | tee -a "$EVIDENCE/extras.txt"
+echo "host-side proof that /work is excluded from snapshots:" | tee -a "$EVIDENCE/extras.txt"
+{
+  echo "\$ tar tzf <snapshot> | grep -c '^\\./work'   # expect 0"
+  SNAP=$(ls "$HOME"/.moat/envs/*/snapshots/before-extras.tar.gz | head -1)
+  echo "snapshot: $SNAP"
+  echo "entries under ./work : $(tar tzf "$SNAP" | grep -c '^\./work' || true)"
+  echo "entries under ./root  : $(tar tzf "$SNAP" | grep -c '^\./root' || true)"
+  echo "total entries         : $(tar tzf "$SNAP" | wc -l)"
+} | tee -a "$EVIDENCE/extras.txt"
+
+section "B. moat restore rolls the rootfs back and preserves /work"
+capture snapshot-restore $MOAT restore before-extras --yes
+capture exec-after-restore $MOAT exec -- /bin/sh -c "echo 'in-sandbox /opt after restore:'; ls /opt; echo '--- /work preserved? ---'; ls /work; echo '--- agent commit still present? ---'; git -C /work log --oneline -1"
+
+section "C. moat apply is a separate, explicit step from moat fetch"
+capture extras-up-again $MOAT up --model mock-model --provider-base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+capture extras-fetch $MOAT fetch
+capture apply-branch $MOAT apply main --name e2e-checkout
+{
+  echo "\$ git -C $PROJECT branch --list 'e2e-checkout'"
+  git -C "$PROJECT" branch --list 'e2e-checkout'
+  echo "\$ git -C $PROJECT rev-parse HEAD   # unchanged: apply did not check anything out"
+  git -C "$PROJECT" rev-parse HEAD
+  echo "\$ git -C $PROJECT status --porcelain   # only the user's own pre-existing dirt"
+  git -C "$PROJECT" status --porcelain
+} | tee -a "$EVIDENCE/extras.txt"
+
+section "D. moat env reports the connection details"
+capture env-details $MOAT env
+
+section "E. the injected credential is short-lived, and expiry is enforced"
+echo "booting with --credential-ttl 6s and watching the sandbox stop on its own..." | tee -a "$EVIDENCE/extras.txt"
+capture down-for-ttl $MOAT down
+capture up-short-ttl $MOAT up --model mock-model --provider-base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL --credential-ttl 6s
+echo "waiting 12s for the TTL watchdog to fire..." | tee -a "$EVIDENCE/extras.txt"
+sleep 12
+capture status-after-ttl $MOAT status
+echo "" | tee -a "$EVIDENCE/extras.txt"
+echo "--- sandbox log: the expiry notice ---" | tee -a "$EVIDENCE/extras.txt"
+{
+  echo "\$ grep -iE 'expired|stopping agent' \$HOME/.moat/envs/*/logs/sandbox.log"
+  grep -iE "expired|stopping agent|agent exited" "$HOME"/.moat/envs/*/logs/sandbox.log | tail -4
+  echo ""
+  echo "\$ moat status  -> status line above shows the box is stopped, which it did to itself"
+} | tee -a "$EVIDENCE/extras.txt"
+
+section "F. every claim about process state is reconciled against the live process table"
+capture status-final $MOAT status
+capture down-final $MOAT down
+if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; fi
+echo "" | tee -a "$EVIDENCE/extras.txt"
+echo "extras evidence written to $EVIDENCE/extras.txt" | tee -a "$EVIDENCE/extras.txt"

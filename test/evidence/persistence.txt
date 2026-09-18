@@ -1,0 +1,9 @@
+jq is NOT in the base image (verified present in the Alpine 3.21 main repo).
+Two independent persistence proofs are taken:
+  (a) a marker file written into the rootfs
+  (b) a package installed with the sandbox's own package manager
+
+$ moat exec -- /bin/sh -c 'echo ... > /opt/moat-marker; apk add --no-cache jq (with retries)'
+
+--- after moat down + moat up (fresh namespaces, same rootfs) ---
+$ moat exec -- /bin/sh -c 'cat /opt/moat-marker; /usr/bin/jq --version'

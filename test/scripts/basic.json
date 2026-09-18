@@ -1,0 +1,38 @@
+[
+  {
+    "tool": "bash",
+    "args": {
+      "command": "pwd && ls -la && cat README.md"
+    }
+  },
+  {
+    "tool": "write",
+    "args": {
+      "filePath": "agent-output.txt",
+      "content": "written by the agent, inside the sandbox\n"
+    }
+  },
+  {
+    "tool": "edit",
+    "args": {
+      "filePath": "agent-output.txt",
+      "oldString": "inside the sandbox",
+      "newString": "inside the sandbox, via the edit tool"
+    }
+  },
+  {
+    "tool": "bash",
+    "args": {
+      "command": "printf 'line two\\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt"
+    }
+  },
+  {
+    "tool": "bash",
+    "args": {
+      "command": "git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && git log --oneline -1 && git rev-parse HEAD"
+    }
+  },
+  {
+    "text": "Task complete: created and edited agent-output.txt, and committed it inside the sandbox."
+  }
+]

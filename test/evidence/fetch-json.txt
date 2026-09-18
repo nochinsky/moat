@@ -1,0 +1,31 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts fetch --json
+--- exit 0
+--- stdout ---
+{
+  "fetched": [
+    {
+      "branch": "moat-session-2026-09-18-17-34",
+      "hostRef": "refs/moat/moat-session-2026-09-18-17-34",
+      "sha": "7e3015fb90cb492368135eab90c2638cb267f11c",
+      "commits": 2,
+      "headBefore": "7fa6da1562627a55d8aee87c9fe40350f0b98189",
+      "headAfter": "7fa6da1562627a55d8aee87c9fe40350f0b98189",
+      "worktreeUntouched": true,
+      "commitsFetched": [
+        {
+          "sha": "7e3015fb90cb492368135eab90c2638cb267f11c",
+          "subject": "agent: add agent-output.txt from inside the sandbox"
+        },
+        {
+          "sha": "7fa6da1562627a55d8aee87c9fe40350f0b98189",
+          "subject": "initial demo project"
+        }
+      ]
+    }
+  ],
+  "worktreeUntouched": true,
+  "projectDigestBefore": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158",
+  "projectDigestAfter": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158"
+}
+--- stderr ---
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-18-17-34:refs/moat/moat-session-2026-09-18-17-34

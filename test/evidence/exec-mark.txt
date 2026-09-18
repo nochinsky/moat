@@ -1,0 +1,7 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c echo MARKER-ADDED-AFTER-SNAPSHOT > /opt/moat-extra; echo 'in-sandbox /opt now contains:'; ls /opt
+--- exit 0
+--- stdout ---
+in-sandbox /opt now contains:
+moat-extra
+moat-marker
+--- stderr ---

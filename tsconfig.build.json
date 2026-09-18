@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "declaration": false,
+    "sourceMap": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "module": "nodenext",
+    "target": "es2023",
+    "lib": ["es2023"],
+    "types": ["node"]
+  },
+  "include": ["cmd/**/*.ts", "lib/**/*.ts", "sandbox/**/*.ts", "sync/**/*.ts", "secrets/**/*.ts", "bundle/**/*.ts"]
+}

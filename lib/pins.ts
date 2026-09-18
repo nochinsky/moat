@@ -1,0 +1,96 @@
+/**
+ * Pinned, verified-against-source constants.
+ *
+ * Every version here was confirmed against a real artifact, not memory:
+ *  - OPENCODE_VERSION: `npm view opencode-ai version` -> 1.18.31, and
+ *    a local clone of the opencode repository is checked out at that same version
+ *    (packages/opencode/package.json "version": "1.18.31").
+ *  - ALPINE_VERSION / ALPINE_ROOTFS: `curl -sSI` on the release tarball
+ *    returned HTTP 200 with a concrete Content-Length.
+ *  - OPENCODE_NPM_PKG: read from `npm view opencode-ai optionalDependencies`.
+ */
+export const OPENCODE_VERSION = "1.18.31"
+
+/** Target triple we provision inside the rootfs. Alpine is musl, so we take the musl build. */
+export const SANDBOX_TRIPLE = "linux-x64-musl"
+/** Target triple of the host helper binary (used only for the interactive `opencode attach` TUI). */
+export const HOST_TRIPLE = "linux-x64"
+
+export const ALPINE_BRANCH = "v3.21"
+export const ALPINE_VERSION = "3.21.4"
+export const ALPINE_ROOTFS_URL =
+  `https://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/releases/x86_64/` +
+  `alpine-minirootfs-${ALPINE_VERSION}-x86_64.tar.gz`
+
+/** Packages baked into every rootfs snapshot. Nothing here is a credential. */
+export const PROVISION_PACKAGES = [
+  "bash",
+  "git",
+  "curl",
+  "ripgrep",
+  "libstdc++",
+  "ca-certificates",
+  "coreutils",
+  "util-linux",
+  "findutils",
+  "diffutils",
+  "patch",
+]
+
+export const NPM_REGISTRY = "https://registry.npmjs.org"
+
+/**
+ * Where the bundle is installed inside the sandbox rootfs.
+ * No credentials ever live under here: the provider config references
+ * `{env:MOAT_INJECTED_CREDENTIAL}`, which opencode substitutes at load time.
+ */
+export const BUNDLE_DIR = "/usr/local/share/moat"
+export const BUNDLE_CONFIG = `${BUNDLE_DIR}/opencode.json`
+export const BUNDLE_PLUGIN = `${BUNDLE_DIR}/plugin/moat-bundle.mjs`
+export const SANDBOX_WORKDIR = "/work"
+export const AUDIT_LOG = "/var/log/moat/tools.jsonl"
+
+/** The curated tool set. This is the complete list the model is ever shown. */
+export const CURATED_TOOLS = [
+  "read",
+  "write",
+  "edit",
+  "apply_patch",
+  "glob",
+  "grep",
+  "bash",
+  "todowrite",
+] as const
+
+/**
+ * Built-ins that ship with opencode but are deliberately NOT in the bundle.
+ *
+ * IMPORTANT, and verified against opencode 1.18.31 rather than assumed:
+ * opencode has NO supported way to prune a built-in tool from the list it
+ * advertises to the model. `tools: {x: false}` compiles to a permission rule
+ * (packages/opencode/src/config/config.ts:567), and the model-facing tool list
+ * is built from the static `builtin` array in
+ * packages/opencode/src/tool/registry.ts (~line 231) with no permission filter
+ * (packages/opencode/src/session/tools.ts:92). Only MCP tools are filtered, via
+ * Permission.visibleTools at registry.ts:286.
+ *
+ * Two of these are nevertheless absent from the advertised list because
+ * opencode itself gates them:
+ *   - `websearch` is gated on the provider (webSearchEnabled, providerID must be
+ *     opencode/opencode-go or exa/parallel enabled)
+ *   - `question` is gated on the client (RuntimeFlags.client must be
+ *     app/cli/desktop); moat sets OPENCODE_CLIENT=moat, which removes it
+ * The other three (`webfetch`, `skill`, `task`) remain advertised. moat
+ * therefore enforces the curated set at the tool boundary instead: the bundle
+ * plugin refuses any tool id outside CURATED_TOOLS, and records the attempt.
+ * See docs/UPSTREAM-CANDIDATES.md for the upstream change that would make this
+ * exact.
+ */
+export const EXCLUDED_TOOLS = ["webfetch", "websearch", "question", "skill", "task"] as const
+
+/**
+ * Of the excluded built-ins above, the ones opencode simply cannot stop
+ * advertising in v1.18.31. Kept explicit so `moat tools` can report the gap
+ * instead of pretending it does not exist.
+ */
+export const UNADVERTISED_GAPS = ["webfetch", "skill", "task"] as const

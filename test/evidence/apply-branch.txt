@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts apply main --name e2e-checkout
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ nothing fetched at refs/moat/main. Run `moat fetch main` first.

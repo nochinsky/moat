@@ -1,0 +1,57 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts doctor
+--- exit 0
+--- stdout ---
+--- stderr ---
+host
+  platform   linux x64 wsl2 userns=yes kvm=no
+  unshare    /usr/bin/unshare
+  chroot     /usr/bin/chroot
+  user ns    available
+  pid ns     available
+  /dev/kvm   absent (v1 microVM path unavailable here)
+  note       no usable /dev/kvm (present but not accessible to uid 1000 (mode 660, gid 991)): v1 microVM unavailable here; the v0 container path is the supported mode
+  note       mknod denied in userns (kernel policy): /dev nodes are bind-mounted read-only from the host's device nodes. No host *data* is mounted.
+→ running in-sandbox isolation checks
+
+isolation (14 checks)
+  pass  host project not reachable     /home/user/moat-demo/project is absent inside the sandbox
+  pass  host home not reachable        /home/user is absent inside the sandbox
+  pass  host canary unreadable         /home/user/.moat/canary (mode 600, exists only on the host) is unreadable
+  pass  no host ssh directory          host /home/user/.ssh absent; sandbox /root/.ssh absent
+  pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential — disclosed below)
+  pass  no host data mounts            13 mounts; none reference a host filesystem path
+  pass  sandbox pid 1                  pid 1 is "sh", 4 visible processes
+  pass  own mount namespace            sandbox mnt:[4026532235] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532238] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532234] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532236] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532237] vs host ipc:[4026532208]
+  pass  uid mapping                    uid_map "0 1000 1" — uid 0 inside is the calling user outside
+  pass  device nodes are the only host mounts 6 read-only device node bind(s): /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
+
+exposures — measured, and NOT fixed in v0. Read these before trusting the box.
+  expose  credential visible to the agent
+          MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. The bundle blanks secret-looking names for shell commands, but the values remain in the opencode process environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token.
+  expose  host loopback reachable
+          the sandbox connected to a service the host opened on 127.0.0.1:41317. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent.
+  expose  egress unrestricted
+          the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it can read, including the project and the injected credential. Egress policy is v2.
+  expose  shell env redaction (bundle)
+          the bundle blanks MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, OPENCODE_SERVER_PASSWORD for shell commands the agent writes. Speed bump only: the values are still in the opencode process environment and reachable via /proc/<pid>/environ. This record comes from the plugin running inside the box.
+
+  note  network namespace shared       sandbox and host share net:[4026531833]. The agent has the host's network position. Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md).
+
+mount table inside the sandbox
+  /dev/full||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/null||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/pts||devpts devpts rw,mode=620,ptmxmode=666
+  /dev/random||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/shm||tmpfs tmpfs rw,uid=1000,gid=1000
+  /dev/tty||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/urandom||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/zero||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
+  /proc||proc proc rw
+  /run||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
+  /tmp||tmpfs tmpfs rw,uid=1000,gid=1000
+  /||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered
