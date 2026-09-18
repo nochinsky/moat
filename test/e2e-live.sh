@@ -13,32 +13,24 @@
 #
 # Usage:
 #   DEEPSEEK_API_KEY=sk-... bash test/e2e-live.sh
-#   ZHIPU_API_KEY=...        bash test/e2e-live.sh zai glm-4.6
-#   OPENAI_API_KEY=...       bash test/e2e-live.sh openai gpt-5.4
+#   DEEPSEEK_API_KEY=...    bash test/e2e-live.sh deepseek-v4-flash   # another model
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MOAT="node $REPO/cmd/main.ts"
-PROVIDER="${1:-deepseek}"
-MODEL="${2:-deepseek-v4-pro}"
+MODEL="${1:-deepseek-v4-pro}"
 PROFILE="${PROFILE:-node}"
 WORK="${MOAT_E2E_DIR:-$HOME/moat-demo}"
 PROJECT="$WORK/live-project"
 EVIDENCE="$REPO/test/evidence"
 TIMEOUT="${LIVE_TIMEOUT:-1800}"
 
-case "$PROVIDER" in
-  deepseek) KEYVAR=DEEPSEEK_API_KEY ;;
-  zai)      KEYVAR=ZHIPU_API_KEY ;;
-  openai)   KEYVAR=OPENAI_API_KEY ;;
-  anthropic) KEYVAR=ANTHROPIC_API_KEY ;;
-  *)        KEYVAR="${PROVIDER^^}_API_KEY" ;;
-esac
+KEYVAR=DEEPSEEK_API_KEY
 
 if [ -z "${!KEYVAR:-}" ]; then
   echo "no $KEYVAR in the environment."
   echo "This suite spends real tokens against a real provider; it will not run without a key."
-  echo "  $KEYVAR=... bash test/e2e-live.sh $PROVIDER $MODEL"
+  echo "  $KEYVAR=... bash test/e2e-live.sh $MODEL"
   exit 2
 fi
 
@@ -55,7 +47,7 @@ run() {
 }
 
 say "=============================================================="
-say "== live model run: $PROVIDER / $MODEL"
+say "== live model run: deepseek / $MODEL"
 say "== key: \$$KEYVAR (value never printed, never written to disk)"
 say "=============================================================="
 
@@ -119,7 +111,7 @@ say ""
 say "== 2. boot with the real provider"
 # ---------------------------------------------------------------------------
 run $MOAT destroy --yes
-run $MOAT up --provider "$PROVIDER" --model "$MODEL" --profile "$PROFILE" --credential-env "$KEYVAR"
+run $MOAT up --model "$MODEL" --profile "$PROFILE" --credential-env "$KEYVAR"
 
 # ---------------------------------------------------------------------------
 say ""

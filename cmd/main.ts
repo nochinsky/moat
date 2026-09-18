@@ -10,10 +10,10 @@ import { hashTree } from "../lib/hash.ts"
 import { probeHost, assertHostUsable, describeHost } from "../lib/host.ts"
 import { envPaths, type EnvPaths } from "../lib/paths.ts"
 import { ALPINE_VERSION, CURATED_TOOLS, EXCLUDED_TOOLS, OPENCODE_VERSION, SANDBOX_WORKDIR, UNADVERTISED_GAPS } from "../lib/pins.ts"
-import { describeProviders, findProvider, providerIds, type ProviderSpec } from "../lib/providers.ts"
+import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, isDeepSeekHost } from "../lib/provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from "../sandbox/profiles.ts"
-import { detectProfiles, detectProviderFromEnv } from "../lib/detect.ts"
+import { detectProfiles } from "../lib/detect.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import {
   envExists,
@@ -54,7 +54,6 @@ import {
   INJECTED_ENV_NAMES,
   credentialRiskNotice,
   mint,
-  refusedAutoCredential,
   ttlToSeconds,
   toSandboxEnv,
   type MintedCredential,
@@ -112,7 +111,6 @@ const SPEC: Spec = {
   json: "boolean",
   verbose: "boolean",
   model: "string",
-  provider: "string",
   profile: "string",
   profiles: "boolean",
   tools: "string",
@@ -120,7 +118,7 @@ const SPEC: Spec = {
   refresh: "boolean",
   "list-models": "boolean",
   "model-id": "string",
-  "provider-base-url": "string",
+  "base-url": "string",
   credential: "string",
   "credential-env": "string",
   "credential-ttl": "string",
@@ -206,45 +204,47 @@ function ms(value: number): string {
 // provider, model and profile resolution
 // ---------------------------------------------------------------------------
 
-/**
- * Decide which provider to use.
- *
- * Explicit flag wins. Otherwise moat looks for a credential it recognises and
- * infers the provider from it, but only from the names the provider actually
- * uses, and it says which one it picked rather than doing it silently.
- */
-function resolveProvider(p: Parsed, state?: EnvState | null): ProviderSpec {
-  const explicit = flag<string>(p, "provider")
-  // A custom base URL only means anything for a custom endpoint, so it implies
-  // `local` rather than silently pairing with whatever provider key happens to
-  // be exported.
-  if (!explicit && flag<string>(p, "provider-base-url")) return findProvider("local")!
-  if (!explicit && !detectProviderFromEnv() && state?.provider) {
-    // Nothing new exported, but this environment already knows what it used.
-    // Typing the provider once should be enough.
-    const remembered = findProvider(state.provider)
-    if (remembered) {
-      log.debug(`provider: ${remembered.id} (remembered from this environment)`)
-      return remembered
-    }
-  }
-  if (explicit) {
-    const found = findProvider(explicit)
-    if (!found) {
-      log.fail(`unknown provider "${explicit}". Known: ${providerIds().join(", ")}\n\n${describeProviders()}`)
-    }
-    return found!
-  }
-  const detected = detectProviderFromEnv()
-  if (detected) {
-    log.debug(`provider: ${detected.provider} (from ${detected.envVar})`)
-    return findProvider(detected.provider)!
-  }
-  // A custom endpoint with no credential yet still needs a provider shell.
-  return findProvider("local")!
-}
+type ResolvedProvider = { opencodeID: string; label: string; npm: string; baseUrl: string; native: boolean; modelID: string }
 
-const PROVIDERS_ORDER = ["zai", "deepseek", "openai", "anthropic", "openrouter", "groq", "moonshot"]
+/**
+ * DeepSeek, or whatever `--base-url` points at.
+ *
+ * There is no provider to choose and nothing to infer: the model defaults to
+ * DeepSeek's, and `--base-url` switches to any OpenAI-compatible endpoint.
+ */
+function resolveProvider(p: Parsed, state?: EnvState | null): ResolvedProvider {
+  const custom = flag<string>(p, "base-url")
+  if (custom) {
+    return {
+      opencodeID: CUSTOM_ENDPOINT.opencodeID,
+      label: CUSTOM_ENDPOINT.label,
+      npm: CUSTOM_ENDPOINT.npm,
+      baseUrl: custom.replace(/\/+$/, ""),
+      native: false,
+      modelID: flag<string>(p, "model") ?? state?.model?.split("/").pop() ?? DEEPSEEK.defaultModel,
+    }
+  }
+  if (flag<string>(p, "model") === undefined && state?.model?.startsWith(`${DEEPSEEK.opencodeID}/`)) {
+    // Same provider, so the environment's model is a better default than the
+    // built-in one. Typing the model once should be enough.
+    return {
+      opencodeID: DEEPSEEK.opencodeID,
+      label: DEEPSEEK.label,
+      npm: DEEPSEEK.npm,
+      baseUrl: DEEPSEEK.baseUrl,
+      native: true,
+      modelID: state.model.slice(DEEPSEEK.opencodeID.length + 1),
+    }
+  }
+  return {
+    opencodeID: DEEPSEEK.opencodeID,
+    label: DEEPSEEK.label,
+    npm: DEEPSEEK.npm,
+    baseUrl: DEEPSEEK.baseUrl,
+    native: true,
+    modelID: flag<string>(p, "model") ?? DEEPSEEK.defaultModel,
+  }
+}
 
 type ResolvedModel = {
   providerID: string
@@ -254,46 +254,38 @@ type ResolvedModel = {
   meta: { context?: number; output?: number; toolCall?: boolean; reasoning?: boolean; attachment?: boolean } | undefined
 }
 
-async function resolveModel(
-  spec: ProviderSpec,
-  requested: string | undefined,
-  catalog: Catalog | null,
-  opts: { baseUrl?: string },
-): Promise<ResolvedModel> {
-  if (spec.id === "local" && !opts.baseUrl) {
-    log.fail(
-      `--provider local needs --provider-base-url (e.g. http://127.0.0.1:11434/v1 for Ollama).\n` +
-        `Or pick a known provider: ${providerIds().filter((id) => id !== "local").join(", ")}`,
-    )
-  }
-  const modelID = requested ?? spec.defaultModel
-  if (!modelID) log.fail(`no model: pass --model <id>, or --provider-base-url for a custom endpoint`)
+async function resolveModel(provider: ResolvedProvider, catalog: Catalog | null): Promise<ResolvedModel> {
+  const modelID = provider.modelID
+  const known = catalogModel(catalog, provider.opencodeID, modelID)
 
-  const native = spec.native && spec.envVars.length > 0
-  const catalogProvider = catalog?.get(spec.opencodeID)
-  const known = catalogModel(catalog, spec.opencodeID, modelID!)
-
-  if (catalog && native && catalogProvider && !known) {
-    // Say so rather than failing: opencode would silently be unable to resolve it.
+  // A native model id that the catalog does not describe would leave opencode
+  // unable to resolve it, so say so and describe it here instead.
+  const catalogProvider = catalog?.get(provider.opencodeID)
+  if (catalog && provider.native && catalogProvider && !known) {
     log.warn(
-      `${spec.opencodeID} does not define a model "${modelID}" in the models.dev catalog. ` +
-        `moat will declare it as a custom OpenAI-compatible model instead. ` +
-        `Known ids: ${catalogProvider.models.slice(0, 8).map((m) => m.id).join(", ")}…  (moat models ${spec.id})`,
+      `${provider.opencodeID} does not define "${modelID}" in the models.dev catalog; declaring it as a custom ` +
+        `model instead. Known ids: ${catalogProvider.models.map((m) => m.id).join(", ")}   (moat models)`,
     )
   }
   if (known && known.toolCall === false) {
-    log.warn(`${spec.opencodeID}/${modelID} does not advertise tool calling; the agent will not be able to act.`)
+    log.warn(`${provider.opencodeID}/${modelID} does not advertise tool calling; the agent will not be able to act.`)
   }
 
-  const useNative = native && (known !== null || !catalog)
-  const providerID = useNative ? spec.opencodeID : "moat"
+  const useNative = provider.native && (known !== null || !catalog)
+  const providerID = useNative ? provider.opencodeID : CUSTOM_ENDPOINT.opencodeID
   return {
     providerID,
-    modelID: modelID!,
+    modelID,
     model: `${providerID}/${modelID}`,
     native: useNative,
     meta: known
-      ? { context: known.context, output: known.output, toolCall: known.toolCall, reasoning: known.reasoning, attachment: known.attachment }
+      ? {
+          context: known.context,
+          output: known.output,
+          toolCall: known.toolCall,
+          reasoning: known.reasoning,
+          attachment: known.attachment,
+        }
       : undefined,
   }
 }
@@ -497,10 +489,10 @@ ${command}
   // --- provider, model, catalog ---------------------------------------------
   const catalog = flag<boolean>(p, "refresh") ? await loadCatalog({ refresh: true }) : await loadCatalog()
   const provider = resolveProvider(p, state)
-  const baseUrl = flag<string>(p, "provider-base-url") ?? provider.baseUrl
-  const resolvedModel = await resolveModel(provider, flag<string>(p, "model"), catalog, { baseUrl })
+  const baseUrl = provider.baseUrl
+  const resolvedModel = await resolveModel(provider, catalog)
   const toolPreset = resolveToolPreset(p)
-  report.provider = { id: provider.id, opencodeID: resolvedModel.providerID, native: resolvedModel.native, label: provider.label }
+  report.provider = { opencodeID: resolvedModel.providerID, native: resolvedModel.native, label: provider.label }
   report.model = {
     id: resolvedModel.model,
     context: resolvedModel.meta?.context,
@@ -525,24 +517,20 @@ ${command}
     credential = mint({
       literal: flag<string>(p, "credential"),
       envName: flag<string>(p, "credential-env"),
-      provider: provider.id,
+      provider: DEEPSEEK.label,
       baseUrl,
       model: resolvedModel.modelID,
       ttlSeconds,
-      // Native providers get the credential under the name opencode looks for;
-      // a custom endpoint gets it under moat's own name, which the rendered
-      // provider block references as {env:MOAT_INJECTED_CREDENTIAL}.
-      targetEnvVars: resolvedModel.native ? provider.envVars : [],
+      // DeepSeek gets the key under the name opencode looks for. A custom
+      // endpoint gets it under moat's own name, which the rendered provider
+      // block references as {env:MOAT_INJECTED_CREDENTIAL}.
+      targetEnvVars: resolvedModel.native ? [DEEPSEEK.envVar] : [],
     })
     if (!credential) {
-      const refused = refusedAutoCredential()
-      if (refused) log.warn(refused)
-      else {
-        log.warn(
-          "no credential found. moat will boot the sandbox, but the agent cannot call a model. " +
-            "Provide one with --credential-env NAME, or create ~/.moat/credentials.json (chmod 600).",
-        )
-      }
+      log.warn(
+        `no ${DEEPSEEK.envVar} found, so the agent has no model to call. Export it, or pass ` +
+          `--credential-env NAME if it lives under a different name.`,
+      )
     } else {
       log.warn(credentialRiskNotice(credential))
     }
@@ -599,12 +587,10 @@ ${command}
   // session id. Cheaper to say so now.
   if (task.length > 0 && !credential) {
     log.fail(
-      "no credential, so the agent has no model to call. Either:\n" +
-        `  export ZHIPU_API_KEY=...     then  moat run --provider zai "..."\n` +
-        `  export DEEPSEEK_API_KEY=...  then  moat run --provider deepseek "..."\n` +
-        `  export OPENAI_API_KEY=...    then  moat run --provider openai "..."\n` +
-        `  or name one explicitly:      moat run --credential-env MY_KEY "..."\n` +
-        "  or point at any OpenAI-compatible endpoint:  moat run --provider-base-url http://localhost:11434/v1 --model llama3 \"...\"",
+      `no ${DEEPSEEK.envVar}, so the agent has no model to call.\n` +
+        `  export ${DEEPSEEK.envVar}=sk-...   then  moat run "..."\n` +
+        `  if the key lives under another name:  moat run --credential-env THAT_NAME "..."\n` +
+        "  or point at another OpenAI-compatible endpoint:  moat run --base-url http://localhost:11434/v1 --model llama3 \"...\"",
     )
   }
 
@@ -635,7 +621,7 @@ ${command}
     port,
     model: resolvedModel.model,
     providerBaseUrl: baseUrl,
-    provider: provider.id,
+    provider: provider.opencodeID,
     branch,
     baseBranch,
     profiles: resolvedProfiles.profiles,
@@ -1391,43 +1377,41 @@ async function cmdEnv(argv: string[]): Promise<number> {
   return 0
 }
 
-/** `moat models [provider]`, what the catalog actually offers, not a stale list. */
+/** `moat models`, what DeepSeek actually offers, straight from the catalog. */
 async function cmdModels(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const catalog = await loadCatalog({ refresh: flag<boolean>(p, "refresh") ?? false })
-  if (!catalog) log.fail("could not load the models.dev catalog and there is no cached copy")
 
-  const requested = p._[0]
-  const specs = requested
-    ? [findProvider(requested) ?? log.fail(`unknown provider "${requested}". Known: ${providerIds().join(", ")}`)]
-    : (["zai", "deepseek", "openai"] as const).map((id) => findProvider(id)!)
+  const entry = catalog?.get(DEEPSEEK.opencodeID)
+  const models = entry
+    ? [...entry.models].sort((a, b) => (b.context ?? 0) - (a.context ?? 0))
+    : FALLBACK_MODELS.map((id) => ({ id, toolCall: true, context: undefined, output: undefined }))
 
-  const payload: Record<string, unknown> = {}
-  for (const spec of specs) {
-    const entry = catalog!.get(spec.opencodeID)
-    if (!entry) {
-      payload[spec.id] = { error: `not in the catalog (opencodeID=${spec.opencodeID})` }
-      if (!flag<boolean>(p, "json")) log.info(`${spec.id}: not in the catalog; use --provider-base-url`)
-      continue
-    }
-    const models = [...entry.models].sort((a, b) => (b.context ?? 0) - (a.context ?? 0))
-    payload[spec.id] = { id: entry.id, env: entry.envVars, api: entry.api, models }
-    if (flag<boolean>(p, "json")) continue
-    log.info("")
-    log.info(`${log.bold(spec.label)}  (--provider ${spec.id})  env=${entry.envVars.join(" | ") || "n/a"}`)
-    if (entry.api) log.info(`  endpoint ${entry.api}`)
-    log.info(`  ${"model".padEnd(38)} ${"context".padStart(7)} ${"output".padStart(7)}  tools`)
-    for (const model of models.slice(0, 30)) {
-      const isDefault = model.id === spec.defaultModel ? log.green(" *") : "  "
-      log.info(
-        `${isDefault}${model.id.padEnd(36)} ${formatTokens(model.context).padStart(7)} ` +
-          `${formatTokens(model.output).padStart(7)}  ${model.toolCall ? "yes" : log.yellow("NO")}`,
-      )
-    }
-    if (models.length > 30) log.info(`  … and ${models.length - 30} more`)
-    log.info(`  ${log.dim("* = moat's default. Usage: moat up --provider " + spec.id + " --model <id>")}`)
+  if (flag<boolean>(p, "json")) {
+    log.emit({
+      provider: DEEPSEEK.opencodeID,
+      endpoint: entry?.api ?? DEEPSEEK.baseUrl,
+      env: DEEPSEEK.envVar,
+      default: DEEPSEEK.defaultModel,
+      source: entry ? "models.dev catalog" : "built-in fallback (catalog unavailable)",
+      models,
+    })
+    return 0
   }
-  if (flag<boolean>(p, "json")) log.emit(payload)
+
+  log.info("")
+  log.info(`${log.bold(DEEPSEEK.label)}  env=${DEEPSEEK.envVar}  ${log.dim(entry?.api ?? DEEPSEEK.baseUrl)}`)
+  if (!entry) log.info(`  ${log.yellow("catalog unavailable, showing the built-in list")}`)
+  log.info(`  ${"model".padEnd(30)} ${"context".padStart(7)} ${"output".padStart(7)}  tools`)
+  for (const model of models) {
+    const isDefault = model.id === DEEPSEEK.defaultModel ? log.green(" *") : "  "
+    log.info(
+      `${isDefault}${model.id.padEnd(28)} ${formatTokens(model.context).padStart(7)} ` +
+        `${formatTokens(model.output).padStart(7)}  ${model.toolCall ? "yes" : log.yellow("NO")}`,
+    )
+  }
+  log.info("")
+  log.info(`  ${log.dim("* = default. Override with: moat run --model <id> \"...\"")}`)
   return 0
 }
 
@@ -1597,13 +1581,12 @@ Diagnostics
   moat version
 
 Options that apply to up/run
-  --provider NAME        zai | deepseek | openai | anthropic | openrouter | groq | moonshot | local
-  --model ID             default per provider; see: moat models
+  --model ID             DeepSeek model id; see: moat models
   --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project
   --tools core|extended  core = 8 coding tools (default); extended adds webfetch + subagents
-  --provider-base-url URL  any OpenAI-compatible endpoint, e.g. Ollama
+  --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek
   --credential-env NAME  host env var holding the key   --credential-ttl 4h
   --continue             continue the last session instead of starting a new one
   --show-output          print each tool's output as it runs

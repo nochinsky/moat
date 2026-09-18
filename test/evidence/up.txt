@@ -1,16 +1,16 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --json --model mock-model --provider-base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- $ node /home/user/Projects/moat/cmd/main.ts up --json --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
 {
   "project": "/home/user/moat-demo/project",
   "envId": "18620c2c4f34",
-  "provisionMs": 867,
+  "provisionMs": 875,
   "provisionFromImageCache": true,
   "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-c1ed4315e817.tar.gz",
   "provisionSteps": [
     {
       "name": "extract cached image",
-      "ms": 867
+      "ms": 875
     }
   ],
   "baselineSnapshot": {
@@ -20,7 +20,7 @@
   },
   "copyIn": {
     "transport": "git",
-    "head": "751e45b7443ae2970f670aa55eb3cef02b0151eb",
+    "head": "6b5b97d9867f7c4213c387c21fa4a89f1970855a",
     "branch": "main",
     "dirty": true,
     "trackedChanges": 1,
@@ -29,14 +29,13 @@
     "files": 3,
     "bytes": 126,
     "suspectSecrets": [],
-    "hostState": "git:751e45b7443ae2970f670aa55eb3cef02b0151eb:4f00b88b7e9318be"
+    "hostState": "git:6b5b97d9867f7c4213c387c21fa4a89f1970855a:4f00b88b7e9318be"
   },
   "copyInMs": 41,
   "provider": {
-    "id": "local",
     "opencodeID": "moat",
     "native": false,
-    "label": "Local / custom OpenAI-compatible endpoint"
+    "label": "custom OpenAI-compatible endpoint"
   },
   "model": {
     "id": "moat/mock-model"
@@ -62,15 +61,15 @@
     "preset": "core"
   },
   "status": "running",
-  "port": 41575,
-  "pid": 45024,
-  "bootMs": 11543,
-  "totalMs": 12542,
+  "port": 34709,
+  "pid": 48984,
+  "bootMs": 10917,
+  "totalMs": 11923,
   "readyCheck": "GET /config -> 200",
   "credential": {
-    "provider": "local",
+    "provider": "DeepSeek",
     "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-18T22:34:38.679Z",
+    "expiresAt": "2026-09-18T22:52:37.469Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -90,10 +89,10 @@
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-c1ed4315e817.tar.gz
-✓ image provisioned in 867ms (extract cached image 867ms)
+✓ image provisioned in 875ms (extract cached image 875ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 3 files, 0.1 KiB, digest c73dfe12c6e22b9f (dirty tree: 1 modified, 1 untracked)
 model: moat/mock-model
-! injecting local credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a provider-scoped, spend-capped token, not a general-purpose key. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-18-34
-→ sandbox booted (pid 45024, port 41575); waiting for opencode serve
+! injecting DeepSeek credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-18-18-52
+→ sandbox booted (pid 48984, port 34709); waiting for opencode serve

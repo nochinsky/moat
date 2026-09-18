@@ -1,4 +1,3 @@
-import type { ProviderSpec } from "../lib/providers.ts"
 import { BUNDLE_CONFIG, BUNDLE_DIR, BUNDLE_PLUGIN, SANDBOX_WORKDIR } from "../lib/pins.ts"
 
 /**
@@ -52,9 +51,17 @@ export function excludedFor(preset: ToolPreset): string[] {
 }
 
 export type RenderInput = {
-  provider: ProviderSpec
+  /**
+   * Which provider block, if any, to write.
+   *
+   * DeepSeek needs none: opencode is built on the models.dev catalog, which
+   * already describes it, so moat sets the model and lets opencode supply the
+   * base URL, the npm SDK, the context window and the tool-call support. Only a
+   * custom endpoint has to be described here, and then moat states the limits
+   * rather than guessing them.
+   */
+  provider: { opencodeID: string; npm: string; native: boolean }
   modelID: string
-  /** Base URL to use. For native providers this is informational; opencode knows it. */
   baseUrl: string
   preset: ToolPreset
   /** From the models.dev catalog, when it is known. */
@@ -75,7 +82,7 @@ export type RenderedBundle = {
 export function renderBundle(input: RenderInput): RenderedBundle {
   const curated = TOOL_PRESETS[input.preset]
   const excluded = excludedFor(input.preset)
-  const native = input.provider.native && input.provider.envVars.length > 0
+  const native = input.provider.native
   const providerID = native ? input.provider.opencodeID : "moat"
   const model = `${providerID}/${input.modelID}`
 

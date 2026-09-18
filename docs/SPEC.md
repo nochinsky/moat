@@ -200,7 +200,7 @@ filesystem, no socket, no subprocess.
 | `moat shell` | interactive shell inside the sandbox |
 | `moat doctor` | host probe plus 15 isolation assertions executed *inside* the box |
 | `moat tools` | the declared bundle, the registry, and the measured gap between them |
-| `moat models [provider]` | what the models.dev catalog offers, with real context windows |
+| `moat models` | DeepSeek models and their context windows, from the catalog |
 | `moat profiles` | toolchain profiles, and the base packages every image has |
 | `moat env` | connection details (url, user, password, basic-auth header) |
 | `moat logs [sandbox\|audit]` | tail a log |
@@ -509,34 +509,30 @@ unsupervised on real projects, with real dependencies, against real providers,
 and because a harness that is merely *configured* is not the same as one that
 *works*.
 
-### 6b.1 Provider resolution, and why there is no provider block
+### 6b.1 DeepSeek, and why there is no provider block
 
-opencode is built on the [models.dev](https://models.dev) catalog: 222 providers
-with maintained base URLs, npm SDK packages, context windows, output limits and
-tool-call support. That dataset is not worth reimplementing. Guess a context
-window wrong and opencode compacts at the wrong moment, and the failure looks like
-a model problem.
+moat targets one provider. That deletes a provider registry, provider flags,
+environment inference and most of the credential broker, which is worth more than
+the flexibility it costs.
 
-So for a provider the catalog defines (`zai`, `deepseek`, `openai`, `anthropic`,
-`openrouter`, `groq`, `moonshot`):
+opencode is built on the [models.dev](https://models.dev) catalog, which already
+describes DeepSeek: base URL, npm SDK, context window, output limit, tool-call
+support. So moat writes **no provider block at all**. It sets
+`model: deepseek/<id>`, `enabled_providers: ["deepseek"]`, and injects the key as
+`DEEPSEEK_API_KEY`, which is the name opencode looks for. That dataset is not
+worth reimplementing: guess a context window wrong and opencode compacts at the
+wrong moment, and the failure looks like a model problem.
 
-* moat writes **no provider block at all**;
-* it injects the credential under the variable name opencode expects
-  (`ZHIPU_API_KEY`, `DEEPSEEK_API_KEY`, …);
-* it sets `model` to `<provider>/<model>` and `enabled_providers` to that one
-  provider, so opencode's surface is exactly what you configured.
+The catalog is fetched once a day and cached on the host. Without it moat falls
+back to a built-in model list and says so. `moat models` reads it live, and a
+model id it does not describe is declared inline rather than left for opencode to
+fail to resolve.
 
-moat declares a provider itself only when it must, a custom OpenAI-compatible
-endpoint (`--provider local --provider-base-url …`, which covers Ollama,
-llama.cpp, vLLM, LiteLLM, LM Studio), and then it states the context and output
-limits explicitly rather than guessing generously.
-
-The catalog is cached on the host for a day and is optional: without it moat falls
-back to its own provider table and says so. `moat models` reads it live, and
-`moat up` warns when a requested model id is not in it, instead of letting opencode
-fail to resolve it silently.
-
-Verified wiring for all three target providers is in `docs/VERIFICATION.md`.
+**`--base-url` remains**, pointing at any OpenAI-compatible endpoint. It is an
+escape hatch, not a provider system: moat's own test suite runs against a local
+stub through it, and it is how a gateway or a local model would be used. When it
+is set, moat has to describe the provider itself, and then it states the context
+and output limits explicitly instead of guessing them.
 
 ### 6b.2 Toolchain profiles
 

@@ -81,22 +81,7 @@ export function detectProfiles(projectDir: string, limit = 4000): Detection {
   return { profiles, reasons, uncertain: reasons.length === 0 }
 }
 
-/** Providers moat can infer from a key that is already in the environment. */
-export const KEY_PROVIDERS: { envVar: string; provider: string }[] = [
-  { envVar: "ZHIPU_API_KEY", provider: "zai" },
-  { envVar: "ZAI_API_KEY", provider: "zai" },
-  { envVar: "DEEPSEEK_API_KEY", provider: "deepseek" },
-  { envVar: "OPENAI_API_KEY", provider: "openai" },
-  { envVar: "ANTHROPIC_API_KEY", provider: "anthropic" },
-  { envVar: "OPENROUTER_API_KEY", provider: "openrouter" },
-  { envVar: "GROQ_API_KEY", provider: "groq" },
-  { envVar: "MOONSHOT_API_KEY", provider: "moonshot" },
-]
-
-/** Which provider the user has a key for, if exactly one is obvious. */
-export function detectProviderFromEnv(): { provider: string; envVar: string } | null {
-  for (const candidate of KEY_PROVIDERS) {
-    if (process.env[candidate.envVar]) return candidate
-  }
-  return null
+/** Whether the one key moat uses is present on the host. */
+export function hasCredentialInEnv(): boolean {
+  return Boolean(process.env.DEEPSEEK_API_KEY || process.env.MOAT_CREDENTIAL)
 }

@@ -1,4 +1,4 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --json --model mock-model --provider-base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- $ node /home/user/Projects/moat/cmd/main.ts up --json --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
 {
@@ -6,14 +6,13 @@
   "envId": "18620c2c4f34",
   "profileInstall": {
     "installed": [],
-    "ms": 104
+    "ms": 105
   },
-  "copyInMs": 11,
+  "copyInMs": 13,
   "provider": {
-    "id": "local",
     "opencodeID": "moat",
     "native": false,
-    "label": "Local / custom OpenAI-compatible endpoint"
+    "label": "custom OpenAI-compatible endpoint"
   },
   "model": {
     "id": "moat/mock-model"
@@ -39,15 +38,15 @@
     "preset": "core"
   },
   "status": "running",
-  "port": 43279,
-  "pid": 46299,
-  "bootMs": 3922,
-  "totalMs": 4122,
+  "port": 33171,
+  "pid": 50247,
+  "bootMs": 3921,
+  "totalMs": 4126,
   "readyCheck": "GET /config -> 200",
   "credential": {
-    "provider": "local",
+    "provider": "DeepSeek",
     "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-18T22:36:00.816Z",
+    "expiresAt": "2026-09-18T22:53:59.075Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -68,6 +67,6 @@ no project manifest found; booting with the base image only (see `moat profiles`
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
-! injecting local credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a provider-scoped, spend-capped token, not a general-purpose key. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-18-36
-→ sandbox booted (pid 46299, port 43279); waiting for opencode serve
+! injecting DeepSeek credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-18-18-53
+→ sandbox booted (pid 50247, port 33171); waiting for opencode serve

@@ -80,7 +80,7 @@ def main() -> int:
     sh(["node", os.path.join(REPO, "cmd", "main.ts"), "destroy", "--yes"], cwd=PROJECT, env=env)
     boot = sh(["node", os.path.join(REPO, "cmd", "main.ts"), "up", "--quiet",
                "--no-detect", "--profile", "node",
-               "--provider", "local", "--provider-base-url", f"http://127.0.0.1:{PORT}/v1",
+               "--base-url", f"http://127.0.0.1:{PORT}/v1",
                "--model", "mock-model"], cwd=PROJECT, env=env)
     if boot.returncode != 0:
         print(boot.stdout, boot.stderr)

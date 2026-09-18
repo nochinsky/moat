@@ -1,4 +1,4 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --model mock-model --provider-base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- $ node /home/user/Projects/moat/cmd/main.ts up --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
 --- stderr ---
@@ -6,17 +6,17 @@ no project manifest found; booting with the base image only (see `moat profiles`
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
-! injecting local credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a provider-scoped, spend-capped token, not a general-purpose key. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-18-36
-→ sandbox booted (pid 46503, port 42669); waiting for opencode serve
+! injecting DeepSeek credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-18-18-54
+→ sandbox booted (pid 50451, port 34275); waiting for opencode serve
 ✓ sandbox up, warm start 4.12s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:42669  (basic auth user "opencode")
-  password   Gh35YLK1AYwu6BS9NIAsKb5q9SA6ypRA
+  opencode   http://127.0.0.1:34275  (basic auth user "opencode")
+  password   Q8PWWFHs7mxhnzc3PNxKj2JG2Wl2_B42
   workspace  /work (inside the sandbox)
-  credential local sha256:7726b438889c7f57 expires 2026-09-18T22:36:05.594Z
+  credential DeepSeek sha256:7726b438889c7f57 expires 2026-09-18T22:54:03.841Z
 
   next: moat attach   drive a session
         moat fetch    pull the agent's branch onto the host

@@ -79,27 +79,11 @@ export type MintOptions = {
 export const DEFAULT_TTL_SECONDS = 4 * 60 * 60
 
 /**
- * Variables moat will pick up WITHOUT being asked. Only moat-specific names:
- * moat is a tool that runs an agent with no permission prompts and an open
- * network, so silently reaching for a general-purpose provider key the user
- * happens to have exported is the wrong default. Anything else must be named
- * explicitly with `--credential-env`, which is one word of friction and forces
- * a conscious decision.
+ * moat uses one provider, so there is no ambiguity to resolve and no reason to
+ * make the user say which key to use. `MOAT_CREDENTIAL` is kept as an override
+ * for when the key lives under a different name (CI, a secret manager).
  */
-const AUTO_ENV = ["MOAT_CREDENTIAL", "MOAT_MOCK_CREDENTIAL"]
-
-/** Recognised provider keys, used only to give a useful error. Never auto-used. */
-const PROVIDER_ENV = [
-  "OPENAI_API_KEY",
-  "DEEPSEEK_API_KEY",
-  "GROQ_API_KEY",
-  "OPENROUTER_API_KEY",
-  "TOGETHER_API_KEY",
-  "FIREWORKS_API_KEY",
-  "ANTHROPIC_API_KEY",
-  "XAI_API_KEY",
-  "MISTRAL_API_KEY",
-]
+const AUTO_ENV = ["DEEPSEEK_API_KEY", "MOAT_CREDENTIAL"]
 
 /** Names the sandbox's environment will contain. Values are never needed. */
 export const INJECTED_ENV_NAMES = [
@@ -177,24 +161,6 @@ export function findCredential(opts: MintOptions): { provider: string; credentia
 }
 
 /**
- * A provider key is present on the host but was not explicitly claimed. moat
- * will not use it silently; it says exactly what to do instead.
- */
-export function refusedAutoCredential(): string | null {
-  for (const name of PROVIDER_ENV) {
-    if (process.env[name]) {
-      return (
-        `found ${name} in the host environment, but moat will not use a general-purpose provider key ` +
-        `without being asked. The agent runs with no permission prompts and an open network, so it can read ` +
-        `and exfiltrate whatever credential it is given. Pass --credential-env ${name} if that is what you ` +
-        `want, or better, create a short-lived, spend-capped token for this session and pass that.`
-      )
-    }
-  }
-  return null
-}
-
-/**
  * The notice printed whenever a credential is injected. Two sentences, because
  * the accurate description is short: the agent can read the key,
  * so the key must be disposable.
@@ -203,8 +169,8 @@ export function credentialRiskNotice(minted: MintedCredential): string {
   const where = minted.targetEnvVars.length > 0 ? ` as ${minted.targetEnvVars[0]}` : ""
   return (
     `injecting ${minted.provider} credential ${minted.fingerprint} (ttl ${minted.ttlSeconds}s)${where}. ` +
-    `The agent can read this value and, with the network open, exfiltrate it. Use a provider-scoped, ` +
-    `spend-capped token, not a general-purpose key. See docs/SPEC.md §1.2.`
+    `The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key ` +
+    `with a low limit. See docs/SPEC.md §1.2.`
   )
 }
 
@@ -266,9 +232,8 @@ export function toSandboxEnv(minted: MintedCredential): Record<string, string> {
  * host env vars that carry a credential for `provider`, in priority order.
  * Explicit user intent (`--credential-env`) always wins over convention.
  */
-export function credentialCandidates(provider: string, envVars: string[]): string[] {
-  const moatSpecific = [`MOAT_CREDENTIAL_${provider.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`, "MOAT_CREDENTIAL"]
-  return [...moatSpecific, ...envVars]
+export function credentialCandidates(envVars: string[]): string[] {
+  return ["MOAT_CREDENTIAL", ...envVars]
 }
 
 export function ttlToSeconds(text: string): number {

@@ -46,37 +46,49 @@ refuses to run.
 
 ```bash
 cd ~/code/my-project
-export DEEPSEEK_API_KEY=sk-...        # or ZHIPU_API_KEY, or OPENAI_API_KEY
+export DEEPSEEK_API_KEY=sk-...
 moat run "add a CHANGELOG, run the test suite, and commit it"
 moat take                             # review it, then apply it if you like it
 moat down
 ```
 
-That is the whole loop. The first run picks the provider from whichever key you
-exported and detects the toolchain from the project; later runs only need the
-task. `moat models` shows what a provider actually offers, with real context
-windows, and `moat run --provider zai --model glm-4.6` overrides the defaults
-when you want something specific.
+That is the whole loop. The first run detects the toolchain from the project and
+remembers the model; later runs only need the task.
 
-## Providers
+## DeepSeek
 
-| `--provider` | env var | notes |
-| --- | --- | --- |
-| `zai` | `ZHIPU_API_KEY` | GLM-4.6, GLM-5.x, GLM-4.5-air… |
-| `deepseek` | `DEEPSEEK_API_KEY` | deepseek-v4-pro, deepseek-v4-flash |
-| `openai` | `OPENAI_API_KEY` | gpt-5.x, gpt-4.1 |
-| `anthropic` | `ANTHROPIC_API_KEY` | native SDK |
-| `openrouter` | `OPENROUTER_API_KEY` | one key, many models |
-| `groq` | `GROQ_API_KEY` | |
-| `moonshot` | `MOONSHOT_API_KEY` | Kimi |
-| `local` |, | Ollama, llama.cpp, vLLM, LiteLLM: `--provider-base-url http://…/v1` |
+moat runs DeepSeek models. Export the key once and everything else follows:
 
-moat is built on opencode, which is built on the [models.dev](https://models.dev)
-catalog, 222 providers with maintained context limits, output limits and
-tool-call support. For a catalog provider moat writes **no provider block at all**:
-it injects the credential under the name opencode expects and lets opencode supply
-the accurate metadata. Guessing a context window wrong means compacting at the
-wrong moment, so moat does not guess.
+```bash
+export DEEPSEEK_API_KEY=sk-...
+```
+
+`moat models` lists what is available, with real context windows taken from the
+[models.dev](https://models.dev) catalog that opencode is built on:
+
+```
+$ moat models
+DeepSeek  env=DEEPSEEK_API_KEY  https://api.deepseek.com
+  model                          context  output  tools
+  deepseek-v4-flash-vision-exp      1M    384k  yes
+  deepseek-v4-flash                 1M    384k  yes
+ *deepseek-v4-pro                   1M    384k  yes
+  deepseek-flash                    1M    384k  yes
+```
+
+`--model <id>` picks a different one. The environment remembers it, so you set it
+once.
+
+**`--base-url`** points the agent at any OpenAI-compatible endpoint instead, which
+is how moat's own tests run against a local stub and how you would use a gateway
+or a local model:
+
+```bash
+moat run --base-url http://localhost:11434/v1 --model llama3 "…"
+```
+
+Use a spend-capped key with a low limit. The agent can read it and the network is
+open, which `moat doctor` will tell you plainly.
 
 ## Toolchain profiles
 
@@ -212,7 +224,7 @@ environment must never be printed or exfiltrated. It works on its own git branch
 
 - **The credential is readable by the agent** and, with egress open, exfiltratable.
   There is no in-sandbox fix: a process that must use a credential cannot hide it
-  from code running as the same uid. Use a disposable token.
+  from code running as the same uid. Use a spend-capped key with a low limit.
 - **The network is not fenced.** Restricting it is v2, and it is hard to do
   rootless, the reason v1 is planned as a microVM.
 - **The tool set cannot be pruned exactly.** opencode 1.18.31 offers no supported

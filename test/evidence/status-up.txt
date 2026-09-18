@@ -5,49 +5,49 @@
   "version": 1,
   "id": "18620c2c4f34",
   "projectDir": "/home/user/moat-demo/project",
-  "createdAt": "2026-09-18T18:34:38.595Z",
-  "lastUpAt": "2026-09-18T18:34:38.695Z",
+  "createdAt": "2026-09-18T18:52:37.383Z",
+  "lastUpAt": "2026-09-18T18:52:37.486Z",
   "status": "running",
   "opencodeVersion": "1.18.31",
   "alpineVersion": "3.21.4",
-  "port": 41575,
+  "port": 34709,
   "model": "moat/mock-model",
-  "provider": "local",
+  "provider": "moat",
   "providerBaseUrl": "http://127.0.0.1:5599/v1",
-  "branch": "moat-session-2026-09-18-18-34",
+  "branch": "moat-session-2026-09-18-18-52",
   "baseBranch": "main",
   "profiles": [],
-  "pid": 45024,
+  "pid": 48984,
   "baselineDigest": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158",
-  "baselineHostState": "git:751e45b7443ae2970f670aa55eb3cef02b0151eb:4f00b88b7e9318be",
+  "baselineHostState": "git:6b5b97d9867f7c4213c387c21fa4a89f1970855a:4f00b88b7e9318be",
   "credential": {
-    "provider": "local",
+    "provider": "DeepSeek",
     "fingerprint": "sha256:7726b438889c7f57",
-    "mintedAt": "2026-09-18T18:34:38.679Z",
-    "expiresAt": "2026-09-18T22:34:38.679Z"
+    "mintedAt": "2026-09-18T18:52:37.469Z",
+    "expiresAt": "2026-09-18T22:52:37.469Z"
   },
   "snapshots": [
     "baseline"
   ],
-  "lastBootMs": 11543,
+  "lastBootMs": 10917,
   "envDir": "/home/user/.moat/envs/18620c2c4f34",
   "rootfsDir": "/home/user/.moat/envs/18620c2c4f34/rootfs",
   "running": true,
-  "url": "http://127.0.0.1:41575",
-  "rootfsBytes": 395298711,
+  "url": "http://127.0.0.1:34709",
+  "rootfsBytes": 395298695,
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "751e45b7443ae2970f670aa55eb3cef02b0151eb",
+      "sha": "6b5b97d9867f7c4213c387c21fa4a89f1970855a",
       "subject": "initial demo project",
-      "committedAt": "2026-09-18T20:34:37+02:00",
+      "committedAt": "2026-09-18T20:52:35+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-18-18-34",
-      "sha": "751e45b7443ae2970f670aa55eb3cef02b0151eb",
+      "name": "moat-session-2026-09-18-18-52",
+      "sha": "6b5b97d9867f7c4213c387c21fa4a89f1970855a",
       "subject": "initial demo project",
-      "committedAt": "2026-09-18T20:34:37+02:00",
+      "committedAt": "2026-09-18T20:52:35+02:00",
       "current": true
     }
   ]

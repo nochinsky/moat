@@ -791,7 +791,7 @@ total entries        : 5911
 
 ## The harness — providers, profiles, and the agent brief
 
-Added after v0 passed, for production use with Z.AI (GLM), DeepSeek and OpenAI.
+Added after v0 passed, for production use with DeepSeek.
 These are the checks that the harness is *wired* correctly; the model quality is
 the provider's business, and no API key exists on this host, so what is verified
 here is configuration, resolution and capability — never a claim about a model.

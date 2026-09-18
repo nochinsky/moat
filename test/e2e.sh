@@ -126,7 +126,7 @@ node "$WORK/hashtree.mjs" write "$PROJECT" > "$WORK/hash-before.json"
 echo "project tree hash BEFORE any moat activity:"
 cat "$WORK/hash-before.json" | tee -a "$EVIDENCE/summary.txt"
 
-capture up $MOAT up --json --model mock-model --provider-base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+capture up $MOAT up --json --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 UP_JSON="$EVIDENCE/up.out"
 BOOT_MS=$(json_field "$UP_JSON" "['bootMs']" 2>/dev/null || echo "?")
 TOTAL_MS=$(json_field "$UP_JSON" "['totalMs']" 2>/dev/null || echo "?")
@@ -276,7 +276,7 @@ capture down $MOAT down
 capture status-after-down $MOAT status
 echo "" | tee -a "$EVIDENCE/summary.txt"
 echo "booting again (warm start) and checking whether jq is still installed..." | tee -a "$EVIDENCE/summary.txt"
-capture up-warm $MOAT up --json --model mock-model --provider-base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+capture up-warm $MOAT up --json --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 echo "warm start: totalMs=$(json_field "$EVIDENCE/up-warm.out" "['totalMs']") bootMs=$(json_field "$EVIDENCE/up-warm.out" "['bootMs']")" | tee -a "$EVIDENCE/summary.txt"
 {
   echo ""

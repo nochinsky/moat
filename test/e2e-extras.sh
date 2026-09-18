@@ -49,7 +49,7 @@ cd "$PROJECT"
 export MOAT_MOCK_CREDENTIAL="$CREDENTIAL"
 
 section "boot the fixture environment"
-capture extras-up $MOAT up --model mock-model --provider-base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+capture extras-up $MOAT up --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 
 section "A. snapshots capture the rootfs and never the project"
 capture snapshot-take $MOAT snapshot before-extras
@@ -70,7 +70,7 @@ capture snapshot-restore $MOAT restore before-extras --yes
 capture exec-after-restore $MOAT exec -- /bin/sh -c "echo 'in-sandbox /opt after restore:'; ls /opt; echo '--- /work preserved? ---'; ls /work; echo '--- agent commit still present? ---'; git -C /work log --oneline -1"
 
 section "C. moat apply is a separate, explicit step from moat fetch"
-capture extras-up-again $MOAT up --model mock-model --provider-base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+capture extras-up-again $MOAT up --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 capture extras-fetch $MOAT fetch
 capture apply-branch $MOAT apply main --name e2e-checkout
 {
@@ -88,7 +88,7 @@ capture env-details $MOAT env
 section "E. the injected credential is short-lived, and expiry is enforced"
 echo "booting with --credential-ttl 6s and watching the sandbox stop on its own..." | tee -a "$EVIDENCE/extras.txt"
 capture down-for-ttl $MOAT down
-capture up-short-ttl $MOAT up --model mock-model --provider-base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL --credential-ttl 6s
+capture up-short-ttl $MOAT up --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL --credential-ttl 6s
 echo "waiting 12s for the TTL watchdog to fire..." | tee -a "$EVIDENCE/extras.txt"
 sleep 12
 capture status-after-ttl $MOAT status
