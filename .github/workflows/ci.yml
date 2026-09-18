@@ -11,8 +11,8 @@ jobs:
     name: typecheck, build, CLI smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "24"
       - run: npm install --no-audit --no-fund
@@ -29,15 +29,29 @@ jobs:
         run: ./cmd/main.ts doctor --json || true
 
   sandbox:
-    name: sandbox end-to-end
-    runs-on: ubuntu-latest
+    name: sandbox end-to-end (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "24"
       - run: npm install --no-audit --no-fund
+      # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor,
+      # which is the one kernel feature moat cannot work without. GitHub runners
+      # have passwordless sudo, so lift the restriction and then check whether
+      # namespaces actually work rather than assuming the sysctl was enough.
+      - name: lift the AppArmor restriction on user namespaces (24.04+)
+        run: |
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+        continue-on-error: true
       - name: can this runner create unprivileged user namespaces?
         id: userns
         run: |
@@ -47,8 +61,10 @@ jobs:
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "user namespaces: NOT available on this runner."
-            echo "moat has no host fallback by design, so the sandbox suite is skipped."
-            echo "This is reported rather than silently passing."
+            echo "moat has no host fallback by design, so the sandbox suite is skipped"
+            echo "on this runner. Reported rather than silently passing, but it does"
+            echo "mean this leg of the matrix proves nothing about the sandbox."
+            exit 1
           fi
       - name: list the toolchain profiles
         run: ./cmd/main.ts profiles
@@ -62,7 +78,7 @@ jobs:
         run: bash test/e2e-extras.sh
       - name: upload evidence
         if: always() && steps.userns.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: evidence
           path: test/evidence/
