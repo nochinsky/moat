@@ -1226,7 +1226,44 @@ $ moat up
   credential deepseek sha256:e493a50d942e2a4f expires 2026-09-19T00:16:25.853Z
 ```
 
-### I. The session display, and the price of a turn
+### I. A binary file in the project used to break the baseline
+
+`moat apply` materialises the recorded baseline by running `git archive` and
+unpacking the result. Both halves of that went through the process: the archive
+was captured as a UTF-8 string and written back to `tar`'s stdin. A tar archive
+is binary, and the round-trip is lossy — a byte that is not valid UTF-8 decodes
+to U+FFFD, which re-encodes to **three** bytes, so the stream grows and every
+header after the damage is read from the wrong offset. `tar` then stops partway.
+
+Because only its exit code was checked, the result was not an error but a silent
+one: the baseline came back empty, the caller skipped the comparison, and moat
+reported `nothing to apply` over a tree it had failed to read. With a large
+enough archive the same fault killed the CLI outright, since writing the rest of
+the stream to a `tar` that had already exited raises `EPIPE` on its stdin, and an
+`error` event with no listener is fatal in Node.
+
+Reproduced by putting a binary file in the project, named so that it sorts before
+everything else — tar has to stop early enough to lose the files after it:
+
+```
+$ python3 test/repl-apply.py        # with a 100 KB binary file in the fixture
+  pass  the agent worked
+  pass  apply showed a plan
+  pass  the file landed in the directory
+  pass  a binary file did not stop the plan
+  pass  the binary file survived apply byte for byte
+```
+
+The archive now goes to a file and `tar` reads that, and `run()` swallows EPIPE
+so a child that exits early is reported rather than fatal. Reintroducing the old
+pipeline fails four of those checks, which is how the guard was confirmed to be
+capable of failing.
+
+Copy-in was checked for the same fault and is **not** affected: `git diff
+--binary` emits base85, which is pure ASCII, verified by round-tripping a real
+binary patch and finding no character above ASCII 126.
+
+### J. The session display, and the price of a turn
 
 **The prices are DeepSeek's, not the catalog's.** The models.dev entry opencode
 bills against disagrees with the published table, so moat computes its own:

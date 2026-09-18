@@ -53,6 +53,14 @@ export function run(
       if (result.code !== 0 && !opts.allowFailure) reject(new CommandError(result))
       else resolve(result)
     })
+    // A child that exits before it has read all of its input closes the pipe
+    // underneath us, and Node raises EPIPE on the stdin socket. That is not a
+    // failure of the command — the exit code is, and it is reported above — but
+    // an `error` event with no listener is fatal in Node, so without this the
+    // whole CLI dies with a stack trace instead of reporting what the child did.
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") reject(error)
+    })
     if (opts.input !== undefined) child.stdin.end(opts.input)
     else child.stdin.end()
   })

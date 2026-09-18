@@ -1,7 +1,7 @@
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-c1ed4315e817.tar.gz
-✓ image provisioned in 863ms (extract cached image 862ms)
+✓ image provisioned in 868ms (extract cached image 868ms)
 ! /home/user/moat-demo/onboard-demo is not a git repository; falling back to rsync + a fresh in-sandbox repo
 → copy-in: initialising a repository inside the sandbox (non-git project)
 ✓ copy-in via rsync: 0 files, 0.0 KiB, digest e3b0c44298fc1c14
@@ -16,21 +16,21 @@ moat needs a DeepSeek API key.
   DEEPSEEK_API_KEY: ***********************************
   checking...                    ✓ key accepted (deepseek-flash, deepseek-v4-pro), saved to /home/user/.moat/credentials.json
 ! injecting deepseek credential sha256:e493a50d942e2a4f (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-22-44
-→ sandbox booted (pid 130399, port 33941); waiting for opencode serve
-✓ sandbox up, cold start 20.15s (image built)
+agent branch: moat-session-2026-09-18-23-13
+→ sandbox booted (pid 140081, port 37403); waiting for opencode serve
+✓ sandbox up, cold start 21.11s (image built)
 
   project    /home/user/moat-demo/onboard-demo
   env        /home/user/.moat/envs/a5b7670da9ae
-  opencode   http://127.0.0.1:33941  (basic auth user "opencode")
-  password   K28i9bKhJ4NuK7hIduIRcAD0TWh83nKN
+  opencode   http://127.0.0.1:37403  (basic auth user "opencode")
+  password   M0-44HaMOMRoex6rmQzGVBIyv23ivtqj
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:e493a50d942e2a4f expires 2026-09-19T02:44:35.542Z
+  credential deepseek sha256:e493a50d942e2a4f expires 2026-09-19T03:13:24.281Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
         moat down    stop the sandbox (state and snapshots are kept)
-
+^C
 --- checks ---
   pass  it asked for the key
   pass  the key was not echoed
