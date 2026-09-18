@@ -1,0 +1,65 @@
+
+› moat · moat/mock-model · /home/user/moat-demo/slugkit
+› type a task and press enter. /help for commands, ctrl-c to interrupt.
+› 
+› › /status
+
+
+›   project     /home/user/moat-demo/slugkit
+›   endpoint    http://127.0.0.1:45005
+›   model       moat/mock-model
+›   branch      moat-session-2026-09-18-18-36
+›   session     none yet
+›   profiles    node
+›   credential  14385s left
+› 
+› › fix the failing tests and commit it
+
+  · bash      
+›   ✓ bash      pwd && ls -la && cat README.md
+›   · write     
+›   ✓ write     agent-output.txt
+›   · edit      
+›   ✓ edit      agent-output.txt
+›   · bash      
+›   ✓ bash      printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt
+›   · bash      
+›   ✓ bash      git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && gi
+› › /diff
+
+
+›   14683e0 agent: add agent-output.txt from inside the sandbox
+› 
+›    agent-output.txt | 2 ++
+›    1 file changed, 2 insertions(+)
+› 
+› › /help
+
+
+›   type anything to send it to the agent. It queues if the agent is mid-turn.
+› 
+›   /help      this list
+›   /stop      abort the turn the agent is running
+›   /diff      everything the agent has changed since it started
+›   /take      bring the agent's branch onto the host and show it
+›   /status    model, branch, session and credential time left
+›   /sessions  list past sessions in this environment
+›   /use       switch to another session: /use <id>
+›   /new       start a fresh session
+›   /shell     open a shell inside the sandbox (ctrl-d to come back)
+›   /quit      leave (the sandbox keeps running)
+›   /exit      leave (the sandbox keeps running)
+› 
+› › /quit
+
+
+
+--- checks ---
+  pass  banner and prompt
+  pass  /status printed the environment
+  pass  agent activity streamed live
+  pass  /diff reported the agent's work
+  pass  /help listed the commands
+  pass  commands still worked after the turn
+
+6/6 checks passed

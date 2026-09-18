@@ -101,7 +101,15 @@ echo "--- sandbox log: the expiry notice ---" | tee -a "$EVIDENCE/extras.txt"
   echo "\$ moat status  -> status line above shows the box is stopped, which it did to itself"
 } | tee -a "$EVIDENCE/extras.txt"
 
-section "F. every claim about process state is reconciled against the live process table"
+section "F. the interactive CLI, driven through a real pty"
+echo "an interactive session cannot be checked by piping stdin, so this allocates a pty," | tee -a "$EVIDENCE/extras.txt"
+echo "types at it, and reads what comes back. It starts its own stub and its own sandbox." | tee -a "$EVIDENCE/extras.txt"
+python3 "$REPO/test/repl-smoke.py" > "$EVIDENCE/repl-smoke.txt" 2>&1
+REPL_RC=$?
+tail -12 "$EVIDENCE/repl-smoke.txt" | tee -a "$EVIDENCE/extras.txt"
+echo "repl smoke exit: $REPL_RC" | tee -a "$EVIDENCE/extras.txt"
+
+section "G. every claim about process state is reconciled against the live process table"
 capture status-final $MOAT status
 capture down-final $MOAT down
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; fi

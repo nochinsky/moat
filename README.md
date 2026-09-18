@@ -107,6 +107,45 @@ moat down             stop the sandbox; nothing is lost
 moat status           what is running, on which model, with how much time left
 ```
 
+At a terminal, `moat run` doesn't just print and exit: it drops you into a
+session where you can watch the agent work and talk to it while it does. Anything
+you type is sent to the agent; if it is mid-turn your message queues and lands at
+the next step, and ctrl-c interrupts the turn without losing the session.
+
+```
+$ moat run "the tests are failing, fix them"
+› moat · deepseek/deepseek-v4-pro · ~/code/slugkit
+› type a task and press enter. /help for commands, ctrl-c to interrupt.
+
+  · bash      npm test
+  ✓ bash      npm test
+  ✓ read      src/slugify.js
+  ✓ edit      src/slugify.js
+  ✓ bash      npm test
+│ The bug was the naive `replace(/ /g, "-")`, which does not collapse runs of
+│ whitespace or trim. Fixed in slugify.js and the suite is green.
+  ✓ bash      git commit -m "fix slugify whitespace handling"
+
+› also add a test for the empty string        ← typed while it was working
+  queued, the agent will pick this up when the current step finishes
+  · read      test/slugify.test.js
+  ...
+```
+
+| command | |
+| --- | --- |
+| `/help` | the command list |
+| `/stop` | abort the turn the agent is running |
+| `/diff` | everything the agent has changed since it started |
+| `/take` | bring its branch onto the host and show it |
+| `/status` | model, branch, session, credential time left |
+| `/sessions`, `/use <id>`, `/new` | move between sessions |
+| `/shell` | a shell inside the sandbox; ctrl-d comes back |
+| `/quit` | leave; the sandbox keeps running |
+
+Piping `moat run` output somewhere keeps it non-interactive, so scripts are
+unaffected. `--no-follow` forces that even at a terminal.
+
 `moat run` reads the project and picks the toolchain itself: `package.json` means
 the node profile, `pyproject.toml` means python, `go.mod` means go, a `Makefile`
 means a C toolchain. It also remembers the provider and model from the last run,

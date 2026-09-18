@@ -32,6 +32,8 @@ export type EnvState = {
   providerBaseUrl: string | null
   /** Branch the agent was told to commit to. */
   branch: string | null
+  /** The branch that was checked out when the agent's branch was created. */
+  baseBranch: string | null
   /** Toolchain profiles currently installed in this environment. */
   profiles: string[]
   /** PID of the namespace supervisor process group leader on the host. */
@@ -61,6 +63,7 @@ export function initialState(p: EnvPaths, versions: { opencode: string; alpine: 
     provider: null,
     providerBaseUrl: null,
     branch: null,
+    baseBranch: null,
     profiles: [],
     pid: null,
     baselineDigest: null,

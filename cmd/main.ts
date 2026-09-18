@@ -70,6 +70,7 @@ import {
   suggestBranch,
 } from "../sync/copyout.ts"
 import { connect, driveSession, listSessions, toolIds, waitForServer, authHeaders, baseUrl } from "./client.ts"
+import { runRepl } from "./repl.ts"
 
 // ---------------------------------------------------------------------------
 // argument parsing
@@ -140,6 +141,8 @@ const SPEC: Spec = {
   "show-output": "boolean",
   "commit-worktree": "boolean",
   "no-detect": "boolean",
+  "no-follow": "boolean",
+  quiet: "boolean",
   "keep": "boolean",
 }
 
@@ -388,6 +391,9 @@ async function cmdUp(argv: string[]): Promise<number> {
         }
         return result.errors.length > 0 ? 1 : 0
       }
+      if (process.stdin.isTTY === true && !json && !flag<boolean>(p, "no-follow")) {
+        return await runRepl({ paths, state: state!, password, showOutput: flag<boolean>(p, "show-output") ?? false })
+      }
       if (json) log.emit({ ...report, status: "already-running", ...state })
       else printUpSummary(paths, state!, password, { coldStart: 0, reused: true, provisioned: false })
       return 0
@@ -546,7 +552,15 @@ ${command}
   // Work on a dedicated branch so the user's own branch is untouched inside the
   // box too, and copy-out has one predictable ref to read.
   const branch = sessionBranch()
+  let baseBranch: string | null = null
   if (fs.existsSync(path.join(paths.work, ".git"))) {
+    baseBranch =
+      (
+        await run("git", ["-C", paths.work, "rev-parse", "--abbrev-ref", "HEAD"], {
+          env: SANITIZED_GIT_ENV,
+          allowFailure: true,
+        })
+      ).stdout.trim() || null
     const created = await run(
       "git",
       ["-C", paths.work, "checkout", "-q", "-B", branch],
@@ -623,6 +637,7 @@ ${command}
     providerBaseUrl: baseUrl,
     provider: provider.id,
     branch,
+    baseBranch,
     profiles: resolvedProfiles.profiles,
     lastUpAt: new Date().toISOString(),
     credential: credential
@@ -651,6 +666,19 @@ ${command}
 
   // `moat up "fix the tests"` and `moat run "fix the tests"` are the same thing:
   // bringing up a box you are not going to use is not a step worth having.
+  // At a terminal, a task is the first line of a conversation rather than the
+  // whole of one: start it, then stay so it can be steered while it runs.
+  const interactive = process.stdin.isTTY === true && !json && !flag<boolean>(p, "no-follow")
+  if (task.length > 0 && interactive) {
+    return await runRepl({
+      paths,
+      state,
+      password,
+      firstMessage: task,
+      showOutput: flag<boolean>(p, "show-output") ?? false,
+    })
+  }
+
   if (task.length > 0) {
     const result = await driveTask(state, password, task, {
       continueLast: flag<boolean>(p, "continue") ?? false,
@@ -808,29 +836,17 @@ async function cmdAttach(argv: string[]): Promise<number> {
   const prompt = flag<string>(p, "prompt")
 
   if (!prompt) {
-    // Interactive: hand over to opencode's own attach client. moat ships no TUI
-    // of its own in v0, the requirement is explicit about that.
-    const hostBinary = await ensureHostOpencode()
-    if (!hostBinary) {
-      log.info("opencode is not available on the host for an interactive attach. Options:")
-      log.info(`  1. npm i -g opencode-ai@${OPENCODE_VERSION}`)
-      log.info(`  2. drive it non-interactively:  moat attach --prompt "..."`)
-      log.info("")
-      log.info(`server:   ${baseUrl(state)}`)
-      log.info(`password: ${password}`)
-      log.info(`command:  opencode attach ${baseUrl(state)} --password <password>`)
-      return 1
-    }
-    log.step(`attaching opencode client to ${baseUrl(state)}`)
-    const code = await new Promise<number>((resolve, reject) => {
-      const proc = spawn(hostBinary, ["attach", baseUrl(state), "--password", password], {
-        stdio: "inherit",
-        env: { ...process.env, OPENCODE_SERVER_PASSWORD: password },
-      })
-      proc.on("error", reject)
-      proc.on("close", (exit) => resolve(exit ?? 0))
+    // moat's own interactive session. This used to exec opencode's TUI, which
+    // meant an interactive session was impossible unless opencode was also
+    // installed on the host. The sandbox already runs the server; the CLI is a
+    // client of it, so the dependency was never necessary.
+    return await runRepl({
+      paths,
+      state,
+      password,
+      showOutput: flag<boolean>(p, "show-output") ?? false,
+      sessionID: flag<string>(p, "session"),
     })
-    return code
   }
 
   const result = await driveTask(state, password, prompt, {

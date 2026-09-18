@@ -188,7 +188,8 @@ filesystem, no socket, no subprocess.
 | `moat run "<task>"` | `up` when needed, then do the task and stream it. The entry point most people use |
 | `moat take [branch]` | fetch the agent's branch, show its commits and diff, and offer to apply it |
 | `moat up [task]` | provision if needed, copy in, mint a credential, boot, wait for ready |
-| `moat attach [--prompt TEXT]` | attach the opencode client: interactive TUI, or drive one prompt. Reports tool calls as they happen; `--continue` resumes the last session |
+| `moat attach` | the interactive session: watch the agent work and steer it. Also what `moat run` opens at a terminal |
+| `moat attach --prompt TEXT` | drive one prompt and exit; the scriptable form |
 | `moat fetch [branch] [--all]` | `git fetch` the agent's branch from the sandbox into `refs/moat/*` |
 | `moat apply <branch> [--checkout]` | turn a fetched ref into a local branch (never automatic) |
 | `moat status [--all]` | state, endpoint, credential expiry, snapshots, sandbox branches |
@@ -605,6 +606,27 @@ that branch; `moat apply` creates a local branch of the same name.
 
 Sessions live in the rootfs and therefore survive `moat down` / `moat up`;
 `moat attach --continue` resumes the most recent one.
+
+### 6b.5 The interactive session
+
+At a terminal, `moat run` does not print and exit. It opens a session where the
+agent's work streams as it happens and the user can type at any time. Typed text
+goes to the same session; if a turn is in flight the server queues it and it lands
+at the next step, and ctrl-c aborts the turn without losing the session.
+
+This is a client of the sandbox's own server, nothing more: the event stream for
+the live view, `prompt_async` to send, `abort` to interrupt. The queueing
+behaviour is the server's, and was verified rather than assumed: two messages sent
+during one turn produce two user messages and both are processed.
+
+It replaces an earlier design that exec'd opencode's own TUI, which meant an
+interactive session was impossible unless opencode was also installed on the
+host. The sandbox already runs the server, so that dependency was never
+necessary.
+
+`test/repl-smoke.py` drives the CLI through a real pty and asserts on what comes
+back. Piping stdin is not a substitute: readline behaves differently without a
+terminal, and the live view is the whole point of the mode.
 
 ---
 

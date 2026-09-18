@@ -35,6 +35,7 @@ const port = Number(get("port", "5599"))
 const scriptPath = get("script", null)
 const recordPath = get("record", "/tmp/moat-mock-model.jsonl")
 const modelName = get("model", "mock-model")
+const delayMs = Number(get("delay", "0"))
 
 const script = scriptPath
   ? JSON.parse(fs.readFileSync(scriptPath, "utf8"))
@@ -108,6 +109,8 @@ const server = http.createServer(async (req, res) => {
     selectedStep: turns,
     step,
   })
+
+  if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
 
   const stream = body.stream === true
   if (!stream) {
