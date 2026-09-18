@@ -17,7 +17,7 @@ import { SANDBOX_WORKDIR } from "../lib/pins.ts"
 export type InstructionsInput = {
   provider: string
   model: string
-  /** The branch the agent works on, e.g. `moat/session-2026-09-18`. */
+  /** The branch the agent works on, e.g. `moat-session-2026-09-18-14-30`. */
   branch: string
   profiles: string[]
   installedPackages: string[]

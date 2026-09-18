@@ -1,13 +1,12 @@
 # Verification
 
-> **Note on paths.** The captured output below was produced on the author's
-> machine and has had `/home/<user>` rewritten to `/home/user` before
-> publication. Nothing else in any command or its output was altered.
+The acceptance criteria, each with the command that produced it and its real
+output. Nothing here is paraphrased: the blocks are copied from `test/evidence/`,
+which the suites write.
 
-
-The acceptance criteria, with the command that produced it and
-its real output. Nothing here is paraphrased: the blocks below are copied from
-`test/evidence/`, which is written by the two suites.
+A note on paths: the captured output was produced on the author's machine, and
+`/home/<user>` was rewritten to `/home/user` before publication. Nothing else in
+any command or its output was altered.
 
 ```
 bash test/e2e.sh          # criteria 1–9          -> test/evidence/
@@ -221,6 +220,7 @@ $ moat up --json --model mock-model --provider-base-url http://127.0.0.1:5599/v1
     "OPENCODE_SERVER_PASSWORD"
   ]
 }
+```
 ```json
 {
   "project": "/home/user/moat-demo/project",

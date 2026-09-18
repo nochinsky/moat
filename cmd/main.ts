@@ -1836,7 +1836,7 @@ That is the whole loop. Everything below exists but you should not need it.
 
 Attaching to a running box
   moat run "<task>"      give it another task
-  moat attach            open opencode's own TUI against the running box
+  moat attach            open a session against the running box (no boot)
   moat shell             a plain shell inside the sandbox
   moat exec -- <cmd>     run one command inside the sandbox
 
