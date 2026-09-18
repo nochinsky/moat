@@ -176,6 +176,14 @@ for line in open(sys.argv[1]):
 PY
 
 echo "" | tee -a "$EVIDENCE/summary.txt"
+# Streaming regression guard: only the event-driven path emits a "(running)"
+# line, because it reports a tool when it starts rather than after the turn ends.
+if grep -qE "\[tool\] [a-z_]+ \(running\)" "$EVIDENCE/attach-task.txt"; then
+  echo "streaming: tool calls were reported as they started (not just at the end)" | tee -a "$EVIDENCE/summary.txt"
+else
+  echo "streaming: FAILED, no in-progress tool line found; attach fell back to waiting for the whole turn" | tee -a "$EVIDENCE/summary.txt"
+fi
+
 PERM_FILE="$ENV_DIR/rootfs/var/log/moat/permissions.jsonl"
 if [ -f "$PERM_FILE" ]; then
   echo "permission requests raised: $(wc -l < "$PERM_FILE")" | tee -a "$EVIDENCE/summary.txt"

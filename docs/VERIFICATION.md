@@ -522,6 +522,74 @@ separate, explicitly-requested step.
 
 ---
 
+### Uncommitted sandbox work is not collected, and now says so
+
+`git fetch` reads a branch ref. Uncommitted work is in no ref, so it cannot be
+collected by any fetch. An earlier version of the sandbox instructions told the
+agent the opposite ("may still be picked up from the working tree"), which was
+simply false, and there was no warning when it happened. Verified after the fix,
+with two dirty files in the sandbox:
+
+```
+$ moat fetch
+! the sandbox has 2 uncommitted change(s); `git fetch` reads a branch ref and cannot see them.
+    M README.md
+    ?? uncommitted-note.txt
+
+  to collect them:  moat fetch --commit-worktree   (commits them in the sandbox, then fetches)
+  or ask the agent to commit inside the box
+```
+
+The explicit form commits them in the box, then fetches, so the work lands:
+
+```
+$ moat fetch --commit-worktree
+! committed 2 uncommitted file(s) from the sandbox as 039673d775f1 before fetching,
+  because you passed --commit-worktree
+✓ fetched moat-session-… -> refs/moat/moat-session-… (039673d775f1)
+    039673d775f1  moat: uncommitted sandbox work, committed at fetch time
+
+$ git show refs/moat/moat-session-2026-09-18-18-11:uncommitted-note.txt
+work the agent never committed
+
+$ git status --porcelain          # host working tree, unchanged
+ M README.md
+?? notes.txt
+```
+
+Nothing commits to a sandbox branch unless the user asks for it. The same
+distinction protects the automatic re-copy when the host project changes: if the
+sandbox holds work the host cannot reach, moat warns instead of overwriting it.
+
+```
+$ moat up                                  # host edited, sandbox has uncommitted work
+! the host project has changed since it was copied in, but the sandbox holds 1 uncommitted
+  file(s) that the host does not have. The agent will work on the OLD copy. Run `moat fetch`
+  (add --commit-worktree to include uncommitted work) to keep it, or `moat up --sync` to
+  discard it and re-copy.
+```
+
+```
+$ moat exec -- cat /work/precious.txt      # still there afterwards
+precious uncommitted work
+```
+
+### A turn reports itself while it runs
+
+`moat attach --prompt` used to wait for the whole turn and print nothing until it
+finished. On a real task that is minutes of blank terminal, which reads as hung,
+and the natural response is Ctrl-C, which loses the turn. It now subscribes to the
+server's event stream before starting the turn and reports parts as they arrive.
+`test/e2e.sh` asserts this so it cannot regress:
+
+```
+streaming: tool calls were reported as they started (not just at the end)
+```
+
+The guard looks for a `(running)` tool line, which only the event-driven path can
+emit: the old path learned about a tool call only after the turn was over. The
+blocking call is still there as a fallback, and says so if it is used.
+
 ## Criterion 6 — cold start is measured and reported
 
 `moat up --json` reports the breakdown; the human output labels the kind of start

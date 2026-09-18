@@ -2,13 +2,15 @@
 --- exit 1
 --- stdout ---
 --- stderr ---
+[tool] webfetch (running) 
 [tool] webfetch (error) 
-[tool-error] webfetch: moat: tool "webfetch" is not part of this sandbox's bundle. Available tools: read, write, edit, apply_patch, glob, grep, bash, todowrite.
+[tool-error] moat: tool "webfetch" is not part of this sandbox's bundle. Available tools: read, write, edit, apply_patch, glob, grep, bash, todowrite.
+[tool] write (running) 
 [tool] write (error) 
-[tool-error] write: moat: refusing write.filePath outside the workspace: /etc/moat-escape-attempt. The workspace is /work; /tmp is also writable.
+[tool-error] moat: refusing write.filePath outside the workspace: /etc/moat-escape-attempt. The workspace is /work; /tmp is also writable.
+[tool] read (running) 
 [tool] read (completed) ../etc/os-release
-[tool-output]
-<path>/etc/os-release</path>
+[tool-output] <path>/etc/os-release</path>
 <type>file</type>
 <content>
 1: NAME="Alpine Linux"
@@ -22,5 +24,6 @@
 </content>
 Attempted an excluded tool and an out-of-workspace write; see the tool results above.
 
-session ses_f4a6a3050ffeSXiDlDA3lhbirD
+
+session ses_f4a461bb8ffe05dOq0mauZE8jo
 tools   webfetch:error, write:error, read:completed

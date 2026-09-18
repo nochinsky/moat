@@ -5,17 +5,17 @@
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
-! injecting local credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a provider-scoped, spend-capped token — not a general-purpose key. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-17-34
-→ sandbox booted (pid 26955, port 44907); waiting for opencode serve
-✓ sandbox up — warm start 4.10s (image reused)
+! injecting local credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a provider-scoped, spend-capped token, not a general-purpose key. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-18-18-15
+→ sandbox booted (pid 38775, port 33853); waiting for opencode serve
+✓ sandbox up, warm start 4.13s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:44907  (basic auth user "opencode")
-  password   RUlPir5kzL0pFeaObILzyHU_zItoAGIn
+  opencode   http://127.0.0.1:33853  (basic auth user "opencode")
+  password   S3H-4qze9uk3-I__3s_JOHulwfl44cuz
   workspace  /work (inside the sandbox)
-  credential local sha256:7726b438889c7f57 expires 2026-09-18T21:34:17.125Z
+  credential local sha256:7726b438889c7f57 expires 2026-09-18T22:15:04.864Z
 
   next: moat attach   drive a session
         moat fetch    pull the agent's branch onto the host

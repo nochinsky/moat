@@ -1,5 +1,14 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts status
---- exit 1
+--- exit 0
 --- stdout ---
 --- stderr ---
-✗ ENOENT: process.cwd failed with error no such file or directory, the current working directory was likely removed without changing the working directory, uv_cwd
+project      /home/user/moat-demo/project
+env          /home/user/.moat/envs/18620c2c4f34
+status       stopped
+opencode     1.18.31 / alpine 3.21.4
+model        moat/mock-model (local)
+branch       moat-session-2026-09-18-18-15
+rootfs       380.9 MiB
+credential   local sha256:7726b438889c7f57 expires in -10s (EXPIRED, the sandbox watchdog stops the agent)
+snapshots    before-extras, baseline
+branches     main, moat-session-2026-09-18-18-13, moat-session-2026-09-18-18-14, moat-session-2026-09-18-18-15*

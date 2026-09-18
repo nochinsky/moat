@@ -7,7 +7,7 @@ bundle (from the plugin's config-time record)
   excluded   webfetch, websearch, question, skill, task
   omissions confirmed by opencode: question, skill, webfetch, websearch, task
 
-registry (everything opencode knows about — NOT what the model sees)
+registry (everything opencode knows about, NOT what the model sees)
   + apply_patch
   + bash
   + edit

@@ -59,7 +59,15 @@ import {
   type MintedCredential,
 } from "../secrets/broker.ts"
 import { copyIn, ensureSandboxRepo, hostState, isGitRepo, SANITIZED_GIT_ENV } from "../sync/copyin.ts"
-import { applyBranch, fetchBranch, listSandboxBranches, sandboxHead, suggestBranch } from "../sync/copyout.ts"
+import {
+  applyBranch,
+  commitSandboxWorktree,
+  fetchBranch,
+  listSandboxBranches,
+  sandboxHead,
+  sandboxWorktreeChanges,
+  suggestBranch,
+} from "../sync/copyout.ts"
 import { connect, driveSession, listSessions, toolIds, waitForServer, authHeaders, baseUrl } from "./client.ts"
 
 // ---------------------------------------------------------------------------
@@ -129,6 +137,7 @@ const SPEC: Spec = {
   tail: "number",
   timeout: "number",
   "show-output": "boolean",
+  "commit-worktree": "boolean",
 }
 
 function flag<T>(p: Parsed, key: string): T | undefined {
@@ -380,25 +389,38 @@ ${command}
   // Has the host project moved on since it was copied in? Running an agent
   // against a stale copy is a silent, expensive failure, so this is checked on
   // every boot rather than left to the user to remember --sync.
-  let drift: { changed: boolean; sandboxCommits: number } | null = null
+  let drift: { changed: boolean; sandboxCommits: number; sandboxFiles: number } | null = null
   if (!needsProvision && sandboxRepoExists && !sync && state?.baselineHostState) {
     const current = await hostState(paths.projectDir)
     if (current !== state.baselineHostState) {
-      drift = { changed: true, sandboxCommits: await countUnfetched(paths) }
+      drift = {
+        changed: true,
+        sandboxCommits: await countUnfetched(paths),
+        // Uncommitted sandbox work counts as work to lose: copy-in wipes the
+        // working tree, and no fetch could have preserved it.
+        sandboxFiles: (await sandboxWorktreeChanges(paths)).length,
+      }
     }
   }
-  const mustCopy = needsProvision || sync || !sandboxRepoExists || (drift?.changed === true && drift.sandboxCommits === 0)
+  const safeToRecopy = drift?.changed === true && drift.sandboxCommits === 0 && drift.sandboxFiles === 0
+  const mustCopy = needsProvision || sync || !sandboxRepoExists || safeToRecopy
 
   if (drift?.changed && mustCopy) {
     log.warn(
-      "the host project has changed since it was copied in, and the sandbox has no commits of its own " +
-        "to lose. Re-copying it now.",
+      "the host project has changed since it was copied in, and the sandbox holds nothing that is not already " +
+        "on the host. Re-copying it now.",
     )
   } else if (drift?.changed && !mustCopy) {
+    const held = [
+      drift.sandboxCommits > 0 ? `${drift.sandboxCommits} commit(s)` : null,
+      drift.sandboxFiles > 0 ? `${drift.sandboxFiles} uncommitted file(s)` : null,
+    ]
+      .filter(Boolean)
+      .join(" and ")
     log.warn(
-      `the host project has changed since it was copied in, but the sandbox has ${drift.sandboxCommits} commit(s) ` +
-        "the host does not. The agent will work on the OLD copy. Run `moat fetch` first to keep that work, " +
-        "or `moat up --sync` to discard it and re-copy.",
+      `the host project has changed since it was copied in, but the sandbox holds ${held} that the host does not ` +
+        "have. The agent will work on the OLD copy. Run `moat fetch` (add --commit-worktree to include " +
+        "uncommitted work) to keep it, or `moat up --sync` to discard it and re-copy.",
     )
   }
 
@@ -744,6 +766,7 @@ async function cmdAttach(argv: string[]): Promise<number> {
   const [providerID = "moat", ...rest] = modelRef.split("/")
   const modelID = flag<string>(p, "model-id") ?? rest.join("/") ?? "model"
 
+  let wrote = false
   const result = await driveSession(client, {
     sessionID,
     prompt,
@@ -751,8 +774,14 @@ async function cmdAttach(argv: string[]): Promise<number> {
     modelID,
     agent: flag<string>(p, "agent"),
     onEvent: (line) => process.stderr.write(`${line}\n`),
+    onDelta: (chunk) => {
+      wrote = true
+      process.stderr.write(chunk)
+    },
     showOutput: flag<boolean>(p, "show-output") ?? false,
+    timeoutMs: (flag<number>(p, "timeout") ?? 2700) * 1000,
   })
+  if (wrote) process.stderr.write("\n")
 
   if (flag<boolean>(p, "json")) {
     log.emit(result)
@@ -788,6 +817,29 @@ async function cmdFetch(argv: string[]): Promise<number> {
 
   const branches = await listSandboxBranches(paths)
   if (branches.length === 0) log.fail("the agent has not created any branch in the sandbox yet")
+
+  // Uncommitted work is not in any ref, so `git fetch` cannot see it. Say so
+  // rather than letting someone believe their sandbox work was collected.
+  const dirty = await sandboxWorktreeChanges(paths)
+  if (dirty.length > 0) {
+    if (flag<boolean>(p, "commit-worktree")) {
+      const committed = await commitSandboxWorktree(paths, "moat: uncommitted sandbox work, committed at fetch time")
+      log.warn(
+        `committed ${committed.files} uncommitted file(s) from the sandbox as ${committed.sha?.slice(0, 12)} ` +
+          `before fetching, because you passed --commit-worktree`,
+      )
+    } else {
+      log.warn(
+        `the sandbox has ${dirty.length} uncommitted change(s); \`git fetch\` reads a branch ref and cannot see them.`,
+      )
+      for (const line of dirty.slice(0, 10)) log.info(`    ${line}`)
+      if (dirty.length > 10) log.info(`    … and ${dirty.length - 10} more`)
+      log.info("")
+      log.info(`  to collect them:  moat fetch --commit-worktree   ${log.dim("(commits them in the sandbox, then fetches)")}`)
+      log.info("  or ask the agent to commit inside the box")
+      log.info("")
+    }
+  }
 
   const requested = p._.length > 0 ? p._ : undefined
   const targets = flag<boolean>(p, "all")
@@ -1335,6 +1387,7 @@ Usage: moat <command> [options]
                          --show-output  also print each tool's output
                          --continue     resume the most recent session
   fetch [branch]         git fetch the agent's branch from the sandbox into refs/moat/*
+                         --commit-worktree  also commit anything left uncommitted in the box
   apply <branch>         turn a fetched ref into a local branch (--checkout to switch)
   status [--all]         show environment state
   down                   stop the sandbox (environment and snapshots are kept)

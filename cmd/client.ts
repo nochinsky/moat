@@ -79,13 +79,6 @@ export type SessionResult = {
   errors: string[]
 }
 
-type Part = {
-  type?: string
-  text?: string
-  tool?: string
-  state?: { status?: string; title?: string; input?: unknown; output?: string; error?: string }
-}
-
 /**
  * Drive one prompt to completion and return everything the agent did.
  *
@@ -101,46 +94,201 @@ export async function driveSession(
     modelID: string
     agent?: string
     onEvent?: (line: string) => void
+    /** Raw text fragments, written without a trailing newline. */
+    onDelta?: (text: string) => void
     /** Also emit each tool's output (truncated). */
     showOutput?: boolean
+    /** Give up on a turn after this long and return what we have. */
+    timeoutMs?: number
   },
 ): Promise<SessionResult> {
-  let sessionID = input.sessionID
-  if (!sessionID) {
-    const created = await client.session.create({ body: { title: "moat session" } })
-    const data = created.data as { id?: string } | undefined
-    if (!data?.id) throw new Error(`failed to create session: ${JSON.stringify(created.error ?? created)}`)
-    sessionID = data.id
+  const sessionID = input.sessionID ?? (await createSession(client))
+  try {
+    return await driveStreaming(client, sessionID, input)
+  } catch (error) {
+    // Streaming is the pleasant path, not the only path. If the event stream is
+    // unavailable for any reason, fall back to the blocking call and say so.
+    input.onEvent?.(`[stream] unavailable (${(error as Error).message}); falling back to waiting for the whole turn`)
+    return await driveBlocking(client, sessionID, input)
+  }
+}
+
+async function createSession(client: Client): Promise<string> {
+  const created = await client.session.create({ body: { title: "moat session" } })
+  const data = created.data as { id?: string } | undefined
+  if (!data?.id) throw new Error(`failed to create session: ${JSON.stringify(created.error ?? created)}`)
+  return data.id
+}
+
+type Part = {
+  sessionID?: string
+  messageID?: string
+  type?: string
+  text?: string
+  tool?: string
+  callID?: string
+  state?: { status?: string; title?: string; input?: unknown; output?: string; error?: string }
+}
+
+function promptBody(input: { prompt: string; providerID: string; modelID: string; agent?: string }) {
+  return {
+    model: { providerID: input.providerID, modelID: input.modelID },
+    agent: input.agent,
+    parts: [{ type: "text" as const, text: input.prompt }],
+  }
+}
+
+/**
+ * Drive a turn and report it as it happens.
+ *
+ * The blocking `session.prompt` call shows nothing until the whole turn is over,
+ * which on a real task means minutes of a blank terminal. That reads as "hung",
+ * and the natural reaction is Ctrl-C, which loses the turn. So the event stream
+ * is subscribed to first, the prompt is started asynchronously, and parts are
+ * reported as they arrive. `session.idle` ends the turn.
+ */
+async function driveStreaming(
+  client: Client,
+  sessionID: string,
+  input: { prompt: string; providerID: string; modelID: string; agent?: string; onEvent?: (line: string) => void; onDelta?: (text: string) => void; showOutput?: boolean; timeoutMs?: number },
+): Promise<SessionResult> {
+  const deadline = Date.now() + (input.timeoutMs ?? 45 * 60 * 1000)
+  const controller = new AbortController()
+  const subscription = await client.event.subscribe({ signal: controller.signal })
+
+  let text = ""
+  let midText = false
+  const toolStatus = new Map<string, string>()
+  const errors: string[] = []
+  // The event stream carries the user's own prompt as a text part too. Only
+  // assistant message ids are streamed, or the prompt echoes back at you.
+  const assistantMessages = new Set<string>()
+
+  const endText = () => {
+    if (midText) {
+      input.onDelta?.("\n")
+      midText = false
+    }
   }
 
-  const response = await client.session.prompt({
-    path: { id: sessionID },
-    body: {
-      model: { providerID: input.providerID, modelID: input.modelID },
-      agent: input.agent,
-      parts: [{ type: "text", text: input.prompt }],
-    },
-  })
+  await client.session.promptAsync({ path: { id: sessionID }, body: promptBody(input) })
 
-  if (response.error) {
-    throw new Error(`prompt failed: ${JSON.stringify(response.error)}`)
+  const iterator = subscription.stream[Symbol.asyncIterator]()
+  let pending = iterator.next()
+  let idle = false
+  let lastEvent = Date.now()
+
+  try {
+    while (!idle) {
+      const outcome = await Promise.race([
+        pending.then((value) => ({ kind: "event" as const, value })),
+        new Promise<{ kind: "tick" }>((resolve) => setTimeout(() => resolve({ kind: "tick" }), 15000)),
+      ])
+
+      if (outcome.kind === "tick") {
+        if (Date.now() > deadline) {
+          input.onEvent?.("[timeout] turn exceeded its budget; aborting")
+          await client.session.abort({ path: { id: sessionID } }).catch(() => undefined)
+          break
+        }
+        // Silence means the model is thinking. Say so rather than looking dead.
+        if (Date.now() - lastEvent > 30000) {
+          endText()
+          input.onEvent?.(`[waiting] no output for ${Math.round((Date.now() - lastEvent) / 1000)}s`)
+          lastEvent = Date.now()
+        }
+        continue
+      }
+
+      const { value, done } = outcome.value
+      if (done) break
+      pending = iterator.next()
+      lastEvent = Date.now()
+
+      const event = value as { type?: string; properties?: Record<string, unknown> }
+      const properties = event.properties ?? {}
+
+      if (event.type === "message.updated") {
+        const info = properties.info as { id?: string; role?: string; sessionID?: string } | undefined
+        if (info?.role === "assistant" && info.id && (!info.sessionID || info.sessionID === sessionID)) {
+          assistantMessages.add(info.id)
+        }
+        continue
+      }
+
+      if (event.type === "message.part.updated") {
+        const part = properties.part as Part | undefined
+        if (!part || (part.sessionID && part.sessionID !== sessionID)) continue
+
+        if (part.type === "text") {
+          if (part.messageID && !assistantMessages.has(part.messageID)) continue
+          const delta = typeof properties.delta === "string" ? properties.delta : undefined
+          const chunk = delta ?? part.text ?? ""
+          if (chunk) {
+            text += chunk
+            midText = true
+            input.onDelta?.(chunk)
+          }
+          continue
+        }
+
+        if (part.type === "tool" && part.tool) {
+          const status = part.state?.status ?? "unknown"
+          // `pending` is the instant between the model emitting a call and the
+          // tool starting; reporting it just doubles every line.
+          if (status === "pending") continue
+          const key = part.callID ?? part.tool
+          if (toolStatus.get(key) !== status) {
+            toolStatus.set(key, status)
+            endText()
+            input.onEvent?.(`[tool] ${part.tool} (${status}) ${part.state?.title ?? ""}`)
+            const detail = part.state?.error ?? part.state?.output
+            if (status === "error") errors.push(`${part.tool}: ${detail ?? "failed"}`)
+            if (status === "error" || (status === "completed" && input.showOutput)) {
+              input.onEvent?.(`[tool-${status === "error" ? "error" : "output"}] ${truncate(detail ?? "")}`)
+            }
+          }
+          continue
+        }
+      }
+
+      if (event.type === "session.idle" && properties.sessionID === sessionID) idle = true
+      if (event.type === "session.error" && (!properties.sessionID || properties.sessionID === sessionID)) {
+        errors.push(`session error: ${truncate(JSON.stringify(properties.error ?? properties))}`)
+        idle = true
+      }
+    }
+  } finally {
+    controller.abort()
+    endText()
   }
 
-  // `session.prompt` resolves with the *final* assistant message. Tool calls live
-  // in earlier assistant messages, so the whole session is read back and folded
-  // into one transcript. Without this, a successful agent run reports "no tools",
-  // which is exactly the kind of claim this project is not allowed to make.
+  // The event stream is a live view; the transcript is the record. Re-read it so
+  // the returned result is authoritative rather than reconstructed from deltas.
+  return await collect(client, sessionID, errors)
+}
+
+/** The blocking path, kept as a fallback. */
+async function driveBlocking(
+  client: Client,
+  sessionID: string,
+  input: { prompt: string; providerID: string; modelID: string; agent?: string; onEvent?: (line: string) => void; onDelta?: (text: string) => void; showOutput?: boolean; timeoutMs?: number },
+): Promise<SessionResult> {
+  const errors: string[] = []
+  const response = await client.session.prompt({ path: { id: sessionID }, body: promptBody(input) })
+  if (response.error) throw new Error(`prompt failed: ${JSON.stringify(response.error)}`)
+  const result = await collect(client, sessionID, errors)
+  if (result.text) input.onDelta?.(result.text.endsWith("\n") ? result.text : `${result.text}\n`)
+  return result
+}
+
+/** Fold the whole session into one transcript. */
+async function collect(client: Client, sessionID: string, errors: string[]): Promise<SessionResult> {
   const transcript = await client.session.messages({ path: { id: sessionID } })
   const messages = (transcript.data ?? []) as { info?: { role?: string }; parts?: Part[] }[]
 
   const toolCalls: SessionResult["toolCalls"] = []
-  const errors: string[] = []
   let lastAssistantText = ""
-
-  if (messages.length === 0) {
-    const message = response.data as { parts?: Part[] } | undefined
-    messages.push({ info: { role: "assistant" }, parts: message?.parts ?? [] })
-  }
 
   for (const message of messages) {
     const role = message.info?.role ?? "assistant"
@@ -150,20 +298,13 @@ export async function driveSession(
       if (part.type === "tool" && part.tool) {
         const status = part.state?.status ?? "unknown"
         toolCalls.push({ tool: part.tool, status, title: part.state?.title })
-        input.onEvent?.(`[tool] ${part.tool} (${status}) ${part.state?.title ?? ""}`)
-        const detail = part.state?.error ?? part.state?.output
         if (status === "error") {
-          errors.push(`${part.tool}: ${detail ?? "failed"}`)
-          input.onEvent?.(`[tool-error] ${part.tool}: ${truncate(detail ?? "failed")}`)
-        } else if (input.showOutput) {
-          input.onEvent?.(`[tool-output]\n${truncate(detail ?? "")}`)
+          const detail = `${part.tool}: ${part.state?.error ?? part.state?.output ?? "failed"}`
+          if (!errors.includes(detail)) errors.push(detail)
         }
       }
     }
-    if (role === "assistant" && messageText.trim().length > 0) {
-      lastAssistantText = messageText
-      input.onEvent?.(messageText)
-    }
+    if (role === "assistant" && messageText.trim().length > 0) lastAssistantText = messageText
   }
 
   return { sessionID, text: lastAssistantText, toolCalls, errors }

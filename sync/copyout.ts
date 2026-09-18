@@ -64,6 +64,54 @@ export async function listSandboxBranches(p: EnvPaths): Promise<SandboxBranch[]>
     })
 }
 
+/**
+ * Uncommitted changes sitting in the sandbox working tree.
+ *
+ * These are NOT collected by `moat fetch`: it fetches a branch ref, and
+ * uncommitted work is in no ref. Left alone it simply stays in the box, which is
+ * fine until someone assumes otherwise. So it is measured and reported.
+ */
+export async function sandboxWorktreeChanges(p: EnvPaths): Promise<string[]> {
+  if (!(await sandboxRepoExists(p))) return []
+  const result = await run("git", ["-C", p.work, "status", "--porcelain"], {
+    env: SANITIZED_GIT_ENV,
+    allowFailure: true,
+  })
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+}
+
+/**
+ * Commit the sandbox working tree on the user's behalf, so that work the agent
+ * left uncommitted can be fetched.
+ *
+ * Only ever called because the user asked for it (`moat fetch --commit-worktree`).
+ * Nothing in moat commits to a sandbox branch on its own.
+ */
+export async function commitSandboxWorktree(
+  p: EnvPaths,
+  message: string,
+): Promise<{ sha: string | null; files: number }> {
+  const env = {
+    ...SANITIZED_GIT_ENV,
+    GIT_AUTHOR_NAME: "moat agent",
+    GIT_AUTHOR_EMAIL: "agent@moat.invalid",
+    GIT_COMMITTER_NAME: "moat agent",
+    GIT_COMMITTER_EMAIL: "agent@moat.invalid",
+  }
+  const changes = await sandboxWorktreeChanges(p)
+  if (changes.length === 0) return { sha: null, files: 0 }
+
+  await run("git", ["-C", p.work, "add", "-A"], { env })
+  const commit = await run("git", ["-C", p.work, "commit", "--quiet", "-m", message], { env, allowFailure: true })
+  if (commit.code !== 0) {
+    throw new Error(`could not commit the sandbox working tree: ${commit.stderr.trim() || commit.stdout.trim()}`)
+  }
+  return { sha: await sandboxHead(p), files: changes.length }
+}
+
 export async function sandboxHead(p: EnvPaths): Promise<string | null> {
   const result = await run("git", ["-C", p.work, "rev-parse", "HEAD"], { env: SANITIZED_GIT_ENV, allowFailure: true })
   return result.code === 0 ? result.stdout.trim() : null

@@ -186,7 +186,7 @@ filesystem, no socket, no subprocess.
 | command | effect |
 | --- | --- |
 | `moat up` | provision if needed, copy in, mint a credential, boot, wait for ready |
-| `moat attach [--prompt TEXT]` | attach the opencode client: interactive TUI, or drive one prompt |
+| `moat attach [--prompt TEXT]` | attach the opencode client: interactive TUI, or drive one prompt. Reports tool calls as they happen; `--continue` resumes the last session |
 | `moat fetch [branch] [--all]` | `git fetch` the agent's branch from the sandbox into `refs/moat/*` |
 | `moat apply <branch> [--checkout]` | turn a fetched ref into a local branch (never automatic) |
 | `moat status [--all]` | state, endpoint, credential expiry, snapshots, sandbox branches |
@@ -255,6 +255,13 @@ for every project, not just git ones.
 3. `moat apply <branch>` creates the local branch `moat/<branch>`, and only with
    `--checkout` does it touch the working tree, and then only if the tree is
    clean.
+
+Uncommitted work in the sandbox is in no ref, so no fetch can reach it. `moat
+fetch` reports it and names the files; `moat fetch --commit-worktree` commits it
+in the sandbox first, then fetches. Nothing commits to a sandbox branch unless
+the user asks. The same rule guards the automatic re-copy described in §2.2: if
+the host project has changed but the sandbox holds commits or files the host
+cannot reach, moat warns rather than overwriting them.
 
 Guarantees, both verified in `docs/VERIFICATION.md`:
 

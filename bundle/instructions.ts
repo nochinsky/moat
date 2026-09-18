@@ -75,8 +75,9 @@ prefer installing the Alpine package over downloading a release tarball.
 - The project has already been copied in, including any uncommitted changes the
   user had. \`git status\` will show them.
 - **Commit your work to \`${input.branch}\`.** The user collects it with
-  \`moat fetch\`, which reads that branch. Work you leave uncommitted may still be
-  picked up from the working tree, but commits are what they will see.
+  \`moat fetch\`, which reads that branch and nothing else. Work you leave
+  uncommitted stays in this box and never reaches them: it is in no commit, so no
+  fetch can see it. When you finish something, commit it.
 - Write small, well-described commits. The user's \`git log\` of your branch is
   the primary way they review what you did.
 - Do not try to push to a remote. There are no credentials for one, and the
