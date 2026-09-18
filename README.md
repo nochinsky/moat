@@ -1,5 +1,7 @@
 # moat
 
+[![ci](https://github.com/nochinsky/moat/actions/workflows/ci.yml/badge.svg)](https://github.com/nochinsky/moat/actions/workflows/ci.yml)
+
 Run an AI coding agent inside a disposable, fully isolated Linux box.
 
 `moat` copies your project into a fresh sandbox with its own rootfs and package
@@ -164,11 +166,22 @@ environment must never be printed or exfiltrated. It works on its own git branch
 ```bash
 bash test/e2e.sh          # the acceptance criteria, ~4 minutes
 bash test/e2e-extras.sh   # snapshots, apply, credential expiry
+DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model doing a real task
 ```
 
-The suites drive real agent sessions inside a real sandbox against a
+The first two drive real agent sessions inside a real sandbox against a
 deterministic local model stub, so they need no API key and produce the same
-result every time. Raw output lands in `test/evidence/`.
+result every time. The third spends real tokens against a real provider, and
+refuses to run without a key rather than skipping quietly. Raw output from all
+three is in `test/evidence/`, and `docs/VERIFICATION.md` quotes it.
+
+**Run them on your own machine, not in CI.** GitHub's hosted runners cannot
+create unprivileged user namespaces at all: `max_user_namespaces` is fine and the
+AppArmor restriction can be lifted with sudo, but `unshare` is killed silently by
+the runner's own confinement, and there is no way to change that from inside a
+job. The CI workflow says so in a warning annotation instead of pretending a suite
+ran. CI covers the build, the CLI, the model catalog and the profiles; the sandbox
+suite is local-only, and that is a real gap rather than a hidden one.
 
 ## Documentation
 
