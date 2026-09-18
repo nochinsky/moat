@@ -1,0 +1,16 @@
+=== what opencode actually put on the wire ===
+  reasoning_effort='max' thinking=None model=deepseek-v4-pro stream=True tools=11
+  reasoning_effort=None thinking={'type': 'disabled'} model=deepseek-v4-pro stream=True tools=11
+
+reasoning levels the server offered: ['high', 'max', 'off']
+
+--- checks ---
+  pass  --upstream kept the DeepSeek catalog
+  pass  the model still offers its reasoning levels
+  pass  the proxy saw both turns
+  pass  effort max went out as reasoning_effort=max
+  pass  thinking off went out as thinking.type=disabled
+  pass  thinking off did not also send an effort
+  pass  the model name on the wire is DeepSeek's, not moat's
+
+7/7 checks passed

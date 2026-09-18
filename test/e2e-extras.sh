@@ -180,7 +180,21 @@ else
   echo "skipped: needs DEEPSEEK_API_KEY (it spends a few tokens on a real turn)" | tee -a "$EVIDENCE/extras.txt"
 fi
 
-section "M. every claim about process state is reconciled against the live process table"
+section "M. the request body DeepSeek actually receives"
+echo "every other check of the reasoning setting asks opencode what it thinks it did." | tee -a "$EVIDENCE/extras.txt"
+echo "This one puts a recording proxy in front of the provider and reads the request:" | tee -a "$EVIDENCE/extras.txt"
+echo "reasoning_effort for an effort, thinking.type=disabled for off. It uses --upstream," | tee -a "$EVIDENCE/extras.txt"
+echo "which keeps DeepSeek's catalog definition and only moves the address." | tee -a "$EVIDENCE/extras.txt"
+if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+  python3 "$REPO/test/wire-effort.py" 2>&1 | scrub > "$EVIDENCE/wire-effort.txt"
+  WIRE_RC=$?
+  tail -14 "$EVIDENCE/wire-effort.txt" | tee -a "$EVIDENCE/extras.txt"
+  echo "wire check exit: $WIRE_RC" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "skipped: needs DEEPSEEK_API_KEY (it spends two short turns)" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+section "N. every claim about process state is reconciled against the live process table"
 capture status-final $MOAT status
 capture down-final $MOAT down
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; fi

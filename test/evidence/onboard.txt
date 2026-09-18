@@ -1,7 +1,7 @@
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-c1ed4315e817.tar.gz
-✓ image provisioned in 852ms (extract cached image 852ms)
+✓ image provisioned in 868ms (extract cached image 868ms)
 ! /home/user/moat-demo/onboard-demo is not a git repository; falling back to rsync + a fresh in-sandbox repo
 → copy-in: initialising a repository inside the sandbox (non-git project)
 ✓ copy-in via rsync: 0 files, 0.0 KiB, digest e3b0c44298fc1c14
@@ -16,21 +16,21 @@ moat needs a DeepSeek API key.
   DEEPSEEK_API_KEY: ***********************************
   checking...                    ✓ key accepted (deepseek-flash, deepseek-v4-pro), saved to /home/user/.moat/credentials.json
 ! injecting deepseek credential sha256:e493a50d942e2a4f (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-18-21-15
-→ sandbox booted (pid 99025, port 35147); waiting for opencode serve
-✓ sandbox up, cold start 20.42s (image built)
+agent branch: moat-session-2026-09-18-22-03
+→ sandbox booted (pid 115698, port 43463); waiting for opencode serve
+✓ sandbox up, cold start 22.00s (image built)
 
   project    /home/user/moat-demo/onboard-demo
   env        /home/user/.moat/envs/a5b7670da9ae
-  opencode   http://127.0.0.1:35147  (basic auth user "opencode")
+  opencode   http://127.0.0.1:43463  (basic auth user "opencode")
   password   <redacted-in-history>
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:e493a50d942e2a4f expires 2026-09-19T01:15:54.456Z
+  credential deepseek sha256:e493a50d942e2a4f expires 2026-09-19T02:03:57.913Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
         moat down    stop the sandbox (state and snapshots are kept)
-^C
+
 --- checks ---
   pass  it asked for the key
   pass  the key was not echoed

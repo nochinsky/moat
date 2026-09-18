@@ -660,10 +660,52 @@ that directory too. Switching to a model that does not accept the current effort
 clears it and says so, rather than carrying a level that will be dropped.
 
 The effort travels as opencode's `variant` field on the prompt. It is absent from
-the published SDK's generated request type, so moat widens the type at the call
-site; the server accepts it and records it on the assistant message, which is how
-the path is verified rather than assumed. For DeepSeek it reaches the provider as
-`reasoning_effort`.
+the published SDK's generated request type, so moat builds the body in one place
+(`promptBody`) and passes the result rather than an inline literal — TypeScript
+only rejects an unknown property on a fresh literal. For DeepSeek the variant
+reaches the provider as `reasoning_effort`.
+
+**Thinking off is not an effort level.** DeepSeek's scale runs `minimal`, `low`,
+`medium`, `high`, `xhigh`, `max`, `ultra`, mapping onto four distinct levels, and
+`medium` maps to `high` — so there is no value in it that means "do not think".
+That is a separate documented parameter, `{"thinking": {"type": "disabled"}}`,
+and opencode has no per-request field for it. It does, however, merge variants
+declared in config *over* the ones it computes
+(`packages/opencode/src/provider/provider.ts:1572`), and a variant is exactly a
+bag of provider options applied to one request. So `off` is declared in the
+rendered config as a variant, appears in `GET /config/providers` like any other,
+and `/think off` needs no special case anywhere. It is declared for every model
+the provider defines, not just the boot model, because `/model` switches at
+runtime and a variant declared for one model would vanish on a switch.
+
+Only `variants` is declared, never the whole model, so the base URL, context
+window, price and tool support still come from the models.dev catalog.
+
+**What the effort costs.** DeepSeek bills cache hits at roughly a thirtieth of
+cache misses and doubles every rate during peak hours (01:00–04:00 and
+06:00–10:00 UTC, Monday to Friday). `lib/pricing.ts` holds the published table
+and computes the turn's cost from the billed token counts, because the price
+opencode reports comes from the models.dev catalog and is wrong for
+`deepseek-v4-pro` — 0.435/0.87/0.003625 per million against the published
+0.66/1.98/0.022 off-peak. The token fields were pinned down by reconciling
+opencode's own arithmetic: `input` is the cache-*miss* count, `cache.read` the
+cache-hit count, and `reasoning` is billed at the output rate as a field separate
+from `output`.
+
+**Two of the four catalogue models are retired names.** DeepSeek still accepts
+`deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, but serves them with the
+current Flash model and bills at its price. moat marks them in `/model` and
+prices them as Flash rather than presenting four live models.
+
+**Verification is at the wire.** Asking opencode what variant it recorded, or how
+many reasoning tokens it counted, is evidence about opencode's bookkeeping. The
+setting itself is checked by putting a recording proxy in front of the provider
+(`test/wire-effort.py`, using `--upstream`) and reading the request body:
+`variant: "max"` produces `reasoning_effort: "max"`, and `variant: "off"`
+produces `thinking: {"type": "disabled"}` with no effort alongside it. This is
+what resolved a false alarm — a turn that answered wrongly with zero reasoning
+tokens looked like a dropped parameter, but the proxy showed it arriving intact
+and the model simply not using it.
 
 #### Streamed text arrives on its own event
 

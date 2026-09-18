@@ -1214,6 +1214,77 @@ $ moat up
   credential deepseek sha256:e493a50d942e2a4f expires 2026-09-19T00:16:25.853Z
 ```
 
+### I. The session display, and the price of a turn
+
+**The prices are DeepSeek's, not the catalog's.** The models.dev entry opencode
+bills against disagrees with the published table, so moat computes its own:
+
+```
+                     models.dev        published (off-peak)   published (peak)
+deepseek-v4-pro      in  0.435        in  0.66               in  1.32
+                     out 0.87         out 1.98               out 3.96
+                     hit 0.003625     hit 0.022              hit 0.044
+deepseek-flash       in  0.15         in  0.15               in  0.30
+```
+
+The `deepseek-flash` row matches off-peak exactly, which is what makes the
+`deepseek-v4-pro` row look like a stale entry rather than a different convention.
+The same turn is charged at double the off-peak rate during peak hours.
+
+Which token field is which was not guessable; it was recovered by reconciling
+opencode's own arithmetic against its own reported cost, exactly:
+
+```
+input=6504 output=47 reasoning=0  cache.read=2304  cost=0.002878482
+  6504·0.435 + 2304·0.003625 + 47·0.87  (per million) = 0.002878482
+input=114  output=2  reasoning=53 cache.read=8704  cost=0.000128992
+  114·0.435 + 8704·0.003625 + (2+53)·0.87              = 0.000128992
+```
+
+So `input` is the cache-*miss* count, `cache.read` the cache-hit count, and
+reasoning is a separate field billed at the output rate. The second line only
+reconciles if reasoning is added to output, which is how that was established
+rather than assumed.
+
+**The setting is verified at the wire, not from opencode's account of itself.**
+`test/wire-effort.py` starts a recording proxy, boots with `--upstream` so the
+provider keeps its catalog definition but sends traffic to the proxy, and reads
+the request body:
+
+```
+$ python3 test/wire-effort.py
+=== what opencode actually put on the wire ===
+  reasoning_effort='max' thinking=None model=deepseek-v4-pro stream=True tools=11
+  reasoning_effort=None thinking={'type': 'disabled'} model=deepseek-v4-pro stream=True tools=11
+
+reasoning levels the server offered: ['high', 'max', 'off']
+  7/7 checks passed
+```
+
+This exists because of a false alarm worth recording. A turn sent with
+`variant: max` answered a multiplication wrongly and reported zero reasoning
+tokens, and a run without the `off` variant declared answered the same question
+correctly — which read as "the new variant broke reasoning". Two samples. The
+proxy showed the parameter arriving correctly in both configurations; the model
+had simply not used it the first time. The test above replaced the guesswork, and
+`test/repl-effort.py` no longer asserts that thinking *on* produces reasoning,
+because that is model behaviour rather than plumbing.
+
+**Layout regressions are guarded.** The answer text, the per-call elapsed time,
+the added/removed counts and the turn footer are asserted by
+`test/repl-smoke.py`. The guard was checked against a deliberately reintroduced
+bug: reverting the delta-event fix makes `the model's answer was displayed` fail.
+
+**Two rendering faults found and fixed while doing this**, both of which the
+tests then covered:
+
+- The reasoning spinner was cleared on *every* streamed fragment, so it vanished
+  and nothing replaced it until a line completed. The renderer buffers fragments
+  until a line is whole, so clearing has to happen at the moment something is
+  actually written, not in anticipation of it.
+- The answer gutter was written as its own row, leaving a bare `│` above every
+  reply. The gutter is written with the line it belongs to.
+
 ---
 
 ## Requirement-by-requirement
@@ -1274,6 +1345,8 @@ Listed so that absence is not mistaken for success.
 | Non-DeepSeek providers | moat is DeepSeek-only by design; `--base-url` exists for a gateway or a local model and is exercised against a stub, but no second hosted provider was wired up or called. |
 | The `countUnfetched` / host-drift logic under adversarial git states | both branches were exercised (drift with unpreserved sandbox commits → warning; drift with everything already fetched → automatic re-copy), but not things like a rebased sandbox branch or a detached host HEAD. |
 | The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |
+| The absolute correctness of a cost figure against a DeepSeek invoice | it is the published table applied to the billed token counts, and it reconciles exactly with opencode's own arithmetic on the same numbers (above). It is not compared against a real bill. |
+| Rendering in terminals other than the ones tested | verified through a pty at 80 and 100 columns, and in plain mode via `NO_COLOR`. Narrow widths, unusual `TERM` values and terminal resize mid-turn were not exercised. |
 | `/undo`, `/redo` and `/compact` against a real model | the calls are exercised against the stub and the server accepts them, but summarisation is model-driven and the stub cannot summarise: it answers `/compact` by trying to call a tool, which the server rejects with `Tool call not allowed while generating summary`. |
 | Network isolation | not attempted in v0; it is the top risk in the report and is disclosed on every `moat doctor` run. |
 | Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), but a reboot mid-session was not staged. |

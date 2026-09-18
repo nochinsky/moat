@@ -477,13 +477,15 @@ export async function listModels(client: Client): Promise<ModelChoice[]> {
 }
 
 /**
- * Effort levels, weakest first.
+ * Reasoning levels, weakest first.
  *
  * The server hands them over in its own (alphabetical) order, which reads as
  * noise in a menu. This is the ranking the levels actually mean; anything
- * unrecognised keeps its place at the end.
+ * unrecognised keeps its place at the end. `off` is moat's own variant (see
+ * bundle/render.ts) and belongs at the bottom with `none`, which is the
+ * OpenAI-format name for the same idea.
  */
-const EFFORT_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+const EFFORT_ORDER = ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 function orderVariants(names: string[]): string[] {
   return [...names].sort((a, b) => {

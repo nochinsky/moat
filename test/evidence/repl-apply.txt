@@ -3,18 +3,21 @@
 › type a task and press enter. /help for commands, ctrl-c to interrupt.
 › 
 › › create a file and commit it
-  · bash      
-›   ✓ bash      pwd && ls -la && cat README.md
-›   · write     
-›   ✓ write     agent-output.txt
-›   · edit      
-›   ✓ edit      agent-output.txt
-›   · bash      
-›   ✓ bash      printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt
-›   · bash      
-›   ✓ bash      git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && gi
-› │ Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
-› /apply
+
+  ⠇ bash  ⠏ bash  ⠋ bash  ✓ bash       pwd && ls -la && cat README.md  149ms
+
+  ⠙ thinking 1s  ⠹ thinking 1s  ⠹ write  ✓ write      agent-output.txt  +1 24ms
+
+  ⠸ thinking 1s  ⠼ thinking 1s  ⠼ edit  ✓ edit       agent-output.txt  +1 -1 28ms
+
+  ⠴ thinking 2s  ⠦ thinking 2s  ⠦ bash  ⠧ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent…  23ms
+
+  ⠇ thinking 2s  ⠇ bash  ⠏ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sa…  36ms
+
+  ⠋ thinking 2s  ⠙ thinking 2s│   Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
+
+  ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 2.1s  6% of context  cost unknown
+› › /apply
 
 ›   add     agent-output.txt
 › 

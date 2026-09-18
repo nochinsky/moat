@@ -5,19 +5,20 @@
 › › /status
 
 ›   project     /home/user/moat-demo/controls
-›   endpoint    http://127.0.0.1:38057
+›   endpoint    http://127.0.0.1:33399
 ›   model       moat/mock-model
 ›   agent       default
 ›   thinking    hidden
-›   branch      moat-session-2026-09-18-21-16
+›   branch      moat-session-2026-09-18-22-04
 ›   session     none yet
 ›   profiles    node
-›   credential  14387s left
+›   credential  14385s left
 › 
 › › /model
 
 ›   ›  1. moat/mock-model       128k ctx
 › 
+›   retired names still work but are served by the current flash model
 ›   switch with /model <number or name>
 › › /think
 moat/mock-model does not expose reasoning effort levels; there is nothing to set.
@@ -26,14 +27,14 @@ moat/mock-model does not expose reasoning effort levels; there is nothing to set
 › › /status
 
 ›   project     /home/user/moat-demo/controls
-›   endpoint    http://127.0.0.1:38057
+›   endpoint    http://127.0.0.1:33399
 ›   model       moat/mock-model
 ›   agent       default
 ›   thinking    hidden
-›   branch      moat-session-2026-09-18-21-16
+›   branch      moat-session-2026-09-18-22-04
 ›   session     none yet
 ›   profiles    node
-›   credential  14378s left
+›   credential  14377s left
 › 
 › › /think bogus
 moat/mock-model does not expose reasoning effort levels; there is nothing to set.
@@ -56,36 +57,41 @@ hiding tool output
 › 
 ›   switch with /agent <name>
 › › fix the failing tests
-  · bash      
-›   ✓ bash      pwd && ls -la && cat README.md
-›   · write     
-›   ✓ write     agent-output.txt
-›   · edit      
-›   ✓ edit      agent-output.txt
-›   · bash      
-›   ✓ bash      printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt
-›   · bash      
-›   ✓ bash      git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && gi
-› │ Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
-› /undo
+
+  ⠇ bash  ⠏ bash  ⠋ bash  ✓ bash       pwd && ls -la && cat README.md  143ms
+
+  ⠙ thinking 1s  ⠙ write  ⠹ write  ✓ write      agent-output.txt  +1 28ms
+
+  ⠸ thinking 1s  ⠼ thinking 1s  ⠼ edit  ✓ edit       agent-output.txt  +1 -1 24ms
+
+  ⠴ thinking 2s  ⠦ thinking 2s  ⠦ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent…  28ms
+
+  ⠧ thinking 2s  ⠇ thinking 2s  ⠇ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sa…  24ms
+
+  ⠏ thinking 2s  ⠋ thinking 2s  ⠙ thinking 2s│   Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
+
+  ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 2.1s  6% of context  cost unknown
+› › /undo
 undone  (/redo to put it back)
 › › /redo
 restored
 › › /compact
 compacting...
-› session error: {"name":"UnknownError","data":{"message":"Tool call not allowed while generating summary: bash"}}
+› session error: Tool call not allowed while generating summary: bash
+›   ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 31s  6% of context  cost unknown
 › › compacted
-› › › /status
+› ›   ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 31s  6% of context  cost unknown
+› › /status
 
 ›   project     /home/user/moat-demo/controls
-›   endpoint    http://127.0.0.1:38057
+›   endpoint    http://127.0.0.1:33399
 ›   model       moat/mock-model
 ›   agent       default
 ›   thinking    hidden
-›   branch      moat-session-2026-09-18-21-16
-›   session     ses_f499f1456ffeGRHk8PHmJ7FJdp
+›   branch      moat-session-2026-09-18-22-04
+›   session     ses_f497308c6ffeK7MOU6TqhxNj25
 ›   profiles    node
-›   credential  14325s left
+›   credential  14324s left
 › 
 › › /quit
 
