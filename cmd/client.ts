@@ -100,6 +100,14 @@ export async function driveSession(
     showOutput?: boolean
     /** Give up on a turn after this long and return what we have. */
     timeoutMs?: number
+    /**
+     * Called when the agent asks the user something.
+     *
+     * Required in practice: this path is never attended, and a question nobody
+     * can answer would hang the turn. The handler rejects it so the agent is
+     * told to decide for itself.
+     */
+    onQuestion: (requestID: string) => Promise<void>
   },
 ): Promise<SessionResult> {
   const sessionID = input.sessionID ?? (await createSession(client))
@@ -150,7 +158,17 @@ function promptBody(input: { prompt: string; providerID: string; modelID: string
 async function driveStreaming(
   client: Client,
   sessionID: string,
-  input: { prompt: string; providerID: string; modelID: string; agent?: string; onEvent?: (line: string) => void; onDelta?: (text: string) => void; showOutput?: boolean; timeoutMs?: number },
+  input: {
+    prompt: string
+    providerID: string
+    modelID: string
+    agent?: string
+    onEvent?: (line: string) => void
+    onDelta?: (text: string) => void
+    showOutput?: boolean
+    timeoutMs?: number
+    onQuestion?: (requestID: string) => Promise<void>
+  },
 ): Promise<SessionResult> {
   const deadline = Date.now() + (input.timeoutMs ?? 45 * 60 * 1000)
   const controller = new AbortController()
@@ -176,6 +194,7 @@ async function driveStreaming(
   const iterator = subscription.stream[Symbol.asyncIterator]()
   let pending = iterator.next()
   let idle = false
+  let abortRequested = false
   let lastEvent = Date.now()
 
   try {
@@ -252,7 +271,21 @@ async function driveStreaming(
         }
       }
 
+      if (event.type === "question.asked") {
+        const request = (properties as { request?: { id?: string } }).request ?? (properties as { id?: string })
+        if (request?.id) {
+          // Unattended by construction: the interactive path is the REPL, which
+          // runs its own loop and answers questions properly. There is no way to
+          // unblock the tool from here, so the turn is ended rather than stalled.
+          await input.onQuestion?.(request.id)
+          abortRequested = true
+          await client.session.abort({ path: { id: sessionID } }).catch(() => undefined)
+        }
+        continue
+      }
+
       if (event.type === "session.idle" && properties.sessionID === sessionID) idle = true
+      if (event.type === "session.error" && abortRequested) idle = true
       if (event.type === "session.error" && (!properties.sessionID || properties.sessionID === sessionID)) {
         errors.push(`session error: ${truncate(JSON.stringify(properties.error ?? properties))}`)
         idle = true
@@ -342,3 +375,68 @@ export function describeConnection(state: EnvState, password: string): string {
 }
 
 export { log }
+
+// ---------------------------------------------------------------------------
+// Questions
+//
+// The server exposes these at /question, but the published SDK omits the
+// bindings, so they are called directly. Verified against the route group in
+// packages/opencode/src/server/routes/instance/httpapi/groups/question.ts:
+//   GET  /question                     list pending questions
+//   POST /question/:requestID/reply    { answers: string[][] }
+//   POST /question/:requestID/reject
+// ---------------------------------------------------------------------------
+
+export type QuestionOption = { label: string; description: string }
+export type QuestionInfo = {
+  question: string
+  header: string
+  options: QuestionOption[]
+  multiple?: boolean
+  custom?: boolean
+}
+export type QuestionRequest = { id: string; sessionID: string; questions: QuestionInfo[] }
+
+async function questionCall(
+  state: EnvState,
+  password: string,
+  path: string,
+  body?: unknown,
+): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+  const response = await fetch(`${baseUrl(state)}${path}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: {
+      ...authHeaders(password),
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!response.ok) return { ok: false, error: `HTTP ${response.status}` }
+  const text = await response.text()
+  try {
+    return { ok: true, data: text ? JSON.parse(text) : undefined }
+  } catch {
+    return { ok: true, data: text }
+  }
+}
+
+export async function listQuestions(state: EnvState, password: string): Promise<QuestionRequest[]> {
+  const result = await questionCall(state, password, "/question")
+  return result.ok && Array.isArray(result.data) ? (result.data as QuestionRequest[]) : []
+}
+
+export async function replyToQuestion(
+  state: EnvState,
+  password: string,
+  requestID: string,
+  answers: string[][],
+): Promise<boolean> {
+  const result = await questionCall(state, password, `/question/${requestID}/reply`, { answers })
+  return result.ok
+}
+
+export async function rejectQuestion(state: EnvState, password: string, requestID: string): Promise<boolean> {
+  const result = await questionCall(state, password, `/question/${requestID}/reject`)
+  return result.ok
+}

@@ -16,11 +16,13 @@ import { AUDIT_LOG, BUNDLE_CONFIG, SANDBOX_WORKDIR } from "../lib/pins.ts"
  *     set, and `OPENCODE_CONFIG_DIR` points at a directory moat owns so no
  *     ambient host/global config is read.
  *
- *     `OPENCODE_CLIENT=moat` is load-bearing for the bundle: RuntimeFlags.client
- *     must not be app/cli/desktop or opencode adds the interactive `question`
- *     tool to the model-facing list (packages/opencode/src/tool/registry.ts,
- *     `questionEnabled`). Verified: with this set, `question` disappears from
- *     the tool list the provider receives.
+ *     `OPENCODE_CLIENT=moat` keeps opencode from adding TUI-oriented tools, but
+ *     it also drops `question` (packages/opencode/src/tool/registry.ts,
+ *     `questionEnabled` checks `flags.client`). `OPENCODE_ENABLE_QUESTION_TOOL=1`
+ *     is the supported way to get that one back, and the bundle curates it:
+ *     moat tells the agent whether anyone is listening, and rejects the question
+ *     when nobody is, so it can never hang waiting for an answer that cannot
+ *     come.
  */
 
 export type ServeOptions = {
@@ -50,6 +52,10 @@ export function serveEntryScript(opts: ServeOptions): string {
     "OPENCODE_DISABLE_TERMINAL_TITLE=1",
     "OPENCODE_SERVER_USERNAME=opencode",
     "OPENCODE_CLIENT=moat",
+    // OPENCODE_CLIENT=moat is what keeps TUI-oriented tools out of the list, but
+    // it also drops `question` (registry.ts `questionEnabled` checks flags.client).
+    // This is the supported way to get that one back, and the bundle curates it.
+    "OPENCODE_ENABLE_QUESTION_TOOL=1",
     `MOAT_AUDIT_LOG=${AUDIT_LOG}`,
   ].join(" ")
 

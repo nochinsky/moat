@@ -18,14 +18,26 @@ export type ToolPreset = "core" | "extended"
 
 export const TOOL_PRESETS: Record<ToolPreset, string[]> = {
   /** Everything a coding agent needs and nothing else. This is the default. */
-  core: ["read", "write", "edit", "apply_patch", "glob", "grep", "bash", "todowrite"],
+  core: ["read", "write", "edit", "apply_patch", "glob", "grep", "bash", "todowrite", "question"],
   /**
    * Adds `webfetch` (opencode's own HTML-to-text fetcher) and `task` (spawns
    * sub-agents). Neither changes the security posture, `bash` + `curl` already
    * reaches the network, but both widen what the model can reach for, so they
    * are opt-in.
    */
-  extended: ["read", "write", "edit", "apply_patch", "glob", "grep", "bash", "todowrite", "webfetch", "task"],
+  extended: [
+    "read",
+    "write",
+    "edit",
+    "apply_patch",
+    "glob",
+    "grep",
+    "bash",
+    "todowrite",
+    "question",
+    "webfetch",
+    "task",
+  ],
 }
 
 /** Every built-in opencode ships (packages/core/src/tool/builtins.ts) minus the ones we keep. */
@@ -80,8 +92,13 @@ export type RenderedBundle = {
 }
 
 export function renderBundle(input: RenderInput): RenderedBundle {
+  // `question` is always advertised. Whether a human is listening is a property
+  // of the session, not of the boot: moat may be started headless and attached
+  // later. Instead of guessing at boot time, the instructions say a question may
+  // or may not reach anyone, and a question that arrives with nobody attached is
+  // rejected outright so the agent can get on with deciding for itself.
   const curated = TOOL_PRESETS[input.preset]
-  const excluded = excludedFor(input.preset)
+  const excluded = ALL_BUILTINS.filter((name) => !curated.includes(name))
   const native = input.provider.native
   const providerID = native ? input.provider.opencodeID : "moat"
   const model = `${providerID}/${input.modelID}`

@@ -23,11 +23,31 @@ export type InstructionsInput = {
   installedPackages: string[]
   /** True when a credential was injected, so the agent knows it can call a model. */
   hasCredential: boolean
+  /** True when a human is attached to this session and can answer a question. */
+  canAsk: boolean
+  /** The commands this project uses to check itself, if moat found any. */
+  checks: { label: string; command: string }[]
   workspace: string
 }
 
 export function renderInstructions(input: InstructionsInput): string {
   const tools = input.profiles.length > 0 ? input.profiles.join(", ") : "base only"
+  const askParagraph = input.canAsk
+    ? `- **You can ask the user a question, and someone is waiting to answer it.** Use it
+  when the answer genuinely changes what you build: offer the options you are
+  actually choosing between rather than an open question, and ask once rather
+  than in a series. Everything else, decide yourself. Never ask permission, never
+  ask for confirmation, and never ask something the repository already answers.`
+    : `- **Nobody is going to answer a question.** This session is running unattended.
+  If something is ambiguous, pick the most reasonable interpretation, do the
+  work, and say clearly in your final message what you assumed and what you would
+  have asked.`
+  const checkList =
+    input.checks.length > 0
+      ? `- This project's own checks, which moat found and will run against your work:\n` +
+        input.checks.map((c) => `  \`${c.command}\`  (${c.label})`).join("\n") +
+        "\n"
+      : ""
   return `# You are working inside a moat sandbox
 
 This is a **disposable Linux container**. It is not the user's machine, and it is
@@ -42,10 +62,7 @@ not shared with anything else. You are root here.
 - **You have the network**, unrestricted. \`apk add\`, \`npm install\`, \`pip install\`,
   \`go get\`, \`cargo add\`, \`git clone\`, \`curl\` all work. If a tool is missing,
   install it rather than working around it.
-- **No one is going to answer a question.** There is no human attached to this
-  session to approve, clarify, or choose. If something is ambiguous, pick the
-  most reasonable interpretation, do the work, and say clearly in your final
-  message what you assumed and what you would have asked.
+${askParagraph}
 - **You will not be interrupted by permission prompts.** Every tool call runs. If
   a tool is not in your toolset, it is not available at all, find another way.
 
@@ -86,7 +103,10 @@ prefer installing the Alpine package over downloading a release tarball.
 ## Testing
 
 Assume you are expected to actually verify your work, not to assert it works.
+The user runs these same commands after you finish, so a claim that does not
+survive them is worse than saying you could not check.
 
+${checkList}
 - Run the project's existing test suite, linter and typechecker if it has them.
 - If the project needs a database or another service, **run it here.** The \`db\`
   profile ships PostgreSQL, SQLite and Redis as real servers, not just clients.

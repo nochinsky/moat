@@ -85,3 +85,79 @@ export function detectProfiles(projectDir: string, limit = 4000): Detection {
 export function hasCredentialInEnv(): boolean {
   return Boolean(process.env.DEEPSEEK_API_KEY || process.env.MOAT_CREDENTIAL)
 }
+
+/**
+ * The commands the project uses to check itself.
+ *
+ * moat detects the toolchain already; this is the step further, and it is what
+ * makes verification possible: to run the project's tests for the agent, moat has
+ * to know what they are. The same list is handed to the agent in its
+ * instructions, so it runs your commands instead of inventing its own.
+ */
+export type Check = { label: string; command: string; kind: "test" | "lint" | "types" }
+
+function readJson(file: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function packageManager(projectDir: string): string {
+  const has = (file: string) => fs.existsSync(path.join(projectDir, file))
+  if (has("pnpm-lock.yaml")) return "pnpm"
+  if (has("yarn.lock")) return "yarn"
+  if (has("bun.lockb") || has("bun.lock")) return "bun"
+  return "npm"
+}
+
+export function detectChecks(projectDir: string): Check[] {
+  const checks: Check[] = []
+  const has = (file: string) => fs.existsSync(path.join(projectDir, file))
+
+  const pkg = has("package.json") ? readJson(path.join(projectDir, "package.json")) : null
+  if (pkg) {
+    const scripts = (pkg.scripts ?? {}) as Record<string, string>
+    const pm = packageManager(projectDir)
+    // A `test` script that only echoes is worse than no test script.
+    for (const [kind, names] of [
+      ["test", ["test", "tests"]],
+      ["lint", ["lint"]],
+      ["types", ["typecheck", "types", "check"]],
+    ] as const) {
+      const found = names.find((name) => typeof scripts[name] === "string" && scripts[name]!.length > 0)
+      if (found) checks.push({ label: `${pm} ${found}`, command: `${pm} run ${found}`, kind })
+    }
+  }
+
+  if (has("Makefile") || has("makefile")) {
+    try {
+      const makefile = fs.readFileSync(path.join(projectDir, "Makefile"), "utf8")
+      for (const target of ["test", "check"] as const) {
+        if (new RegExp(`^${target}:`, "m").test(makefile)) {
+          checks.push({ label: `make ${target}`, command: `make ${target}`, kind: target === "test" ? "test" : "lint" })
+        }
+      }
+    } catch {
+      /* unreadable Makefile */
+    }
+  }
+
+  if (has("pyproject.toml") || has("pytest.ini") || has("setup.cfg") || has("requirements.txt")) {
+    const looksLikePytest =
+      has("pytest.ini") ||
+      has("tests") ||
+      (has("pyproject.toml") && fs.readFileSync(path.join(projectDir, "pyproject.toml"), "utf8").includes("pytest"))
+    if (looksLikePytest) checks.push({ label: "pytest", command: "python3 -m pytest -q", kind: "test" })
+    if (has("pyproject.toml") && fs.readFileSync(path.join(projectDir, "pyproject.toml"), "utf8").includes("ruff")) {
+      checks.push({ label: "ruff", command: "python3 -m ruff check .", kind: "lint" })
+    }
+  }
+
+  if (has("Cargo.toml")) checks.push({ label: "cargo test", command: "cargo test --quiet", kind: "test" })
+  if (has("go.mod")) checks.push({ label: "go test", command: "go test ./...", kind: "test" })
+
+  // Tests first: that is the one that decides whether the work is any good.
+  return checks.sort((a, b) => (a.kind === "test" ? -1 : 0) - (b.kind === "test" ? -1 : 0))
+}

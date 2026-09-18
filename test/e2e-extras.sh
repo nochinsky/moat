@@ -109,7 +109,19 @@ REPL_RC=$?
 tail -12 "$EVIDENCE/repl-smoke.txt" | tee -a "$EVIDENCE/extras.txt"
 echo "repl smoke exit: $REPL_RC" | tee -a "$EVIDENCE/extras.txt"
 
-section "G. every claim about process state is reconciled against the live process table"
+section "G. the agent can ask a question when someone is there to answer"
+echo "only in interactive mode: an unattended question has no answer, so batch runs end the" | tee -a "$EVIDENCE/extras.txt"
+echo "turn and say so rather than stalling until the timeout." | tee -a "$EVIDENCE/extras.txt"
+python3 "$REPO/test/repl-questions.py" > "$EVIDENCE/repl-questions.txt" 2>&1
+QUESTION_RC=$?
+tail -8 "$EVIDENCE/repl-questions.txt" | tee -a "$EVIDENCE/extras.txt"
+echo "question flow exit: $QUESTION_RC" | tee -a "$EVIDENCE/extras.txt"
+
+section "H. the project's own checks, run by moat against the agent's work"
+capture verify $MOAT verify
+echo "the exit code above is the project's own verdict on whatever is in the sandbox." | tee -a "$EVIDENCE/extras.txt"
+
+section "I. every claim about process state is reconciled against the live process table"
 capture status-final $MOAT status
 capture down-final $MOAT down
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; fi

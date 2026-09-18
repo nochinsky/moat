@@ -5,7 +5,7 @@
 bundle (from the plugin's config-time record)
   curated    read, write, edit, apply_patch, glob, grep, bash, todowrite
   excluded   webfetch, websearch, question, skill, task
-  omissions confirmed by opencode: question, skill, webfetch, websearch, task
+  omissions confirmed by opencode: skill, webfetch, websearch, task
 
 registry (everything opencode knows about, NOT what the model sees)
   + apply_patch
@@ -14,6 +14,7 @@ registry (everything opencode knows about, NOT what the model sees)
   + glob
   + grep
   - invalid
+  - question
   + read
   - skill
   - task

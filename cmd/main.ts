@@ -13,7 +13,8 @@ import { ALPINE_VERSION, CURATED_TOOLS, EXCLUDED_TOOLS, OPENCODE_VERSION, SANDBO
 import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, isDeepSeekHost } from "../lib/provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from "../sandbox/profiles.ts"
-import { detectProfiles } from "../lib/detect.ts"
+import { detectChecks, detectProfiles } from "../lib/detect.ts"
+import { runChecks, summarise } from "../sandbox/checks.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import {
   envExists,
@@ -68,7 +69,15 @@ import {
   sandboxWorktreeChanges,
   suggestBranch,
 } from "../sync/copyout.ts"
-import { connect, driveSession, listSessions, toolIds, waitForServer, authHeaders, baseUrl } from "./client.ts"
+import {
+  connect,
+  driveSession,
+  listSessions,
+  toolIds,
+  waitForServer,
+  authHeaders,
+  baseUrl,
+} from "./client.ts"
 import { runRepl } from "./repl.ts"
 
 // ---------------------------------------------------------------------------
@@ -140,6 +149,7 @@ const SPEC: Spec = {
   "commit-worktree": "boolean",
   "no-detect": "boolean",
   "no-follow": "boolean",
+  "no-verify": "boolean",
   quiet: "boolean",
   "keep": "boolean",
 }
@@ -323,6 +333,11 @@ async function cmdUp(argv: string[]): Promise<number> {
   // Read the task once, before anything can return early. A task given to a
   // running sandbox used to be dropped on the floor by the reuse path below.
   const task = p._.join(" ").trim()
+
+  // Whether a human is actually attached. This decides two things that must
+  // agree: whether the agent may ask a question, and what its instructions say
+  // about asking. Getting them out of step is how you get a hang.
+  const interactive = process.stdin.isTTY === true && !json && !flag<boolean>(p, "no-follow")
 
   const fresh = flag<boolean>(p, "fresh") ?? false
   const sync = flag<boolean>(p, "sync") ?? false
@@ -562,6 +577,11 @@ ${command}
   // come from the host image cache or from an environment created days ago,
   // either of which would otherwise keep running a stale plugin, which is
   // exactly how a shell.env fix silently failed to take effect once already.
+  const projectChecks = detectChecks(paths.projectDir)
+  if (projectChecks.length > 0) {
+    log.info(`checks: ${projectChecks.map((c) => c.command).join(", ")}`)
+  }
+
   const bundleManifest = installBundle(paths.rootfs, {
     render: {
       provider,
@@ -577,6 +597,8 @@ ${command}
       profiles: resolvedProfiles.profiles,
       installedPackages: resolvedProfiles.profiles.length > 0 ? resolvedProfiles.packages : BASE_PACKAGES,
       hasCredential: Boolean(credential),
+      canAsk: interactive,
+      checks: projectChecks.map((c) => ({ label: c.label, command: c.command })),
     },
     installedPackages: resolvedProfiles.profiles.length > 0 ? resolvedProfiles.packages : BASE_PACKAGES,
   })
@@ -654,7 +676,6 @@ ${command}
   // bringing up a box you are not going to use is not a step worth having.
   // At a terminal, a task is the first line of a conversation rather than the
   // whole of one: start it, then stay so it can be steered while it runs.
-  const interactive = process.stdin.isTTY === true && !json && !flag<boolean>(p, "no-follow")
   if (task.length > 0 && interactive) {
     return await runRepl({
       paths,
@@ -900,6 +921,16 @@ async function driveTask(
     },
     showOutput: opts.showOutput,
     timeoutMs: (opts.timeoutSeconds ?? 2700) * 1000,
+    // Nobody is attached on this path, so a question has no answer. Rejecting it
+    // is what the API offers, but it does not actually unblock the tool (the
+    // server returns success and never logs the request), so the turn is ended
+    // instead of left to stall. Honest and quick beats silent and stuck.
+    onQuestion: async () => {
+      log.warn(
+        "the agent stopped to ask a question, and this run is unattended so there is nobody to answer it.\n" +
+          "  Re-run it at a terminal (`moat run \"...\"`) to answer questions, or phrase the task so it does not need one.",
+      )
+    },
   })
   if (wrote) process.stderr.write("\n")
   return result
@@ -1004,6 +1035,41 @@ async function cmdFetch(argv: string[]): Promise<number> {
 }
 
 /**
+ * Run the project's own checks against whatever is in the sandbox right now.
+ *
+ * An agent saying "the tests pass" is a claim. This is the evidence. No model is
+ * involved: moat runs the command the project declares and reports what happened.
+ */
+async function cmdVerify(argv: string[]): Promise<number> {
+  const p = parse(argv, SPEC)
+  const paths = resolveEnv()
+  requireState(paths)
+
+  const checks = detectChecks(paths.projectDir)
+  if (checks.length === 0) {
+    log.warn("no test, lint or typecheck command found for this project")
+    log.info("  moat looks at package.json scripts, Makefile targets, pyproject.toml, Cargo.toml and go.mod")
+    return 0
+  }
+
+  log.step(`running ${checks.map((c) => c.command).join(", ")} inside the sandbox`)
+  const results = await runChecks(paths, checks, { onOutput: (chunk) => process.stderr.write(chunk) })
+
+  if (flag<boolean>(p, "json")) {
+    log.emit(results)
+  } else {
+    log.info("")
+    for (const result of results) {
+      const mark = result.ok ? log.green("pass") : log.red("FAIL")
+      const detail = result.timedOut ? " (timed out)" : result.ok ? "" : ` (exit ${result.code})`
+      log.info(`  ${mark}  ${result.label.padEnd(24)} ${log.dim(`${(result.ms / 1000).toFixed(1)}s${detail}`)}`)
+    }
+    log.info("")
+  }
+  return results.every((r) => r.ok) ? 0 : 1
+}
+
+/**
  * The one command most people actually want after an agent has worked:
  * bring the branch across, show what is in it, and stop.
  *
@@ -1041,7 +1107,30 @@ async function cmdTake(argv: string[]): Promise<number> {
     log.info(changed.stdout.trimEnd())
   }
 
+  // The point of take is to decide whether to keep the work, and the single most
+  // useful input to that decision is whether the project's own checks pass on it.
+  let verified: { ok: boolean; summary: string } | null = null
+  if (!flag<boolean>(p, "no-verify")) {
+    const checks = detectChecks(paths.projectDir)
+    if (checks.length > 0) {
+      log.step(`verifying: ${checks.map((c) => c.command).join(", ")}`)
+      const results = await runChecks(paths, checks)
+      verified = { ok: results.every((r) => r.ok), summary: summarise(results) }
+      log.info("")
+      for (const check of results) {
+        const mark = check.ok ? log.green("pass") : log.red("FAIL")
+        log.info(`  ${mark}  ${check.label.padEnd(24)} ${log.dim(`${(check.ms / 1000).toFixed(1)}s`)}`)
+        if (!check.ok) {
+          for (const line of check.output.split("\n").slice(-6)) log.info(`      ${log.dim(line)}`)
+        }
+      }
+    }
+  }
+
   log.info("")
+  if (verified) {
+    log.info(`  checks:  ${verified.ok ? log.green(verified.summary) : log.red(verified.summary)}`)
+  }
   log.info(`  your working tree is ${before.digest === after.digest ? log.green("untouched") : log.red("CHANGED")}`)
   log.info(`  review:  git log ${result.hostRef}`)
   log.info(`  accept:  moat apply ${target} --checkout`)
@@ -1548,7 +1637,8 @@ const HELP = `moat — run an AI coding agent in a disposable sandbox. Your mach
 Usage: moat <command> [options]
 
   moat run "<task>"      boot if needed, do the task, stream the work
-  moat take              review what the agent did, and apply it if you want
+  moat take              review what the agent did; runs the project's own checks
+  moat verify            just run those checks against the sandbox, no fetching
   moat down              stop the sandbox; nothing is lost
   moat status            what is running, on which model, with how much time left
 
@@ -1623,6 +1713,8 @@ async function main(): Promise<number> {
         return await cmdApply(rest)
       case "take":
         return await cmdTake(rest)
+      case "verify":
+        return await cmdVerify(rest)
       case "run":
         // `moat run "task"` is `moat up "task"`. Same code, friendlier name.
         return await cmdUp(rest)

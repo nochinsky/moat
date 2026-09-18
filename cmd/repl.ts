@@ -8,7 +8,17 @@ import { run } from "../lib/shell.ts"
 import type { EnvState } from "../sandbox/state.ts"
 import { SANITIZED_GIT_ENV } from "../sync/copyin.ts"
 import { fetchBranch, listSandboxBranches, sandboxWorktreeChanges, suggestBranch } from "../sync/copyout.ts"
-import { authHeaders, baseUrl, connect, listSessions, type Client } from "./client.ts"
+import { detectChecks } from "../lib/detect.ts"
+import { runChecks } from "../sandbox/checks.ts"
+import {
+  authHeaders,
+  baseUrl,
+  connect,
+  listSessions,
+  replyToQuestion,
+  type Client,
+  type QuestionInfo,
+} from "./client.ts"
 
 /**
  * moat's interactive session: watch the agent work, and talk to it while it does.
@@ -49,6 +59,9 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   let typing = false // an assistant text block is open on the current line
   let exitCode = 0
   let closed = false
+  // A question the agent asked, waiting for the user's next line. While this is
+  // set, input is an answer rather than a new instruction.
+  let pending: { requestID: string; questions: QuestionInfo[]; index: number; answers: string[][] } | null = null
 
   const terminal = process.stdin.isTTY === true
   const rl = readline.createInterface({
@@ -84,6 +97,78 @@ export async function runRepl(options: ReplOptions): Promise<number> {
       typing = true
     }
     process.stdout.write(chunk.replace(/\n(?!$)/g, `\n${DIM}\u2502${RESET} `))
+  }
+
+  const askQuestion = (request: { id: string; questions: QuestionInfo[] }): void => {
+    if (terminal) {
+      readline.clearLine(process.stdout, 0)
+      readline.cursorTo(process.stdout, 0)
+    }
+    pending = { requestID: request.id, questions: request.questions, index: 0, answers: [] }
+    renderQuestion()
+  }
+
+  const renderQuestion = (): void => {
+    if (!pending) return
+    const current = pending.questions[pending.index]
+    if (!current) return
+    say("")
+    say(`  ${YELLOW}?${RESET} ${BOLD}${current.question}${RESET}`)
+    current.options.forEach((option, index) => {
+      say(`    ${index + 1}. ${option.label.padEnd(18)} ${DIM}${option.description}${RESET}`)
+    })
+    const hints = [`a number 1-${current.options.length}`, "a label"]
+    if (current.custom !== false) hints.push("or type your own answer")
+    if (current.multiple) hints.push("(comma separated for several)")
+    say(`  ${DIM}${hints.join(", ")}${RESET}`)
+    if (pending.questions.length > 1) {
+      say(`  ${DIM}question ${pending.index + 1} of ${pending.questions.length}${RESET}`)
+    }
+    prompt()
+  }
+
+  /** Turn the user's line into one answer for the current question. */
+  const resolveQuestion = async (line: string): Promise<void> => {
+    if (!pending) return
+    const current = pending.questions[pending.index]
+    if (!current) return
+    const text = line.trim()
+
+    if (text === "" && current.custom === false) {
+      say("  pick one of the numbered options")
+      return renderQuestion()
+    }
+
+    const parts = current.multiple ? text.split(",").map((p) => p.trim()) : [text]
+    const resolved: string[] = []
+    for (const part of parts) {
+      if (part === "") continue
+      const asNumber = Number.parseInt(part, 10)
+      if (String(asNumber) === part && asNumber >= 1 && asNumber <= current.options.length) {
+        resolved.push(current.options[asNumber - 1]!.label)
+        continue
+      }
+      const byLabel = current.options.find((option) => option.label.toLowerCase() === part.toLowerCase())
+      if (byLabel) {
+        resolved.push(byLabel.label)
+        continue
+      }
+      if (current.custom === false) {
+        say(`  ${part} is not one of the options`)
+        return renderQuestion()
+      }
+      resolved.push(part)
+    }
+
+    pending.answers.push(resolved.length > 0 ? resolved : [current.options[0]?.label ?? "no preference"])
+    pending.index += 1
+
+    if (pending.index < pending.questions.length) return renderQuestion()
+
+    const { requestID, answers } = pending
+    pending = null
+    const ok = await replyToQuestion(options.state, options.password, requestID, answers)
+    say(ok ? `  ${GREEN}answered${RESET}` : `  ${RED}could not deliver the answer${RESET}`)
   }
 
   const prompt = (): void => {
@@ -137,6 +222,23 @@ export async function runRepl(options: ReplOptions): Promise<number> {
               exitCode = 1
             }
           }
+          continue
+        }
+
+        if (e.type === "question.asked") {
+          const request = (props as { request?: { id: string; questions: QuestionInfo[] } }).request ??
+            (props as unknown as { id: string; questions: QuestionInfo[] })
+          if (request?.id && Array.isArray(request.questions) && props.sessionID === sessionID) {
+            askQuestion(request)
+          } else if (request?.id && Array.isArray(request.questions)) {
+            askQuestion(request)
+          }
+          continue
+        }
+
+        if (e.type === "question.rejected") {
+          pending = null
+          say(`  ${DIM}the question was dismissed${RESET}`)
           continue
         }
 
@@ -342,6 +444,24 @@ exec /bin/bash -l
         say("back in moat")
       },
     },
+    verify: {
+      help: "run the project's own tests against the agent's work",
+      run: async () => {
+        const checks = detectChecks(options.paths.projectDir)
+        if (checks.length === 0) return say("no test, lint or typecheck command found for this project")
+        say(`running ${checks.map((c) => c.command).join(", ")} inside the sandbox...`)
+        const results = await runChecks(options.paths, checks, { onOutput: () => undefined })
+        say("")
+        for (const result of results) {
+          const mark = result.ok ? `${GREEN}pass${RESET}` : `${RED}FAIL${RESET}`
+          say(`  ${mark}  ${result.label}  ${DIM}(${(result.ms / 1000).toFixed(1)}s)${RESET}`)
+          if (!result.ok) {
+            for (const line of result.output.split("\n").slice(-8)) say(`        ${DIM}${line}${RESET}`)
+          }
+        }
+        say("")
+      },
+    },
     quit: { help: "leave (the sandbox keeps running)", run: () => rl.close() },
   }
   commands.exit = commands.quit!
@@ -349,6 +469,18 @@ exec /bin/bash -l
   const handle = async (line: string): Promise<void> => {
     const text = line.trim()
     if (text.length === 0) return prompt()
+
+    // A question is waiting, so this line is the answer to it.
+    if (pending) {
+      if (text === "/stop" || text === "/skip") {
+        pending = null
+        if (sessionID) await client.session.abort({ path: { id: sessionID } }).catch(() => undefined)
+        busy = false
+        say(`  ${YELLOW}question dismissed${RESET}  ${DIM}(the turn was stopped; ask again to continue)${RESET}`)
+        return prompt()
+      }
+      return resolveQuestion(text)
+    }
 
     if (text.startsWith("/")) {
       const [name, ...rest] = text.slice(1).split(" ")

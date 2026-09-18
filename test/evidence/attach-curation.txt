@@ -4,7 +4,7 @@
 --- stderr ---
 [tool] webfetch (running) 
 [tool] webfetch (error) 
-[tool-error] moat: tool "webfetch" is not part of this sandbox's bundle. Available tools: read, write, edit, apply_patch, glob, grep, bash, todowrite.
+[tool-error] moat: tool "webfetch" is not part of this sandbox's bundle. Available tools: read, write, edit, apply_patch, glob, grep, bash, todowrite, question.
 [tool] write (running) 
 [tool] write (error) 
 [tool-error] moat: refusing write.filePath outside the workspace: /etc/moat-escape-attempt. The workspace is /work; /tmp is also writable.
@@ -25,4 +25,4 @@
 Attempted an excluded tool and an out-of-workspace write; see the tool results above.
 
 
-session ses_f4a222ca9ffe9aXS0B3pHBhwEf   3 tool call(s), 2 failed
+session ses_f49ff1ca7ffe8az6uWfYZhNKcP   3 tool call(s), 2 failed

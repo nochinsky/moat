@@ -58,6 +58,8 @@ export function installBundle(rootfs: string, options: InstallOptions): Installe
   const environment = `${JSON.stringify(
     {
       writtenAt: new Date().toISOString(),
+      checks: options.brief.checks,
+      canAsk: options.brief.canAsk,
       provider: options.brief.provider,
       model: options.brief.model,
       branch: options.brief.branch,

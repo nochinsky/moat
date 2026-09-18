@@ -159,3 +159,41 @@ v1.18.x.
   `gpt-4` (`registry.ts`, `usePatch`). This is not mentioned in any tool
   documentation, and it surprised moat: a bundle that declares `apply_patch`
   gets it only on some models.
+
+---
+
+## 8. `POST /question/:requestID/reject` does not unblock the question
+
+**Measured.** With a question pending from a running session:
+
+```
+$ curl -X POST .../question/que_0b5fdc8fe001.../reject    ->  200
+$ grep -E "reject|unknown request" <sandbox log>          ->  (nothing)
+```
+
+The turn stays blocked on the question tool indefinitely; the client sees a
+successful HTTP response and the server logs neither the rejection nor an
+"unknown request" warning. The endpoint appears to resolve to a different
+instance than the one holding the pending entry.
+
+For comparison, `POST /question/:id/reply` with a valid **option label** does
+resolve it (`{ "answers": [["sqlite"]] }`). A free-text answer that is not one of
+the labels does not, despite `Question.Info.custom` defaulting to true and the
+description saying custom answers are allowed.
+
+**Why moat cares.** A headless supervisor needs a way to dismiss a question it
+cannot answer. Without one, the only safe behaviour is to abort the turn, which
+is what moat does, and which is strictly worse than telling the agent "nobody is
+available, decide for yourself" and letting it continue.
+
+**Request:** make `reject` resolve the pending deferred, and either accept free
+text in `answers` or reject it with a clear error rather than silently doing
+nothing.
+
+**Also:** the published `@opencode-ai/sdk@1.18.31` has no `question` bindings at
+all — zero occurrences of `Question` in its generated types — while the server
+exposes the route group and the in-tree CLI calls `sdk.question.reply`. moat calls
+the endpoints directly. Regenerating the published client would let integrators
+use the typed API.
+
+Estimated diff: small for the reject fix; the SDK is a regeneration.

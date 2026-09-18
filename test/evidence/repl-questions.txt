@@ -1,0 +1,32 @@
+
+› moat · moat/mock-model · /home/user/moat-demo/question-demo
+› type a task and press enter. /help for commands, ctrl-c to interrupt.
+› 
+› › make the migration
+
+
+›   ? Which database should the new migration target?
+›     1. postgres           Add a Postgres migration
+›     2. sqlite             Add a SQLite migration
+›   a number 1-2, a label, or type your own answer
+› ›   · question  
+› 2
+
+  answered
+›   ✓ question  Asked 1 question
+›   · bash      
+›   ✓ bash      echo 'the user chose' > choice.txt && git add -A && git commit -q -m 'add migration' && ec
+› › /verify
+
+no test, lint or typecheck command found for this project
+› › /quit
+
+
+
+--- checks ---
+  pass  the agent asked a question
+  pass  the options were shown
+  pass  the answer was delivered
+  pass  the agent continued after the answer
+
+4/4 checks passed

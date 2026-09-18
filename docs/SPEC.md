@@ -186,6 +186,7 @@ filesystem, no socket, no subprocess.
 | command | effect |
 | --- | --- |
 | `moat run "<task>"` | `up` when needed, then do the task and stream it. The entry point most people use |
+| `moat verify` | run the project's own checks against the sandbox, no model involved |
 | `moat take [branch]` | fetch the agent's branch, show its commits and diff, and offer to apply it |
 | `moat up [task]` | provision if needed, copy in, mint a credential, boot, wait for ready |
 | `moat attach` | the interactive session: watch the agent work and steer it. Also what `moat run` opens at a terminal |
@@ -623,6 +624,40 @@ necessary.
 `test/repl-smoke.py` drives the CLI through a real pty and asserts on what comes
 back. Piping stdin is not a substitute: readline behaves differently without a
 terminal, and the live view is the whole point of the mode.
+
+### 6b.6 Checking the work
+
+An agent reporting that the tests pass is a claim, not evidence. moat finds the
+project's checks — `package.json` scripts, `Makefile` targets, `pyproject.toml`,
+`Cargo.toml`, `go.mod` — gives the same list to the agent so it runs the project's
+own commands rather than inventing them, and runs them itself against the agent's
+work before the user is asked to decide anything. `moat take` does this by
+default, `moat verify` on demand, `/verify` inside a session.
+
+No model is involved in the verdict: moat runs the declared command in the sandbox
+and reports the exit code. A check that times out is reported as timed out rather
+than as a failure, because those are different things.
+
+### 6b.7 Questions, and when they are answerable
+
+The `question` tool is always advertised, because whether anyone is listening is a
+property of the *session*, not of the boot: a sandbox can be started headless and
+attached later. What changes with the mode is the instruction. Interactive
+sessions are told a person is waiting and to ask when the answer would change
+what they build; unattended ones are told nobody will answer and to decide and
+say what they assumed.
+
+`OPENCODE_CLIENT=moat` is what keeps TUI-oriented tools out of the model-facing
+list, but it also drops `question` (`registry.ts`, `questionEnabled` checks
+`flags.client`), so `OPENCODE_ENABLE_QUESTION_TOOL=1` turns that one back on and
+the bundle curates it.
+
+One finding worth recording: **`POST /question/:id/reject` reports success and
+does nothing.** It returns 200, the server logs nothing, and the tool stays
+blocked; a reply with a valid option label works, but a free-text reply does not
+resolve it either. So moat does not use reject. An unattended question ends the
+turn with an explanation, and `/skip` stops the turn rather than pretending to
+dismiss the question. This is filed in `docs/UPSTREAM-CANDIDATES.md`.
 
 ---
 

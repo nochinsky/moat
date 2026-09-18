@@ -148,6 +148,7 @@ $ moat run "the tests are failing, fix them"
 | --- | --- |
 | `/help` | the command list |
 | `/stop` | abort the turn the agent is running |
+| `/verify` | run the project's own tests against the agent's work |
 | `/diff` | everything the agent has changed since it started |
 | `/take` | bring its branch onto the host and show it |
 | `/status` | model, branch, session, credential time left |
@@ -219,6 +220,54 @@ it where it is, that it may install and break anything, that nobody will answer 
 question, that it should run the tests, and that the credential in its
 environment must never be printed or exfiltrated. It works on its own git branch
 (`moat/session-<timestamp>`) so your branch is untouched inside the box too.
+
+## It proves its work
+
+An agent saying "the tests pass" is a claim. moat finds the project's own checks
+from `package.json` scripts, a `Makefile`, `pyproject.toml`, `Cargo.toml` or
+`go.mod`, hands them to the agent so it runs *your* commands, and runs them itself
+once the work is done:
+
+```
+$ moat take
+  moat-session-2026-09-18-19-30  2 commit(s), 72fc923e48f5
+    72fc923e48  slugify: handle whitespace, punctuation and accents
+
+   src/slugify.js | 7 ++++++-
+   1 file changed, 6 insertions(+), 1 deletion(-)
+  → verifying: npm run test
+
+    pass  npm test                 0.3s
+
+    checks:  npm test passed
+    your working tree is untouched
+    accept:  moat apply moat-session-2026-09-18-19-30 --checkout
+```
+
+No model is involved in that verdict. `moat verify` runs the same checks on
+demand, and `/verify` does it without leaving the session.
+
+## It can ask you things
+
+In an interactive session the agent may stop and ask, when the answer would
+change what it builds:
+
+```
+› make the migration
+
+  ? Which database should the new migration target?
+    1. postgres           Add a Postgres migration
+    2. sqlite             Add a SQLite migration
+  a number 1-2, a label, or type your own answer
+› 2
+  answered
+  ✓ question  Asked 1 question
+  ✓ bash      git commit -m "add migration"
+```
+
+Unattended runs are told plainly that nobody will answer, and if the agent stops
+to ask anyway the turn ends with an explanation instead of hanging until a
+timeout.
 
 ## Limitations
 
