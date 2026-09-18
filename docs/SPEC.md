@@ -1,24 +1,21 @@
 # moat, specification (v0)
 
-> Sandbox always. Permissions never needed.
-
 moat runs an AI coding agent inside a disposable, fully isolated Linux box. The
-host is never touched, not by a bind mount, not by an environment variable, not
+host is never touched: not by a bind mount, not by an environment variable, not
 by a forwarded credential, not by the agent's writes.
 
 This document is the contract. It describes what v0 does, and it is explicit
-about the places where v0 falls short of the design goals, with the
-evidence for each.
+about where v0 falls short of the design goals, with the evidence for each.
 
 ---
 
-## 1. The design axiom
+## 1. What the sandbox does and does not protect
 
-> **The host holds everything the user would miss. The box holds a copy.**
-
-That is the accurate version, and it is what makes autonomy defensible. It is
-tempting to go further and say the box "contains nothing worth protecting from the
-agent". That is false, and the difference matters, so here it is in full.
+The sandbox protects the host. It does not protect the project, and it does not
+protect the credential: the agent has to read the project to work on it, and has
+to read the key to call the model. Both are therefore available to it, and with
+egress open, both are available to anyone it talks to. This section states which
+is which, so neither claim is read as covering the other.
 
 ### 1.1 What the sandbox protects
 
