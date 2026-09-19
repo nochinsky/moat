@@ -137,6 +137,24 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   thing that decides whether a recorded pid is safe to signal. Do not call
   `isRunning` on a stored pid; a reused pid would send SIGTERM and SIGKILL to a
   bystander's process group.
+* A boot is not instantaneous, and for most of it the environment looks idle:
+  state.json still says stopped with no pid, because that is what it said *before*
+  the boot started. Measured in that window (provisioning + copy-in + the readiness
+  wait): `moat down` printed "sandbox is not running" and the box then came up and
+  stayed up, `moat destroy` deleted the rootfs out from under the boot, and a second
+  `moat up` booted a second box over the same rootfs — after which state.json records
+  whichever finished last and the other sandbox is alive with nothing tracking it.
+  The long-running boot now writes `runtime/boot.json` before it starts
+  (`sandbox/boot.ts`: pid + start time, reaped as soon as that process is gone), and
+  `down`, `destroy`, `restore` and a second `up` wait for it (`awaitBoot`, five
+  minutes, then a refusal naming the pid); `snapshot` refuses without `--yes`, and
+  `destroy --all` skips a booting environment with a reason instead of blocking.
+  Ephemeral boots (`exec`, `doctor`, `shell`, the checks runner) deliberately take
+  no marker: running them in parallel is by design. `moat status` says
+  `booting (pid N, Ns in)` instead of `stopped` while that marker is live. Extras
+  section U polls for the marker rather than sleeping, so the check is not
+  timing-based. `test/unit/boot-marker.test.ts` covers liveness, stale pids and the
+  wait.
 * Boot scripts are unique per invocation (`boot-<pid>-<rand>.sh`,
   `entry-<pid>-<rand>.sh`) and written with write-then-rename, because two host
   processes can boot one environment at once (`moat doctor` while `moat up`, or

@@ -7,5 +7,5 @@ README.md
 greet.sh
 notes.txt
 --- agent commit still present? ---
-c2649f2 initial demo project
+4f05005 initial demo project
 --- stderr ---

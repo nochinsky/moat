@@ -4,20 +4,20 @@
 {
   "fetched": [
     {
-      "branch": "moat-session-2026-09-19-18-27",
-      "hostRef": "refs/moat/moat-session-2026-09-19-18-27",
-      "sha": "cb885f02aafc2bb8201183ee49a523edda50c2fa",
+      "branch": "moat-session-2026-09-19-18-44",
+      "hostRef": "refs/moat/moat-session-2026-09-19-18-44",
+      "sha": "7548bf7e24d5934a3d9977aeca2797ac48094437",
       "commits": 2,
-      "headBefore": "4f05005db8db31684ef554acec5e280d84510dd0",
-      "headAfter": "4f05005db8db31684ef554acec5e280d84510dd0",
+      "headBefore": "0333f0c9a7e2d4381de2066c8fcf3b6684f44c89",
+      "headAfter": "0333f0c9a7e2d4381de2066c8fcf3b6684f44c89",
       "headUnchanged": true,
       "commitsFetched": [
         {
-          "sha": "cb885f02aafc2bb8201183ee49a523edda50c2fa",
+          "sha": "7548bf7e24d5934a3d9977aeca2797ac48094437",
           "subject": "agent: add agent-output.txt from inside the sandbox"
         },
         {
-          "sha": "4f05005db8db31684ef554acec5e280d84510dd0",
+          "sha": "0333f0c9a7e2d4381de2066c8fcf3b6684f44c89",
           "subject": "initial demo project"
         }
       ]
@@ -28,4 +28,4 @@
   "projectDigestAfter": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158"
 }
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-18-27:refs/moat/moat-session-2026-09-19-18-27
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-18-44:refs/moat/moat-session-2026-09-19-18-44
