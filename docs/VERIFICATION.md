@@ -955,8 +955,10 @@ brief in system    : True
 branch in system   : True
 ```
 
-The sandbox loads these instructions into its system prompt — 13,589 characters of it,
-including the branch name the agent was told to commit to.
+The sandbox loads these instructions into its system prompt — 13,589 characters of it
+in that run (the count moves with the brief's text, which is why it is quoted from a
+capture rather than asserted), including the branch name the agent was told to commit
+to.
 
 ### The working branch
 
@@ -2175,6 +2177,40 @@ The residual race is real but small: `freePort` picks a port and closes the sock
 another process can take it before the box binds, a few seconds later through slirp.
 That path still costs the readiness budget and the message still does not name the
 port; what is fixed is the case the user can control.
+
+### Y. The agent brief describes the box the boot actually made
+
+`InstructionsInput` carries `hasCredential` and the boot's profile list. The renderer
+read neither: the credential paragraph and the "the `db` profile ships PostgreSQL,
+SQLite and Redis as real servers" line were unconditional text. Measured by rendering
+the brief for a boot with no credential and no `db` profile:
+
+```
+- The credential that lets you call the model is readable by anything in this
+  sandbox, including code you run. Do not print it, do not commit it, and do not
+  send it anywhere. …
+- If the project needs a database or another service, **run it here.** The `db`
+  profile ships PostgreSQL, SQLite and Redis as real servers, not just clients.
+```
+
+Both are false for that box. A boot against a local `--base-url` endpoint injects no
+credential (the stub-provider sections boot exactly that way), and `db` is never
+auto-detected — it takes an explicit `--profile db` — so the default brief told every
+agent to guard a key it did not have and to start servers that were not installed.
+After the fix the same render says:
+
+```
+- **No model credential was injected into this sandbox.** There is no key in your
+  environment to find, print, commit or send. …
+- If the project needs a database, **run it here.** This box does not have the
+  `db` profile installed (PostgreSQL, SQLite, Redis as real servers): `apk add` what
+  you need, …
+```
+
+The injection-refusal instruction is in both versions deliberately: refusing a project
+file that asks for environment variables does not depend on there being a credential to
+steal. `test/unit/instructions.test.ts` holds both halves and both `db` states, and was
+watched failing with either paragraph made unconditional again.
 
 ---
 

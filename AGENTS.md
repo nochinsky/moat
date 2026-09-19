@@ -250,6 +250,14 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   with nothing else is the same problem the other way round (it can only pass).
   `detectChecks` filters both (`isRealScript`); `test/unit/checks-detect.test.ts` and
   extras section W hold it there.
+* The agent brief must describe the boot that was actually made, so every claim in it
+  is rendered from `InstructionsInput`. Two inputs were declared and never read
+  (`hasCredential`, the profile list): a boot against a local endpoint — no credential
+  injected — was told to guard a key it did not have, and every boot without
+  `--profile db` was told PostgreSQL and Redis were installed and to start them.
+  `db` is never auto-detected, and detection never adds it. Adding a claim to the brief
+  means rendering it from an input and writing both branches;
+  `test/unit/instructions.test.ts` fails if either paragraph goes unconditional again.
 * `moat restore` stages beside the rootfs and swaps with renames, so a bad
   snapshot cannot destroy the environment. Do not go back to deleting the live
   rootfs first: that is how an afternoon of installed packages and an agent's
