@@ -472,7 +472,15 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   stops it after the box (its start time is checked, like the sandbox pid).
   Ephemeral boots (doctor, exec, checks, shell) start their own slirp with a
   unique API socket, so they run in the same kind of network as the box rather
-  than quietly measuring a different one.
+  than quietly measuring a different one. **A box that dies out of band leaves that
+  datapath running**, and it is a *separate* process: only a command holding its pid on
+  record can reap it. `moat up` now stops a recorded datapath whose box is no longer
+  alive before it starts a new box — without that, booting overwrote `state.json` and
+  the old datapath became unattributable, outliving even `moat destroy` (measured: one
+  `kill -9` of the box, then `moat up` → two slirp4netns processes, and destroy took
+  only the new one). `stopSlirp` signals a pid only while its start time matches;
+  `test/unit/stop-slirp.test.ts` covers that guard and extras section AG is the
+  end-to-end reap.
 
 **opencode 1.18.31**
 

@@ -2458,6 +2458,51 @@ split: `sandboxProviderEnv` carries the base URL and model, `toSandboxEnv` adds 
 credential on top, and the credential-bearing variable names are exactly the five that
 appear only with a credential.
 
+### AE. A datapath whose box is gone is reaped, not orphaned
+
+A sandbox in an own-namespace mode has two processes: the box and its `slirp4netns`
+datapath. Only a command that still holds the datapath's pid on record reaps it, and
+`moat up` used to overwrite `state.json` without looking — so a box that died out of band
+left a process nobody could attribute again. Measured before the fix, on real boots
+(`--egress isolated`, box pid killed with `kill -9`):
+
+```
+box 370445, datapath 370467          # state.json, before the kill
+slirp before up: 1                   # the datapath is still running
+$ moat up                            # boots a second box
+slirp after up: 2                    # the orphan plus the new one
+state now: box 370599 slirp 370621   # only the new one is recorded
+$ moat destroy
+slirp after destroy: 1               # the orphan outlived the destructive command
+```
+
+`moat up` now stops a recorded datapath whose box is no longer alive, before it starts
+the new box, and says so only when there was something to reap — the datapath can also
+exit on its own when the tap goes away. Extras section AG:
+
+```
+box 395713, datapath 395735
+datapath for that box still up one second after the kill: 1
+! reaped the datapath of a sandbox that is no longer running (pid 395735)
+after the second boot: old datapath 0, new datapath 1 (new box 395893)
+out-of-band kill: no orphaned datapath survives the next boot, and destroy takes the rest
+```
+
+Because the datapath sometimes exits by itself within a second of the kill, a second,
+deterministic half keeps the box alive and makes its *recorded identity* stale instead —
+the state a reboot with pid reuse leaves — so the datapath is certainly running when the
+next boot decides:
+
+```
+recorded identity replaced; box 396027 datapath 396049
+datapath up while its box is still alive: 1
+stale identity: the datapath of a box that is not ours is reaped, and named
+```
+
+`test/unit/stop-slirp.test.ts` holds the safety half without a sandbox: a recorded pid
+whose start time does not match is never signalled, one that matches is, and no record at
+all is a no-op. The mismatch case was watched failing with the start-time comparison removed.
+
 ---
 
 ## Requirement-by-requirement
@@ -2530,7 +2575,7 @@ Listed so that absence is not mistaken for success.
 | Rendering in terminals other than the ones tested | verified through a pty at 80 and 100 columns, and in plain mode via `NO_COLOR`. Narrow widths, unusual `TERM` values and terminal resize mid-turn were not exercised. |
 | `/undo`, `/redo` and `/compact` against a real model | the calls are exercised against the stub and the server accepts them, but summarisation is model-driven and the stub cannot summarise: it answers `/compact` by trying to call a tool, which the server rejects with `Tool call not allowed while generating summary`. |
 | Exfiltration through an allowed channel | §L verifies that the allowlist admits the provider and refuses an arbitrary address, and that the host's loopback is unreachable on both routes. It does not attempt to push data out *through* an allowlisted address or over DNS, both of which remain possible by construction. |
-| Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), but a reboot mid-session was not staged. |
+| Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), and §AE covers a box killed out of band and a stale recorded identity, but a real reboot (with the kernel's own pid reuse) was not staged. |
 | Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all — a refusal, not support, and not a silent drop. |
 | What the copy-out credential scan cannot see | it compares against the values the host holds at fetch/apply time (`DEEPSEEK_API_KEY`, `MOAT_CREDENTIAL`, the credential store) and searches the commits a fetch brought in (the most recent 50) or the files an apply plan would write (up to 64 MiB each). A key rotated since the boot, a secret the agent obtained somewhere else, older commits and larger files are outside it — each bound is named when it is reached (extras §AB, `test/unit/leak-scan.test.ts`). A file that does not match is not a claim that it is clean. |
 | A live event stream that stays open and goes quiet | the *end* of the stream is detected and reported (secondary claim P), and the box dying closes its sockets, which is the case measured. A connection that stays open while delivering nothing — no FIN, no error — is not detected: there is no watchdog on the server's 10s heartbeat. Nothing observed produced one. |

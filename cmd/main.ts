@@ -67,6 +67,7 @@ import {
   sandboxPidStatus,
   startSandbox,
   stopSandbox,
+  stopSlirp,
   unshareArgs,
   writeInnerScript,
   writeOuterScript,
@@ -1091,6 +1092,19 @@ ${command}
   })
   reportUnresolved(egressConfig.unresolved, providerName, egress === "filtered")
   const bootStart = Date.now()
+  // A box that died out of band — killed, OOM, host reboot — leaves its slirp4netns
+  // datapath running, because that is a separate process and only the commands that still
+  // hold its pid on record reap it. Booting a new box overwrites state.json, so without
+  // this the old datapath becomes unattributable and outlives even `moat destroy`.
+  // Measured before the fix: one `kill -9` of the box, then `moat up` left two
+  // slirp4netns processes, and `moat destroy` removed only the new one.
+  if (state?.slirpPid && !sandboxAlive(state, paths)) {
+    // The datapath may have exited on its own when the box died, so only say "reaped"
+    // when there was something to reap.
+    const reaped = await stopSlirp(state.slirpPid, state.slirpStart)
+    if (reaped) log.warn(`reaped the datapath of a sandbox that is no longer running (pid ${state.slirpPid})`)
+  }
+
   const sandbox = await startSandbox(paths, entry, sandboxEnvVars, {
     egress,
     port,

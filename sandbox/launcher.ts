@@ -630,17 +630,23 @@ export async function stopSandbox(pid: number, opts: StopSandboxOptions = {}): P
   return stopped
 }
 
-/** Stop a slirp4netns process; never signal a pid that is no longer ours. */
-export async function stopSlirp(pid: number | null, startTime: string | null): Promise<void> {
-  if (!pid || !isRunning(pid)) return
-  if (startTime && processStartTime(pid) !== startTime) return
+/**
+ * Stop a slirp4netns process; never signal a pid that is no longer ours.
+ *
+ * Returns true only when it actually signalled a live process whose start time matched.
+ * The caller prints "reaped the datapath" on the strength of that: a message that fires
+ * when the datapath had already exited on its own would be a small lie.
+ */
+export async function stopSlirp(pid: number | null, startTime: string | null): Promise<boolean> {
+  if (!pid || !isRunning(pid)) return false
+  if (startTime && processStartTime(pid) !== startTime) return false
   try {
     process.kill(pid, "SIGTERM")
   } catch {
-    return
+    return false
   }
   for (let i = 0; i < 20; i += 1) {
-    if (!isRunning(pid)) return
+    if (!isRunning(pid)) return true
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   try {
@@ -648,6 +654,7 @@ export async function stopSlirp(pid: number | null, startTime: string | null): P
   } catch {
     /* already gone */
   }
+  return true
 }
 
 async function stopSandboxProcess(pid: number, opts: StopSandboxOptions): Promise<boolean> {

@@ -151,6 +151,16 @@ than acting on the stale file. The marker is a pid *and* its start time
 the long-running boot takes it: ephemeral boots (`moat exec`, `moat doctor`,
 `moat shell`, the checks runner) are meant to run alongside it.
 
+A sandbox in an own-namespace mode also has a **datapath process** (`slirp4netns`), and
+that process outlives the box if the box dies out of band — a `kill -9`, an OOM kill, a
+host reboot. `moat down`, `moat destroy`, `moat restore` and the restart inside
+`moat up` stop it after the box, and a boot that is about to start a **new** box reaps a
+recorded datapath whose box is no longer alive: booting overwrites `state.json`, and a
+process nobody records can never be attributed again. Measured before that: one
+`kill -9`, then `moat up` left two `slirp4netns` processes, and `moat destroy`
+reclaimed only the new one. A recorded pid is signalled only while its `/proc` start time
+still matches the record.
+
 ### 2.3 Boot sequence, the exact commands
 
 `moat up` performs, in order:

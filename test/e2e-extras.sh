@@ -828,6 +828,75 @@ else
 fi
 ( cd "$NC" && $MOAT destroy --yes >/dev/null 2>&1 )
 ( cd "$NATIVE" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "AG. a datapath whose box is gone is reaped, not orphaned"
+# The slirp4netns datapath is a separate process, and only a command holding its pid on
+# record can reap it. A box killed out of band (OOM, host reboot, kill -9) left its datapath
+# running; the next `moat up` booted a second one and overwrote state.json, so the old one
+# became unattributable and outlived even `moat destroy`. Measured before the fix: one
+# kill -9, then `moat up` left two slirp4netns processes, and destroy took only one.
+KD="$WORK/killed"
+rm -rf "$KD"; mkdir -p "$KD"
+( cd "$KD" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
+  && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
+( cd "$KD" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$KD" && capture killed-up $MOAT up --quiet --no-detect --no-credential --egress isolated \
+  --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
+( cd "$KD" && capture killed-status $MOAT status --json )
+KSTATE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['envDir'])" "$EVIDENCE/killed-status.out")/state.json
+OLD_BOX=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['pid'])" "$KSTATE")
+OLD_SLIRP=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['slirpPid'])" "$KSTATE")
+# The binary path is slirp4netns-<version>, so there is no space after the name.
+count_datapath() { ps -eo args | grep -c "[s]lirp4netns.* $1 tap0"; }
+echo "box $OLD_BOX, datapath $OLD_SLIRP" | tee -a "$EVIDENCE/extras.txt"
+kill -9 "$OLD_BOX" 2>/dev/null
+sleep 1
+ORPHAN_BEFORE=$(count_datapath "$OLD_BOX")
+echo "datapath for that box still up one second after the kill: $ORPHAN_BEFORE" | tee -a "$EVIDENCE/extras.txt"
+( cd "$KD" && capture killed-up-again $MOAT up --quiet --no-detect --no-credential --egress isolated \
+  --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
+NEW_BOX=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['pid'])" "$KSTATE")
+OLD_LEFT=$(count_datapath "$OLD_BOX")
+NEW_UP=$(count_datapath "$NEW_BOX")
+echo "after the second boot: old datapath $OLD_LEFT, new datapath $NEW_UP (new box $NEW_BOX)" | tee -a "$EVIDENCE/extras.txt"
+( cd "$KD" && $MOAT destroy --yes >/dev/null 2>&1 )
+AFTER_DESTROY=$(count_datapath "$NEW_BOX")
+# Half one, the outcome: no datapath for the dead box survives, and the new one is
+# reclaimed. This holds whether the datapath exited on its own or was reaped.
+if [ "$OLD_LEFT" = "0" ] && [ "$NEW_UP" = "1" ] && [ "$AFTER_DESTROY" = "0" ]; then
+  echo "out-of-band kill: no orphaned datapath survives the next boot, and destroy takes the rest" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "out-of-band kill: FAILED — old=$OLD_LEFT new=$NEW_UP after-destroy=$AFTER_DESTROY" | tee -a "$EVIDENCE/extras.txt"
+fi
+# Half two, deterministic: the datapath can exit by itself when the box dies (it notices
+# the tap going away), which would leave the reap itself untested. So keep the box alive and
+# make its recorded identity stale instead — the state a reboot with pid reuse leaves — and
+# the datapath is certainly running when the next boot decides.
+( cd "$KD" && capture reaped-up $MOAT up --quiet --no-detect --no-credential --egress isolated \
+  --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
+python3 - "$KSTATE" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+state = json.load(open(path))
+state["pidStart"] = "not-the-process-that-is-running"
+json.dump(state, open(path, "w"), indent=2)
+print("recorded identity replaced; box", state["pid"], "datapath", state["slirpPid"])
+PYEOF
+LIVE_BOX=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['pid'])" "$KSTATE")
+LIVE_SLIRP=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['slirpPid'])" "$KSTATE")
+echo "datapath up while its box is still alive: $(count_datapath "$LIVE_BOX")" | tee -a "$EVIDENCE/extras.txt"
+( cd "$KD" && capture reaped-up-again $MOAT up --quiet --no-detect --no-credential --egress isolated \
+  --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
+REAPED_LEFT=$(count_datapath "$LIVE_BOX")
+if grep -q "reaped the datapath of a sandbox that is no longer running (pid $LIVE_SLIRP)" "$EVIDENCE/reaped-up-again.txt" \
+   && [ "$REAPED_LEFT" = "0" ]; then
+  echo "stale identity: the datapath of a box that is not ours is reaped, and named" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "stale identity: FAILED — datapath left=$REAPED_LEFT" | tee -a "$EVIDENCE/extras.txt"
+fi
+# The old box could not be reaped (its identity was tampered with on purpose), so end it
+# here; its datapath is already gone.
+kill -9 -- "-$LIVE_BOX" 2>/dev/null
+( cd "$KD" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

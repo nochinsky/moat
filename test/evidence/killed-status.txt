@@ -1,0 +1,59 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts status --json
+--- exit 0
+--- stdout ---
+{
+  "version": 1,
+  "id": "00edb0f8f18c",
+  "projectDir": "/home/user/moat-demo/killed",
+  "createdAt": "2026-09-19T23:16:42.365Z",
+  "lastUpAt": "2026-09-19T23:16:42.571Z",
+  "status": "running",
+  "opencodeVersion": "1.18.31",
+  "alpineVersion": "3.21.4",
+  "port": 37667,
+  "model": "moat/mock-model",
+  "effort": "high",
+  "agent": null,
+  "provider": "moat",
+  "providerBaseUrl": "http://127.0.0.1:5599/v1",
+  "branch": "moat-session-2026-09-19-23-16",
+  "baseBranch": "main",
+  "profiles": [],
+  "pid": 395713,
+  "pidStart": "3548229",
+  "egress": "isolated",
+  "egressAllow": [],
+  "slirpPid": 395735,
+  "slirpStart": "3548231",
+  "baselineDigest": "6bdc92b0668ce66c1b51f3308654946a0e08ceddfdeb37828c80c1b8a877144f",
+  "baselineHostState": "git:ad385b0bfee0ad70ad08a263d7751d56658287fd:6e340b9cffb37a98",
+  "baselineCommit": "eb54997a9d17d9500cdbad7e3a75baa598982c52",
+  "credential": null,
+  "snapshots": [
+    "baseline"
+  ],
+  "lastBootMs": 11668,
+  "envDir": "/home/user/.moat/envs/00edb0f8f18c",
+  "rootfsDir": "/home/user/.moat/envs/00edb0f8f18c/rootfs",
+  "running": true,
+  "booting": null,
+  "url": "http://127.0.0.1:37667",
+  "rootfsBytes": 396904882,
+  "sandboxBranches": [
+    {
+      "name": "main",
+      "sha": "ad385b0bfee0ad70ad08a263d7751d56658287fd",
+      "subject": "base",
+      "committedAt": "2026-09-20T01:16:41+02:00",
+      "current": false
+    },
+    {
+      "name": "moat-session-2026-09-19-23-16",
+      "sha": "ad385b0bfee0ad70ad08a263d7751d56658287fd",
+      "subject": "base",
+      "committedAt": "2026-09-20T01:16:41+02:00",
+      "current": true
+    }
+  ]
+}
+--- stderr ---

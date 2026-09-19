@@ -3,8 +3,8 @@
 --- stdout ---
 --- stderr ---
 ! state.json is missing, but the sandbox's working tree is still there, so the environment was recovered from disk instead of replaced.
-  branch   moat-session-2026-09-19-22-41
-  baseline 5635348b48b5
+  branch   moat-session-2026-09-19-23-12
+  baseline 07415a1e3ebd
   everything installed in it, and every commit it holds, are intact; this boot mints a fresh credential.
   the host-drift check cannot run without the recorded baseline: `moat up --sync` re-copies the project and restores it.
   to discard the sandbox's copy instead: moat up --fresh --yes
@@ -13,15 +13,15 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-22-41
-✓ sandbox up, warm start 1.68s (image reused)
+agent branch: moat-session-2026-09-19-23-12
+✓ sandbox up, warm start 4.13s (image reused)
 
   project    /home/user/moat-demo/stateless
   env        /home/user/.moat/envs/47af90427aba
-  opencode   http://127.0.0.1:36923  (basic auth user "opencode")
-  password   PV9HfKmweos7eNIUjMrIMqljzLwMj1sw
+  opencode   http://127.0.0.1:35131  (basic auth user "opencode")
+  password   mX8zVOggUSCykVv5D2-vU2WEhto160UL
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-20T02:41:41.946Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-20T03:12:44.629Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
