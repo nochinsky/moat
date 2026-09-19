@@ -1576,8 +1576,17 @@ async function cmdStatus(argv: string[]): Promise<number> {
 async function cmdSnapshot(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
-  requireState(paths)
+  const state = requireState(paths)
   const name = p._[0] ?? `snap-${new Date().toISOString().replace(/[:.]/g, "-")}`
+  // Tarring a live rootfs can capture a torn state (a half-written package
+  // database, for example). Snapshots are not destructive, so this is a gate
+  // that --yes can open rather than a refusal.
+  if (state.pid && sandboxAlive(state, paths) && !flag<boolean>(p, "yes")) {
+    log.fail(
+      `the sandbox is running (pid ${state.pid}); a snapshot of a live rootfs can capture a torn state.\n` +
+        "  run \`moat down\` first, or pass --yes to snapshot it as it is.",
+    )
+  }
   const result = await snapshotEnv(paths, name)
   log.success(`snapshot ${name} (${human(result.bytes)}) -> ${result.file}`)
   return 0

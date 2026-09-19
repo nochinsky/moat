@@ -1,4 +1,4 @@
---- $ node /home/user/Projects/moat/cmd/main.ts snapshot before-extras
+--- $ node /home/user/Projects/moat/cmd/main.ts snapshot before-extras --yes
 --- exit 0
 --- stdout ---
 --- stderr ---
