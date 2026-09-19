@@ -43,6 +43,18 @@ check() {
 check_absent() {
   if grep -q "$2" "$3"; then say "  FAIL  $1"; FAIL=1; else say "  pass  $1"; fi
 }
+# The teardown check is about *this* environment's datapath. A machine-wide
+# `pgrep -f slirp4netns` also finds other environments' processes, so the suite
+# failed whenever any other sandbox happened to be up. Read the pid this box
+# recorded, then assert that pid is gone.
+env_slirp_pid() {
+  python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('slirpPid') or '')" \
+    "$EVIDENCE/status-before-down.out" 2>/dev/null
+}
+slirp_gone() {
+  [ -z "$1" ] && return 0
+  ! kill -0 "$1" 2>/dev/null
+}
 
 say "=============================================================="
 say "== egress policy: an isolated network namespace"
@@ -93,21 +105,84 @@ capture egress-gateway $M exec -- /bin/sh -c "curl -sS --max-time 6 -o /dev/null
 check_absent "slirp's 10.0.2.2 gateway cannot reach the host's loopback" "gateway-exit=0" "$EVIDENCE/egress-gateway.txt"
 
 capture doctor $M doctor
-check "doctor reports the isolated namespace"        "network namespace isolated" "$EVIDENCE/doctor.txt"
-check "doctor reports loopback unreachable"          "host loopback reachable"    "$EVIDENCE/doctor.txt"
+check "doctor reports the isolated namespace"        "pass  network namespace isolated" "$EVIDENCE/doctor.txt"
+check "doctor reports loopback unreachable"          "pass  host loopback reachable"    "$EVIDENCE/doctor.txt"
 check_absent "doctor no longer says the namespace is shared" "network namespace shared" "$EVIDENCE/doctor.txt"
 
 say ""
-say "--- teardown ---"
-capture down $M down
+say "--- restart filtered: a default-deny allowlist inside the namespace ---"
+capture status-before-down $M status --json
+ISOLATED_SLIRP=$(env_slirp_pid)
+capture down-isolated $M down
 sleep 1
-if pgrep -f slirp4netns >/dev/null 2>&1; then
-  say "  FAIL  slirp stopped with the box"
-  FAIL=1
+if slirp_gone "$ISOLATED_SLIRP"; then
+  say "  pass  the isolated box's slirp (pid ${ISOLATED_SLIRP:-none}) stopped with it"
 else
-  say "  pass  slirp stopped with the box"
+  say "  FAIL  the isolated box's slirp (pid $ISOLATED_SLIRP) outlived it"
+  FAIL=1
+fi
+
+capture up-filtered $M up --egress filtered
+check "the box booted with filtered egress" "sandbox up" "$EVIDENCE/up-filtered.txt"
+
+capture status-filtered $M status
+check "status reports filtered egress" "egress       filtered" "$EVIDENCE/status-filtered.txt"
+
+capture egress-allowed $M exec -- /bin/sh -c 'curl -sS -o /dev/null -w "%{http_code}" --max-time 25 https://api.deepseek.com/models'
+check "the allowlisted provider is still reachable (401 without a key)" "401" "$EVIDENCE/egress-allowed.txt"
+
+capture egress-blocked $M exec -- /bin/sh -c 'curl -sS --max-time 6 -o /dev/null -w "code %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"'
+check "the blocked probe ran inside the box"           "curl-exit=" "$EVIDENCE/egress-blocked.txt"
+check_absent "an address outside the allowlist is refused" "curl-exit=0" "$EVIDENCE/egress-blocked.txt"
+
+capture doctor-filtered $M doctor
+check "doctor reports filtered egress"              "pass  egress filtered" "$EVIDENCE/doctor-filtered.txt"
+check_absent "doctor no longer calls egress unrestricted" "egress unrestricted" "$EVIDENCE/doctor-filtered.txt"
+
+say ""
+say "--- teardown: the filtered box ---"
+capture status-before-down-filtered $M status --json
+FILTERED_SLIRP=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('slirpPid') or '')" \
+  "$EVIDENCE/status-before-down-filtered.out" 2>/dev/null)
+capture down-filtered $M down
+sleep 1
+if slirp_gone "$FILTERED_SLIRP"; then
+  say "  pass  the filtered box's slirp (pid ${FILTERED_SLIRP:-none}) stopped with it"
+else
+  say "  FAIL  the filtered box's slirp (pid $FILTERED_SLIRP) outlived it"
+  FAIL=1
 fi
 capture destroy $M destroy --yes
+
+say ""
+say "--- a fresh project with no --egress flag: the default policy ---"
+say "an environment with no recorded mode takes the default. It has to be the"
+say "filtered policy, and it has to be enforced, not merely reported."
+DEFAULT_PROJECT="$HOME/moat-demo/egress-default"
+rm -rf "$DEFAULT_PROJECT"
+mkdir -p "$DEFAULT_PROJECT"
+cd "$DEFAULT_PROJECT"
+git init -q -b main
+git config user.email egress@example.com
+git config user.name "Egress Test"
+echo "# default" > README.md
+git add -A
+git commit -qm "default fixture"
+
+capture up-default $M up
+check "a fresh environment boots filtered by default" "sandbox up" "$EVIDENCE/up-default.txt"
+capture status-default $M status
+check "the default policy is reported as filtered" "egress       filtered" "$EVIDENCE/status-default.txt"
+
+capture default-allowed $M exec -- /bin/sh -c 'curl -sS -o /dev/null -w "%{http_code}" --max-time 25 https://api.deepseek.com/models'
+check "the default policy still allows the provider (401 without a key)" "401" "$EVIDENCE/default-allowed.txt"
+
+capture default-blocked $M exec -- /bin/sh -c 'curl -sS --max-time 6 -o /dev/null -w "code %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"'
+check "the default-policy probe ran inside the box"  "curl-exit=" "$EVIDENCE/default-blocked.txt"
+check_absent "the default policy blocks an address outside the allowlist" "curl-exit=0" "$EVIDENCE/default-blocked.txt"
+
+capture down-default $M down
+capture destroy-default $M destroy --yes
 
 say ""
 say "egress checks $( [ "$FAIL" = "0" ] && echo passed || echo FAILED )"

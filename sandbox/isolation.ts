@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { moatHome, type EnvPaths } from "../lib/paths.ts"
-import type { EgressMode } from "../lib/pins.ts"
+import { ownNetns, type EgressMode } from "../lib/pins.ts"
 import { shellQuote } from "../lib/shell.ts"
 import { runInSandbox } from "./launcher.ts"
 
@@ -186,17 +186,22 @@ echo "MOAT_SECRET_ENV_NAMES=$MOAT_SECRET_ENV_NAMES"
 # the shared-namespace case; 10.0.2.2 is slirp's gateway, which by default
 # forwards straight to the host's loopback even from an isolated namespace.
 # Only --disable-host-loopback closes that second route, so it is measured.
-if /bin/bash -c 'exec 3<>/dev/tcp/127.0.0.1/${opts.hostLoopbackPort}' 2>/dev/null; then
+# Every probe is bounded. A default-deny policy drops rather than refuses, and
+# an unbounded connect sits in the kernel's SYN retries for about two minutes
+# before it reports the failure it already knows about.
+MOAT_PROBE_TIMEOUT=""
+if command -v timeout >/dev/null 2>&1; then MOAT_PROBE_TIMEOUT="timeout 6"; fi
+if $MOAT_PROBE_TIMEOUT /bin/bash -c 'exec 3<>/dev/tcp/127.0.0.1/${opts.hostLoopbackPort}' 2>/dev/null; then
   echo "MOAT_HOST_LOOPBACK=REACHABLE"
 else
   echo "MOAT_HOST_LOOPBACK=blocked"
 fi
-if /bin/bash -c 'exec 3<>/dev/tcp/10.0.2.2/${opts.hostLoopbackPort}' 2>/dev/null; then
+if $MOAT_PROBE_TIMEOUT /bin/bash -c 'exec 3<>/dev/tcp/10.0.2.2/${opts.hostLoopbackPort}' 2>/dev/null; then
   echo "MOAT_HOST_LOOPBACK_GATEWAY=REACHABLE"
 else
   echo "MOAT_HOST_LOOPBACK_GATEWAY=blocked"
 fi
-if /bin/bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null; then
+if $MOAT_PROBE_TIMEOUT /bin/bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null; then
   echo "MOAT_EGRESS_OPEN=yes"
 else
   echo "MOAT_EGRESS_OPEN=no"
@@ -277,6 +282,9 @@ export async function runIsolationChecks(
     /** Run the probe in the same kind of network as the environment under test. */
     egress?: EgressMode
     slirpBinary?: string
+    egressRules?: string
+    /** An endpoint the filtered policy should still allow. */
+    allowedProbe?: { host: string; port: number }
   },
 ): Promise<IsolationReport> {
   const hostNamespaces = opts.hostNamespaces ?? hostNamespaceIds()
@@ -293,17 +301,30 @@ export async function runIsolationChecks(
     throw error
   }
 
-  const script = innerScript({
-    hostHome: opts.hostHome,
-    canary: canary.path,
-    hostProject: p.projectDir,
-    hostLoopbackPort: probe.port,
-  })
+  const script =
+    innerScript({
+      hostHome: opts.hostHome,
+      canary: canary.path,
+      hostProject: p.projectDir,
+      hostLoopbackPort: probe.port,
+    }) +
+    (opts.allowedProbe
+      ? "if $MOAT_PROBE_TIMEOUT /bin/bash -c 'exec 3<>/dev/tcp/" +
+        shellQuote(opts.allowedProbe.host) +
+        "/" +
+        opts.allowedProbe.port +
+        "' 2>/dev/null; then echo \"MOAT_ALLOWED_REACHABLE=yes\"; else echo \"MOAT_ALLOWED_REACHABLE=no\"; fi\n"
+      : "")
 
   const injected = Object.fromEntries((opts.injectedVarNames ?? []).map((name) => [name, "REDACTED-BY-DOCTOR"]))
   let result: { output: string; code: number }
   try {
-    result = await runInSandbox(p, script, { env: injected, egress: opts.egress, slirpBinary: opts.slirpBinary })
+    result = await runInSandbox(p, script, {
+      env: injected,
+      egress: opts.egress,
+      slirpBinary: opts.slirpBinary,
+      egressRules: opts.egressRules,
+    })
   } finally {
     await probe.close()
     // A throwing check must not leave the host canary behind. The success path
@@ -427,7 +448,7 @@ export async function runIsolationChecks(
   })
   // With an isolated namespace this stops being a documented exposure and
   // becomes a property that must hold: the host's loopback must be unreachable.
-  const isolated = opts.egress === "isolated"
+  const isolated = ownNetns(opts.egress ?? "open")
   const loopbackDirect = parsed.MOAT_HOST_LOOPBACK === "REACHABLE"
   const loopbackGateway = parsed.MOAT_HOST_LOOPBACK_GATEWAY === "REACHABLE"
   const loopbackReachable = loopbackDirect || loopbackGateway
@@ -448,19 +469,38 @@ export async function runIsolationChecks(
           `run locally (databases, dev servers, notebooks) is reachable by the agent.`
         : `the sandbox could not reach 127.0.0.1:${probe.port} on the host`,
   })
-  checks.push({
-    kind: "exposure",
-    name: "egress unrestricted",
-    ok: true,
-    detail:
-      parsed.MOAT_EGRESS_OPEN !== "yes"
-        ? "no outbound connectivity observed"
-        : isolated
-          ? "the sandbox reached 1.1.1.1:443 through slirp. It has its own network namespace, but its " +
-            "egress is not filtered yet: an allowlist applied inside the namespace is the next step."
-          : "the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it " +
-            "can read, including the project and the injected credential. Egress policy is v2.",
-  })
+  const egressOpen = parsed.MOAT_EGRESS_OPEN === "yes"
+  if (opts.egress === "filtered") {
+    // The allowlist is the point of this mode, so the check is two-sided: an
+    // arbitrary destination must be refused AND the allowlisted one reachable.
+    const allowedOk = !opts.allowedProbe || parsed.MOAT_ALLOWED_REACHABLE === "yes"
+    const probeLabel = opts.allowedProbe ? `${opts.allowedProbe.host}:${opts.allowedProbe.port}` : "the provider"
+    checks.push({
+      kind: "check",
+      name: "egress filtered",
+      ok: !egressOpen && allowedOk,
+      detail: egressOpen
+        ? "the sandbox reached 1.1.1.1:443, which the allowlist does not contain"
+        : allowedOk
+          ? `an address outside the allowlist (1.1.1.1:443) is refused, and ${probeLabel} is reachable`
+          : `the allowlisted endpoint ${probeLabel} was not reachable`,
+    })
+  } else {
+    checks.push({
+      kind: "exposure",
+      name: "egress unrestricted",
+      ok: true,
+      detail:
+        parsed.MOAT_EGRESS_OPEN !== "yes"
+          ? "no outbound connectivity observed"
+          : isolated
+            ? "the sandbox reached 1.1.1.1:443 through slirp. It has its own network namespace, but its " +
+              "egress is not filtered: use --egress filtered for an allowlist."
+            : "the sandbox reached 1.1.1.1:443. It shares the host's network namespace (egress mode " +
+              '\"open\"), so the agent can install dependencies AND exfiltrate anything it can read, ' +
+              "including the project and the injected credential. A new environment defaults to \"filtered\".",
+    })
+  }
 
   // In open mode the shared namespace is a documented limitation (a note). In
   // isolated mode it is a property that must hold.

@@ -152,29 +152,40 @@ them.
 ## How it works
 
 ```
-unshare --user --map-root-user --mount --pid --fork --uts --ipc --kill-child
+unshare --user --map-root-user --mount --pid --fork --uts --ipc [--net] --kill-child
   └─ mount --make-rprivate /          # nothing propagates back to the host
      mount --bind <rootfs> <mnt>      # the sandbox root is a mount we own
      mount -t proc / tmpfs /dev / devpts / /dev/shm / /tmp / /run
      bind device nodes (read-write)   # interfaces, not host data
+     nft -f /.moat/egress.nft         # default drop: provider + registries only
      chroot <mnt> && exec /.moat/entry.sh
-        └─ opencode serve --port N --hostname 127.0.0.1
+        └─ opencode serve --port N --hostname 0.0.0.0
+              ↑ the host reaches it through slirp4netns (API socket, add_hostfwd)
 ```
 
-The host talks to the agent over HTTP on loopback. The agent loop, its tools and
-the filesystem all live inside the box; nothing is proxied. Copy-in is a `git
+The host talks to the agent over HTTP, through an explicit port forward when the
+box has its own network namespace. The agent loop, its tools and the filesystem
+all live inside the box; nothing is proxied. Copy-in is a `git
 clone --no-hardlinks`, so the project arrives as data rather than as a mount.
+
+The default network policy is `filtered`: the sandbox is in its own namespace
+(`--net`), slirp4netns is its only datapath, the host's loopback is closed on
+both routes, and an nftables allowlist drops everything except the provider and
+the package registries. `moat doctor` measures all of it.
 
 The agent works on its own branch, and moat runs the project's own checks against
 the result before showing it to you. No model is involved in that verdict.
 
 ## Limitations
 
-- The credential is readable by the agent, and egress is open.
-- Egress is not fenced. `moat up --egress isolated` gives the sandbox its own
-  network namespace and closes the host's loopback (both routes, measured), but
-  anything it can reach is still reachable until the allowlist lands; v1 is
-  planned as a microVM.
+- The credential is readable by the agent. Egress is fenced by default, but not
+  sealed: an allowlisted address, or DNS, can still carry data out.
+- The allowlist is an IP snapshot resolved when the box boots, so a host that
+  rotates to an address outside it is unreachable until the next `moat up`, and
+  it cannot express per-host ports. `moat up --egress isolated` drops the
+  ruleset; `--egress open` restores the host's network namespace, and moat
+  chooses that automatically for a provider on the host's loopback, which the
+  sandbox's own namespace cannot reach. v1 is planned as a microVM.
 - The tool list cannot be pruned exactly in opencode 1.18.31. The bundle refuses
   to execute anything outside the curated set instead, and `moat tools` prints the
   gap.

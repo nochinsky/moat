@@ -152,6 +152,17 @@ TOTAL_MS=$(json_field "$UP_JSON" "['totalMs']" 2>/dev/null || echo "?")
 PROVISION_MS=$(json_field "$UP_JSON" "['provisionMs']" 2>/dev/null || echo "?")
 echo "cold start: totalMs=$TOTAL_MS provisionMs=$PROVISION_MS bootMs=$BOOT_MS" | tee -a "$EVIDENCE/summary.txt"
 capture status-up $MOAT status --json
+# The default network policy is `filtered`, with one documented exception: a
+# provider on the host's loopback cannot be reached from the sandbox's own
+# namespace at all, so that case stays `open`. This suite runs against a stub on
+# 127.0.0.1, so the exception is what is being exercised here.
+EGRESS_MODE=$(json_field "$EVIDENCE/status-up.out" "['egress']" 2>/dev/null || echo "?")
+if [ "$EGRESS_MODE" = "open" ]; then
+  echo "egress: open, as it must be for a provider on the host's loopback (the default for a real provider is filtered)" |
+    tee -a "$EVIDENCE/summary.txt"
+else
+  echo "egress: FAILED, expected open for a loopback provider, got '$EGRESS_MODE'" | tee -a "$EVIDENCE/summary.txt"
+fi
 
 # ---------------------------------------------------------------------------
 section "3. isolation self-test from inside the sandbox (moat doctor)"

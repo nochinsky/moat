@@ -6,17 +6,19 @@ several constraints are not obvious from the code.
 ## The idea
 
 moat runs an AI coding agent inside a disposable Linux sandbox. The agent gets a
-copy of the project, a package manager, an open network, and no permission
-prompts. Everything it can break is inside the box. Your machine holds the only
-copy that matters, and nothing crosses back until you say so.
+copy of the project, a package manager, a network restricted by default to the
+provider and the package registries, and no permission prompts. Everything it can
+break is inside the box. Your machine holds the only copy that matters, and
+nothing crosses back until you say so.
 
 That is the whole product: **autonomy without prompts**, bought by making the
 blast radius a box instead of a home directory.
 
 It is deliberately not a confidentiality boundary. The agent has to read the
 project to work on it and has to read the key to call the model, so it has both,
-and with egress open it can send both anywhere. Every claim in the docs is written
-to keep that distinction visible rather than to paper over it. If you find
+and the default egress allowlist only narrows where it can send them: an
+allowlisted address, or DNS, still carries them out. Every claim in the docs is
+written to keep that distinction visible rather than to paper over it. If you find
 yourself writing "secure" or "safe" without a qualifier, stop.
 
 The direction of travel is a production-ready harness: something you would hand to
@@ -75,7 +77,7 @@ is wired with `npm link` and runs the source directly.
 npm run test:unit         # pure unit tests, no sandbox, so CI runs them
 bash test/e2e.sh          # acceptance criteria, ~4 min, no API key
 bash test/e2e-extras.sh   # snapshots, apply, credential expiry, the pty suites
-bash test/e2e-egress.sh   # isolated netns, slirp datapath, host loopback closed (no key)
+bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced, default (no key)
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
 ```
 
@@ -175,8 +177,26 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   from inside the "isolated" namespace. `moat doctor` probes **both**
   `127.0.0.1` and `10.0.2.2`, because testing only the namespace's own loopback
   is vacuous and passes while the hole is open.
-* In isolated mode `opencode serve` binds `0.0.0.0`; a loopback bind inside the
-  namespace cannot be reached through the forward.
+* In any own-namespace mode (both `isolated` and `filtered`) `opencode serve`
+  binds `0.0.0.0`; a loopback bind inside the namespace cannot be reached through
+  the forward. The predicate for "has its own namespace" lives in one place,
+  `ownNetns()` in `lib/pins.ts`, because `filtered` was once spelled
+  `opts.egress === "isolated"` at four call sites: the box then booted in the
+  **host's** namespace and `nft -f` failed with `netlink: Error: cache
+  initialization failed: Operation not permitted` (nft needs `CAP_NET_ADMIN` in
+  the namespace's user namespace and an unprivileged user has none in the host's).
+  `bootIsolation()` now refuses to boot a ruleset outside the sandbox's own
+  namespace, and `test/unit/egress.test.ts` fails if either predicate regresses.
+* The API socket is **not** a fixed path. Every boot names its own
+  (`slirp-<pid>-<rand>.sock`) and readiness is a **connection**, not a `stat()`:
+  a socket file outlives the slirp that made it, so a restart that only checked
+  `existsSync` found the previous boot's corpse (`ECONNREFUSED` from the forward,
+  and slirp itself cannot bind over a stale file). `pruneDeadSockets` reaps the
+  ones nothing is listening on and never touches a live one.
+* The in-box connectivity probes are wrapped in `timeout`: a default-deny policy
+  **drops** packets, and an unbounded `/dev/tcp` connect sits in the kernel's SYN
+  retries for about two minutes before reporting the failure it already knows
+  about. `moat doctor` in filtered mode is the case that hits it.
 * The long-running box records its slirp pid in `state.json` and `moat down`
   stops it after the box (its start time is checked, like the sandbox pid).
   Ephemeral boots (doctor, exec, checks, shell) start their own slirp with a
@@ -257,12 +277,15 @@ Two rules the suite follows, worth preserving:
 
 Not built, in rough order of how much they matter:
 
-* **Egress policy, second half.** `moat up --egress isolated` gives the sandbox
-  its own network namespace with a pinned slirp4netns datapath and closes the
-  host's loopback on both routes; what it does not do yet is filter *where* the
-  sandbox can go. The nftables default-deny allowlist is the remaining half, and
-  `open` stays the default until it has evidence. This is the largest remaining
-  exposure and the reason the docs say the key must be disposable.
+* **Egress policy, second half.** Done: a new environment gets its own network
+  namespace, the pinned slirp4netns datapath, a closed host loopback on both
+  routes, and an nftables default-deny allowlist resolved at boot, with
+  `bash test/e2e-egress.sh` proving the allowed and the blocked path without a
+  key and `moat doctor` failing the run when either is wrong. What is left is the
+  allowlist's shape rather than its existence: it is an IP snapshot taken at boot
+  (a rotating CDN address falls out until the next `moat up`), it cannot express
+  per-host ports, and DNS to slirp's resolver remains an outbound channel. Closing
+  those means a resolving proxy moat owns, not a bigger ruleset.
 * **Provider-side credential scoping** — short-lived, spend-capped tokens minted
   per boot, instead of borrowing a long-lived key.
 * **Cost ceilings.** The turn footer reports what a turn cost; nothing stops it.

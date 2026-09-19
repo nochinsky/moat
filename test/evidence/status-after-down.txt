@@ -7,9 +7,9 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 opencode     1.18.31 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-19-14-10
+branch       moat-session-2026-09-19-15-05
 egress       open (host network namespace)
-rootfs       381.0 MiB
-credential   moat sha256:7726b438889c7f57 expires in 13651s
+rootfs       382.4 MiB
+credential   moat sha256:7726b438889c7f57 expires in 14296s
 snapshots    baseline
-branches     main, moat-session-2026-09-19-14-10*
+branches     main, moat-session-2026-09-19-15-05*

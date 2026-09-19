@@ -3,16 +3,16 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-project      /home/user/moat-demo/egress-project
-env          /home/user/.moat/envs/16a525996d67
+project      /home/user/moat-demo/egress-default
+env          /home/user/.moat/envs/2a1bb9cb2696
 status       running
-endpoint     http://127.0.0.1:45293
-pid          60073
+endpoint     http://127.0.0.1:38793
+pid          61068
 opencode     1.18.31 / alpine 3.21.4
 model        deepseek/deepseek-flash (deepseek)
 branch       moat-session-2026-09-19-15-04
-egress       isolated (own network namespace)
-rootfs       378.5 MiB
-credential   deepseek sha256:34c4e933b47c1fb3 expires in 14390s
+egress       filtered (own network namespace, default-deny allowlist)
+rootfs       374.0 MiB
+credential   deepseek sha256:34c4e933b47c1fb3 expires in 14385s
 snapshots    baseline
 branches     main, moat-session-2026-09-19-15-04*

@@ -4,7 +4,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import type { EnvPaths } from "../lib/paths.ts"
-import { SLIRP_DNS, type EgressMode } from "../lib/pins.ts"
+import { SLIRP_DNS, ownNetns, type EgressMode } from "../lib/pins.ts"
 import { shellQuote } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
 
@@ -133,6 +133,12 @@ export type OuterScriptOptions = {
    * the host, and the host's resolver is unreachable from inside.
    */
   waitForTap?: boolean
+  /**
+   * Path inside the rootfs of an nftables ruleset to apply before anything runs.
+   * Set when egress is filtered: the rules go on inside the sandbox's own
+   * network namespace, which moat owns, before the entry script starts.
+   */
+  egressRules?: string
 }
 
 export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string {
@@ -181,6 +187,17 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
     lines.push("  sleep 0.1")
     lines.push("done")
     lines.push("echo nameserver " + SLIRP_DNS + " > \"$N/etc/resolv.conf\"")
+  }
+  if (opts.egressRules) {
+    // A policy that fails to load must stop the boot: running unfiltered while
+    // the environment claims to be filtered is worse than not booting at all.
+    const rulesPath = opts.egressRules
+    lines.push('if [ ! -f "$N' + rulesPath + '" ]; then echo "[moat] egress policy file is missing" >&2; exit 1; fi')
+    lines.push(
+      "if ! chroot \"$N\" /bin/sh -c 'PATH=/usr/sbin:/usr/bin:/sbin:/bin; nft -f " + rulesPath + "'; then",
+    )
+    lines.push('  echo "[moat] failed to apply the egress policy" >&2; exit 1')
+    lines.push("fi")
   }
   lines.push(`exec chroot "$N" /bin/sh ${inner}`)
   return `${lines.join("\n")}\n`
@@ -316,6 +333,25 @@ export function unshareArgs(inner: string, opts: { net?: boolean } = {}): string
 }
 
 /**
+ * Whether a boot gets its own network namespace, and the guards around it.
+ *
+ * `filtered` is `isolated` plus a ruleset: the same namespace and the same slirp
+ * datapath, with nftables dropping everything the allowlist does not name. A
+ * `filtered` boot that kept the host's network namespace would apply the ruleset
+ * as an unprivileged user — `netlink: Error: cache initialization failed` — and a
+ * box that says "filtered" while sharing the host's network is worse than one
+ * that refuses to boot.
+ */
+export function bootIsolation(opts: { egress?: EgressMode; slirpBinary?: string; egressRules?: string }): boolean {
+  const isolated = ownNetns(opts.egress ?? "open")
+  if (isolated && !opts.slirpBinary) throw new Error(`${opts.egress} egress needs the slirp4netns binary`)
+  if (opts.egressRules && !isolated) {
+    throw new Error("an egress ruleset needs the sandbox's own network namespace")
+  }
+  return isolated
+}
+
+/**
  * Wait until a child has actually entered its new network namespace.
  *
  * slirp4netns is pointed at the child's pid, and attaching before the child's
@@ -359,6 +395,8 @@ export type SandboxRunOptions = {
   port?: number
   /** Path to the slirp4netns binary; required when egress is isolated. */
   slirpBinary?: string
+  /** Path inside the sandbox of the nftables ruleset; required when filtered. */
+  egressRules?: string
 }
 
 /** Run a script inside a *fresh, ephemeral* boot of the sandbox and wait for it. */
@@ -367,10 +405,9 @@ export async function runInSandbox(
   innerBody: string,
   opts: SandboxRunOptions = {},
 ): Promise<RunInSandboxResult> {
-  const isolated = opts.egress === "isolated"
-  if (isolated && !opts.slirpBinary) throw new Error("isolated egress needs the slirp4netns binary")
+  const isolated = bootIsolation(opts)
   const inner = writeInnerScript(p, innerBody)
-  const boot = writeOuterScript(p, { innerScript: inner, waitForTap: isolated })
+  const boot = writeOuterScript(p, { innerScript: inner, waitForTap: isolated, egressRules: opts.egressRules })
   const child = spawn("unshare", unshareArgs(boot, { net: isolated }), {
     env: sandboxEnv(opts.env),
     stdio: ["ignore", "pipe", "pipe"],
@@ -441,10 +478,9 @@ export async function runInteractive(
   innerBody: string,
   opts: SandboxRunOptions = {},
 ): Promise<number> {
-  const isolated = opts.egress === "isolated"
-  if (isolated && !opts.slirpBinary) throw new Error("isolated egress needs the slirp4netns binary")
+  const isolated = bootIsolation(opts)
   const inner = writeInnerScript(p, innerBody)
-  const boot = writeOuterScript(p, { innerScript: inner, waitForTap: isolated })
+  const boot = writeOuterScript(p, { innerScript: inner, waitForTap: isolated, egressRules: opts.egressRules })
   const child = spawn("unshare", unshareArgs(boot, { net: isolated }), {
     stdio: "inherit",
     env: sandboxEnv(opts.env),
@@ -491,6 +527,8 @@ export type SandboxStartOptions = {
   port?: number
   /** Path to the slirp4netns binary; required when egress is isolated. */
   slirpBinary?: string
+  /** Path inside the sandbox of the nftables ruleset; required when filtered. */
+  egressRules?: string
 }
 
 /** Boot the sandbox as a long-running server, detached into its own process group. */
@@ -500,13 +538,12 @@ export async function startSandbox(
   env: SandboxEnv,
   opts: SandboxStartOptions = {},
 ): Promise<SandboxProcess> {
-  const isolated = opts.egress === "isolated"
-  if (isolated && !opts.slirpBinary) throw new Error("isolated egress needs the slirp4netns binary")
+  const isolated = bootIsolation(opts)
   const inner = writeInnerScript(p, innerBody)
   // The boot log lives inside the rootfs, so the long-running box does not hold
   // an append fd on a host file outside itself.
   const bootLog = path.join(p.rootfs, "var", "log", "moat", "boot.log")
-  const boot = writeOuterScript(p, { innerScript: inner, bootLog, waitForTap: isolated })
+  const boot = writeOuterScript(p, { innerScript: inner, bootLog, waitForTap: isolated, egressRules: opts.egressRules })
   fs.mkdirSync(p.logs, { recursive: true })
   const logFile = path.join(p.logs, "sandbox.log")
   const fd = fs.openSync(logFile, "a", 0o600)
@@ -529,7 +566,9 @@ export async function startSandbox(
     }
     fs.mkdirSync(path.join(p.dir, "runtime"), { recursive: true })
     const handle = await egress.startSlirp(opts.slirpBinary!, child.pid, {
-      apiSocket: path.join(p.dir, "runtime", "slirp.sock"),
+      // Unique per boot, like the boot scripts: a fixed name made a restart
+      // reuse the previous slirp's dead socket.
+      apiSocket: path.join(p.dir, "runtime", `slirp-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sock`),
       port: opts.port,
       logFile: path.join(p.logs, "slirp.log"),
     })

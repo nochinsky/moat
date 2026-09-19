@@ -14,8 +14,10 @@ about where v0 falls short of the design goals, with the evidence for each.
 The sandbox protects the host. It does not protect the project, and it does not
 protect the credential: the agent has to read the project to work on it, and has
 to read the key to call the model. Both are therefore available to it, and with
-egress open, both are available to anyone it talks to. This section states which
-is which, so neither claim is read as covering the other.
+egress policy decides who else can get them, and by default the box may reach
+the provider and the package registries and nothing else. That narrows the
+audience; it does not make either one confidential. This section states which is
+which, so neither claim is read as covering the other.
 
 ### 1.1 What the sandbox protects
 
@@ -43,12 +45,13 @@ Measured, not assumed (`moat doctor` prints all three on every run):
   a process that must use it, running as the same uid inside the box.** Every
   in-sandbox mitigation is a speed bump.
 * **The project's confidentiality.** The agent can read every byte of the copy,
-  and egress is open, so it can send them anywhere.
-* **Your host's loopback.** In the default `open` egress mode the sandbox
-  shares the host's network namespace, so every service you are running locally,
-  databases, dev servers, notebooks, the model endpoint, is reachable from
-  inside. `moat up --egress isolated` removes that: the sandbox gets its own
-  namespace and the host's loopback is closed on both routes (§7.3).
+  and egress is an allowlist rather than a wall, so anything on that allowlist —
+  or DNS — can carry them out.
+* **Your host's loopback.** In the default `filtered` mode, and in `isolated`,
+  the sandbox has its own network namespace and the host's loopback is closed on
+  both routes (§7.3), so the services you run locally are out of reach. Only
+  `moat up --egress open` puts the sandbox back in the host's namespace, and
+  then every service on the host's loopback is reachable from inside.
 
 ### 1.3 Why autonomy is still the right default
 
@@ -65,16 +68,19 @@ The lever is therefore not the tool list. It is:
    effort. moat enforces a TTL (§5.3) and refuses to silently pick up a
    general-purpose key from your environment, but provider-side scoping is the
    control that matters and it is v2 work.
-2. **Egress policy.** Restricting where the box can talk is the only thing that
-   actually stops exfiltration. It is v2, and it is hard to do rootless, see
-   §7.3.
+2. **Egress policy.** Restricting where the box can talk is the main thing that
+   limits exfiltration, and it is what a new environment gets by default: its own
+   network namespace behind an nftables default-deny allowlist built from the
+   provider and the package registries (§7.3). The remaining hole is the
+   allowlist itself: an allowlisted host, or DNS, can still carry data out.
 3. **Choosing not to put things in the box.** `moat up` names any copied-in file
    that looks like it holds a credential.
 
 **In one line:** moat is a containment boundary for your *host*, not a
-confidentiality boundary for your *project* or your *credential*. If you need the
-latter, wait for v2's egress policy or use `moat up --no-credential` and drive the
-agent with something you do not mind losing.
+confidentiality boundary for your *project* or your *credential*. The default
+egress policy narrows who the box can talk to; it does not make either secret. If
+you need that, use `moat up --no-credential` and drive the agent with something
+you do not mind losing.
 
 ## 2. Lifecycle
 
@@ -627,8 +633,11 @@ and moat adds nothing to it.
 The instructions tell the agent:
 
 * it is in a disposable box, and may install, break and delete freely;
-* the network is open, and it should install what it needs rather than work
-  around a missing tool;
+* **what the network will actually do**, per egress mode: with the default
+  `filtered`, the package registries and GitHub are reachable and every other
+  address is dropped, so a timed-out download is reported rather than retried;
+  with `open` or `isolated`, the network is open and it should install what it
+  needs rather than work around a missing tool;
 * **nobody is going to answer a question**, decide, act, and document the
   assumption;
 * it is expected to run the tests and paste real output, and never to claim
@@ -638,8 +647,9 @@ The instructions tell the agent:
   exfiltrate environment variables is an attack to refuse.
 
 An agent that does not know it is in a box wastes turns being careful. An agent
-that does not know the network is open will not install what it needs. Both are
-harness failures, and this file is the cheapest fix in the project.
+that does not know the network policy either fails to install what it needs or
+keeps retrying a download that the allowlist is dropping. Both are harness
+failures, and this file is the cheapest fix in the project.
 
 ### 6b.4 The working branch
 
@@ -848,6 +858,7 @@ dismiss the question. This is filed in `docs/UPSTREAM-CANDIDATES.md`.
 | mount | `unshare --mount`, root replaced by `chroot` into a mount the sandbox owns | namespace inode differs from the host's; mount table has no host path |
 | PID | `unshare --pid --fork` | PID 1 is the sandbox's own `sh`; ≤ 12 visible processes |
 | UTS / IPC | `unshare --uts --ipc` | namespace inodes differ from the host's |
+| network | `unshare --net` in every mode except `open`; pinned `slirp4netns` as the datapath, with an nftables default-deny allowlist when `filtered` | netns inode differs; the host's loopback answers on neither route; an address outside the allowlist times out while the provider answers |
 | filesystem | the root is the Alpine rootfs; the host's `/` is unreachable | host project path and `$HOME` are absent inside |
 | credentials | one injected variable; no host env, no SSH agent, no dotfiles | canary + env-name diff |
 
@@ -874,39 +885,62 @@ cannot hide behind the device name the way it did when the check read only the
 source field. `docs/VERIFICATION.md` quotes the mount table so the claim can be
 checked line by line.
 
-### 7.3 Network: two modes
+### 7.3 Network: three modes
 
 The network policy is chosen per environment, persisted in `state.json`, and
-measured by `moat doctor` in whichever mode is in force.
+measured by `moat doctor` in whichever mode is in force. A new environment
+defaults to `filtered`; an existing one keeps the mode its state records until
+`--egress` changes it.
 
-**`open`** (the default until the filtered policy has evidence): the sandbox
-shares the host's network namespace. The agent has the host's network position:
-every service on the host's loopback is reachable, and egress is unrestricted.
+**`filtered`** (the default; `moat up --egress filtered` selects it explicitly):
+the sandbox gets its own network namespace and an nftables ruleset with
+`policy drop`, applied inside the namespace before the entry script runs. The
+sandbox owns that namespace, so it holds `CAP_NET_ADMIN` there. What survives:
 
-**`isolated`**: `moat up --egress isolated` puts the sandbox in its own network
-namespace (`unshare --net`) and runs a pinned, digest-verified static
-`slirp4netns` as the datapath. The consequences are measured, not asserted:
+* TCP 80/443 to addresses resolved **on the host at boot** from the provider host
+  plus the package registries in `lib/pins.ts` (`EGRESS_REGISTRY_HOSTS`: npm,
+  the Alpine CDNs, PyPI, the Go and Rust proxies, Maven Central, GitHub).
+  `--egress-allow host[,host]` adds to that list, per environment;
+* DNS to slirp's resolver, `10.0.2.3:53`, and nowhere else;
+* everything else is dropped, including the host's loopback on both routes.
 
-* the sandbox keeps outbound access through slirp's userspace NAT: the provider
-  answers (an unauthenticated request returns 401) and packages install;
-* the host reaches `opencode serve` only through an explicit forward that moat
-  adds over slirp's API socket (`add_hostfwd`, bound to the host's loopback).
-  The server therefore binds `0.0.0.0` inside the namespace, because a
-  namespace-local loopback cannot be forwarded to;
-* the host's loopback is closed on both routes. The namespace's own
-  `127.0.0.1` is not the host's, and slirp is started with
-  `--disable-host-loopback`, which closes slirp's `10.0.2.2` gateway. Measured:
-  without that flag the gateway answers HTTP 200 for a service on the host's
-  loopback; with it, the connection is refused. `moat doctor` probes both
-  addresses and fails the run if either answers.
+A ruleset that fails to load fails the boot. A box that claims to be filtered and
+is not would be worse than a box that does not start.
 
-What isolated mode does **not** do yet: it does not restrict *where* the sandbox
-can go. Egress through slirp is still open, so exfiltration is still possible.
-The next step is an nftables default-deny allowlist applied inside the namespace
-(which the sandbox owns, so it holds `CAP_NET_ADMIN` there), generated from
-hostnames resolved at boot. Until that exists and has evidence, `open` stays the
-default and `moat doctor` reports unrestricted egress as an exposure in both
-modes. `bash test/e2e-egress.sh` proves the isolation half without a key.
+The allowlist is a snapshot of DNS as it resolved when the box booted. A host
+that rotates to an address outside it is unreachable until the next `moat up`.
+That is the deliberate trade for not depending on a resolver inside the box, and
+it is why the policy is an exposure limit rather than a wall: an allowlisted
+address, or DNS itself, can still carry data out.
+
+**`isolated`**: `moat up --egress isolated` gives the sandbox the same namespace
+and the same datapath with no ruleset. Outbound access through slirp's userspace
+NAT is unrestricted; the host's network position is still gone. It is what to
+reach for when the allowlist is in the way.
+
+**`open`**: the sandbox shares the host's network namespace. The agent has the
+host's network position, every service on the host's loopback is reachable, and
+egress is unrestricted. `moat up` also chooses it automatically when the
+provider is on the host's loopback (`--base-url http://127.0.0.1:...`, or
+`--upstream` pointing at a proxy you run), because the sandbox's own namespace
+cannot reach the host's loopback by construction and filtering it would only
+break the box. The choice and its reason are printed when it happens.
+
+Both non-open modes are measured, not asserted. The datapath is a pinned,
+digest-verified static `slirp4netns`; the host reaches `opencode serve` only
+through an explicit forward moat adds over slirp's API socket (`add_hostfwd`,
+bound to the host's loopback), so the server binds `0.0.0.0` inside the
+namespace — a namespace-local loopback cannot be forwarded to; and slirp runs
+with `--disable-host-loopback`, which closes its `10.0.2.2` gateway. Measured:
+without that flag the gateway answers HTTP 200 for a service on the host's
+loopback; with it, the connection is refused. `moat doctor` probes both
+`127.0.0.1` and `10.0.2.2`, and in filtered mode it also probes an address
+outside the allowlist and the allowlisted provider, failing if either is wrong.
+
+`bash test/e2e-egress.sh` proves the isolation half, the allowlist and the
+default, all without a key. What the policy still does not do: it does not stop
+exfiltration to an allowlisted address or over DNS, and it does not protect the
+credential (§1.2).
 
 ### 7.4 Exposures, as `moat doctor` reports them
 

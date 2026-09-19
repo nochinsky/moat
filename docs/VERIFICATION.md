@@ -60,7 +60,11 @@ The criteria that follow show a box that protects your host. They do not show a
 box that protects your **project** or your **credential**, and it would be
 dishonest to let a page of green `pass` marks imply otherwise. `moat doctor`
 therefore prints these on every run, in a separate section, sourced from
-measurements taken inside a real boot:
+measurements taken inside a real boot. The transcript below is from a box whose
+network policy is `open`; in the default `filtered` mode the middle two lines
+are not exposures at all but `check`s that must pass (`pass egress filtered`,
+`pass host loopback reachable`, see §L), and the credential and the bundle
+redaction are exactly as shown here.
 
 ```
 $ moat doctor
@@ -76,9 +80,10 @@ exposures — measured, and NOT fixed in v0. Read these before trusting the box.
           the sandbox connected to a service the host opened on 127.0.0.1:35367. Every service
           you run locally (databases, dev servers, notebooks) is reachable by the agent.
   expose  egress unrestricted
-          the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate
-          anything it can read, including the project and the injected credential. Egress
-          policy is v2.
+          the sandbox reached 1.1.1.1:443. It shares the host's network namespace (egress mode
+          "open"), so the agent can install dependencies AND exfiltrate anything it can read,
+          including the project and the injected credential. A new environment defaults to
+          "filtered".
   expose  shell env redaction (bundle)
           the bundle blanks MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT,
           MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, OPENCODE_SERVER_PASSWORD for
@@ -144,13 +149,15 @@ must hold the value to use it, and the agent's commands run as the same uid.
 ### What this means
 
 * There is **no in-sandbox fix** for the credential. The control is
-  provider-side scoping, which is v2.
-* There is **no in-sandbox fix** for exfiltration while egress is open. The
-  control is egress policy, which is v2 and not achievable rootless
-  (`docs/SPEC.md` §7.3).
-* Tool-level permissions would not have changed any of the four measurements
-  above: every one came from a single `bash` call. This is why the
-  "no deny rules" is not the problem, see `docs/SPEC.md` §1.3.
+  provider-side scoping, which is v2; until then the key has to be disposable.
+* Egress policy narrows exfiltration instead of ending it. The default
+  `filtered` mode keeps the box away from the host's loopback and out of
+  arbitrary addresses (`docs/SPEC.md` §7.3, verified in §L), but an *allowlisted*
+  address, and DNS, can still carry data out. Treat the allowlist as a limit on
+  the blast radius, not as confidentiality.
+* Tool-level permissions would not have changed any of these measurements:
+  every one came from a single `bash` call. This is why the "no deny rules" is
+  not the problem, see `docs/SPEC.md` §1.3.
 
 **In the meantime:** `moat up --no-credential` puts nothing stealable in the box.
 If you need a model, hand it a short-lived, spend-capped token and assume it will
@@ -169,42 +176,74 @@ $ moat up --json --model mock-model --base-url http://127.0.0.1:5599/v1 \
 {
   "project": "/home/user/moat-demo/project",
   "envId": "18620c2c4f34",
-  "provisionMs": 1187,
+  "provisionMs": 1022,
   "provisionFromImageCache": true,
-  "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-9dfe4958feef.tar.gz",
+  "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-50303c72c8d1.tar.gz",
   "provisionSteps": [
     {
       "name": "extract cached image",
-      "ms": 1187
+      "ms": 864
     }
   ],
   "baselineSnapshot": {
     "name": "baseline",
-    "bytes": 112206731,
+    "bytes": 81976993,
     "linked": true
   },
   "copyIn": {
     "transport": "git",
-    "head": "0b97af8ec4d6460038e833e6633fb00ca1d80168",
+    "head": "c1ac17d4d20d6924cdb30e548f6852f1e277e21f",
     "branch": "main",
     "dirty": true,
     "trackedChanges": 1,
     "untrackedFiles": 1,
     "digest": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158",
     "files": 3,
-    "bytes": 126
+    "bytes": 126,
+    "suspectSecrets": [],
+    "skippedFromCopy": [],
+    "hostState": "git:c1ac17d4d20d6924cdb30e548f6852f1e277e21f:af703fa3b275a51f"
   },
-  "copyInMs": 35,
+  "copyInMs": 76,
+  "provider": {
+    "opencodeID": "moat",
+    "native": false,
+    "label": "custom OpenAI-compatible endpoint"
+  },
+  "model": {
+    "id": "moat/mock-model"
+  },
+  "bundle": {
+    "curated": [
+      "read",
+      "write",
+      "edit",
+      "apply_patch",
+      "glob",
+      "grep",
+      "bash",
+      "todowrite",
+      "question"
+    ],
+    "excluded": [
+      "skill",
+      "webfetch",
+      "websearch",
+      "task"
+    ],
+    "preset": "core"
+  },
+  "egress": "open",
   "status": "running",
-  "port": 43969,
-  "pid": 13904,
-  "bootMs": 1461,
-  "totalMs": 2718,
+  "port": 42021,
+  "pid": 61565,
+  "bootMs": 8891,
+  "totalMs": 10131,
   "readyCheck": "GET /config -> 200",
   "credential": {
     "provider": "moat",
     "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-19T00:27:00.032Z",
+    "expiresAt": "2026-09-19T19:05:28.621Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -601,38 +640,33 @@ blocking call is still there as a fallback, and says so if it is used.
 
 ## Criterion 6 — cold start is measured and reported
 
-`moat up --json` reports the breakdown; the human output labels the kind of start
-so a warm boot is never reported as a cold one.
-
-```
-$ moat destroy --yes && moat up --json …          # first boot for this project
-✓ image provisioned in 1.19s (extract cached image 1.19s)
-
-$ moat up
-✓ sandbox up, cold start 2.72s (image built)
-```
+The human output labels the kind of start, so a warm boot is never reported
+as a cold one (`cold start … (image built)` vs `warm start … (image reused)`, the
+latter measured in `test/evidence/up-short-ttl.txt`). `moat up --json` reports the
+breakdown:
 
 ```json
+$ moat destroy --yes && moat up --json …          # first boot for this project
 {
-  "provisionMs": 1187,
+  "provisionMs": 1022,
   "provisionFromImageCache": true,
-  "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-9dfe4958feef.tar.gz",
-  "provisionSteps": [ { "name": "extract cached image", "ms": 1187 } ],
-  "baselineSnapshot": { "name": "baseline", "bytes": 112206731, "linked": true },
-  "copyInMs": 35,
-  "bootMs": 1461,
-  "totalMs": 2718,
+  "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-50303c72c8d1.tar.gz",
+  "provisionSteps": [ { "name": "extract cached image", "ms": 864 } ],
+  "baselineSnapshot": { "name": "baseline", "bytes": 81976993, "linked": true },
+  "copyInMs": 76,
+  "bootMs": 8891,
+  "totalMs": 10131,
   "readyCheck": "GET /config -> 200"
 }
 ```
 
 | measurement | this run |
 | --- | --- |
-| `totalMs` — `moat up` start to server ready | **2 718 ms** |
-| `provisionMs` — image extraction | 1 187 ms |
-| `copyInMs` — clone + dirty-tree replay | 35 ms |
-| `bootMs` — spawn namespaces to `GET /config -> 200` | 1 461 ms |
-| warm start (`provisioned: false`) | **3 971 ms** |
+| `totalMs` — `moat up` start to server ready | **10 131 ms** |
+| `provisionMs` — image extraction | 1 022 ms |
+| `copyInMs` — clone + dirty-tree replay | 76 ms |
+| `bootMs` — spawn namespaces to `GET /config -> 200` | 8 891 ms |
+| warm start (`provisioned: false`) | **4 153 ms** |
 
 ### Why these numbers vary, and what was done about it
 
@@ -935,8 +969,14 @@ that a frontier coding model, given the environment moat builds, actually does
 the work.
 
 This section is the opposite: a real DeepSeek session, spending real tokens.
-Reproduce with `DEEPSEEK_API_KEY=... bash test/e2e-live.sh` (or `zai glm-4.6`,
-`openai gpt-5.4`). Full transcript: `test/evidence/live-session.txt`, 304 lines.
+Reproduce with `DEEPSEEK_API_KEY=... bash test/e2e-live.sh`. Full transcript:
+`test/evidence/live-session.txt`, 398 lines.
+
+The environment takes the **default** network policy: the suite passes no
+`--egress` flag. The fifth section of the transcript then measures that policy in
+the same box that did the work, rather than trusting the boot line — the
+allowlisted provider answers (HTTP 401 without a key) and an address outside the
+allowlist times out (`curl-exit=28`).
 
 ### The setup
 
@@ -946,10 +986,10 @@ no punctuation handling, no accent transliteration. The sandbox was booted with
 `--profile node` and the real provider:
 
 ```
-$ moat up --model deepseek-v4-pro --profile node --credential-env DEEPSEEK_API_KEY
-model: deepseek/deepseek-v4-pro (context 1M, out 384k)
-agent branch: moat-session-2026-09-18-17-50
-✓ sandbox up, cold start 48.61s (image built)
+$ moat up --model deepseek-flash --profile node --credential-env DEEPSEEK_API_KEY
+model: deepseek/deepseek-flash (context 1M, out 384k)
+agent branch: moat-session-2026-09-19-15-15
+✓ sandbox up, cold start 17.98s (image built)
 ```
 
 ### What the agent did
@@ -959,25 +999,29 @@ so the whole suite passes. Then run npm install and verify the CLI works end to
 end. Commit everything to the branch you are on, and report the final test
 output."*
 
-Twelve tool calls, all completed, in a sensible order:
+Fourteen tool calls, all completed, in a sensible order:
 
 ```
-bash  cd /work && git status && git log --oneline -5
-bash  cd /work && npm test
+bash  cat package.json; ls -la; git status; git log --oneline -5
 read  src/slugify.js
+glob  (found test/slugify.test.js)
+bash  ls -R src test; npm test 2>&1 | head -100
 read  test/slugify.test.js
-read  package.json
-bash  cd /work && ls -la && cat src/cli.js; cat README.md
+read  src/cli.js
 edit  src/slugify.js
-bash  cd /work && npm test
-bash  cd /work && npm install
-bash  cd /work && node src/cli.js "Hello   World, Crème Brûlée!" && node src/cli.js --version
-bash  cd /work && git add -A && git commit -m "slugify: fix whitespace, punctuation, trimming and accent handling"
-bash  cd /work && git rm -r --cached node_modules -q && printf 'node_modules/\n' > .gitignore && git commit
+bash  npm test 2>&1 | tail -20
+bash  npm install 2>&1 | tail -15
+bash  node src/cli.js "  Crème Brûlée  " ; node src/cli.js --version
+bash  git add -A && git commit -m "fix(slugify): handle whitespace, punctuation and accents"
+write  .gitignore
+bash  git rm -r -q --cached node_modules && git add .gitignore package-lock.json && git commit
+bash  npm test 2>&1
 ```
 
-That last call is worth noting: the agent noticed `npm install` had staged
-`node_modules`, and cleaned it up rather than committing it.
+The `npm install` in the middle is worth noting twice over: it worked — the npm
+registry is on the allowlist — and the agent then noticed it had staged
+`node_modules`, wrote a `.gitignore`, and removed it from the index in a second
+commit rather than leaving it in the branch.
 
 ### The agent's claims, checked by moat rather than believed
 
@@ -1431,11 +1475,13 @@ uncommitted file and no `--yes` refuses and names the count; `--fresh --yes`
 reboots over the re-copied project; and `moat down` with `state.json` pointed
 at an unrelated live process warns and leaves that process running.
 
-### L. Egress policy: an isolated network namespace
+### L. Egress policy: its own namespace, a pinned datapath, an allowlist, and the default
 
 `bash test/e2e-egress.sh` needs no key: reachability is proven by the provider
 answering 401 to an unauthenticated request, which a stub on the host's loopback
-cannot fake from inside the namespace.
+cannot fake from inside the namespace. It runs three boots: `--egress isolated`,
+the same environment restarted `--egress filtered`, and then a **fresh project
+with no `--egress` flag at all** to prove what a new environment gets.
 
 ```
 $ bash test/e2e-egress.sh
@@ -1446,14 +1492,46 @@ $ bash test/e2e-egress.sh
   pass  the provider answers through slirp (401 without a key)
   pass  slirp's 10.0.2.2 gateway cannot reach the host's loopback
   pass  host loopback reachable        the sandbox has its own network namespace and reached the host's
-                                       loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway
-  pass  network namespace isolated     sandbox net:net:[4026532448] differs from host net:net:[4026531833]
+                                       loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 35205)
+  pass  network namespace isolated     sandbox net:net:[4026532585] differs from host net:net:[4026531833];
+                                       slirp4netns carries its traffic
   pass  doctor reports the isolated namespace
   pass  doctor reports loopback unreachable
   pass  doctor no longer says the namespace is shared
-  pass  slirp stopped with the box
+  pass  the isolated box's slirp (pid 60096) stopped with it
+  pass  the box booted with filtered egress
+  pass  status reports filtered egress
+  pass  the allowlisted provider is still reachable (401 without a key)
+  pass  the blocked probe ran inside the box
+  pass  an address outside the allowlist is refused
+  pass  egress filtered                an address outside the allowlist (1.1.1.1:443) is refused, and
+                                       api.deepseek.com:443 is reachable
+  pass  doctor reports filtered egress
+  pass  doctor no longer calls egress unrestricted
+  pass  the filtered box's slirp (pid 60628) stopped with it
+  pass  a fresh environment boots filtered by default
+  pass  the default policy is reported as filtered
+  pass  the default policy still allows the provider (401 without a key)
+  pass  the default-policy probe ran inside the box
+  pass  the default policy blocks an address outside the allowlist
 egress checks passed
 ```
+
+Both the allowed and the blocked path are the real command, in the same box:
+
+```
+$ moat exec -- /bin/sh -c 'curl -sS -o /dev/null -w "%{http_code}" --max-time 25 https://api.deepseek.com/models'
+401
+$ moat exec -- /bin/sh -c 'curl -sS --max-time 6 -o /dev/null -w "code %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"'
+curl: (28) Connection timed out after 6002 milliseconds
+code 000
+curl-exit=28
+```
+
+The blocked probe is asserted twice on purpose: that `curl-exit=` is present at
+all (the command ran, the boot did not fail before it) and that it is not 0. The
+first assertion is what keeps the second from passing vacuously — the tranche
+before this one "passed" the blocked check while the box was not booting.
 
 The gateway check exists because the obvious probe was vacuous. Testing
 `127.0.0.1:<host port>` from inside an isolated namespace only proves that the
@@ -1467,10 +1545,36 @@ default slirp:            guest -> 10.0.2.2:45681 -> HTTP 200
 ```
 
 So the launcher passes the flag, and `moat doctor` measures both addresses and
-fails the isolated check if either answers. What is still open, and reported as
-an exposure in both modes, is unrestricted egress: the namespace belongs to moat
-(so it holds `CAP_NET_ADMIN` inside it), but nothing filters what leaves it yet.
-That allowlist is the next tranche.
+fails a namespaced run if either answers. In `filtered` mode the in-sandbox check
+is two-sided — an address outside the allowlist (1.1.1.1:443) must be refused
+**and** the allowlisted provider must be reachable — so a ruleset that drops
+everything, including the provider, fails the run.
+
+Two defects found while building this are guarded by unit tests that were watched
+failing with the bug reintroduced (`test/unit/egress.test.ts`):
+
+* `filtered` was not counted as "has its own network namespace" (the predicate
+  was `egress === "isolated"` at four call sites). The box then booted in the
+  **host's** namespace and `nft -f` failed with `netlink: Error: cache
+  initialization failed: Operation not permitted`, because nft needs
+  `CAP_NET_ADMIN` in the namespace's user namespace and an unprivileged user has
+  none in the host's. `bootIsolation()` (`sandbox/launcher.ts`) now refuses to
+  load a ruleset outside the sandbox's own namespace, and the unit test fails if
+  either predicate regresses.
+* The slirp API socket was a fixed path and readiness was a `stat()`. A socket
+  file outlives the slirp that created it, so the second boot in an environment
+  failed with `ECONNREFUSED` on the forward while slirp itself could not bind
+  over the stale file. Each boot now names its own socket
+  (`slirp-<pid>-<rand>.sock`) and readiness is a connection; `pruneDeadSockets`
+  reaps the dead ones and never touches a live one.
+
+What remains open is the shape of the allowlist, not its existence: it is an IP
+snapshot resolved on the host when the box boots, so a host that rotates to an
+address outside it is unreachable until the next `moat up`; it cannot express
+per-host ports; and DNS to slirp's resolver (`10.0.2.3:53`) is itself an outbound
+channel. The policy also does not change the credential exposure (§1.2 of the
+SPEC): the agent still reads the key, and an allowlisted address or DNS can still
+carry it out.
 
 ---
 
@@ -1527,7 +1631,7 @@ Listed so that absence is not mistaken for success.
 | thing | why |
 | --- | --- |
 | v1 (microVM on KVM): boot time, image size, delta vs v0 | `/dev/kvm` is present but not accessible to this user (mode 660, gid 991, not a member). v1 is a separate phase and is not claimed here. |
-| v2 (egress rules, credential revocation, spend caps, concurrent sandboxes) | explicitly gated on v0 *and* v1 passing. |
+| v2 (provider-side credential revocation and spend caps, concurrent sandboxes) | explicitly gated on v0 *and* v1 passing. Egress rules landed ahead of v2 and are verified in §L. |
 | Model quality, as opposed to model reachability | a real DeepSeek session is verified above. That is one task, one model, one run — a smoke test with teeth, not a benchmark. |
 | That a reasoning-effort level changes any particular answer | the level provably reaches the provider (see "Secondary claims" H). Whether `max` answers better than `default` is model behaviour, and one sample per level shows nothing. |
 | Non-DeepSeek providers | moat is DeepSeek-only by design; `--base-url` exists for a gateway or a local model and is exercised against a stub, but no second hosted provider was wired up or called. |
@@ -1536,5 +1640,5 @@ Listed so that absence is not mistaken for success.
 | The absolute correctness of a cost figure against a DeepSeek invoice | it is the published table applied to the billed token counts, and it reconciles exactly with opencode's own arithmetic on the same numbers (above). It is not compared against a real bill. |
 | Rendering in terminals other than the ones tested | verified through a pty at 80 and 100 columns, and in plain mode via `NO_COLOR`. Narrow widths, unusual `TERM` values and terminal resize mid-turn were not exercised. |
 | `/undo`, `/redo` and `/compact` against a real model | the calls are exercised against the stub and the server accepts them, but summarisation is model-driven and the stub cannot summarise: it answers `/compact` by trying to call a tool, which the server rejects with `Tool call not allowed while generating summary`. |
-| Network isolation | not attempted in v0; it is the top risk in the report and is disclosed on every `moat doctor` run. |
+| Exfiltration through an allowed channel | §L verifies that the allowlist admits the provider and refuses an arbitrary address, and that the host's loopback is unreachable on both routes. It does not attempt to push data out *through* an allowlisted address or over DNS, both of which remain possible by construction. |
 | Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), but a reboot mid-session was not staged. |
