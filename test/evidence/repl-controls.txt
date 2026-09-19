@@ -5,14 +5,14 @@
 › › /status
 
 ›   project     /home/user/moat-demo/controls
-›   endpoint    http://127.0.0.1:45631
+›   endpoint    http://127.0.0.1:40157
 ›   model       moat/mock-model
 ›   agent       default
 ›   thinking    hidden
-›   branch      moat-session-2026-09-19-19-17
+›   branch      moat-session-2026-09-19-19-35
 ›   session     none yet
 ›   profiles    node
-›   credential  14386s left
+›   credential  14390s left
 › 
 › › /model
 
@@ -27,14 +27,14 @@ moat/mock-model does not expose reasoning effort levels; there is nothing to set
 › › /status
 
 ›   project     /home/user/moat-demo/controls
-›   endpoint    http://127.0.0.1:45631
+›   endpoint    http://127.0.0.1:40157
 ›   model       moat/mock-model
 ›   agent       default
 ›   thinking    hidden
-›   branch      moat-session-2026-09-19-19-17
+›   branch      moat-session-2026-09-19-19-35
 ›   session     none yet
 ›   profiles    node
-›   credential  14378s left
+›   credential  14381s left
 › 
 › › /think bogus
 moat/mock-model does not expose reasoning effort levels; there is nothing to set.
@@ -58,15 +58,15 @@ hiding tool output
 ›   switch with /agent <name>
 › › fix the failing tests
 
-  ⠇ bash  ⠏ bash  ✓ bash       pwd && ls -la && cat README.md                                                 128ms
+  ⠇ bash  ⠏ bash  ⠋ bash  ✓ bash       pwd && ls -la && cat README.md                                                 147ms
 
-  ⠋ thinking 1s  ⠋ write  ⠙ write  ✓ write      agent-output.txt                                                             +1 24ms
+  ⠙ thinking 1s  ⠙ write  ⠹ write  ✓ write      agent-output.txt                                                             +1 18ms
 
-  ⠹ thinking 1s  ⠹ edit  ⠸ edit  ✓ edit       agent-output.txt                                                          +1 -1 28ms
+  ⠸ thinking 1s  ⠸ edit  ✓ edit       agent-output.txt                                                          +1 -1 26ms
 
-  ⠼ thinking 1s  ⠼ bash  ⠴ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agen…  20ms
+  ⠼ thinking 1s  ⠴ thinking 2s  ⠴ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agen…  30ms
 
-  ⠦ thinking 2s  ⠦ bash  ⠧ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the s…  37ms
+  ⠦ thinking 2s  ⠧ thinking 2s  ⠧ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the s…  22ms
 
   ⠇ thinking 2s  ⠏ thinking 2s│   Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
 
@@ -84,14 +84,14 @@ compacting...
 › › /status
 
 ›   project     /home/user/moat-demo/controls
-›   endpoint    http://127.0.0.1:45631
+›   endpoint    http://127.0.0.1:40157
 ›   model       moat/mock-model
 ›   agent       default
 ›   thinking    hidden
-›   branch      moat-session-2026-09-19-19-17
-›   session     ses_f44e5812dffeQkInHYTMbHUL9t
+›   branch      moat-session-2026-09-19-19-35
+›   session     ses_f44d48638ffe2EkOXQV11OhnQM
 ›   profiles    node
-›   credential  14325s left
+›   credential  14328s left
 › 
 › › /quit
 

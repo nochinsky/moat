@@ -393,6 +393,7 @@ export async function ensureSandboxRepo(p: EnvPaths): Promise<void> {
   const env = { ...SANITIZED_GIT_ENV, GIT_AUTHOR_NAME: "moat", GIT_AUTHOR_EMAIL: "moat@localhost", GIT_COMMITTER_NAME: "moat", GIT_COMMITTER_EMAIL: "moat@localhost" }
   // init must run before .git exists, so it cannot go through the hardened
   // runner (which refuses anything that is not already a plain .git directory).
+  // raw-git-ok: there is no .git yet, so there is no agent config to neutralize.
   await run("git", ["-C", p.work, "init", "--quiet", "-b", "main"], { env })
   await sandboxGit(p.work, ["add", "-A"], { env })
   // --allow-empty matters: typing `moat` in an empty directory is a use case, and

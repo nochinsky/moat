@@ -2005,6 +2005,56 @@ happen to echo first (`echo starting && node --test`, `echo starting; jest`) kep
 placeholder test that does not hide the lint and typecheck scripts, and the package
 manager still read from the lockfile. Four of its six fail with the filter reverted.
 
+### U. The interactive `/diff` cannot run the agent's programs on the host
+
+The sandbox repository is the agent's, and git executes programs named by
+repository-local config. Every host-side call against it goes through `sandboxGit`
+(`lib/git.ts`), which swaps in a host-owned config for the call — except one. The
+REPL's `/diff` called `run("git", ["-C", options.paths.work, "log", ...])` directly.
+The global config was nulled, so this looked safe; the *repository* config is the
+agent's, and git obeys `log.showSignature` from it. A commit carrying any `gpgsig`
+header makes git run `gpg.program`, which the agent points at a script it wrote into
+`/work` — whose host path it reads straight out of `/proc/self/mountinfo`, which
+inside the sandbox shows the rootfs by its host path:
+
+```
+590 340 8:48 /home/user/.moat/envs/<id>/rootfs / rw,relatime - ext4 /dev/sdd …
+```
+
+Measured, with that config and commit planted as the agent leaves them and `/diff`
+typed at a real pty:
+
+```
+planted in /home/user/.moat/envs/0cc7b2c8dbc5: branch moat-session-…, log.showSignature=true, gpg.program=<work>/evil-gpg.sh
+→ the program the agent planted ran on the host:
+ran
+  FAIL  the agent's gpg program did not run on the host
+2/3 checks passed
+```
+
+`/diff` goes through `sandboxGit` now, and the same scenario is inert while the diff
+still renders:
+
+```
+›   063c988 agent: crafted commit
+›   uncommitted (not fetched by moat fetch):
+›     new file: evil-gpg.sh
+  pass  /diff rendered the branch log
+  pass  the agent's gpg program did not run on the host
+3/3 checks passed
+```
+
+Two tests hold it. `test/unit/git-hardening.test.ts` has the vector itself: a repo with
+`log.showSignature`, a `gpg.program` that writes a marker, and a crafted signed commit,
+with a control that runs the *old* shape (a raw `run("git", …)`) and shows the marker
+appearing, and `sandboxGit` leaving it absent (and the agent's own config restored
+afterwards). The same file now scans the source for that shape:
+`rawWorkTreeGitCalls` fails on any `run("git", ["-C", <…>.work, …])` outside `lib/git.ts`
+that does not carry a `raw-git-ok:` reason, and reports the file and line. It found
+`cmd/repl.ts:778` and `:783` before the fix; the one deliberate exception left is
+`git init` in `sync/copyin.ts`, marked with its reason. Extras section X is the pty
+proof, and it fails with the raw call back.
+
 ---
 
 ## Requirement-by-requirement

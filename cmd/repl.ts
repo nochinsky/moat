@@ -5,10 +5,8 @@ import { hashTree } from "../lib/hash.ts"
 import type { EnvPaths } from "../lib/paths.ts"
 import { SANDBOX_WORKDIR } from "../lib/pins.ts"
 import { DEEPSEEK } from "../lib/provider.ts"
-import { run } from "../lib/shell.ts"
 import { sandboxGit } from "../lib/git.ts"
 import { readState, writeState, type EnvState } from "../sandbox/state.ts"
-import { SANITIZED_GIT_ENV } from "../sync/copyin.ts"
 import { fetchBranch, listSandboxBranches, sandboxWorktreeChanges, suggestBranch } from "../sync/copyout.ts"
 import { detectChecks } from "../lib/detect.ts"
 import { applyPlan, describePlan, planApply, type ApplyPlan } from "../sync/apply.ts"
@@ -775,16 +773,17 @@ export async function runRepl(options: ReplOptions): Promise<number> {
         const sections: string[] = []
 
         if (base && branch) {
-          const commits = await run(
-            "git",
-            ["-C", options.paths.work, "log", "--oneline", `${base}..${branch}`],
-            { env: SANITIZED_GIT_ENV, allowFailure: true },
-          )
-          const stat = await run(
-            "git",
-            ["-C", options.paths.work, "diff", "--stat", base, branch],
-            { env: SANITIZED_GIT_ENV, allowFailure: true },
-          )
+          // Through `sandboxGit`, never a raw `run("git", ...)`: this repository is
+          // the agent's, and git executes programs named by its config. `log` is the
+          // one that made it concrete: with `log.showSignature` and a `gpg.program`
+          // pointing at a script the agent wrote inside /work (whose host path it can
+          // read from /proc/self/mountinfo), typing /diff ran that script on the host.
+          // The hardened runner swaps in a host-owned config for the call, so those
+          // keys are not there to be obeyed.
+          const commits = await sandboxGit(options.paths.work, ["log", "--oneline", `${base}..${branch}`], {
+            allowFailure: true,
+          })
+          const stat = await sandboxGit(options.paths.work, ["diff", "--stat", base, branch], { allowFailure: true })
           if (commits.stdout.trim()) sections.push(commits.stdout.trimEnd())
           if (stat.stdout.trim()) sections.push(stat.stdout.trimEnd())
         }
