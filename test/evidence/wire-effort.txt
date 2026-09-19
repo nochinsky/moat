@@ -1,7 +1,9 @@
 === what opencode actually put on the wire ===
   reasoning_effort='high' thinking=None model=deepseek-flash stream=True tools=11
   reasoning_effort='max' thinking=None model=deepseek-v4-pro stream=True tools=11
+  reasoning_effort='max' thinking=None model=deepseek-v4-pro stream=True tools=11
   reasoning_effort=None thinking={'type': 'disabled'} model=deepseek-v4-pro stream=True tools=11
+  reasoning_effort='max' thinking=None model=deepseek-v4-pro stream=True tools=11
 
 reasoning levels the server offered: ['high', 'max', 'off']
 

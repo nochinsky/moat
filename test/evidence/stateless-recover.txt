@@ -1,0 +1,29 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- exit 0
+--- stdout ---
+--- stderr ---
+! state.json is missing, but the sandbox's working tree is still there, so the environment was recovered from disk instead of replaced.
+  branch   moat-session-2026-09-19-18-25
+  baseline 5b12b845c8f4
+  everything installed in it, and every commit it holds, are intact; this boot mints a fresh credential.
+  the host-drift check cannot run without the recorded baseline: `moat up --sync` re-copies the project and restores it.
+  to discard the sandbox's copy instead: moat up --fresh --yes
+profiles: everything requested is already installed
+! this environment was recovered without its recorded baseline, so the host-drift check cannot run; `moat up --sync` re-copies the project and restores it
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+model: moat/mock-model
+! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-19-18-25
+→ sandbox booted (pid 178243, port 41335); waiting for opencode serve
+✓ sandbox up, warm start 4.17s (image reused)
+
+  project    /home/user/moat-demo/stateless
+  env        /home/user/.moat/envs/47af90427aba
+  opencode   http://127.0.0.1:41335  (basic auth user "opencode")
+  password   AsyL_BSjCc5ZXktbAE8fDOQG_3FyMYu7
+  workspace  /work (inside the sandbox)
+  credential moat sha256:7726b438889c7f57 expires 2026-09-19T22:25:32.597Z
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)

@@ -352,6 +352,42 @@ STREAM_RC=$?
 tail -10 "$EVIDENCE/repl-stream-loss.txt" | tee -a "$EVIDENCE/extras.txt"
 echo "stream loss exit: $STREAM_RC" | tee -a "$EVIDENCE/extras.txt"
 
+section "T. an environment whose state.json is gone is recovered, not replaced"
+# state.json is metadata; the environment is the rootfs. Reading a missing state as
+# "nothing here" made `moat up` provision over the rootfs: measured, that destroyed a
+# committed agent branch and an untracked file without a word, which also contradicts
+# SPEC section 2.2 ("moat destroy is the only operation that deletes data"). This
+# deletes the file for real, boots again, and then checks the work is still there.
+STATELESS="$WORK/stateless"
+rm -rf "$STATELESS"; mkdir -p "$STATELESS"
+( cd "$STATELESS" && git init -q -b main . && printf '{"name":"stateless"}\n' > package.json \
+  && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
+( cd "$STATELESS" && capture stateless-up $MOAT up --quiet --no-detect --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+STATELESS_ENV=$(cd "$STATELESS" && $MOAT status 2>&1 | sed -n "s/^env *//p")
+( cd "$STATELESS" && capture stateless-down $MOAT down )
+# The agent's work, made the way the agent makes it: through a real boot of the same rootfs.
+( cd "$STATELESS" && capture stateless-work $MOAT exec -- /bin/sh -c "cd /work && printf 'agent work\n' > precious.txt && git add -A && git -c user.email=agent@moat.invalid -c user.name=agent commit -qm 'agent: work the host has never seen' && git rev-parse HEAD" )
+STATELESS_HEAD=$(sed -n "s/^\([0-9a-f]\{40\}\)$/\1/p" "$EVIDENCE/stateless-work.out" | tail -1)
+rm -f "$STATELESS_ENV/state.json"
+( cd "$STATELESS" && capture stateless-recover $MOAT up --quiet --no-detect --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+if grep -q "recovered from disk" "$EVIDENCE/stateless-recover.err" \
+   && grep -q "reusing the sandbox working tree" "$EVIDENCE/stateless-recover.err" \
+   && [ -f "$STATELESS_ENV/rootfs/work/precious.txt" ] \
+   && [ -n "$STATELESS_HEAD" ]; then
+  echo "state recovery: the rootfs was kept and its working tree reused, not re-copied" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "state recovery: FAILED, a missing state.json still replaces the environment" | tee -a "$EVIDENCE/extras.txt"
+fi
+# And the recovered environment is usable: the agent's commit reaches the host.
+( cd "$STATELESS" && capture stateless-fetch $MOAT fetch --all )
+if git -C "$STATELESS" cat-file -e "$STATELESS_HEAD" 2>/dev/null; then
+  echo "state recovery: the recovered commit fetched to the host (refs/moat/*)" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "state recovery: FAILED, the recovered commit did not reach the host" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$STATELESS" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

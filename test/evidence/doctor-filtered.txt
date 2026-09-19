@@ -31,7 +31,7 @@ isolation (17 checks)
   pass  own uts namespace              sandbox uts:[4026532449] vs host uts:[4026532220]
   pass  own ipc namespace              sandbox ipc:[4026532450] vs host ipc:[4026532208]
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
-  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 44281)
+  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 46157)
   pass  egress filtered                an address outside the allowlist (1.1.1.1:443) is refused, and api.deepseek.com:443 is reachable
   pass  network namespace isolated     sandbox net:net:[4026532452] differs from host net:net:[4026531833]; slirp4netns carries its traffic
   pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero

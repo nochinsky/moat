@@ -34,6 +34,7 @@ import {
 } from "../sandbox/egress.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
+import { recoverStateFromDisk } from "../sandbox/recover.ts"
 import { readRootfsFile, readRootfsFileHead, readRootfsFileTail } from "../lib/rootfs-fs.ts"
 import {
   credentialExpired,
@@ -570,6 +571,36 @@ async function cmdUp(argv: string[]): Promise<number> {
       log.fail(`--${key} is not a URL: ${value}`)
     }
   }
+  // state.json is metadata; the environment is the rootfs. A missing or
+  // unreadable state used to read as "no environment", and the provisioning
+  // below then replaced the rootfs: measured, deleting state.json and booting
+  // again destroyed a committed agent branch and an untracked file without a
+  // word, which also contradicts SPEC §2.2 ("moat destroy is the only
+  // operation that deletes data"). The sandbox repository is the evidence that
+  // there is something to keep, and it can only exist after provisioning *and*
+  // copy-in have both finished, so its presence also rules out adopting a
+  // rootfs that was interrupted halfway through being built.
+  if (!state && !fresh && envExists(paths) && fs.existsSync(path.join(paths.work, ".git"))) {
+    if (fs.existsSync(paths.state)) {
+      // Unreadable rather than absent: keep it for whoever has to work out why.
+      const salvage = `${paths.state}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}`
+      fs.renameSync(paths.state, salvage)
+      log.warn(`state.json could not be read; kept it as ${salvage}`)
+    }
+    state = await recoverStateFromDisk(paths)
+    writeState(paths, state)
+    report.recovered = true
+    log.warn(
+      "state.json is missing, but the sandbox's working tree is still there, so the environment was " +
+        "recovered from disk instead of replaced.\n" +
+        `  branch   ${state.branch ?? "(detached head)"}\n` +
+        `  baseline ${state.baselineCommit ? state.baselineCommit.slice(0, 12) : "(not recorded)"}\n` +
+        "  everything installed in it, and every commit it holds, are intact; this boot mints a fresh credential.\n" +
+        "  the host-drift check cannot run without the recorded baseline: `moat up --sync` re-copies the " +
+        "project and restores it.\n" +
+        "  to discard the sandbox's copy instead: moat up --fresh --yes",
+    )
+  }
   const needsProvision = fresh || !envExists(paths) || !state
 
   // Where the provider lives decides the default network policy, so resolve it
@@ -795,7 +826,16 @@ ${command}
   // against a stale copy is a silent, expensive failure, so this is checked on
   // every boot rather than left to the user to remember --sync.
   let drift: { changed: boolean; sandboxCommits: number; sandboxFiles: number } | null = null
-  if (!needsProvision && sandboxRepoExists && !sync && state?.baselineHostState) {
+  if (!needsProvision && sandboxRepoExists && !sync && state && !state.baselineHostState) {
+    // A recovered environment: the baseline went missing with the rest of
+    // state.json, and without it there is no way to tell whether the host
+    // moved on since the copy. Silence here would let the agent work on a
+    // stale tree, which is the exact failure this check exists for.
+    log.warn(
+      "this environment was recovered without its recorded baseline, so the host-drift check cannot run; " +
+        "`moat up --sync` re-copies the project and restores it",
+    )
+  } else if (!needsProvision && sandboxRepoExists && !sync && state?.baselineHostState) {
     const current = await hostState(paths.projectDir)
     if (current !== state.baselineHostState) {
       drift = {

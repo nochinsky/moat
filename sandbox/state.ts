@@ -115,6 +115,43 @@ export function initialState(p: EnvPaths, versions: { opencode: string; alpine: 
   }
 }
 
+/** What can be rebuilt about an environment whose state.json is gone. */
+export type RecoveredStateFields = {
+  /** Branch the sandbox repository has checked out, or null when detached. */
+  branch: string | null
+  /** Commit holding exactly what was copied in, from `refs/moat/baseline`. */
+  baselineCommit: string | null
+  /** `/etc/alpine-release`, when the rootfs still says. */
+  alpineVersion: string | null
+  /** Best effort: the environment directory's own birth time. */
+  createdAt: string | null
+}
+
+/**
+ * An environment's state, rebuilt from what survives in its directory.
+ *
+ * `state.json` is metadata; the environment is the rootfs. Reading a missing
+ * state as "there is nothing here" is how `moat up` came to provision over a
+ * rootfs holding a committed agent branch and an untracked file, destroying
+ * both without a word (measured), which also contradicts SPEC §2.2: `moat
+ * destroy` is the only operation that deletes data.
+ *
+ * Deliberately conservative. The credential is not carried over (the boot
+ * mints a new one, and the old one is dead anyway), the recorded host
+ * baseline is *not* invented (so the drift check says it cannot run rather
+ * than comparing against a baseline that was never recorded), and the
+ * versions are only filled in from the rootfs when the rootfs still says.
+ * Everything the next boot learns — port, model, egress, profiles, the new
+ * branch — overwrites the placeholder before it is persisted.
+ */
+export function recoveredState(p: EnvPaths, fields: RecoveredStateFields): EnvState {
+  const state = initialState(p, { opencode: "unknown", alpine: fields.alpineVersion ?? "unknown" })
+  if (fields.createdAt) state.createdAt = fields.createdAt
+  state.branch = fields.branch
+  state.baselineCommit = fields.baselineCommit
+  return state
+}
+
 export function readState(p: EnvPaths): EnvState | null {
   if (!fs.existsSync(p.state)) return null
   try {
