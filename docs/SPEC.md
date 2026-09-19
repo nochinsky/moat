@@ -335,14 +335,18 @@ fetch` reports it and names the files; `moat fetch --commit-worktree` commits it
 in the sandbox first, then fetches. Nothing commits to a sandbox branch unless
 the user asks. The same rule guards the automatic re-copy described in §2.2: if
 the host project has changed but the sandbox holds commits or files the host
-cannot reach, moat warns rather than overwriting them. **Every sandbox branch and
-tag counts, not just the one checked out**: each tip is asked whether the host has
-its objects, and the unreachable-from-any-host-ref commits under all of them are
-added up; a host that is not a repository at all (a plain directory) counts every
-commit the agent added. A commit on a branch nobody is standing on is still work,
-and a re-copy replaces the whole working tree — measured, the HEAD-only version of
-this count let the re-copy destroy a branch, its commit and its file while the
-warning said the sandbox held nothing.
+cannot reach, moat warns rather than overwriting them. **Every ref in the box counts,
+not just the one checked out** — every branch and tag tip *and* the commit HEAD points
+at: each tip is asked whether the host has its objects, and the
+unreachable-from-any-host-ref commits under all of them are added up; a host that is
+not a repository at all (a plain directory) counts every commit the agent added. A
+commit on a branch nobody is standing on is still work, and a re-copy replaces the
+whole working tree — measured, a HEAD-only version of this count let the re-copy
+destroy a branch, its commit and its file while the warning said the sandbox held
+nothing, and a later version that took branches and tags but not HEAD did the same to a
+commit made on a detached HEAD. When HEAD is detached the warning says so, because
+`moat fetch` reads branches: it names the two commands that keep the work
+(`moat exec -- git -C /work branch keep`, then `moat fetch keep`).
 
 Guarantees, both verified in `docs/VERIFICATION.md`:
 

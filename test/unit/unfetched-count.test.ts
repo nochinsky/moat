@@ -6,7 +6,7 @@ import path from "node:path"
 import { test } from "node:test"
 
 import { envPaths } from "../../lib/paths.ts"
-import { countUnfetched } from "../../sync/copyout.ts"
+import { countUnfetched, sandboxHeadDetached } from "../../sync/copyout.ts"
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" })
@@ -136,6 +136,47 @@ test("a detached host HEAD still counts as a place the work can be", (t) => {
     commit(f.p.work, "more work")
     git(f.p.work, "checkout", "-q", "moat-session-test")
     assert.equal(await countUnfetched(f.p), 1, "and new work is still new")
+  })()
+})
+
+test("a commit made on a detached HEAD is work too, and the warning can name it", (t) => {
+  // Measured before this: the drift check re-copied the project over exactly this
+  // commit while saying the sandbox held nothing, and `moat fetch` could not have
+  // collected it — it reads branches.
+  const f = fixture(t)
+  return (async () => {
+    const base = git(f.p.work, "rev-parse", "HEAD").trim()
+    git(f.p.work, "checkout", "-q", "--detach", base)
+    fs.writeFileSync(path.join(f.p.work, "detached.txt"), "detached work\n")
+    git(f.p.work, "add", "-A")
+    commit(f.p.work, "work on a detached HEAD")
+    assert.equal(git(f.p.work, "status", "--porcelain").trim(), "", "the worktree is clean")
+    assert.equal(await sandboxHeadDetached(f.p), true)
+    assert.equal(await countUnfetched(f.p), 1, "no branch names it, HEAD does")
+    // The way out the warning gives: name it, then fetch the name.
+    git(f.p.work, "branch", "keep")
+    assert.equal(await countUnfetched(f.p), 1, "still unfetched until the host has it")
+  })()
+})
+
+test("a detached HEAD sitting on a branch tip adds nothing", (t) => {
+  const f = fixture(t)
+  return (async () => {
+    fs.writeFileSync(path.join(f.p.work, "note.txt"), "note\n")
+    git(f.p.work, "add", "-A")
+    commit(f.p.work, "on the session branch")
+    const tip = git(f.p.work, "rev-parse", "HEAD").trim()
+    git(f.p.work, "checkout", "-q", "--detach", tip)
+    assert.equal(await sandboxHeadDetached(f.p), true)
+    assert.equal(await countUnfetched(f.p), 1, "one commit, counted once")
+  })()
+})
+
+test("an attached HEAD is not reported as detached", (t) => {
+  const f = fixture(t)
+  return (async () => {
+    assert.equal(await sandboxHeadDetached(f.p), false)
+    assert.equal(await countUnfetched(f.p), 0)
   })()
 })
 

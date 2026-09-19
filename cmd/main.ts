@@ -93,6 +93,7 @@ import {
   countUnfetched,
   fetchBranch,
   listSandboxBranches,
+  sandboxHeadDetached,
   sandboxWorktreeChanges,
   suggestBranch,
 } from "../sync/copyout.ts"
@@ -849,10 +850,18 @@ ${command}
   }
   const held = heldParts.join(" and ")
 
+  // A detached HEAD is work `moat fetch` cannot read, so the warning has to name the way
+  // out: sending the user to a command that cannot collect it would be a lie of omission.
+  const detachedHint =
+    held.length > 0 && (await sandboxHeadDetached(paths))
+      ? "\n  the sandbox is on a detached HEAD, and `moat fetch` reads branches. Name the work first:\n" +
+        "  moat exec -- git -C /work branch keep && moat fetch keep"
+      : ""
+
   if (mustCopy && held) {
     log.warn(
       `re-copying the project will discard ${held} that exist only inside the sandbox — the sandbox working tree ` +
-        "is replaced from the host. `moat fetch` (add --commit-worktree for uncommitted work) keeps it.",
+        `is replaced from the host. \`moat fetch\` (add --commit-worktree for uncommitted work) keeps it.${detachedHint}`,
     )
   } else if (drift?.changed && mustCopy) {
     log.warn(
@@ -862,8 +871,8 @@ ${command}
   } else if (drift?.changed) {
     log.warn(
       `the host project has changed since it was copied in, but the sandbox holds ${held} that the host does not ` +
-        "have. The agent will work on the OLD copy. Run `moat fetch` (add --commit-worktree to include " +
-        "uncommitted work) to keep it, or `moat up --sync` to discard it and re-copy.",
+        `have. The agent will work on the OLD copy. Run \`moat fetch\` (add --commit-worktree to include ` +
+        `uncommitted work) to keep it, or \`moat up --sync\` to discard it and re-copy.${detachedHint}`,
     )
   }
 

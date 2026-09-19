@@ -2371,6 +2371,51 @@ repository. The side-branch, multi-branch and tag tests were watched failing wit
 HEAD-only version restored. One trap inside the fix itself, caught by the non-git test:
 `parseInt("0") || fallback` reads a legitimate count of zero as a failed command.
 
+### AC. A commit on a detached HEAD in the sandbox is named, not discarded
+
+§AB made `countUnfetched` walk every branch and tag tip. HEAD itself was still missing, so
+work committed on a detached HEAD — a normal way to try something — stayed invisible to the
+same drift check. Measured before the fix, on a real boot: `git checkout --detach HEAD`,
+commit, leave the box, edit the host project, `moat up` again:
+
+```
+! the host project has changed since it was copied in, and the sandbox holds nothing that is not already on the host. Re-copying it now.
+✓ copy-in via git: 1 files, 0.0 KiB, digest ada4876b6cd3fa95 (dirty tree: 1 modified, 0 untracked)
+
+$ moat exec -- git -C /work log --oneline --all
+2e07f4a moat: state copied from the host
+5b29df5 base
+$ ls /work/detached.txt
+ls: cannot access '/work/detached.txt': No such file or directory
+```
+
+The commit (`2b2aab9`, "work on a detached HEAD") and its file were gone. `moat fetch`
+could not have collected it either — it reads branches — so the fix has two parts: HEAD's
+commit is counted as a tip, and when HEAD is detached the warning names the way out instead
+of pointing at a command that cannot help. Extras section AE, after the fix:
+
+```
+! the host project has changed since it was copied in, but the sandbox holds 1 commit(s) that the host does not have. The agent will work on the OLD copy. Run `moat fetch` … or `moat up --sync` to discard it and re-copy.
+  the sandbox is on a detached HEAD, and `moat fetch` reads branches. Name the work first:
+  moat exec -- git -C /work branch keep && moat fetch keep
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+
+$ moat exec -- git -C /work log --oneline --all
+fa7d22b work on a detached HEAD
+$ ls /work/detached.txt
+/work/detached.txt
+
+$ moat exec -- git -C /work branch keep
+$ moat fetch keep
+✓ fetched keep -> refs/moat/keep (fa7d22b9f86c)
+```
+
+`test/unit/unfetched-count.test.ts` adds three cases without a sandbox: a detached-HEAD
+commit counts, a detached HEAD sitting on a branch tip adds nothing, and an attached HEAD is
+not reported as detached. The detached-commit case was watched failing with HEAD dropped
+from the tips again. What remains outside the count is in the closing table: a *rebased*
+sandbox branch, and commits that survive only in the reflog after a `reset --hard`.
+
 ---
 
 ## Requirement-by-requirement
@@ -2437,7 +2482,7 @@ Listed so that absence is not mistaken for success.
 | Model quality, as opposed to model reachability | a real DeepSeek session is verified above. That is one task, one model, one run — a smoke test with teeth, not a benchmark. |
 | That a reasoning-effort level changes any particular answer | the level provably reaches the provider (see "Secondary claims" H). Whether `max` answers better than `default` is model behaviour, and one sample per level shows nothing. |
 | Non-DeepSeek providers | moat is DeepSeek-only by design; `--base-url` exists for a gateway or a local model and is exercised against a stub, but no second hosted provider was wired up or called. |
-| The `countUnfetched` / host-drift logic under adversarial git states | §AB covers multiple branches, tags, an already-fetched ref, a non-git host and a detached host HEAD; a *rebased* sandbox branch, and commits that survive only in the sandbox reflog after a `reset --hard`, are still not staged. |
+| The `countUnfetched` / host-drift logic under adversarial git states | §AB and §AC cover multiple branches, tags, an already-fetched ref, a non-git host, a detached host HEAD and a detached sandbox HEAD; a *rebased* sandbox branch, and commits that survive only in the sandbox reflog after a `reset --hard`, are still not staged. |
 | The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |
 | The absolute correctness of a cost figure against a DeepSeek invoice | it is the published table applied to the billed token counts, and it reconciles exactly with opencode's own arithmetic on the same numbers (above). It is not compared against a real bill. |
 | Rendering in terminals other than the ones tested | verified through a pty at 80 and 100 columns, and in plain mode via `NO_COLOR`. Narrow widths, unusual `TERM` values and terminal resize mid-turn were not exercised. |

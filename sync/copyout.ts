@@ -283,6 +283,13 @@ export async function countUnfetched(p: EnvPaths): Promise<number> {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
+  // HEAD as well. A commit made on a detached HEAD is on no branch and is still the most
+  // current state of the sandbox's work; measured, the drift check re-copied the project
+  // over exactly that commit while saying the sandbox held nothing. moat fetch could not
+  // have collected it either — it reads branches — which is why the warning names the
+  // detached case and the way out (see sandboxHeadDetached below).
+  const head = await sandboxHead(p)
+  if (head && !tips.includes(head)) tips.push(head)
   if (tips.length === 0) return 0
 
   // A count of 0 is a real answer, not a failed command: `|| fallback` reads it as
@@ -356,6 +363,19 @@ export async function countUnfetched(p: EnvPaths): Promise<number> {
     total += parseCount(count.stdout, unknown.length)
   }
   return total
+}
+
+/**
+ * Is the sandbox on a detached HEAD?
+ *
+ * A commit made there is real work and countUnfetched now counts it, but moat fetch
+ * reads branches, so the only way to keep it is to name it first. The warning has to
+ * say that, or it sends the user to a command that cannot help.
+ */
+export async function sandboxHeadDetached(p: EnvPaths): Promise<boolean> {
+  if (!(await sandboxRepoExists(p))) return false
+  const onBranch = await sandboxGit(p.work, ["symbolic-ref", "-q", "HEAD"], { allowFailure: true })
+  return onBranch.code !== 0
 }
 
 /**

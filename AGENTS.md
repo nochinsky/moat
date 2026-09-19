@@ -280,7 +280,12 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   the box against the clone-time remotes *and* the host refs the box can see
   (`refs/moat/*`, the user's branches, tags) — without that second set, a branch that was
   fetched and then advanced counts twice. When the host is not a repository at all, every
-  commit the agent added counts. Two traps inside that: a count of `0` is a real answer, so
+  commit the agent added counts. **HEAD counts too**, even detached: a commit made on a
+  detached HEAD is on no branch, and the drift re-copy destroyed exactly that commit while
+  saying the sandbox held nothing — and `moat fetch` could not have collected it (it reads
+  branches), so when HEAD is detached the warning names the way out
+  (`moat exec -- git -C /work branch keep && moat fetch keep`) rather than sending the user
+  to a command that cannot help. Two traps inside that: a count of `0` is a real answer, so
   never write `parseInt(x) || fallback` (it turns 0 into the fallback), and the warning
   must follow the *count*, not the decision — the old code printed "holds nothing" based
   on which branch of the drift check it took. `test/unit/unfetched-count.test.ts` has

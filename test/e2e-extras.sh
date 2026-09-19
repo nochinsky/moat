@@ -737,6 +737,41 @@ else
   echo "the control FAILED: a lossless re-copy was blocked" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$BL" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "AE. a commit on a detached HEAD in the sandbox is named, not discarded"
+# countUnfetched took every branch and tag tip but not HEAD itself, so work committed on a
+# detached HEAD was invisible: the drift re-copy destroyed it while saying the sandbox held
+# nothing, and `moat fetch` could not have collected it either (it reads branches). Measured
+# before the fix: the commit and its file were gone.
+DET="$WORK/detached"
+rm -rf "$DET"; mkdir -p "$DET"
+( cd "$DET" && git init -q -b main . && printf 'base\n' > base.txt && git add -A \
+  && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
+( cd "$DET" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$DET" && capture detached-up $MOAT up --quiet --no-detect --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+( cd "$DET" && $MOAT exec -- /bin/sh -c 'git -C /work checkout -q --detach HEAD; \
+  echo important > /work/detached.txt; git -C /work add -A; \
+  git -C /work -c user.email=a@b -c user.name=agent commit -qm "work on a detached HEAD"' >/dev/null 2>&1 )
+( cd "$DET" && $MOAT down >/dev/null 2>&1 )
+( cd "$DET" && echo changed-on-the-host >> base.txt )
+( cd "$DET" && capture detached-up-again $MOAT up --quiet --no-detect --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+( cd "$DET" && capture detached-log $MOAT exec -- /bin/sh -c \
+  'git -C /work log --oneline --all | head -4; echo "--- detached.txt ---"; ls /work/detached.txt' )
+# The way out the warning names: put it on a branch, then fetch that branch.
+( cd "$DET" && $MOAT exec -- /bin/sh -c 'git -C /work branch keep' >/dev/null 2>&1 )
+( cd "$DET" && capture detached-fetch $MOAT fetch keep )
+if grep -q "sandbox holds 1 commit(s)" "$EVIDENCE/detached-up-again.txt" \
+   && grep -q "detached HEAD" "$EVIDENCE/detached-up-again.txt" \
+   && grep -q "reusing the sandbox working tree" "$EVIDENCE/detached-up-again.txt" \
+   && grep -q "work on a detached HEAD" "$EVIDENCE/detached-log.txt" \
+   && grep -q "detached.txt" "$EVIDENCE/detached-log.txt" \
+   && git -C "$DET" rev-parse --verify --quiet refs/moat/keep >/dev/null; then
+  echo "detached HEAD: the commit is kept, and the warning names how to fetch it" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "detached HEAD: FAILED — the commit was discarded, or nothing said so" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$DET" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.
