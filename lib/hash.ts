@@ -2,6 +2,9 @@ import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 
+/** Read files in 1 MiB pieces; large enough to be fast, small enough to bound memory. */
+const CHUNK_BYTES = 1024 * 1024
+
 export type TreeHash = {
   /** Digest over (relative path, mode, kind, content/symlink target) for every entry. */
   digest: string
@@ -48,12 +51,28 @@ export function hashTree(root: string, opts: { skip?: string[] } = {}): TreeHash
         hash.update(`O ${entryRel} ${stat.mode & 0o7777}\n`)
         continue
       }
-      const content = fs.readFileSync(abs)
-      hash.update(`F ${entryRel} ${stat.mode & 0o7777} ${content.length} `)
-      hash.update(content)
+      // Streamed in chunks rather than read whole: this tree is agent-controlled
+      // (it is the sandbox's /work after a session), so a multi-gigabyte file used
+      // to be pulled into memory on `moat fetch`, `moat apply` and every drift
+      // check. The header still carries the size, so the digest is byte-identical
+      // for a file that does not change under the read.
+      hash.update(`F ${entryRel} ${stat.mode & 0o7777} ${stat.size} `)
+      const fd = fs.openSync(abs, "r")
+      try {
+        const buffer = Buffer.allocUnsafe(Math.min(CHUNK_BYTES, Math.max(1, stat.size)))
+        let position = 0
+        while (position < stat.size) {
+          const read = fs.readSync(fd, buffer, 0, Math.min(buffer.length, stat.size - position), position)
+          if (read <= 0) break
+          hash.update(buffer.subarray(0, read))
+          position += read
+        }
+      } finally {
+        fs.closeSync(fd)
+      }
       hash.update("\n")
       files += 1
-      bytes += content.length
+      bytes += stat.size
     }
   }
 

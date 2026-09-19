@@ -15,7 +15,7 @@
 › 
   ✓ question   Asked 1 question                                                                5.2s
 
-  ⠙ thinking 6s  ⠹ thinking 6s  ⠹ bash  ⠸ bash  ✓ bash       echo 'the user chose' > choice.txt && git add -A && git commit -q -m 'add mi…  138ms
+  ⠙ thinking 6s  ⠹ thinking 6s  ⠹ bash  ⠸ bash  ✓ bash       echo 'the user chose' > choice.txt && git add -A && git commit -q -m 'add mi…  142ms
 
   ⠼ thinking 6s  ⠴ thinking 7s  ⠦ thinking 7s│   Done, using the answer you gave.
 

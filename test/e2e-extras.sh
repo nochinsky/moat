@@ -235,6 +235,17 @@ section "O. every claim about process state is reconciled against the live proce
 capture status-final $MOAT status
 capture down-final $MOAT down
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; fi
+
+section "P. the boot log is readable through the guard that refuses symlinks"
+# The box writes its output through a descriptor the host opened and verified
+# (the script dups fd 3 instead of redirecting to a path inside the
+# agent-writable rootfs), and the host reads it back through the same guard.
+capture logs-sandbox $MOAT logs sandbox
+if grep -q "sandbox boot" "$EVIDENCE/logs-sandbox.txt"; then
+  echo "boot log: the banner the box wrote is readable back on the host" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "boot log: FAILED, no boot banner in the captured output" | tee -a "$EVIDENCE/extras.txt"
+fi
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

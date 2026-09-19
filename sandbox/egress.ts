@@ -208,20 +208,40 @@ export async function runtimeForEgress(
  * socket, which is what rootlesskit uses too. The request never leaves the Unix
  * socket, and the reply is the RPC result.
  */
-export function addHostForward(apiSocket: string, port: number, timeoutMs = 5000): Promise<void> {
+export async function addHostForward(apiSocket: string, port: number, timeoutMs = 5000): Promise<void> {
+  // Connecting can fail transiently even when slirp is healthy: its API socket
+  // has a one-connection accept queue, and the readiness probe above may still be
+  // sitting in it when this connect arrives (measured: "connect EAGAIN" on a boot
+  // that then succeeded on the next attempt). A reply that refuses the forward is
+  // final; a connect that never reached slirp is worth another attempt.
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const result = await forwardOnce(apiSocket, port, Math.max(200, deadline - Date.now()))
+    if (result === "done") return
+    if (Date.now() >= deadline) throw new Error("slirp4netns did not accept the add_hostfwd request")
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+}
+
+/** One attempt. Resolves "retry" when the connection never reached slirp. */
+function forwardOnce(apiSocket: string, port: number, timeoutMs: number): Promise<"done" | "retry"> {
   return new Promise((resolve, reject) => {
     const socket = net.connect(apiSocket)
     let buffer = ""
+    let sawReply = false
+    let settled = false
+    const settle = (result: "done" | "retry", error?: Error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      socket.end()
+      if (error) reject(error)
+      else resolve(result)
+    }
     const timer = setTimeout(() => {
       socket.destroy()
       reject(new Error("slirp4netns did not answer the add_hostfwd request"))
     }, timeoutMs)
-    const finish = (error?: Error) => {
-      clearTimeout(timer)
-      socket.end()
-      if (error) reject(error)
-      else resolve()
-    }
     socket.on("connect", () => {
       socket.write(
         JSON.stringify({
@@ -240,28 +260,47 @@ export function addHostForward(apiSocket: string, port: number, timeoutMs = 5000
       } catch {
         return
       }
-      finish(reply.error ? new Error(`slirp4netns refused the port forward: ${buffer.trim()}`) : undefined)
+      sawReply = true
+      if (reply.error) settle("done", new Error(`slirp4netns refused the port forward: ${buffer.trim()}`))
+      else settle("done")
     })
-    socket.on("error", (error) => finish(error))
+    socket.on("error", (error) => {
+      if (sawReply) settle("done", error)
+      else settle("retry")
+    })
   })
 }
 
-/** Can a client connect to this Unix socket right now? */
-export function socketAccepts(socketPath: string, timeoutMs = 250): Promise<boolean> {
+/**
+ * What is behind this Unix socket: a listener, a corpse, or something we cannot
+ * tell?
+ *
+ * "unknown" matters for pruning. EAGAIN means the accept queue is full, which is
+ * what a *live* socket looks like from here, so treating it as dead would unlink
+ * a running slirp's socket and make it unreachable for the rest of its life.
+ */
+export async function socketState(socketPath: string, timeoutMs = 250): Promise<"live" | "dead" | "unknown"> {
   return new Promise((resolve) => {
     const socket = net.connect(socketPath)
     let settled = false
-    const finish = (ok: boolean) => {
+    const finish = (state: "live" | "dead" | "unknown") => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       socket.destroy()
-      resolve(ok)
+      resolve(state)
     }
-    const timer = setTimeout(() => finish(false), timeoutMs)
-    socket.on("connect", () => finish(true))
-    socket.on("error", () => finish(false))
+    const timer = setTimeout(() => finish("unknown"), timeoutMs)
+    socket.on("connect", () => finish("live"))
+    socket.on("error", (error: NodeJS.ErrnoException) => {
+      finish(error.code === "ENOENT" || error.code === "ECONNREFUSED" ? "dead" : "unknown")
+    })
   })
+}
+
+/** Can a client connect to this Unix socket right now? */
+export async function socketAccepts(socketPath: string, timeoutMs = 250): Promise<boolean> {
+  return (await socketState(socketPath, timeoutMs)) === "live"
 }
 
 /**
@@ -304,7 +343,10 @@ export async function pruneDeadSockets(dir: string): Promise<void> {
   for (const name of names) {
     if (!/^slirp-.*\.sock$/.test(name)) continue
     const full = path.join(dir, name)
-    if (await socketAccepts(full)) continue
+    // Only a definitive "nothing is listening" justifies unlinking: an ambiguous
+    // failure (a full accept queue, a transient EMFILE) must keep the file, or a
+    // live box loses the socket its next forward would need.
+    if ((await socketState(full)) !== "dead") continue
     fs.rmSync(full, { force: true })
   }
 }

@@ -389,15 +389,25 @@ permission requests raised: 0  (the file was never created, no permission.ask ho
 ```
 
 The bundle's config-time record, written by the plugin *inside* the sandbox,
-confirms what opencode loaded:
+confirms what opencode loaded (the suite prints the fields it checks; the committed
+copy is `test/evidence/audit.jsonl`):
 
 ```
 $ moat logs audit
-{"phase": "config", "permission": {"webfetch": "deny", "websearch": "deny", "question": "deny", "skill": "deny", "task": "deny", "*": "allow"}, "toolOmissions": ["webfetch", "websearch", "question", "skill", "task"]}
+{"phase": "config", "permission": {"skill": "deny", "webfetch": "deny", "websearch": "deny", "task": "deny", "*": "allow"}, "toolOmissions": ["skill", "webfetch", "websearch", "task"]}
 ```
 
-`"*": "allow"` is the only rule that can match a curated tool, and
-`curationGaps: []` means the bundle saw exactly the omissions it declares.
+`"*": "allow"` is the rule that matches every curated tool, so no approval prompt
+can fire. The four `deny` entries are not approval rules: opencode compiles moat's
+`tools: {name: false}` into permission denies *before* the plugin's config hook
+runs, and the hook has to accept exactly that shape and nothing else. This record
+is also the proof that the hook ran at all. The check used to demand exactly
+`{"*":"allow"}`, so it threw on every boot; opencode logs a plugin hook error and
+carries on, which is why the only symptom for several commits was an ERROR line in
+a boot log and a config record that never appeared.
+`test/unit/plugin-guard.test.ts` asserts both halves: the merged shape is accepted
+with the record written, and an approval rule or a deny moat did not ask for is
+refused.
 
 ---
 
@@ -1641,11 +1651,19 @@ target instead of writing through it. `chmodRootfsDir` and the reads of
 agent-controlled files (`moat logs sandbox`, `moat logs audit`, the
 installed-bundle report) use the same guard.
 
+The boot log is the same story one step further: the boot script used to
+redirect to `<rootfs>/var/log/moat/boot.log` **by path**, so a symlink swapped into
+the agent-writable rootfs could point that write at a host directory. The host now
+opens and verifies the log through the guard and passes it as descriptor 3, and
+the script dups it (`exec 1>&3 2>&3`).
+
 `test/unit/rootfs-write.test.ts` covers it: a symlinked parent is refused with the
 host directory left empty, a symlink at the file itself is replaced rather than
-followed, `..` is refused, chmod does not reach through a symlink, and a symlinked
-boot log reads as nothing instead of printing a host file. The escape test was
-watched failing with the old write path restored.
+followed, `..` is refused, chmod does not reach through a symlink, a symlinked
+boot log reads as nothing instead of printing a host file, an agent-sized log is
+truncated to its tail instead of read whole, the boot script dups a descriptor and
+never names the path, and opening the log for append refuses a symlink. Every one
+of those tests was watched failing with the old behaviour restored.
 
 Snapshot extraction needs no guard of its own, and that was measured rather than
 assumed: GNU tar refuses to write through a symlink its own archive created

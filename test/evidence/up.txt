@@ -1,101 +1,27 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --json --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+
+--- $ node /home/user/Projects/moat/cmd/main.ts up --egress isolated
 --- exit 0
 --- stdout ---
-{
-  "project": "/home/user/moat-demo/project",
-  "envId": "18620c2c4f34",
-  "provisionMs": 1049,
-  "provisionFromImageCache": true,
-  "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-50303c72c8d1.tar.gz",
-  "provisionSteps": [
-    {
-      "name": "extract cached image",
-      "ms": 879
-    }
-  ],
-  "baselineSnapshot": {
-    "name": "baseline",
-    "bytes": 81976993,
-    "linked": true
-  },
-  "copyIn": {
-    "transport": "git",
-    "head": "2aea624d9a16a57e4682b10919ceec3d9c541b3c",
-    "branch": "main",
-    "dirty": true,
-    "trackedChanges": 1,
-    "untrackedFiles": 1,
-    "digest": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158",
-    "files": 3,
-    "bytes": 126,
-    "suspectSecrets": [],
-    "skippedFromCopy": [],
-    "hostState": "git:2aea624d9a16a57e4682b10919ceec3d9c541b3c:af703fa3b275a51f"
-  },
-  "copyInMs": 78,
-  "provider": {
-    "opencodeID": "moat",
-    "native": false,
-    "label": "custom OpenAI-compatible endpoint"
-  },
-  "model": {
-    "id": "moat/mock-model"
-  },
-  "bundle": {
-    "curated": [
-      "read",
-      "write",
-      "edit",
-      "apply_patch",
-      "glob",
-      "grep",
-      "bash",
-      "todowrite",
-      "question"
-    ],
-    "excluded": [
-      "skill",
-      "webfetch",
-      "websearch",
-      "task"
-    ],
-    "preset": "core"
-  },
-  "egress": "open",
-  "status": "running",
-  "port": 44897,
-  "pid": 86155,
-  "bootMs": 13720,
-  "totalMs": 14996,
-  "readyCheck": "GET /config -> 200",
-  "credential": {
-    "provider": "moat",
-    "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-19T19:47:08.980Z",
-    "source": "env:MOAT_MOCK_CREDENTIAL"
-  },
-  "host": "linux x64 wsl2 userns=yes kvm=no",
-  "credentialsInSandboxEnv": [
-    "MOAT_CREDENTIAL_EXPIRES_AT",
-    "MOAT_CREDENTIAL_FINGERPRINT",
-    "MOAT_CREDENTIAL_TTL_SECONDS",
-    "MOAT_INJECTED_CREDENTIAL",
-    "MOAT_MODEL",
-    "MOAT_MODEL_ID",
-    "MOAT_PORT",
-    "MOAT_PROVIDER_BASE_URL",
-    "OPENCODE_SERVER_PASSWORD"
-  ]
-}
 --- stderr ---
-egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-50303c72c8d1.tar.gz
-✓ image provisioned in 1.05s (extract cached image 879ms)
+✓ image provisioned in 1.05s (extract cached image 888ms)
 → copy-in: git clone --no-hardlinks
-✓ copy-in via git: 3 files, 0.1 KiB, digest c73dfe12c6e22b9f (dirty tree: 1 modified, 1 untracked)
-model: moat/mock-model
-! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-15-47
-→ sandbox booted (pid 86155, port 44897); waiting for opencode serve
+✓ copy-in via git: 1 files, 0.0 KiB, digest a6e0969b405179d9
+model: deepseek/deepseek-flash (context 1M, out 384k)
+! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and send it anywhere: its namespace is isolated from yours, its egress is not filtered. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-19-16-33
+→ sandbox booted (pid 114949, port 37327); waiting for opencode serve
+✓ sandbox up, cold start 13.26s (image built)
+
+  project    /home/user/moat-demo/egress-project
+  env        /home/user/.moat/envs/16a525996d67
+  opencode   http://127.0.0.1:37327  (basic auth user "opencode")
+  password   Gg8Rkic_DQ9Hg3QWTtqObR7RlZ-euTA2
+  workspace  /work (inside the sandbox)
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T20:33:43.804Z
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)

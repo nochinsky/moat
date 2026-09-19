@@ -38,6 +38,20 @@ export function envsDir(): string {
   return path.join(moatHome(), "envs")
 }
 
+/**
+ * A temp path unique per process *and* per call, for write-then-rename.
+ *
+ * The pid alone was not enough — two concurrent writers inside one process, and
+ * two host processes working on one environment, shared the same ".part"/".tmp"
+ * name and the loser's rename failed with ENOENT. It is not only lost data: the
+ * crash is an unhandled exception in the middle of a command that had already
+ * done its work. Measured on `writeState`: three runs out of three, one of two
+ * racing writers died renaming `state.json.tmp`.
+ */
+export function partPath(dest: string): string {
+  return `${dest}.part-${process.pid}-${crypto.randomBytes(4).toString("hex")}`
+}
+
 export function credentialsFile(): string {
   return path.join(moatHome(), "credentials.json")
 }

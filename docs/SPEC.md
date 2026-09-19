@@ -509,9 +509,15 @@ is plain ESM JavaScript on purpose: the rootfs ships no build toolchain.
 4. **Permission accounting.** A `permission.ask` hook records and allows. With
    `permission: {"*": "allow"}` it never fires; the verification asserts that the
    log file does not exist, i.e. **zero permission requests were raised**.
-5. **Config assertion.** At load it fails loudly if the expected `tools`
-   omissions are not present in the effective config, so a future opencode
-   change surfaces immediately instead of silently shipping more tools.
+5. **Config assertion.** At load it fails loudly if the effective config raises
+   an approval rule, denies a tool moat did not curate out, or is missing the
+   expected `tools` omissions. The subtlety that made this check silently useless
+   for a while: opencode compiles `tools: {name: false}` into
+   `permission: {name: "deny"}` *before* the hook runs, so a check for "exactly
+   `{"*":"allow"}`" rejected every real boot — and opencode logs a plugin hook
+   error and carries on, so the only symptom was a line in a boot log. A check in
+   this hook has to be written against the merged config, never against what
+   `bundle/render.ts` wrote.
 
 For the record, the hook name is `permission.ask`, not `permission.asked`, the
 brief's spelling does not exist in `packages/plugin/src/index.ts`.

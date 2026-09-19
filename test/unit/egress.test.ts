@@ -17,6 +17,7 @@ import {
   resolveAllowlist,
   runtimeForEgress,
   slirpArgs,
+  socketState,
   waitForSocket,
 } from "../../sandbox/egress.ts"
 import { bootIsolation, unshareArgs } from "../../sandbox/launcher.ts"
@@ -113,7 +114,55 @@ test("an error reply from slirp rejects instead of pretending to forward", async
     server.close()
     fs.rmSync(socketPath, { force: true })
   })
+  const started = Date.now()
   await assert.rejects(() => addHostForward(socketPath, 12345), /refused the port forward/)
+  // A refusal is final. Retrying it would turn a clear error into a five-second
+  // hang, which is the whole reason the retry loop distinguishes the two.
+  assert.ok(Date.now() - started < 1000, "a refusal must not be retried")
+})
+
+test("the host forward retries a socket that is not listening yet", async (t) => {
+  // Measured on a real boot: connect EAGAIN on slirp's API socket, because its
+  // accept queue holds one connection and the readiness probe may still be sitting
+  // in it. A connect that never reached slirp is worth another attempt; a late
+  // listener is the same shape and is what this test can create deterministically.
+  const socketPath = path.join(os.tmpdir(), "moat-slirp-late-" + process.pid + ".sock")
+  fs.rmSync(socketPath, { force: true })
+  const seen: string[] = []
+  const server = net.createServer((socket) => {
+    socket.on("data", (chunk: Buffer) => {
+      seen.push(chunk.toString("utf8"))
+      socket.write(JSON.stringify({ error: null }))
+    })
+  })
+  t.after(() => {
+    server.close()
+    fs.rmSync(socketPath, { force: true })
+  })
+  const late = setTimeout(() => server.listen(socketPath), 150)
+  t.after(() => clearTimeout(late))
+
+  await addHostForward(socketPath, 12345, 3000)
+  assert.equal(seen.length, 1)
+  assert.match(seen[0]!, /"execute":"add_hostfwd"/)
+})
+
+test("a live socket is live and a leftover file is dead", async (t) => {
+  // The distinction pruning depends on: only a definitive "nothing is listening"
+  // may unlink a socket, because EAGAIN means the accept queue is full, which is
+  // what a live socket looks like from here.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "moat-sockstate-"))
+  const live = path.join(dir, "slirp-1-live.sock")
+  const dead = path.join(dir, "slirp-2-dead.sock")
+  fs.writeFileSync(dead, "")
+  const server = net.createServer(() => {})
+  await new Promise<void>((resolve) => server.listen(live, resolve))
+  t.after(() => {
+    server.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+  assert.equal(await socketState(live), "live")
+  assert.equal(await socketState(dead), "dead")
 })
 
 test("a socket file with no listener is not ready", async (t) => {
