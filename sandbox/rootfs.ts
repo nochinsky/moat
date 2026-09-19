@@ -6,9 +6,11 @@ import { pipeline } from "node:stream/promises"
 import { Readable } from "node:stream"
 
 import {
+  ALPINE_ROOTFS_SHA256,
   ALPINE_ROOTFS_URL,
   ALPINE_VERSION,
   NPM_REGISTRY,
+  OPENCODE_TARBALL_INTEGRITY,
   OPENCODE_VERSION,
   PROVISION_PACKAGES,
   SANDBOX_TRIPLE,
@@ -23,35 +25,99 @@ function tailOf(text: string, lines: number): string {
   return text.split("\n").slice(-lines).join("\n")
 }
 
-async function download(url: string, dest: string): Promise<void> {  fs.mkdirSync(path.dirname(dest), { recursive: true })
-  if (fs.existsSync(dest) && fs.statSync(dest).size > 0) {
-    log.debug(`cached: ${dest}`)
-    return
+export type DownloadDigest = { sha256?: string; integrity?: string }
+
+/**
+ * A temp path unique per process *and* per call.
+ *
+ * The pid alone was not enough: two concurrent downloads inside one process
+ * (which is exactly what a parallel caller does) shared the same ".part" name,
+ * and the loser's rename failed. The random suffix removes the collision while
+ * keeping the atomic write-then-rename shape.
+ */
+function partPath(dest: string): string {
+  return `${dest}.part-${process.pid}-${crypto.randomBytes(4).toString("hex")}`
+}
+
+async function hashFile(file: string, algorithm: "sha256" | "sha512", encoding: "hex" | "base64"): Promise<string> {
+  const hash = crypto.createHash(algorithm)
+  await pipeline(fs.createReadStream(file), hash)
+  return hash.digest(encoding)
+}
+
+/**
+ * Does this file match the expected digest?
+ *
+ * `integrity` is an SRI string (sha512-<base64>), the shape npm publishes;
+ * `sha256` is a hex digest. A file is accepted only when the published value
+ * matches what is on disk.
+ */
+export async function verifyFile(file: string, digest: DownloadDigest): Promise<boolean> {
+  if (digest.integrity) {
+    if (!digest.integrity.startsWith("sha512-")) return false
+    const actual = await hashFile(file, "sha512", "base64")
+    return `sha512-${actual}`.toLowerCase() === digest.integrity.toLowerCase()
   }
-  const tmp = `${dest}.part`
-  log.step(`downloading ${url}`)
-  const response = await fetch(url)
-  if (!response.ok || !response.body) throw new Error(`download failed: ${response.status} ${url}`)
-  const total = Number(response.headers.get("content-length") ?? 0)
-  let seen = 0
-  let lastReport = 0
-  const body = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0])
-  body.on("data", (chunk: Buffer) => {
-    seen += chunk.length
-    const now = Date.now()
-    if (now - lastReport > 1500) {
-      lastReport = now
-      const pct = total ? ` (${((seen / total) * 100).toFixed(0)}%)` : ""
-      log.debug(`  ${(seen / 1024 / 1024).toFixed(1)} MiB${pct}`)
+  if (digest.sha256) {
+    return (await hashFile(file, "sha256", "hex")).toLowerCase() === digest.sha256.toLowerCase()
+  }
+  return true
+}
+
+/**
+ * Download an artefact into the host cache, verifiably and atomically.
+ *
+ * - the digest is checked before the file is accepted, and an already-cached
+ *   file is re-checked too, so a corrupted or truncated cache entry is replaced
+ *   rather than unpacked;
+ * - the temporary name is unique per process and the final rename is atomic, so
+ *   two concurrent moat invocations cannot interleave into one `.part` file.
+ */
+export async function download(url: string, dest: string, digest: DownloadDigest = {}): Promise<void> {
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  if (fs.existsSync(dest) && fs.statSync(dest).size > 0) {
+    if (await verifyFile(dest, digest)) {
+      log.debug(`cached: ${dest}`)
+      return
     }
-  })
-  await pipeline(body, fs.createWriteStream(tmp))
-  fs.renameSync(tmp, dest)
+    log.warn(`cached file failed its digest check and will be re-downloaded: ${dest}`)
+    fs.rmSync(dest, { force: true })
+  }
+  const tmp = partPath(dest)
+  log.step(`downloading ${url}`)
+  try {
+    const response = await fetch(url)
+    if (!response.ok || !response.body) throw new Error(`download failed: ${response.status} ${url}`)
+    const total = Number(response.headers.get("content-length") ?? 0)
+    let seen = 0
+    let lastReport = 0
+    const body = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0])
+    body.on("data", (chunk: Buffer) => {
+      seen += chunk.length
+      const now = Date.now()
+      if (now - lastReport > 1500) {
+        lastReport = now
+        const pct = total ? ` (${((seen / total) * 100).toFixed(0)}%)` : ""
+        log.debug(`  ${(seen / 1024 / 1024).toFixed(1)} MiB${pct}`)
+      }
+    })
+    await pipeline(body, fs.createWriteStream(tmp))
+    if (!(await verifyFile(tmp, digest))) {
+      throw new Error(
+        `digest mismatch for ${url}: the download does not match the pinned ` +
+          `${digest.integrity ? "integrity" : "sha256"}`,
+      )
+    }
+    fs.renameSync(tmp, dest)
+  } catch (error) {
+    fs.rmSync(tmp, { force: true })
+    throw error
+  }
 }
 
 export async function ensureRootfsTarball(): Promise<string> {
   const dest = path.join(rootfsCachePath(), `alpine-${ALPINE_VERSION}-x86_64.tar.gz`)
-  await download(ALPINE_ROOTFS_URL, dest)
+  await download(ALPINE_ROOTFS_URL, dest, { sha256: ALPINE_ROOTFS_SHA256 })
   return dest
 }
 
@@ -66,9 +132,9 @@ export async function ensureOpencodeBinary(triple = SANDBOX_TRIPLE): Promise<str
   const pkg = `opencode-${triple}`
   const url = `${NPM_REGISTRY}/${pkg}/-/${pkg}-${OPENCODE_VERSION}.tgz`
   const tarball = path.join(path.dirname(dest), `${pkg}-${OPENCODE_VERSION}.tgz`)
-  await download(url, tarball)
+  await download(url, tarball, { integrity: OPENCODE_TARBALL_INTEGRITY })
   fs.mkdirSync(path.dirname(dest), { recursive: true })
-  const tmp = `${dest}.part`
+  const tmp = partPath(dest)
   // Stream the single member straight to disk: the binary is ~195 MiB and must
   // never pass through a utf8-decoding string buffer.
   const fd = fs.openSync(tmp, "w")
@@ -154,6 +220,20 @@ export async function provisionEnv(
   const useImageCache = opts.useImageCache !== false
 
   if (useImageCache && fs.existsSync(imageCache)) {
+    const sidecar = `${imageCache}.sha256`
+    let usable = true
+    if (fs.existsSync(sidecar)) {
+      const expected = fs.readFileSync(sidecar, "utf8").trim().split(/\s+/)[0] ?? ""
+      usable = expected.length > 0 && (await verifyFile(imageCache, { sha256: expected }))
+      if (!usable) {
+        log.warn(`cached image failed its recorded digest and will be rebuilt: ${path.basename(imageCache)}`)
+        fs.rmSync(imageCache, { force: true })
+        fs.rmSync(sidecar, { force: true })
+      }
+    } else {
+      log.debug(`cached image predates digest recording, using it as-is: ${path.basename(imageCache)}`)
+    }
+    if (usable) {
     log.step(`provisioning from the cached image ${path.basename(imageCache)}`)
     let t = Date.now()
     fs.rmSync(p.rootfs, { recursive: true, force: true })
@@ -162,8 +242,9 @@ export async function provisionEnv(
     mkdirsForRootfs(p.rootfs)
     fs.rmSync(path.join(p.rootfs, "var/log/moat"), { recursive: true, force: true })
     fs.mkdirSync(path.join(p.rootfs, "var/log/moat"), { recursive: true })
-    t = mark("extract cached image", t)
-    return { steps, totalMs: Date.now() - started, fromImageCache: true, imageCache, packages }
+      t = mark("extract cached image", t)
+      return { steps, totalMs: Date.now() - started, fromImageCache: true, imageCache, packages }
+    }
   }
 
   let t = Date.now()
@@ -331,12 +412,21 @@ function mkdirsForRootfs(rootfs: string): void {
 /** Freeze a provisioned rootfs into the host image cache. */
 async function saveImage(p: EnvPaths, dest: string): Promise<void> {
   fs.mkdirSync(path.dirname(dest), { recursive: true })
-  const tmp = `${dest}.part`
+  const tmp = partPath(dest)
   const args = ["-czf", tmp, "-C", p.rootfs]
   for (const exclude of IMAGE_EXCLUDES) args.push(`--exclude=${exclude}`)
   args.push(".")
-  await run("tar", args)
-  fs.renameSync(tmp, dest)
+  try {
+    await run("tar", args)
+    // Record what was written so a later boot can tell a complete cache entry
+    // from one that was corrupted or truncated after the fact.
+    const digest = await hashFile(tmp, "sha256", "hex")
+    fs.renameSync(tmp, dest)
+    fs.writeFileSync(`${dest}.sha256`, `${digest}  ${path.basename(dest)}\n`, { mode: 0o644 })
+  } catch (error) {
+    fs.rmSync(tmp, { force: true })
+    throw error
+  }
 }
 
 export async function ensurePackages(
@@ -517,10 +607,17 @@ export function baselineSnapshot(p: EnvPaths, provision: ProvisionResult): { byt
       /* fall through to a real copy */
     }
   }
-  const args = ["-czf", dest, "-C", p.rootfs]
+  // Atomic, like the other cache writes: a failed tar must not leave a partial
+  // baseline that looks like a restorable image.
+  const tmp = partPath(dest)
+  const args = ["-czf", tmp, "-C", p.rootfs]
   for (const exclude of SNAPSHOT_EXCLUDES) args.push(`--exclude=${exclude}`)
   args.push(".")
   const result = spawnSync("tar", args, { stdio: ["ignore", "ignore", "pipe"] })
-  if (result.status !== 0) throw new Error(`baseline snapshot failed: ${result.stderr?.toString() ?? ""}`)
+  if (result.status !== 0) {
+    fs.rmSync(tmp, { force: true })
+    throw new Error(`baseline snapshot failed: ${result.stderr?.toString() ?? ""}`)
+  }
+  fs.renameSync(tmp, dest)
   return { bytes: fs.statSync(dest).size, linked: false }
 }

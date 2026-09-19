@@ -40,6 +40,21 @@ export const PROVISION_PACKAGES = [
 export const NPM_REGISTRY = "https://registry.npmjs.org"
 
 /**
+ * Published digests for the two network artefacts moat downloads.
+ *
+ * - the Alpine minirootfs SHA-256 comes from the release directory's
+ *   `alpine-minirootfs-3.21.4-x86_64.tar.gz.sha256` file, fetched over TLS and
+ *   then matched against the tarball moat had already downloaded;
+ * - the opencode tarball's SRI comes from
+ *   `npm view opencode-linux-x64-musl@1.18.31 dist.integrity`, same check.
+ *
+ * A download that does not match is rejected rather than unpacked.
+ */
+export const ALPINE_ROOTFS_SHA256 = "e5f52d56d807a069ae0acf9015a85c43e057acab1197518171017b68b19bf445"
+export const OPENCODE_TARBALL_INTEGRITY =
+  "sha512-TxKfcJII53MZ17NSrJ0p51wx0dJtZrX8By60N5O5/M+eP0oO4jCXKIkdBpP/Bku44gm8QZkTNLBWpPc2OTJweg=="
+
+/**
  * Where the bundle is installed inside the sandbox rootfs.
  * No credentials ever live under here: the provider config references
  * `{env:MOAT_INJECTED_CREDENTIAL}`, which opencode substitutes at load time.

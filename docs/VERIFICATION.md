@@ -1392,8 +1392,19 @@ $ npm run test:unit
 ✔ suggestBranch prefers a branch whose tip the host cannot reach
 ✔ a check command with quotes, dollars and command substitution arrives intact
 ✔ a check that ignores SIGTERM is killed after the grace period
-ℹ tests 38
-ℹ pass 38
+✔ verifyFile accepts the published digests and rejects anything else
+✔ a verified download lands, and a corrupted cache is re-downloaded
+✔ a digest mismatch leaves neither the file nor a temp behind
+✔ two concurrent downloads of one artifact end with a complete file
+✔ snapshot names cannot leave the snapshot directory
+✔ snapshotEnv refuses an invalid name and writes no file
+✔ listSnapshots ignores a file whose name is not valid
+✔ restore replaces the rootfs and preserves the project copy
+✔ a failed restore leaves the rootfs and the project untouched
+✔ copy-in names the paths git cannot carry, and stays quiet about ignored ones
+✔ fetchBranch points a non-git project at moat apply
+ℹ tests 49
+ℹ pass 49
 ℹ fail 0
 ```
 
