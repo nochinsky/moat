@@ -1935,6 +1935,48 @@ Ephemeral boots (`moat exec`, `moat doctor`, `moat shell`, the checks runner)
 deliberately take no marker: they are meant to run alongside a boot (AGENTS.md, on
 unique boot scripts), and serialising them would be a worse trade.
 
+### S. Agent text cannot drive the terminal it is printed on
+
+Everything the sandbox emits — the answer, the reasoning, commit subjects, branch
+names, change paths, session titles, the boot log — is *terminal input* as much as it is
+data, and a terminal acts on escape sequences: OSC 0 retitles the window, OSC 52
+writes the clipboard where the terminal allows it, CSI 2J clears the screen, and a
+carriage return overwrites the row. Tool output and tool titles were already
+stripped (`stripAnsi`), which is how the omission was found: the model's own words
+and most of the sandbox's metadata were not.
+
+Measured through a real pty, with a distinct sequence in the answer, in a commit
+subject and in a file name (extras section V):
+
+```
+›   78d81ce agent: subject  here          # the subject's OSC is gone, its words are not
+›   uncommitted (not fetched by moat fetch):
+›     new file: esc-file-.txt             # same for a file name
+--- checks ---
+  pass  the answer's window-title sequence never reached the terminal
+  pass  the answer's erase-display sequence never reached the terminal
+  pass  a commit subject from the sandbox is stripped
+  pass  a changed file name from the sandbox is stripped
+7/7 checks passed
+```
+
+And the sandbox's own log, which the agent can write to at will:
+
+```
+$ moat logs sandbox --tail 3
+LOG-INJECT  end
+sandbox log: the agent's own escape bytes are stripped, its text is not
+```
+
+Four of the seven pty checks fail with `stripAnsi` made a no-op, and the log check
+fails with the one call in `rootfsLogTail` reverted. `test/unit/terminal-text.test.ts`
+covers the helper without a terminal: every sequence a terminal would act on, and the
+stream case — a sequence split across two deltas cannot be reassembled, because
+`stripAnsi` removes every ESC byte either as a sequence or as a control character, so
+neither half can begin one. An `AnswerRenderer` case asserts the same at the
+renderer, with colour off, so every escape in that output would have come from the
+model.
+
 ---
 
 ## Requirement-by-requirement

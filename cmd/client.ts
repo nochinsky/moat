@@ -1,6 +1,7 @@
 import type { EnvState } from "../sandbox/state.ts"
 import * as log from "../lib/log.ts"
 import { sleep } from "../lib/shell.ts"
+import { stripAnsi } from "./display.ts"
 
 /**
  * Host-side attachment to the opencode server running *inside* the sandbox.
@@ -311,7 +312,8 @@ async function driveStreaming(
         if (partID && partKind.get(partID) !== "text") continue
         text += delta
         midText = true
-        input.onDelta?.(delta)
+        // The terminal is the destination; the transcript keeps the raw bytes.
+        input.onDelta?.(stripAnsi(delta))
         continue
       }
 
@@ -384,7 +386,8 @@ async function driveBlocking(
   const response = await client.session.prompt({ path: { id: sessionID }, body: promptBody(input) })
   if (response.error) throw new Error(`prompt failed: ${JSON.stringify(response.error)}`)
   const result = await collect(client, sessionID, errors)
-  if (result.text) input.onDelta?.(result.text.endsWith("\n") ? result.text : `${result.text}\n`)
+  const printable = stripAnsi(result.text)
+  if (printable) input.onDelta?.(printable.endsWith("\n") ? printable : `${printable}\n`)
   return result
 }
 

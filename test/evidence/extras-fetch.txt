@@ -9,11 +9,11 @@
   to collect them:  moat fetch --commit-worktree   (commits them in the sandbox, then fetches)
   or ask the agent to commit inside the box
 
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-18-34:refs/moat/moat-session-2026-09-19-18-34
-✓ fetched moat-session-2026-09-19-18-34 -> refs/moat/moat-session-2026-09-19-18-34 (4f05005db8db)
-  1 commit(s) reachable, HEAD 4f05005db8db -> 4f05005db8db
-    4f05005db8db  initial demo project
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-18-58:refs/moat/moat-session-2026-09-19-18-58
+✓ fetched moat-session-2026-09-19-18-58 -> refs/moat/moat-session-2026-09-19-18-58 (0333f0c9a7e2)
+  1 commit(s) reachable, HEAD 0333f0c9a7e2 -> 0333f0c9a7e2
+    0333f0c9a7e2  initial demo project
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-19-18-34
-  apply with:    moat apply moat-session-2026-09-19-18-34  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-19-18-58
+  apply with:    moat apply moat-session-2026-09-19-18-58  (or --checkout)

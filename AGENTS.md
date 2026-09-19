@@ -241,6 +241,21 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   the dup and never the path. The lines before the dup still go to
   `logs/sandbox.log` outside the box, which is the fallback when a boot dies
   before it gets that far.
+* Text from the sandbox is untrusted **as terminal input**, not only as data. The
+  answer, the reasoning, commit subjects, branch names, change paths, session titles
+  and the boot log all come from inside the box, and a terminal acts on the escape
+  sequences in them: OSC 0 retitles the window, OSC 52 writes the clipboard where
+  the terminal allows it, CSI 2J clears the screen, and a carriage return overwrites
+  the row — enough to repaint the transcript the user is reading, which is exactly
+  what a prompt injection wants. Tool output and tool titles were already stripped
+  (`stripAnsi` in `cmd/display.ts`); the model's own words and most of the sandbox
+  metadata were not. Every such site now strips at the print boundary, and
+  `AnswerRenderer` strips per delta — safe against a sequence split across two
+  deltas, because `stripAnsi` removes every ESC byte (as a sequence *or* as a
+  control character), so nothing can be reassembled on screen. Do not print a string
+  that came out of the sandbox without it: paths, refs and subjects included.
+  `test/unit/terminal-text.test.ts`, `test/repl-escapes.py` and extras section V hold
+  it there (4 of the 7 pty checks fail with `stripAnsi` made a no-op).
 * Snapshot extraction needs no guard of its own, and that was measured rather than
   assumed: GNU tar refuses to write through a symlink its own archive created
   (`Cannot open: Not a directory`, target untouched), and `restoreEnv` treats a
