@@ -205,3 +205,31 @@ test("a new symlink the agent created is applied as a symlink", (t) => {
   })()
 })
 
+test("a second plan does not invalidate the first plan's merge inputs", async (t) => {
+  // The bug: merge temps were named by path alone (moat-merge-<hash>.tmp) and
+  // every planApply() deleted every temp it could find. So a plan made while
+  // another apply was in flight lost its merged inputs under it — applyPlan then
+  // skipped the change silently — and two concurrent plans shared one temp file,
+  // the same shape as the fixed state.json.tmp.
+  const f = fixture({ "shared.txt": "base\n" })
+  cleanup(t, f)
+  fs.writeFileSync(path.join(f.work, "shared.txt"), "base\nagent\n")
+  fs.writeFileSync(path.join(f.host, "shared.txt"), "user\nbase\n")
+
+  const first = await planApply(f.p)
+  const firstMerge = first.changes.find((c) => c.kind === "merge")
+  assert.ok(firstMerge?.mergedFile, "the fixture must produce a merge")
+
+  // A second plan runs while the first is still waiting to be applied.
+  const second = await planApply(f.p)
+  const secondMerge = second.changes.find((c) => c.kind === "merge")
+  assert.ok(secondMerge?.mergedFile, "the second plan must merge too")
+  assert.equal(fs.existsSync(firstMerge!.mergedFile!), true, "the second plan deleted the first plan's input")
+  assert.notEqual(secondMerge!.mergedFile, firstMerge!.mergedFile, "temp names must be unique per call")
+
+  const result = await applyPlan(f.p, first)
+  assert.equal(result.skipped.includes("shared.txt"), false, "the merge must still be applicable")
+  const merged = fs.readFileSync(path.join(f.host, "shared.txt"), "utf8")
+  assert.match(merged, /agent/)
+  assert.match(merged, /user/)
+})

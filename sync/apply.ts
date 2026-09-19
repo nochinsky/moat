@@ -2,7 +2,7 @@ import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 
-import type { EnvPaths } from "../lib/paths.ts"
+import { partPath, type EnvPaths } from "../lib/paths.ts"
 import { run } from "../lib/shell.ts"
 import { SANITIZED_GIT_ENV, sandboxGit, sandboxGitRaw } from "../lib/git.ts"
 
@@ -120,6 +120,20 @@ function sameContent(a: Entry, b: Entry): boolean {
   return a.hash === b.hash
 }
 
+/** How long a plan's merge temps may live before they are treated as abandoned. */
+const MERGE_TEMP_TTL_MS = 60 * 60 * 1000
+
+/**
+ * Reap merge temps nobody can still be using.
+ *
+ * This used to delete every `moat-merge-*`/`moat-theirs-*` file it found, and the
+ * names were derived from the path alone, so a plan running while another apply was
+ * in flight had its merged inputs deleted under it: `applyPlan` then skipped the
+ * change, silently, and two concurrent plans wrote one temp file. Names are unique
+ * per call now (`partPath`), and only files older than an hour are reaped — a live
+ * invocation's inputs are younger than that by definition, and a crashed one's are
+ * eventually cleaned up instead of growing forever.
+ */
 function cleanupMergeTemps(p: EnvPaths): void {
   const dir = path.join(p.dir, "runtime")
   let names: string[] = []
@@ -128,10 +142,18 @@ function cleanupMergeTemps(p: EnvPaths): void {
   } catch {
     return
   }
+  const cutoff = Date.now() - MERGE_TEMP_TTL_MS
   for (const name of names) {
-    if (name.startsWith("moat-merge-") || name.startsWith("moat-theirs-") || name === "merged.tmp") {
-      fs.rmSync(path.join(dir, name), { force: true })
+    if (!name.startsWith("moat-merge-") && !name.startsWith("moat-theirs-") && name !== "merged.tmp") continue
+    const full = path.join(dir, name)
+    let mtime = 0
+    try {
+      mtime = fs.statSync(full).mtimeMs
+    } catch {
+      continue
     }
+    if (mtime > cutoff) continue
+    fs.rmSync(full, { force: true })
   }
 }
 
@@ -252,8 +274,10 @@ async function attemptMerge(
   const dir = path.join(p.dir, "runtime")
   fs.mkdirSync(dir, { recursive: true })
   const key = sha(changePath).slice(0, 16)
-  const mine = path.join(dir, "moat-merge-" + key + ".tmp")
-  const theirs = path.join(dir, "moat-theirs-" + key + ".tmp")
+  // Unique per call, not per path: two applies of one environment can be in flight
+  // (a second terminal, a script), and they must not share a merge target.
+  const mine = partPath(path.join(dir, "moat-merge-" + key))
+  const theirs = partPath(path.join(dir, "moat-theirs-" + key))
   fs.copyFileSync(hostFile, mine)
   fs.copyFileSync(sandboxFile, theirs)
   const merged = await run("git", ["merge-file", mine, baseFile, theirs], {

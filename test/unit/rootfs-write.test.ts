@@ -12,6 +12,7 @@ import {
   ensureRootfsDir,
   openRootfsFileForAppend,
   readRootfsFile,
+  readRootfsFileHead,
   readRootfsFileTail,
   writeRootfsFile,
 } from "../../lib/rootfs-fs.ts"
@@ -153,6 +154,9 @@ test("an agent-sized file reads as nothing, and a tail read stays bounded", (t) 
   const tail = readRootfsFileTail(rootfs, "/var/log/moat/boot.log", 16)
   assert.equal(tail?.length, 16)
   assert.equal(tail?.endsWith("THE-END"), true)
+  const head = readRootfsFileHead(rootfs, "/var/log/moat/boot.log", 16)
+  assert.equal(head, "a".repeat(16))
+  assert.equal(readRootfsFileHead(rootfs, "/var/log/moat/boot.log", 100_000)?.endsWith("THE-END"), true)
   assert.equal(readRootfsFileTail(rootfs, "/var/log/moat/boot.log", 100_000)?.endsWith("THE-END"), true)
 
   // A symlink is refused by both readers, cap or no cap.

@@ -104,34 +104,54 @@ export function defaultAllowHosts(providerHost?: string): string[] {
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/
 
+export type AllowlistResolution = {
+  addresses: string[]
+  /** Hosts that resolved to nothing. The box will not reach them. */
+  unresolved: string[]
+}
+
 /**
- * Turn hostnames into the addresses the ruleset allows.
+ * Turn hostnames into the addresses the ruleset allows, and say which ones
+ * failed.
  *
- * Resolution happens on the host at boot. An address the host cannot resolve is
- * skipped rather than failing the boot; the doctor's allowed-target probe is
- * what reports a provider that ended up unreachable.
+ * Resolution happens on the host at boot. A host that does not resolve is
+ * dropped from the ruleset rather than failing the boot — but dropping it
+ * silently is how a box ends up filtered with an allowlist that cannot reach the
+ * provider, booting happily and failing only when the agent calls the model.
+ * Callers decide what an unresolved host costs; this reports it.
  */
-export async function resolveAllowlist(
+export async function resolveAllowlistDetailed(
   hosts: string[],
   lookup?: (host: string) => Promise<string[]>,
-): Promise<string[]> {
+): Promise<AllowlistResolution> {
   const resolve =
     lookup ??
     (async (host: string) =>
       (await dns.promises.lookup(host, { all: true, family: 4 })).map((entry) => entry.address))
   const ips = new Set<string>()
+  const unresolved: string[] = []
   for (const host of hosts) {
     if (IPV4.test(host)) {
       ips.add(host)
       continue
     }
     try {
-      for (const ip of await resolve(host)) ips.add(ip)
+      const addresses = await resolve(host)
+      if (addresses.length === 0) unresolved.push(host)
+      for (const ip of addresses) ips.add(ip)
     } catch {
-      /* unresolvable: the doctor check reports what that costs */
+      unresolved.push(host)
     }
   }
-  return [...ips].sort()
+  return { addresses: [...ips].sort(), unresolved }
+}
+
+/** The addresses only. Kept for callers that do not report the failures. */
+export async function resolveAllowlist(
+  hosts: string[],
+  lookup?: (host: string) => Promise<string[]>,
+): Promise<string[]> {
+  return (await resolveAllowlistDetailed(hosts, lookup)).addresses
 }
 
 /**
@@ -172,11 +192,14 @@ export function renderNftRules(ips: string[], dnsIp: string = SLIRP_DNS): string
  * inside the sandbox. Resolution happens on every call, so a fresh boot picks
  * up addresses that have rotated since the environment was created.
  */
-export async function ensureEgressPolicy(rootfs: string, hostnames: string[]): Promise<string> {
-  const ips = await resolveAllowlist(hostnames)
+export async function ensureEgressPolicy(
+  rootfs: string,
+  hostnames: string[],
+): Promise<{ path: string; unresolved: string[] }> {
+  const { addresses, unresolved } = await resolveAllowlistDetailed(hostnames)
   ensureRootfsDir(rootfs, "/.moat")
-  writeRootfsFile(rootfs, "/.moat/egress.nft", renderNftRules(ips), 0o644)
-  return "/.moat/egress.nft"
+  writeRootfsFile(rootfs, "/.moat/egress.nft", renderNftRules(addresses), 0o644)
+  return { path: "/.moat/egress.nft", unresolved }
 }
 
 export type EgressRuntime = {
@@ -184,6 +207,8 @@ export type EgressRuntime = {
   slirpBinary?: string
   /** Path inside the sandbox of the ruleset the boot script must apply. */
   egressRules?: string
+  /** Allowlist hosts that resolved to nothing, so the caller can say so. */
+  unresolved?: string[]
 }
 
 /**
@@ -197,8 +222,8 @@ export async function runtimeForEgress(
   if (egress === "open") return { egress }
   const slirpBinary = await ensureSlirp4netns()
   if (egress !== "filtered" || !opts.rootfs) return { egress, slirpBinary }
-  const egressRules = await ensureEgressPolicy(opts.rootfs, opts.allowHosts ?? [])
-  return { egress, slirpBinary, egressRules }
+  const policy = await ensureEgressPolicy(opts.rootfs, opts.allowHosts ?? [])
+  return { egress, slirpBinary, egressRules: policy.path, unresolved: policy.unresolved }
 }
 
 /**

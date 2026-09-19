@@ -34,7 +34,7 @@ import {
 } from "../sandbox/egress.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
-import { readRootfsFile, readRootfsFileTail } from "../lib/rootfs-fs.ts"
+import { readRootfsFile, readRootfsFileHead, readRootfsFileTail } from "../lib/rootfs-fs.ts"
 import {
   credentialExpired,
   envExists,
@@ -275,13 +275,43 @@ async function ensureFilterTool(paths: EnvPaths): Promise<void> {
   if (!fs.existsSync(binary)) log.fail("nftables could not be installed, so this environment cannot boot filtered")
 }
 
+/**
+ * Say what the allowlist could not resolve.
+ *
+ * A host the host resolver cannot reach is dropped from the ruleset, and a box
+ * that boots anyway looks fine until the agent calls the model. The provider is
+ * fatal for a filtered boot; anything else is a warning, because the box still
+ * works without an extra registry.
+ */
+function reportUnresolved(
+  unresolved: string[] | undefined,
+  required: string | undefined,
+  fatal: boolean,
+): void {
+  if (!unresolved || unresolved.length === 0) return
+  const missingRequired = required !== undefined && unresolved.includes(required)
+  if (missingRequired) {
+    const message =
+      `could not resolve ${required}, so a filtered sandbox would not reach the model. ` +
+      "Check DNS and try again, or pass --egress open to boot without the allowlist."
+    if (fatal) log.fail(message)
+    else log.warn(message)
+  }
+  const others = unresolved.filter((host) => host !== required)
+  if (others.length > 0) {
+    log.warn(`the egress allowlist could not resolve: ${others.join(", ")}; the box will not reach them`)
+  }
+}
+
 async function egressRuntime(state: EnvState, paths: EnvPaths): Promise<EgressRuntime> {
   if (state.egress === "filtered") await ensureFilterTool(paths)
-  const hosts = [
-    ...defaultAllowHosts(providerHost(state.providerBaseUrl ?? DEEPSEEK.baseUrl)),
-    ...(state.egressAllow ?? []),
-  ]
-  return await runtimeForEgress(state.egress, { rootfs: paths.rootfs, allowHosts: hosts })
+  const provider = providerHost(state.providerBaseUrl ?? DEEPSEEK.baseUrl)
+  const hosts = [...defaultAllowHosts(provider), ...(state.egressAllow ?? [])]
+  const runtime = await runtimeForEgress(state.egress, { rootfs: paths.rootfs, allowHosts: hosts })
+  // Ephemeral boots warn rather than fail: `moat exec` may be exactly how the
+  // user is diagnosing the box, and doctor's own check reports it as a failure.
+  reportUnresolved(runtime.unresolved, provider, false)
+  return runtime
 }
 
 function requireRunning(p: EnvPaths): { state: EnvState; password: string } {
@@ -937,10 +967,12 @@ ${command}
 
   report.egress = egress
   if (egress === "filtered") await ensureFilterTool(paths)
+  const providerName = providerHost(baseUrl)
   const egressConfig = await runtimeForEgress(egress, {
     rootfs: paths.rootfs,
-    allowHosts: [...defaultAllowHosts(providerHost(baseUrl)), ...egressAllow],
+    allowHosts: [...defaultAllowHosts(providerName), ...egressAllow],
   })
+  reportUnresolved(egressConfig.unresolved, providerName, egress === "filtered")
   const bootStart = Date.now()
   const sandbox = await startSandbox(paths, entry, sandboxEnvVars, {
     egress,
@@ -2175,7 +2207,7 @@ async function cmdTools(argv: string[]): Promise<number> {
     return 0
   }
 
-  log.info(`${log.bold("bundle")} (from the plugin's config-time record)`)
+  log.info(`${log.bold("bundle")} (${bundleReport?.source ?? "not found"})`)
   log.info(`  curated    ${payload.curated.join(", ")}`)
   log.info(`  excluded   ${payload.excluded.join(", ")}`)
   log.info(`  omissions confirmed by opencode: ${(bundleReport?.toolOmissions ?? []).join(", ") || "(plugin record missing)"}`)
@@ -2220,7 +2252,6 @@ function readBundleReport(paths: EnvPaths): {
   permission?: Record<string, string>
   source?: string
 } | null {
-  const pluginReport = path.join(paths.auditDir, "bundle.json")
   const installed = readRootfsFile(paths.rootfs, "/usr/local/share/moat/opencode.json", { maxBytes: 1024 * 1024 })
   if (installed === null) return null
   let declared: Record<string, boolean> = {}
@@ -2232,18 +2263,46 @@ function readBundleReport(paths: EnvPaths): {
   const omissions = Object.entries(declared)
     .filter(([, enabled]) => enabled === false)
     .map(([name]) => name)
-  const base = {
+  const report: NonNullable<ReturnType<typeof readBundleReport>> = {
     excludedFromBuiltins: omissions,
     toolOmissions: omissions,
     source: "installed bundle config",
   }
-  if (!fs.existsSync(pluginReport)) return base
-  try {
-    const live = JSON.parse(fs.readFileSync(pluginReport, "utf8")) as Record<string, unknown>
-    return { ...base, ...live, source: `${installed} + ${pluginReport}` } as ReturnType<typeof readBundleReport>
-  } catch {
-    return base
+
+  // What the plugin loaded. Read through the guard: this file is inside the
+  // agent-writable rootfs like every other record here.
+  const bundleJson = readRootfsFile(paths.rootfs, "/var/log/moat/bundle.json", { maxBytes: 1024 * 1024 })
+  if (bundleJson !== null) {
+    try {
+      Object.assign(report, JSON.parse(bundleJson) as Record<string, unknown>)
+      report.source = "installed bundle config + plugin load record"
+    } catch {
+      /* keep the installed config */
+    }
   }
+
+  // What opencode actually handed the plugin. This is the only record that shows
+  // the effective config agreed with moat's declaration, and it is the first line
+  // of an audit log that grows with every tool call, so read the head.
+  const audit = readRootfsFileHead(paths.rootfs, "/var/log/moat/tools.jsonl", 64 * 1024)
+  const config =
+    audit
+      ?.split("\n")
+      .map((line) => {
+        try {
+          return JSON.parse(line) as Record<string, unknown>
+        } catch {
+          return null
+        }
+      })
+      .find((row) => row?.phase === "config") ?? null
+  if (config) {
+    report.toolOmissions = (config.toolOmissions as string[] | undefined) ?? report.toolOmissions
+    report.curationGaps = (config.curationGaps as string[] | undefined) ?? []
+    report.permission = (config.permission as Record<string, string> | undefined) ?? undefined
+    report.source = `${report.source ?? "installed bundle config"} + plugin config record`
+  }
+  return report
 }
 
 // ---------------------------------------------------------------------------

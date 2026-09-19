@@ -15,6 +15,7 @@ import {
   pruneDeadSockets,
   renderNftRules,
   resolveAllowlist,
+  resolveAllowlistDetailed,
   runtimeForEgress,
   slirpArgs,
   socketState,
@@ -44,6 +45,21 @@ test("resolution keeps IP literals, expands names, and skips unresolvable hosts"
     })
     assert.deepEqual(ips, ["1.2.3.4", "5.6.7.8", "9.10.11.12"])
   })()
+})
+
+test("hosts that resolve to nothing are reported, not just dropped", async () => {
+  // Dropping them silently is how a filtered box boots with an allowlist that
+  // cannot reach the provider: it looks healthy until the agent calls the model.
+  const result = await resolveAllowlistDetailed(
+    ["1.2.3.4", "ok.example", "missing.example", "empty.example"],
+    async (host) => {
+      if (host === "ok.example") return ["5.6.7.8"]
+      if (host === "empty.example") return []
+      throw new Error("ENOTFOUND")
+    },
+  )
+  assert.deepEqual(result.addresses, ["1.2.3.4", "5.6.7.8"])
+  assert.deepEqual(result.unresolved, ["missing.example", "empty.example"])
 })
 
 test("the ruleset drops by default and allows only DNS and the allowlist", () => {

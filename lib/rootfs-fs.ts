@@ -173,6 +173,27 @@ export function readRootfsFileTail(rootfs: string, target: string, maxBytes: num
   })
 }
 
+/**
+ * The first `maxBytes` of a file inside the rootfs.
+ *
+ * The mirror of the tail reader, for records written at the *start* of a file that
+ * then grows without bound: the plugin's config record is the first line of the
+ * audit log, which gains a line per tool call.
+ */
+export function readRootfsFileHead(rootfs: string, target: string, maxBytes: number): string | null {
+  return read(rootfs, target, (size, fd) => {
+    const length = Math.min(size, maxBytes)
+    const buffer = Buffer.allocUnsafe(length)
+    let position = 0
+    while (position < length) {
+      const chunk = fs.readSync(fd, buffer, position, length - position, position)
+      if (chunk <= 0) break
+      position += chunk
+    }
+    return buffer.subarray(0, position).toString("utf8")
+  })
+}
+
 /** The shared open-verify-read dance behind both readers. */
 function read(rootfs: string, target: string, consume: (size: number, fd: number) => string | null): string | null {
   let full: string
