@@ -114,8 +114,8 @@ capture status-after-ttl $MOAT status
 echo "" | tee -a "$EVIDENCE/extras.txt"
 echo "--- sandbox log: the expiry notice ---" | tee -a "$EVIDENCE/extras.txt"
 {
-  echo "\$ grep -iE 'expired|stopping agent' \$HOME/.moat/envs/*/logs/sandbox.log"
-  grep -iE "expired|stopping agent|agent exited" "$HOME"/.moat/envs/*/logs/sandbox.log | tail -4
+  echo "\$ grep -iE 'expired|stopping agent' \$HOME/.moat/envs/*/rootfs/var/log/moat/boot.log"
+  grep -iE "expired|stopping agent|agent exited" "$HOME"/.moat/envs/*/rootfs/var/log/moat/boot.log | tail -4
   echo ""
   echo "\$ moat status  -> status line above shows the box is stopped, which it did to itself"
 } | scrub | tee -a "$EVIDENCE/extras.txt"

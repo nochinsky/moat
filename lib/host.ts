@@ -108,7 +108,7 @@ export async function probeHost(): Promise<Doctor> {
   notes.push(
     chown
       ? "mknod permitted in userns: /dev is built entirely inside the sandbox"
-      : "mknod denied in userns (kernel policy): /dev nodes are bind-mounted read-only from the host's device nodes. No host *data* is mounted.",
+      : "mknod denied in userns (kernel policy): /dev nodes are bind-mounted from the host's device nodes (rw: a device is an interface, not a file). No host *data* is mounted.",
   )
 
   return { linux, wsl, virt, userns, mountns, pidns, kvm, unshare, chroot, mount, chown, problems, notes }

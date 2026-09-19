@@ -18,6 +18,8 @@ jobs:
       - run: npm install --no-audit --no-fund
       - name: typecheck
         run: npm run typecheck
+      - name: unit tests (no sandbox required, so these run in CI)
+        run: npm run test:unit
       - name: build (plain JS into dist/, for consumers who want it)
         run: npm run build
       - name: CLI smoke test

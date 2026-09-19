@@ -6,6 +6,7 @@ import type { EnvPaths } from "../lib/paths.ts"
 import { SANDBOX_WORKDIR } from "../lib/pins.ts"
 import { DEEPSEEK } from "../lib/provider.ts"
 import { run } from "../lib/shell.ts"
+import { sandboxGit } from "../lib/git.ts"
 import { readState, writeState, type EnvState } from "../sandbox/state.ts"
 import { SANITIZED_GIT_ENV } from "../sync/copyin.ts"
 import { fetchBranch, listSandboxBranches, sandboxWorktreeChanges, suggestBranch } from "../sync/copyout.ts"
@@ -724,10 +725,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
 
         const uncommitted = await sandboxWorktreeChanges(options.paths)
         if (uncommitted.length > 0) {
-          const stat = await run("git", ["-C", options.paths.work, "diff", "--stat", "HEAD"], {
-            env: SANITIZED_GIT_ENV,
-            allowFailure: true,
-          })
+          const stat = await sandboxGit(options.paths.work, ["diff", "--stat", "HEAD"], { allowFailure: true })
           const lines = [`uncommitted (not fetched by moat fetch):`]
           if (stat.stdout.trim()) lines.push(stat.stdout.trimEnd())
           for (const entry of uncommitted.filter((l) => l.startsWith("??"))) {
@@ -998,7 +996,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
       run: async () => {
         const { spawn } = await import("node:child_process")
         const { writeInnerScript, writeOuterScript, unshareArgs, sandboxEnv } = await import("../sandbox/launcher.ts")
-        writeInnerScript(
+        const inner = writeInnerScript(
           options.paths,
           `#!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -1008,7 +1006,7 @@ echo "[moat] inside the sandbox. ctrl-d returns to the moat prompt."
 exec /bin/bash -l
 `,
         )
-        const boot = writeOuterScript(options.paths)
+        const boot = writeOuterScript(options.paths, { innerScript: inner })
         rl.pause()
         await new Promise<void>((resolve) => {
           const child = spawn("unshare", unshareArgs(boot), { stdio: "inherit", env: sandboxEnv() })
@@ -1023,6 +1021,7 @@ exec /bin/bash -l
       help: "merge the agent's work into your directory (asks first)",
       run: async () => {
         const plan = await planApply(options.paths)
+        if (plan.baselineProblem) return say(plan.baselineProblem)
         if (plan.empty) return say("nothing to apply: your directory already matches the sandbox")
         say("")
         for (const line of describePlan(plan)) say(`  ${line}`)

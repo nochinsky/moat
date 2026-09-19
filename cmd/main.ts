@@ -16,6 +16,7 @@ import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from ".
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
 import { runChecks, summarise } from "../sandbox/checks.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
+import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import {
   envExists,
   initialState,
@@ -37,9 +38,9 @@ import {
   snapshotEnv,
 } from "../sandbox/rootfs.ts"
 import {
-  isRunning,
   runInSandbox,
   sandboxEnv,
+  sandboxPidStatus,
   startSandbox,
   stopSandbox,
   unshareArgs,
@@ -181,10 +182,22 @@ function requireState(p: EnvPaths): EnvState {
   return state
 }
 
+/**
+ * Is the sandbox recorded in state actually alive *and* ours?
+ *
+ * `isRunning` only proves that some process has that pid. `sandboxPidStatus`
+ * matches the recorded start time (or, for older environments, the environment
+ * id in the command line), so a reused pid is reported as stale instead of
+ * signalled.
+ */
+function sandboxAlive(state: EnvState, paths: EnvPaths): boolean {
+  return sandboxPidStatus(state.pid, { startTime: state.pidStart, envId: paths.id }) === "ours"
+}
+
 function requireRunning(p: EnvPaths): { state: EnvState; password: string } {
   const state = requireState(p)
-  if (!isRunning(state.pid)) {
-    writeState(p, { ...state, status: "stopped", pid: null })
+  if (!sandboxAlive(state, p)) {
+    writeState(p, { ...state, status: "stopped", pid: null, pidStart: null })
     log.fail(`the sandbox for ${p.projectDir} is not running. Run \`moat up\` first.`)
   }
   const password = readPassword(p)
@@ -392,6 +405,31 @@ async function cmdUp(argv: string[]): Promise<number> {
     )
   }
 
+  // `--fresh` rebuilds the rootfs, and the rootfs contains /work: the agent's
+  // branch and any uncommitted work. That is destructive, so it is gated twice:
+  // never while a sandbox is live, and never without --yes when the box holds
+  // work the host cannot reach. Before this, --fresh deleted /work and forgot a
+  // running sandbox's pid, orphaning it, without saying a word.
+  if (fresh && envExists(paths)) {
+    if (state && sandboxAlive(state, paths)) {
+      log.fail(
+        `a sandbox for this project is still running (pid ${state.pid}).\n` +
+          "  run \`moat down\` first: --fresh replaces the rootfs it is using.",
+      )
+    }
+    if (!flag<boolean>(p, "yes") && resolveGitDir(paths.work)) {
+      const unfetched = await countUnfetched(paths)
+      const dirty = await sandboxWorktreeChanges(paths)
+      if (unfetched > 0 || dirty.length > 0) {
+        log.fail(
+          "--fresh deletes the sandbox's working tree, and it holds work the host cannot reach:\n" +
+            `  ${unfetched} commit(s) not fetched, ${dirty.length} uncommitted file(s)\n` +
+            "  fetch it first with \`moat fetch\`, or pass --yes to delete it.",
+        )
+      }
+    }
+  }
+
   let profileRequest = (flag<string>(p, "profile") ?? process.env.MOAT_PROFILES ?? "").trim()
   if (!profileRequest && !state?.profiles?.length && !flag<boolean>(p, "no-detect")) {
     const detected = detectProfiles(paths.projectDir)
@@ -427,8 +465,15 @@ async function cmdUp(argv: string[]): Promise<number> {
     log.success(`image provisioned in ${ms(provision.totalMs)} (${provision.steps.map((s) => `${s.name} ${ms(s.ms)}`).join(", ")})`)
   }
 
+  // The recorded pid is only meaningful if it is still the process moat started.
+  if (state!.pid && !sandboxAlive(state!, paths)) {
+    log.warn(`the recorded sandbox pid ${state!.pid} is not moat's any more; ignoring it`)
+    state = { ...state!, status: "stopped", pid: null, pidStart: null }
+    writeState(paths, state)
+  }
+
   // A stopped sandbox may still be draining; make sure the recorded pid is gone.
-  if (state!.pid && isRunning(state!.pid)) {
+  if (state!.pid && sandboxAlive(state!, paths)) {
     log.info(`sandbox already running (pid ${state!.pid}) on port ${state!.port}`)
     const password = readPassword(paths)!
     const ready = await waitForServer(state!, password, { timeoutMs: 15000 })
@@ -456,7 +501,7 @@ async function cmdUp(argv: string[]): Promise<number> {
       return 0
     }
     log.warn("recorded sandbox pid is alive but the server is not answering; restarting it")
-    await stopSandbox(state!.pid)
+    await stopSandbox(state!.pid, { startTime: state!.pidStart, envId: paths.id })
   }
 
   // Profiles are additive: adding one to an existing environment installs only
@@ -631,18 +676,10 @@ ${command}
   const branch = sessionBranch()
   let baseBranch: string | null = null
   if (fs.existsSync(path.join(paths.work, ".git"))) {
-    baseBranch =
-      (
-        await run("git", ["-C", paths.work, "rev-parse", "--abbrev-ref", "HEAD"], {
-          env: SANITIZED_GIT_ENV,
-          allowFailure: true,
-        })
-      ).stdout.trim() || null
-    const created = await run(
-      "git",
-      ["-C", paths.work, "checkout", "-q", "-B", branch],
-      { env: SANITIZED_GIT_ENV, allowFailure: true },
-    )
+    // The sandbox repository is agent-controlled: its config, hooks and
+    // attributes are neutralized for the duration of every host-side git call.
+    baseBranch = (await sandboxGit(paths.work, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFailure: true })).stdout.trim() || null
+    const created = await sandboxGit(paths.work, ["checkout", "-q", "-B", branch], { allowFailure: true })
     if (created.code === 0) log.info(`agent branch: ${branch}`)
     else log.warn(`could not create ${branch} inside the sandbox; the agent will use the current branch`)
   }
@@ -716,6 +753,7 @@ ${command}
     ...(state as EnvState),
     status: "running",
     pid: sandbox.pid,
+    pidStart: sandbox.startTime,
     port,
     model: resolvedModel.model,
     providerBaseUrl: baseUrl,
@@ -739,9 +777,9 @@ ${command}
   const ready = await waitForServer(state, password, { timeoutMs: flag<number>(p, "timeout") ?? 90000 })
   const bootMs = Date.now() - bootStart
   if (!ready.ok) {
-    const tail = tailFile(path.join(paths.logs, "sandbox.log"), 40)
-    await stopSandbox(sandbox.pid)
-    writeState(paths, { ...state, status: "stopped", pid: null })
+    const tail = sandboxLogTail(paths, 40)
+    await stopSandbox(sandbox.pid, { startTime: sandbox.startTime, envId: paths.id })
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
     log.fail(`opencode serve did not come up (${ready.detail}).\n--- sandbox log ---\n${tail}`)
   }
 
@@ -857,11 +895,9 @@ async function countUnfetched(paths: EnvPaths): Promise<number> {
     allowFailure: true,
   })
   if (base.code !== 0) return 0
-  const count = await run(
-    "git",
-    ["-C", paths.work, "rev-list", "--count", `${base.stdout.trim()}..${head}`],
-    { env: SANITIZED_GIT_ENV, allowFailure: true },
-  )
+  const count = await sandboxGit(paths.work, ["rev-list", "--count", `${base.stdout.trim()}..${head}`], {
+    allowFailure: true,
+  })
   return Number.parseInt(count.stdout.trim(), 10) || 0
 }
 
@@ -1194,7 +1230,7 @@ async function cmdTake(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   requireState(paths)
-  if (!isGitRepo(paths.projectDir)) log.fail(`${paths.projectDir} is not a git repository; nothing to take into`)
+  if (!(await isGitRepo(paths.projectDir))) log.fail(`${paths.projectDir} is not a git repository; nothing to take into`)
 
   const branches = await listSandboxBranches(paths)
   if (branches.length === 0) log.fail("the agent has not committed anything yet")
@@ -1254,9 +1290,25 @@ async function cmdTake(argv: string[]): Promise<number> {
 async function cmdApply(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
-  requireState(paths)
+  const state = requireState(paths)
 
   const plan = await planApply(paths)
+
+  // A missing or moved baseline is not "nothing to do": without the commit moat
+  // recorded at copy-in there is no third input to merge against, and applying
+  // would be a guess. Fail loudly; the old behaviour reported success.
+  if (plan.baselineProblem) {
+    log.fail(plan.baselineProblem)
+    return 1
+  }
+  if (state.baselineCommit && plan.baselineCommit && state.baselineCommit !== plan.baselineCommit) {
+    log.fail(
+      `refs/moat/baseline has moved since moat recorded it (${state.baselineCommit.slice(0, 12)} -> ${plan.baselineCommit.slice(0, 12)}).\n` +
+        "  Something rewrote the sandbox repository's baseline, so moat cannot tell your changes from the agent's.\n" +
+        "  Run 'moat up --sync' to re-copy the project, or fetch the branch and merge it by hand.",
+    )
+    return 1
+  }
   if (plan.empty) {
     log.info("nothing to apply: the directory already matches the sandbox")
     return 0
@@ -1311,13 +1363,22 @@ async function cmdDown(argv: string[]): Promise<number> {
   parse(argv, SPEC) // validates flags; `down` takes no options of its own
   const paths = resolveEnv()
   const state = requireState(paths)
-  if (!state.pid || !isRunning(state.pid)) {
-    writeState(paths, { ...state, status: "stopped", pid: null })
+  const status = sandboxPidStatus(state.pid, { startTime: state.pidStart, envId: paths.id })
+  if (status === "gone") {
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
     log.info("sandbox is not running")
     return 0
   }
-  if (await stopSandbox(state.pid)) {
-    writeState(paths, { ...state, status: "stopped", pid: null })
+  if (status === "stale") {
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
+    log.warn(
+      `the recorded sandbox is gone: pid ${state.pid} now belongs to another process, so moat did not signal it.`,
+    )
+    log.info("  the environment and its snapshots are kept")
+    return 0
+  }
+  if (await stopSandbox(state.pid!, { startTime: state.pidStart, envId: paths.id })) {
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
     log.success(`sandbox stopped (pid ${state.pid}); the environment and its snapshots are kept`)
     log.info(`  resume with: moat up`)
     log.info(`  remove with: moat destroy`)
@@ -1344,7 +1405,9 @@ async function cmdDestroy(argv: string[]): Promise<number> {
     for (const env of envs) {
       const envState = readState(env)
       const size = await rootfsSizeBytes(env)
-      if (envState?.pid && isRunning(envState.pid)) await stopSandbox(envState.pid)
+      if (envState?.pid) {
+        await stopSandbox(envState.pid, { startTime: envState.pidStart, envId: envState.id })
+      }
       if (destroyEnv(env.projectDir)) {
         freed += size
         log.info(`  removed ${env.id}  ${human(size)}  ${env.projectDir}`)
@@ -1355,11 +1418,11 @@ async function cmdDestroy(argv: string[]): Promise<number> {
   }
 
   const state = readState(paths)
-  if (state?.pid && isRunning(state.pid)) {
+  if (state && sandboxAlive(state, paths)) {
     if (!flag<boolean>(p, "yes")) {
       log.fail("sandbox is running. Stop it first, or pass --yes to destroy it while running.")
     }
-    await stopSandbox(state.pid)
+    await stopSandbox(state.pid!, { startTime: state.pidStart, envId: paths.id })
   }
   const removed = destroyEnv(paths.projectDir)
   if (removed) log.success(`destroyed ${paths.dir}`)
@@ -1382,7 +1445,7 @@ async function cmdStatus(argv: string[]): Promise<number> {
       rows.push({
         id: state.id,
         project: state.projectDir,
-        status: isRunning(state.pid) ? "running" : "stopped",
+        status: sandboxAlive(state, env) ? "running" : "stopped",
         port: state.port,
         pid: state.pid,
         credential: state.credential?.expiresAt ?? null,
@@ -1405,10 +1468,13 @@ async function cmdStatus(argv: string[]): Promise<number> {
 
   const state = readState(paths)
   if (!state) log.fail(`no moat environment for ${paths.projectDir}. Run \`moat up\` first.`)
-  const running = isRunning(state!.pid)
+  const running = sandboxAlive(state!, paths)
   if (running !== (state!.status === "running")) {
     state!.status = running ? "running" : "stopped"
-    if (!running) state!.pid = null
+    if (!running) {
+      state!.pid = null
+      state!.pidStart = null
+    }
     writeState(paths, state!)
   }
   const snapshots = await listSnapshots(paths)
@@ -1467,16 +1533,18 @@ async function cmdRestore(argv: string[]): Promise<number> {
   // Restoring replaces the rootfs directory. A running sandbox has that
   // directory bound as its root, so it would keep serving the *deleted* image
   // while the host sees the new one. Refuse rather than silently produce that.
-  if (state.pid && isRunning(state.pid)) {
+  if (state.pid && sandboxAlive(state, paths)) {
     if (!flag<boolean>(p, "yes")) {
       log.fail(
         `the sandbox is running (pid ${state.pid}). Restoring its rootfs underneath it would leave it serving a ` +
           `deleted image. Stop it first (\`moat down\`) or pass --yes to stop it as part of the restore.`,
       )
     }
-    await stopSandbox(state.pid)
-    writeState(paths, { ...state, status: "stopped", pid: null })
+    await stopSandbox(state.pid, { startTime: state.pidStart, envId: paths.id })
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
     log.info(`stopped sandbox pid ${state.pid} before restoring`)
+  } else if (state.pid) {
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
   }
   await restoreEnv(paths, name!)
   log.success(`restored rootfs snapshot ${name} (the project copy in /work was preserved)`)
@@ -1489,13 +1557,30 @@ function tailFile(file: string, lines: number): string {
   return content.slice(-lines).join("\n")
 }
 
+/**
+ * The sandbox's own log.
+ *
+ * The long-running box redirects its output to a file inside its rootfs, so it
+ * never holds an append fd on a host path outside itself. The host-side
+ * `logs/sandbox.log` only carries the few lines before that redirect, and is
+ * the fallback when the boot died before it got there.
+ */
+function sandboxLogTail(paths: EnvPaths, lines: number): string {
+  const boot = tailFile(path.join(paths.rootfs, "var/log/moat/boot.log"), lines)
+  if (boot !== "(no log)") return boot
+  return tailFile(path.join(paths.logs, "sandbox.log"), lines)
+}
+
 async function cmdLogs(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   requireState(paths)
   const which_ = p._[0] ?? "sandbox"
-  const file =
-    which_ === "audit" ? path.join(paths.auditDir, "tools.jsonl") : path.join(paths.logs, `${which_}.log`)
+  if (which_ === "sandbox") {
+    log.info(sandboxLogTail(paths, flag<number>(p, "tail") ?? 80))
+    return 0
+  }
+  const file = which_ === "audit" ? path.join(paths.auditDir, "tools.jsonl") : path.join(paths.logs, `${which_}.log`)
   log.info(tailFile(file, flag<number>(p, "tail") ?? 80))
   return 0
 }
@@ -1552,7 +1637,10 @@ async function cmdDoctor(argv: string[]): Promise<number> {
     log.step("running in-sandbox isolation checks")
     isolation = await runIsolationChecks(paths, {
       hostHome: process.env.HOME ?? "",
-      injectedVarNames: [...INJECTED_ENV_NAMES, "OPENCODE_SERVER_PASSWORD"],
+      // The provider variable is injected under its real name in a live boot, so
+      // the probe injects it too; otherwise the check tests an environment the
+      // agent never sees.
+      injectedVarNames: [...INJECTED_ENV_NAMES, "OPENCODE_SERVER_PASSWORD", DEEPSEEK.envVar],
     })
     out.isolation = isolation
     if (!flag<boolean>(p, "json")) printIsolation(isolation)
@@ -1632,8 +1720,8 @@ cd ${SANDBOX_WORKDIR}
 echo "[moat] sandbox shell, this is inside the box, not your host"
 exec /bin/bash -l
 `
-  writeInnerScript(paths, body)
-  const boot = writeOuterScript(paths)
+  const inner = writeInnerScript(paths, body)
+  const boot = writeOuterScript(paths, { innerScript: inner })
   return await new Promise<number>((resolve, reject) => {
     const proc = spawn("unshare", unshareArgs(boot), { stdio: "inherit", env: sandboxEnv() })
     proc.on("error", reject)
@@ -1739,15 +1827,23 @@ async function cmdTools(argv: string[]): Promise<number> {
   //    inference request, so the mock provider records them verbatim.
   const registry = (await toolIds(client)).sort()
   const bundleReport = readBundleReport(paths)
-  const curatedPresent = registry.filter((id) => CURATED_TOOLS.includes(id as never))
+
+  // The bundle the box is actually running is the authority, not the constants
+  // in lib/pins.ts. Those are only the fallback for an env whose plugin record
+  // has not been written yet. Printing the constants over a live report is how
+  // this command contradicted itself: it listed 'question' as excluded while
+  // the rendered bundle curated it and the plugin's own record said so.
+  const curated = bundleReport?.curated?.length ? bundleReport.curated : [...CURATED_TOOLS]
+  const excluded = bundleReport?.excludedFromBuiltins?.length ? bundleReport.excludedFromBuiltins : [...EXCLUDED_TOOLS]
+  const curatedPresent = registry.filter((id) => curated.includes(id))
 
   const payload = {
     registry,
     bundle: bundleReport,
-    curated: CURATED_TOOLS,
+    curated,
     curatedPresent,
-    excluded: EXCLUDED_TOOLS,
-    curatedButNotAdvertised: CURATED_TOOLS.filter((id) => !registry.includes(id as never)),
+    excluded,
+    curatedButNotAdvertised: curated.filter((id) => !registry.includes(id)),
     /** Known, documented opencode limitation: these cannot be pruned from the list. */
     unprunableByOpencode: UNADVERTISED_GAPS.filter((id) => registry.includes(id as never)),
     advisory: "registry is pre-materialization; the model-facing list is what the provider receives and is measured in docs/VERIFICATION.md",
@@ -1759,8 +1855,8 @@ async function cmdTools(argv: string[]): Promise<number> {
   }
 
   log.info(`${log.bold("bundle")} (from the plugin's config-time record)`)
-  log.info(`  curated    ${CURATED_TOOLS.join(", ")}`)
-  log.info(`  excluded   ${EXCLUDED_TOOLS.join(", ")}`)
+  log.info(`  curated    ${payload.curated.join(", ")}`)
+  log.info(`  excluded   ${payload.excluded.join(", ")}`)
   log.info(`  omissions confirmed by opencode: ${(bundleReport?.toolOmissions ?? []).join(", ") || "(plugin record missing)"}`)
   if ((bundleReport?.curationGaps ?? []).length > 0) {
     log.warn(`  curation gaps reported by the plugin: ${bundleReport!.curationGaps!.join(", ")}`)
@@ -1768,7 +1864,7 @@ async function cmdTools(argv: string[]): Promise<number> {
   log.info("")
   log.info(`${log.bold("registry")} (everything opencode knows about, NOT what the model sees)`)
   for (const id of registry) {
-    const inBundle = CURATED_TOOLS.includes(id as never)
+    const inBundle = payload.curated.includes(id)
     log.info(`  ${inBundle ? log.green("+") : log.dim("-")} ${id}`)
   }
   if (payload.curatedButNotAdvertised.length > 0) {
@@ -1859,7 +1955,7 @@ Branches and history
                          --skip-conflicts   apply what can be merged, leave the rest
 
 The environment
-  moat up [task]         start it without a task; --profile, --fresh, --sync live here
+  moat up [task]         start it without a task; --profile, --fresh, --sync, --yes live here
   moat profiles          toolchain profiles the sandbox can be given
   moat models [provider] what the model catalog offers, with context windows
   moat destroy           delete this project's environment and snapshots

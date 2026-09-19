@@ -99,7 +99,44 @@ export const EXPECTED_SANDBOX_ENV = new Set([
   "MOAT_CREDENTIAL_EXPIRES_AT",
   "MOAT_CREDENTIAL_TTL_SECONDS",
   "MOAT_CREDENTIAL_FINGERPRINT",
+  // The name opencode actually reads. It is present in the real box, so the
+  // environment check must be run with it present or it measures a cleaner box
+  // than the agent gets.
+  "DEEPSEEK_API_KEY",
 ])
+
+/**
+ * The mountinfo fields the doctor renders, as an awk program.
+ *
+ * Field 4 is the *root*: for a bind mount it is the path on the host filesystem
+ * the mount came from, which is the only field that can name host data. Field 5
+ * is the mount point (already relative to the sandbox root), field 6 the mount
+ * options, and the tail after the separator is the fstype, source and
+ * super-options. Exported so a unit test can assert the root field is rendered:
+ * without it, a bind of /home/you/project is indistinguishable from a device.
+ */
+export const MOUNT_FIELDS_AWK = '{split($1,a," "); print a[5]"||"a[4]"||"a[6]"||"$2}'
+
+export type MountAnalysis = {
+  /** Mounts whose root field names something outside moat's own state directory. */
+  suspicious: string[]
+  /** The six host device nodes, which are expected and carry no host data. */
+  deviceBinds: string[]
+}
+
+export function analyseMounts(mounts: string[], stateRoot: string): MountAnalysis {
+  const hostDataPattern = /\/home\/|\/mnt\/|\/media\/|\/usr\/lib\/wsl|^\/init/
+  const suspicious = mounts.filter((line) => {
+    const [mountPoint = "", root = "", , rest = ""] = line.split("||")
+    if (hostDataPattern.test(mountPoint) || hostDataPattern.test(rest)) return true
+    if (!root.startsWith("/")) return false
+    if (root === "/") return false
+    if (/^devtmpfs/.test(rest)) return false
+    return root !== stateRoot && !root.startsWith(stateRoot + "/")
+  })
+  const deviceBinds = mounts.filter((line) => /^\/dev\/(null|zero|full|random|urandom|tty)\|\|\//.test(line))
+  return { suspicious, deviceBinds }
+}
 
 /**
  * Names that must never appear inside the sandbox, taken from the live host
@@ -155,7 +192,7 @@ if /bin/bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null; then
 else
   echo "MOAT_EGRESS_OPEN=no"
 fi
-echo "MOAT_MOUNTS_B64=$(awk -F' - ' '{split($1,a," "); print a[5]"||"$2}' /proc/self/mountinfo | base64 | tr -d '\\n')"
+echo "MOAT_MOUNTS_B64=$(awk -F' - ' '${MOUNT_FIELDS_AWK}' /proc/self/mountinfo | base64 | tr -d '\\n')"
 `
 }
 
@@ -271,12 +308,7 @@ export async function runIsolationChecks(
   const forbidden = forbiddenHostEnvNames()
   const forbiddenPresent = envNames.filter((name) => forbidden.includes(name))
 
-  // Every mount must be one moat created, or a host *device node*. Anything
-  // whose target lives under a host-only path (or whose source is a host path)
-  // means host filesystem got exposed.
-  const hostDataPattern = /\/home\/|\/mnt\/|\/media\/|\/usr\/lib\/wsl|^\/init/
-  const suspicious = mounts.filter((line) => hostDataPattern.test(line))
-  const deviceBinds = mounts.filter((line) => /^\/dev\/(null|zero|full|random|urandom|tty)\|\|devtmpfs/.test(line))
+  const { suspicious, deviceBinds } = analyseMounts(mounts, moatHome())
 
   const checks: IsolationCheck[] = [
     {
@@ -318,7 +350,11 @@ export async function runIsolationChecks(
     },
     {
       name: "sandbox pid 1",
-      ok: (parsed.MOAT_PID1 ?? "") !== "init" && Number(parsed.MOAT_PID_COUNT ?? "0") <= 12,
+      ok:
+        (parsed.MOAT_PID1 ?? "") !== "init" &&
+        (parsed.MOAT_PID1 ?? "") !== "unknown" &&
+        Number(parsed.MOAT_PID_COUNT ?? "0") >= 1 &&
+        Number(parsed.MOAT_PID_COUNT ?? "0") <= 12,
       detail: `pid 1 is "${parsed.MOAT_PID1}", ${parsed.MOAT_PID_COUNT} visible processes`,
     },
   ]
@@ -395,13 +431,15 @@ export async function runIsolationChecks(
         : `sandbox has its own network namespace (${parsed.MOAT_NS_NET})`,
   })
 
-  if (deviceBinds.length > 0) {
-    checks.push({
-      name: "device nodes are the only host mounts",
-      ok: true,
-      detail: `${deviceBinds.length} read-only device node bind(s): ${deviceBinds.map((m) => m.split("||")[0]).join(", ")}`,
-    })
-  }
+  // This used to be hardcoded `ok: true` and only pushed when binds were found,
+  // so it could not fail and could not report a missing device. The binds are
+  // read-write, not read-only: a device node is an interface, not a file, and a
+  // read-only bind makes `> /dev/null` fail (verified). They carry no host data.
+  checks.push({
+    name: "device nodes are the only host mounts",
+    ok: deviceBinds.length === 6,
+    detail: `${deviceBinds.length}/6 device node bind(s), rw like every rootless runtime: ${deviceBinds.map((m) => m.split("||")[0]).join(", ") || "none found"}`,
+  })
 
   // The bundle runs inside the opencode process, so its own record of the agent
   // environment is authoritative in a way this ephemeral boot cannot be: the
