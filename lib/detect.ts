@@ -112,6 +112,27 @@ function packageManager(projectDir: string): string {
   return "npm"
 }
 
+/**
+ * Is this script a check, or a placeholder wearing one's name?
+ *
+ * `npm init` (and yarn's and pnpm's) scaffolds
+ * `test: echo "Error: no test specified" && exit 1`, so a fresh project had a
+ * "check" that is guaranteed to fail: `moat verify` printed FAIL as the project's
+ * own verdict on work it never tested, and the agent's brief handed it a command
+ * to chase a test suite that does not exist. An echo with nothing else is the same
+ * problem pointing the other way — it always "passes", which is a
+ * verdict moat should not print either.
+ */
+function isRealScript(script: unknown): script is string {
+  if (typeof script !== "string") return false
+  const body = script.trim()
+  if (body.length === 0) return false
+  // `echo ... && exit 1`, whatever quoting the scaffolding used.
+  if (/^echo\b[^&|;]*&&\s*exit\s+1$/.test(body)) return false
+  // An echo and nothing else: it cannot fail, so it cannot check anything.
+  return !/^echo\b[^&|;]*$/.test(body)
+}
+
 export function detectChecks(projectDir: string): Check[] {
   const checks: Check[] = []
   const has = (file: string) => fs.existsSync(path.join(projectDir, file))
@@ -126,7 +147,7 @@ export function detectChecks(projectDir: string): Check[] {
       ["lint", ["lint"]],
       ["types", ["typecheck", "types", "check"]],
     ] as const) {
-      const found = names.find((name) => typeof scripts[name] === "string" && scripts[name]!.length > 0)
+      const found = names.find((name) => isRealScript(scripts[name]))
       if (found) checks.push({ label: `${pm} ${found}`, command: `${pm} run ${found}`, kind })
     }
   }

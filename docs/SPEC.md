@@ -876,6 +876,13 @@ own commands rather than inventing them, and runs them itself against the agent'
 work before the user is asked to decide anything. `moat take` does this by
 default, `moat verify` on demand, `/verify` inside a session.
 
+A declared command is only treated as a check if it can decide anything. `npm init`
+scaffolds `test: echo "Error: no test specified" && exit 1`, and moat used to offer
+that as the project's own check: `moat verify` printed FAIL as the project's verdict
+on work no test had looked at, and the agent was told to run it. Scaffolding
+placeholders and bare `echo`s (which can only pass) are filtered out, so a project
+with no tests is reported as having no checks rather than as failing them.
+
 No model is involved in the verdict: moat runs the declared command in the sandbox
 and reports the exit code. A check that times out is reported as timed out rather
 than as a failure, because those are different things.
