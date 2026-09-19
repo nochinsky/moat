@@ -2,71 +2,82 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-[moat] sandbox boot 2026-09-19T19:55:05Z
-[moat] kernel=6.18.33.2-microsoft-standard-WSL2 rootfs=3.21.4
-[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T23:55:05.238Z
-[moat] starting opencode serve on 127.0.0.1:38399
-[moat] agent pid=26
-timestamp=2026-09-19T19:55:06.292Z level=INFO run=581666ae message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T19:55:06.298Z level=INFO run=581666ae message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T19:55:06.301Z level=INFO run=581666ae message=loading path=/root/.config/opencode/opencode.jsonc
-opencode server listening on http://127.0.0.1:38399
-timestamp=2026-09-19T19:55:06.563Z level=INFO run=581666ae message="creating instance" directory=/work
-timestamp=2026-09-19T19:55:06.564Z level=INFO run=581666ae message=fromDirectory directory=/work
-timestamp=2026-09-19T19:55:06.641Z level=INFO run=581666ae message=bootstrapping directory=/work
-timestamp=2026-09-19T19:55:06.655Z level=INFO run=581666ae message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T19:55:06.656Z level=INFO run=581666ae message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T19:55:06.656Z level=INFO run=581666ae message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T19:55:06.657Z level=INFO run=581666ae message=loading path=/usr/local/share/moat/opencode.json
-timestamp=2026-09-19T19:55:06.677Z level=INFO run=581666ae message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T19:55:06.678Z level=INFO run=581666ae message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T19:55:14.660Z level=INFO run=581666ae message="all LSPs are disabled"
-timestamp=2026-09-19T19:55:14.662Z level=INFO run=581666ae message="all formatters are disabled"
-timestamp=2026-09-19T19:55:14.662Z level=INFO run=581666ae message=init
-[moat] sandbox boot 2026-09-19T19:55:29Z
-[moat] kernel=6.18.33.2-microsoft-standard-WSL2 rootfs=3.21.4
-[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T23:55:29.342Z
-[moat] starting opencode serve on 127.0.0.1:34147
-[moat] agent pid=26
-timestamp=2026-09-19T19:55:30.312Z level=INFO run=74c8956b message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T19:55:30.328Z level=INFO run=74c8956b message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T19:55:30.328Z level=INFO run=74c8956b message=loading path=/root/.config/opencode/opencode.jsonc
-opencode server listening on http://127.0.0.1:34147
-timestamp=2026-09-19T19:55:33.147Z level=INFO run=74c8956b message="creating instance" directory=/work
-timestamp=2026-09-19T19:55:33.149Z level=INFO run=74c8956b message=fromDirectory directory=/work
-timestamp=2026-09-19T19:55:33.205Z level=INFO run=74c8956b message=bootstrapping directory=/work
-timestamp=2026-09-19T19:55:33.218Z level=INFO run=74c8956b message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T19:55:33.218Z level=INFO run=74c8956b message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T19:55:33.219Z level=INFO run=74c8956b message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T19:55:33.220Z level=INFO run=74c8956b message=loading path=/usr/local/share/moat/opencode.json
-timestamp=2026-09-19T19:55:33.235Z level=INFO run=74c8956b message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T19:55:33.236Z level=INFO run=74c8956b message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T19:55:33.277Z level=INFO run=74c8956b message="all LSPs are disabled"
-timestamp=2026-09-19T19:55:33.279Z level=INFO run=74c8956b message="all formatters are disabled"
-timestamp=2026-09-19T19:55:33.279Z level=INFO run=74c8956b message=init
+timestamp=2026-09-19T20:14:48.622Z level=INFO run=d77c88a4 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T20:14:48.623Z level=INFO run=d77c88a4 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:14:48.623Z level=INFO run=d77c88a4 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T20:14:48.624Z level=INFO run=d77c88a4 message=loading path=/usr/local/share/moat/opencode.json
+timestamp=2026-09-19T20:14:48.632Z level=INFO run=d77c88a4 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:14:48.632Z level=INFO run=d77c88a4 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T20:14:48.679Z level=INFO run=d77c88a4 message="all LSPs are disabled"
+timestamp=2026-09-19T20:14:48.681Z level=INFO run=d77c88a4 message="all formatters are disabled"
+timestamp=2026-09-19T20:14:48.681Z level=INFO run=d77c88a4 message=init
 Terminated
 [moat] agent exited with status 143
-[moat] sandbox boot 2026-09-19T19:55:34Z
+[moat] sandbox boot 2026-09-19T20:14:49Z
 [moat] kernel=6.18.33.2-microsoft-standard-WSL2 rootfs=3.21.4
-[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T19:55:40.331Z
-[moat] starting opencode serve on 127.0.0.1:33035
+[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-20T00:14:49.269Z
+[moat] starting opencode serve on 127.0.0.1:39351
 [moat] agent pid=26
-timestamp=2026-09-19T19:55:35.309Z level=INFO run=b8d7eb87 message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T19:55:35.314Z level=INFO run=b8d7eb87 message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T19:55:35.326Z level=INFO run=b8d7eb87 message=loading path=/root/.config/opencode/opencode.jsonc
-opencode server listening on http://127.0.0.1:33035
-timestamp=2026-09-19T19:55:38.137Z level=INFO run=b8d7eb87 message="creating instance" directory=/work
-timestamp=2026-09-19T19:55:38.138Z level=INFO run=b8d7eb87 message=fromDirectory directory=/work
-timestamp=2026-09-19T19:55:38.181Z level=INFO run=b8d7eb87 message=bootstrapping directory=/work
-timestamp=2026-09-19T19:55:38.193Z level=INFO run=b8d7eb87 message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T19:55:38.194Z level=INFO run=b8d7eb87 message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T19:55:38.194Z level=INFO run=b8d7eb87 message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T19:55:38.195Z level=INFO run=b8d7eb87 message=loading path=/usr/local/share/moat/opencode.json
-timestamp=2026-09-19T19:55:38.211Z level=INFO run=b8d7eb87 message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T19:55:38.212Z level=INFO run=b8d7eb87 message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T19:55:38.243Z level=INFO run=b8d7eb87 message="all LSPs are disabled"
-timestamp=2026-09-19T19:55:38.244Z level=INFO run=b8d7eb87 message="all formatters are disabled"
-timestamp=2026-09-19T19:55:38.244Z level=INFO run=b8d7eb87 message=init
+timestamp=2026-09-19T20:14:50.237Z level=INFO run=d2c5c347 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T20:14:50.242Z level=INFO run=d2c5c347 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:14:50.254Z level=INFO run=d2c5c347 message=loading path=/root/.config/opencode/opencode.jsonc
+opencode server listening on http://127.0.0.1:39351
+timestamp=2026-09-19T20:14:53.076Z level=INFO run=d2c5c347 message="creating instance" directory=/work
+timestamp=2026-09-19T20:14:53.078Z level=INFO run=d2c5c347 message=fromDirectory directory=/work
+timestamp=2026-09-19T20:14:53.124Z level=INFO run=d2c5c347 message=bootstrapping directory=/work
+timestamp=2026-09-19T20:14:53.136Z level=INFO run=d2c5c347 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T20:14:53.137Z level=INFO run=d2c5c347 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:14:53.137Z level=INFO run=d2c5c347 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T20:14:53.138Z level=INFO run=d2c5c347 message=loading path=/usr/local/share/moat/opencode.json
+timestamp=2026-09-19T20:14:53.157Z level=INFO run=d2c5c347 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:14:53.158Z level=INFO run=d2c5c347 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T20:14:53.199Z level=INFO run=d2c5c347 message="all LSPs are disabled"
+timestamp=2026-09-19T20:14:53.201Z level=INFO run=d2c5c347 message="all formatters are disabled"
+timestamp=2026-09-19T20:14:53.201Z level=INFO run=d2c5c347 message=init
+[moat] sandbox boot 2026-09-19T20:15:33Z
+[moat] kernel=6.18.33.2-microsoft-standard-WSL2 rootfs=3.21.4
+[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-20T00:15:33.158Z
+[moat] starting opencode serve on 127.0.0.1:34645
+[moat] agent pid=26
+timestamp=2026-09-19T20:15:34.119Z level=INFO run=f4ddb8fc message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T20:15:34.123Z level=INFO run=f4ddb8fc message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:15:34.135Z level=INFO run=f4ddb8fc message=loading path=/root/.config/opencode/opencode.jsonc
+opencode server listening on http://127.0.0.1:34645
+timestamp=2026-09-19T20:15:36.963Z level=INFO run=f4ddb8fc message="creating instance" directory=/work
+timestamp=2026-09-19T20:15:36.964Z level=INFO run=f4ddb8fc message=fromDirectory directory=/work
+timestamp=2026-09-19T20:15:37.007Z level=INFO run=f4ddb8fc message=bootstrapping directory=/work
+timestamp=2026-09-19T20:15:37.019Z level=INFO run=f4ddb8fc message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T20:15:37.020Z level=INFO run=f4ddb8fc message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:15:37.020Z level=INFO run=f4ddb8fc message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T20:15:37.021Z level=INFO run=f4ddb8fc message=loading path=/usr/local/share/moat/opencode.json
+timestamp=2026-09-19T20:15:37.036Z level=INFO run=f4ddb8fc message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:15:37.037Z level=INFO run=f4ddb8fc message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T20:15:37.078Z level=INFO run=f4ddb8fc message="all LSPs are disabled"
+timestamp=2026-09-19T20:15:37.080Z level=INFO run=f4ddb8fc message="all formatters are disabled"
+timestamp=2026-09-19T20:15:37.080Z level=INFO run=f4ddb8fc message=init
+Terminated
+[moat] agent exited with status 143
+[moat] sandbox boot 2026-09-19T20:15:38Z
+[moat] kernel=6.18.33.2-microsoft-standard-WSL2 rootfs=3.21.4
+[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T20:15:44.132Z
+[moat] starting opencode serve on 127.0.0.1:39255
+[moat] agent pid=26
+timestamp=2026-09-19T20:15:39.095Z level=INFO run=0c3996fe message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T20:15:39.112Z level=INFO run=0c3996fe message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:15:39.112Z level=INFO run=0c3996fe message=loading path=/root/.config/opencode/opencode.jsonc
+opencode server listening on http://127.0.0.1:39255
+timestamp=2026-09-19T20:15:41.936Z level=INFO run=0c3996fe message="creating instance" directory=/work
+timestamp=2026-09-19T20:15:41.938Z level=INFO run=0c3996fe message=fromDirectory directory=/work
+timestamp=2026-09-19T20:15:41.981Z level=INFO run=0c3996fe message=bootstrapping directory=/work
+timestamp=2026-09-19T20:15:41.993Z level=INFO run=0c3996fe message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T20:15:41.994Z level=INFO run=0c3996fe message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:15:41.994Z level=INFO run=0c3996fe message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T20:15:41.995Z level=INFO run=0c3996fe message=loading path=/usr/local/share/moat/opencode.json
+timestamp=2026-09-19T20:15:42.011Z level=INFO run=0c3996fe message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T20:15:42.011Z level=INFO run=0c3996fe message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T20:15:42.050Z level=INFO run=0c3996fe message="all LSPs are disabled"
+timestamp=2026-09-19T20:15:42.052Z level=INFO run=0c3996fe message="all formatters are disabled"
+timestamp=2026-09-19T20:15:42.052Z level=INFO run=0c3996fe message=init
 [moat] injected credential expired (ttl=6s); stopping agent
 Terminated
 [moat] agent exited with status 143

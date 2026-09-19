@@ -1,0 +1,6 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts fetch --timeout 5
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ --timeout has no effect on `moat fetch`, so it is refused rather than ignored.
+  moat's flag table is shared by every command; `moat help` lists the commands.

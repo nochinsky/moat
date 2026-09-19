@@ -15,7 +15,20 @@ export const cyan = (text: string) => paint("36", text)
 
 export const verbose = process.env.MOAT_VERBOSE === "1"
 
+let quiet = false
+
+/**
+ * Hide the progress lines (`step`).
+ *
+ * `--quiet` is about the progress chatter, not about hiding what happened:
+ * warnings, errors and results still print. Set from `--quiet` in main().
+ */
+export function setQuiet(value: boolean): void {
+  quiet = value
+}
+
 export function step(message: string): void {
+  if (quiet) return
   process.stderr.write(`${cyan("→")} ${message}\n`)
 }
 

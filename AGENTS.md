@@ -204,11 +204,18 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   flag now (measured after the fix: `TIMED OUT after 1s`, exit 124, `FAIL npm test
   1.0s (timed out)`); extras section Y is the check. The REPL's `/verify` has no flag
   and keeps the default.
-* The flag table (`SPEC` in `cmd/main.ts`) is **global**: every command parses the same
-  keys, so a flag a command does not read is accepted and silently ignored
-  (`moat fetch --timeout 5` does nothing). Two of those were real bugs (`--timeout` on
-  the checks above; `--tools`/`--log-level` were validated late rather than never).
-  When adding a flag, read it where it is meant to act, or it does not act at all.
+* The flag layer is `lib/flags.ts`, and it has **two** tables: `SPEC` (every flag moat
+  knows, so a typo is refused) and `COMMAND_FLAGS` (what each command actually reads).
+  `main()` parses once before dispatch with the command's name, so a flag a command
+  does not read is refused with a message naming both. One shared table used to accept
+  and silently drop them: that is how `--timeout` never reached the checks runner, and
+  how `--quiet` — which every harness in this repo passes — was read by nothing at all,
+  while `moat up --help` booted a sandbox instead of printing help.
+* When adding a flag: add it to `SPEC`, add it to every command that reads it in
+  `COMMAND_FLAGS`, and read it there. `--help`, `--quiet` and `--verbose` are global
+  (handled in `main`/the logger) and need no entry. `test/unit/flags.test.ts` fails if
+  the table names a flag that does not exist or drops one the suites pass; extras
+  section Z covers the refusal, `--quiet` and `--help` end to end.
 * `moat up --fresh` deletes `/work`. It refuses while a sandbox is live and
   refuses without `--yes` when the box holds unfetched commits or uncommitted
   files.

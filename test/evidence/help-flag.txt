@@ -1,0 +1,78 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts profiles --help
+--- exit 0
+--- stdout ---
+moat — run an AI coding agent in a disposable sandbox. Your machine is never touched.
+
+Usage: moat <command> [options]
+
+  moat run "<task>"      boot if needed, do the task, stream the work
+  moat take              review what the agent did; runs the project's own checks
+  moat verify            just run those checks against the sandbox, no fetching
+  moat down              stop the sandbox; nothing is lost
+  moat status            what is running, on which model, with how much time left
+
+That is the whole loop. Everything below exists but you should not need it.
+
+Attaching to a running box
+  moat run "<task>"      give it another task
+  moat attach            open a session against the running box (no boot)
+  moat shell             a plain shell inside the sandbox
+  moat exec -- <cmd>     run one command inside the sandbox
+
+Branches and history
+  moat fetch [branch]    bring the agent's branch across into refs/moat/*
+                         --commit-worktree  also commit anything left uncommitted
+  moat take [branch]     fetch, show, and offer to apply
+  moat apply             merge the agent's work into this directory
+                         --dry-run          show the plan, write nothing
+                         --skip-conflicts   apply what can be merged, leave the rest
+
+The environment
+  moat up [task]         start it without a task; --profile, --fresh, --sync, --yes live here
+  moat profiles          toolchain profiles the sandbox can be given
+  moat models [provider] what the model catalog offers, with context windows
+  moat destroy           delete this project's environment and snapshots
+  moat snapshot [name]   save the rootfs; moat restore <name> brings it back
+
+Diagnostics
+  moat doctor            host support, the in-sandbox isolation checks, the measured exposures
+  moat tools             the declared tools, and what opencode actually offers
+  moat env               connection details (url, password, auth header)
+  moat logs [sandbox|audit]
+  moat version
+
+Options that apply to up/run
+  --model ID             DeepSeek model id; see: moat models
+  --effort LEVEL         reasoning effort: low, medium, high or max.
+                         Not every model takes every level; inside a session
+                         /model and /think show what the current one accepts.
+  --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full
+                         (auto-detected from the project if you do not say)
+  --no-detect            do not guess a profile from the project
+  --tools core|extended  core = 8 coding tools (default); extended adds webfetch + subagents
+  --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek
+  --upstream URL         keep DeepSeek but send its traffic elsewhere (a gateway,
+                         or a proxy you are inspecting). Unlike --base-url this
+                         keeps the catalog: context window, price, effort levels.
+  --credential-env NAME  host env var holding the key   --credential-ttl 4h
+  --egress MODE          open, isolated or filtered. Default: filtered, which puts
+                         the box in its own namespace behind a default-deny
+                         allowlist (provider + package registries). A provider on
+                         the host's loopback defaults to open instead, because the
+                         box cannot reach it there.
+  --egress-allow HOSTS   extra hosts the filtered allowlist permits, comma-separated
+  --timeout SECONDS      how long one turn may take (default 2700) and how long a
+                         boot waits for opencode serve (default 90). Seconds, always.
+  --continue             continue the last session instead of starting a new one
+  --show-output          print each tool's output as it runs
+  --json                 machine-readable output on stdout
+
+Options that apply to every command
+  --help                 print this text instead of running the command
+  --quiet                hide the progress lines; warnings and results still print
+  --verbose              extra diagnostics on stderr
+
+A flag a command does not read is refused rather than ignored.
+
+Docs: docs/SPEC.md, docs/VERIFICATION.md
+--- stderr ---

@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts down
+--- exit 0
+--- stdout ---
+--- stderr ---
+sandbox is not running

@@ -2089,10 +2089,57 @@ SIGTERM, and a command with quotes and substitution arriving intact — were alr
 covered by `test/unit/checks-runner.test.ts`. The REPL's `/verify` has no flag and
 keeps the default.
 
-The general wart this came from is worth stating: the flag table is global, so any
-command accepts any declared flag and silently ignores the ones it does not read
-(`moat fetch --timeout 5` does nothing). Two of those turned out to be real bugs —
-this one and `--tools`/`--log-level`, which were validated late or not at all.
+The general wart this came from is that the flag table was global, so any command
+accepted any declared flag and silently ignored the ones it did not read. Section W
+below is the fix for that.
+
+### W. A flag a command does not read is refused, `--quiet` exists, and `--help` prints help
+
+`parse` checked that a flag *existed*, not that the command *read* it, so a flag a
+command ignored was accepted and dropped. Two real bugs came out of that silence —
+`--timeout` never reached the checks runner (§V), and `--quiet`, which every harness in
+this repository passes on `moat up`, was read by nothing at all. A third was worse than
+silence: `moat up --help` booted a sandbox.
+
+The parser now lives in `lib/flags.ts` with two tables: every flag moat has, and what
+each command reads. `main()` parses once before dispatch with the command's name:
+
+```
+$ moat fetch --timeout 5
+✗ --timeout has no effect on `moat fetch`, so it is refused rather than ignored.
+  moat's flag table is shared by every command; `moat help` lists the commands.
+--- exit 1
+```
+
+`--quiet` hides the progress lines (warnings and results still print) — the point
+of the flag the suites were already passing:
+
+```
+$ moat up --quiet …                       # no progress lines at all
+profiles: everything requested is already installed
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+✓ sandbox up, warm start 4.16s (image reused)
+--- exit 0
+```
+
+and `moat profiles --help` prints the help text instead of the profile list:
+
+```
+$ moat profiles --help
+moat — run an AI coding agent in a disposable sandbox. Your machine is never touched.
+Usage: moat <command> [options]
+--- exit 0
+```
+
+Extras section Z is those three, with a control that runs the same `up` *without*
+`--quiet` and shows the progress lines are there to be hidden; all four checks fail
+with the refusal, `setQuiet` and the `--help` return reverted. `test/unit/flags.test.ts`
+covers the parser without a sandbox: the refusal names the flag and the command, the
+flag still parses for the commands that read it, `--help`/`--quiet`/`--verbose` are
+global, `--` ends flag parsing (so `moat exec -- cmd --quiet` passes it through), and
+every flag named in the command table exists in `SPEC`. A second test pins the flags the
+suites pass to `moat up`, so a missing entry fails there rather than as a wall of boot
+output.
 
 ---
 

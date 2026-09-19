@@ -525,6 +525,43 @@ else
   echo "--timeout: FAILED, the flag did not shorten the check (reported ${SLOW_DUR}s)" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$SLOW" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "Z. a flag a command does not read is refused, and --quiet exists"
+# The flag table is shared by every command, so a flag the command never reads used to
+# be accepted and silently dropped: that is how --timeout never reached the checks
+# runner (section Y) and how --quiet, which every harness here passes, was read by
+# nothing at all. A flag is refused now, --quiet hides the progress lines, and a
+# command with --help prints help instead of running.
+capture flag-refused $MOAT fetch --timeout 5
+if grep -q "^--- exit 1$" "$EVIDENCE/flag-refused.txt" \
+   && grep -q -- "--timeout" "$EVIDENCE/flag-refused.txt" \
+   && grep -q "refused rather than ignored" "$EVIDENCE/flag-refused.txt" \
+   && ! grep -q "copy-out:" "$EVIDENCE/flag-refused.txt"; then
+  echo "--timeout on fetch: refused before any work, not ignored" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--timeout on fetch: FAILED, the flag was accepted or the command ran anyway" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+capture down-before-z $MOAT down
+capture loud-up $MOAT up --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+capture down-mid-z $MOAT down
+capture quiet-up $MOAT up --quiet --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+if grep -q "^--- exit 0$" "$EVIDENCE/quiet-up.txt" && ! grep -q "→" "$EVIDENCE/quiet-up.txt"; then
+  echo "--quiet: the boot printed no progress lines, and still succeeded" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--quiet: FAILED, progress lines were still printed" | tee -a "$EVIDENCE/extras.txt"
+fi
+if grep -q "→" "$EVIDENCE/loud-up.txt"; then
+  echo "the control without --quiet printed them, so the check above can fail" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "the control printed no progress lines: the --quiet check proves nothing" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+capture help-flag $MOAT profiles --help
+if grep -q "Usage: moat <command>" "$EVIDENCE/help-flag.txt" && ! grep -q "Node.js / TypeScript" "$EVIDENCE/help-flag.txt"; then
+  echo "--help: prints the help text instead of running the command" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--help: FAILED, the command ran instead of printing help" | tee -a "$EVIDENCE/extras.txt"
+fi
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

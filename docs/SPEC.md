@@ -246,6 +246,12 @@ filesystem, no socket, no subprocess.
 | `moat env` | connection details (url, user, password, basic-auth header) |
 | `moat logs [sandbox\|audit]` | tail a log |
 
+Flags are per command. The parser knows every flag moat has, so a typo is an error,
+and each command declares the ones it reads: a flag the command does not read is
+refused before it runs rather than accepted and ignored. `--help`, `--quiet` and
+`--verbose` apply everywhere, and `moat <command> --help` prints the command list
+instead of running the command.
+
 ---
 
 ## 3. Copy-in contract

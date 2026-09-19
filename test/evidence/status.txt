@@ -6,13 +6,13 @@
 project      /home/user/moat-demo/egress-project
 env          /home/user/.moat/envs/16a525996d67
 status       running
-endpoint     http://127.0.0.1:38987
-pid          236644
+endpoint     http://127.0.0.1:42727
+pid          249247
 opencode     1.18.31 / alpine 3.21.4
 model        deepseek/deepseek-flash (deepseek)
-branch       moat-session-2026-09-19-20-05
+branch       moat-session-2026-09-19-20-25
 egress       isolated (own network namespace)
 rootfs       378.5 MiB
-credential   deepseek sha256:34c4e933b47c1fb3 expires in 14389s
+credential   deepseek sha256:34c4e933b47c1fb3 expires in 14388s
 snapshots    baseline
-branches     main, moat-session-2026-09-19-20-05*
+branches     main, moat-session-2026-09-19-20-25*

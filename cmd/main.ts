@@ -108,92 +108,15 @@ import {
   baseUrl,
 } from "./client.ts"
 import { runRepl } from "./repl.ts"
+import { COMMAND_FLAGS, SPEC, flag, parse, type Parsed } from "../lib/flags.ts"
 
 // ---------------------------------------------------------------------------
 // argument parsing
 // ---------------------------------------------------------------------------
-
-type Spec = Record<string, "boolean" | "string" | "number">
-type Parsed = { _: string[]; flags: Record<string, string | boolean | number> }
-
-function parse(argv: string[], spec: Spec): Parsed {
-  const flags: Parsed["flags"] = {}
-  const rest: string[] = []
-  for (let i = 0; i < argv.length; i++) {
-    const token = argv[i]!
-    if (token === "--") {
-      rest.push(...argv.slice(i + 1))
-      break
-    }
-    if (!token.startsWith("-")) {
-      rest.push(token)
-      continue
-    }
-    const name = token.replace(/^--?/, "")
-    const [key, inline] = name.includes("=") ? [name.slice(0, name.indexOf("=")), name.slice(name.indexOf("=") + 1)] : [name, undefined]
-    const type = spec[key]
-    if (!type) throw new Error(`unknown flag: ${token}`)
-    if (type === "boolean") {
-      flags[key] = inline === undefined ? true : inline !== "false"
-      continue
-    }
-    const value = inline ?? argv[++i]
-    if (value === undefined) throw new Error(`flag --${key} needs a value`)
-    flags[key] = type === "number" ? Number(value) : value
-  }
-  return { _: rest, flags }
-}
-
-const SPEC: Spec = {
-  help: "boolean",
-  json: "boolean",
-  verbose: "boolean",
-  model: "string",
-  effort: "string",
-  profile: "string",
-  profiles: "boolean",
-  tools: "string",
-  continue: "boolean",
-  refresh: "boolean",
-  "list-models": "boolean",
-  "model-id": "string",
-  "base-url": "string",
-  upstream: "string",
-  credential: "string",
-  "credential-env": "string",
-  "credential-ttl": "string",
-  "no-credential": "boolean",
-  port: "number",
-  egress: "string",
-  "egress-allow": "string",
-  fresh: "boolean",
-  sync: "boolean",
-  "log-level": "string",
-  prompt: "string",
-  session: "string",
-  agent: "string",
-  all: "boolean",
-  checkout: "boolean",
-  name: "string",
-  yes: "boolean",
-  tail: "number",
-  timeout: "number",
-  "show-output": "boolean",
-  "commit-worktree": "boolean",
-  "no-detect": "boolean",
-  "no-follow": "boolean",
-  "no-verify": "boolean",
-  "skip-conflicts": "boolean",
-  "dry-run": "boolean",
-  force: "boolean",
-  quiet: "boolean",
-  "keep": "boolean",
-}
-
-function flag<T>(p: Parsed, key: string): T | undefined {
-  const value = p.flags[key]
-  return value === undefined ? undefined : (value as T)
-}
+// The parser and the flag tables live in lib/flags.ts, so they can be unit-tested
+// without a sandbox. parse(argv, SPEC, command) refuses a flag the command does
+// not read; main() runs that check before dispatching, and the command parses its
+// own arguments again for its own use.
 
 /**
  * A numeric flag that has to be a positive integer.
@@ -2597,7 +2520,13 @@ Options that apply to up/run
   --continue             continue the last session instead of starting a new one
   --show-output          print each tool's output as it runs
   --json                 machine-readable output on stdout
-  --verbose              verbose diagnostics on stderr
+
+Options that apply to every command
+  --help                 print this text instead of running the command
+  --quiet                hide the progress lines; warnings and results still print
+  --verbose              extra diagnostics on stderr
+
+A flag a command does not read is refused rather than ignored.
 
 Docs: docs/SPEC.md, docs/VERIFICATION.md
 `
@@ -2625,7 +2554,23 @@ async function main(): Promise<number> {
     process.stdout.write(`moat 0.0.1 (opencode ${OPENCODE_VERSION}, alpine ${ALPINE_VERSION})\n`)
     return 0
   }
-  if (rest.includes("--verbose")) process.env.MOAT_VERBOSE = "1"
+  // Parse once before dispatch: this is where a flag the command does not read is
+  // refused (lib/flags.ts) instead of accepted and ignored, and where the three
+  // global flags act. The command parses its own arguments again for its own use.
+  if (Object.prototype.hasOwnProperty.call(COMMAND_FLAGS, command)) {
+    let global: Parsed
+    try {
+      global = parse(rest, SPEC, command)
+    } catch (error) {
+      log.fail((error as Error).message)
+    }
+    if (global.flags.help === true) {
+      process.stdout.write(HELP)
+      return 0
+    }
+    if (global.flags.verbose === true) process.env.MOAT_VERBOSE = "1"
+    if (global.flags.quiet === true) log.setQuiet(true)
+  }
 
   try {
     switch (command) {
