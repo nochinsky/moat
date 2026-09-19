@@ -5,8 +5,59 @@ import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
 
-import { SLIRP_DNS, SLIRP_NAMESERVER_LINE, addHostForward, runtimeForEgress, slirpArgs } from "../../sandbox/egress.ts"
-import { unshareArgs } from "../../sandbox/launcher.ts"
+import {
+  SLIRP_DNS,
+  SLIRP_NAMESERVER_LINE,
+  addHostForward,
+  defaultAllowHosts,
+  parseAllowlist,
+  pruneDeadSockets,
+  renderNftRules,
+  resolveAllowlist,
+  runtimeForEgress,
+  slirpArgs,
+  waitForSocket,
+} from "../../sandbox/egress.ts"
+import { bootIsolation, unshareArgs } from "../../sandbox/launcher.ts"
+import { defaultEgress, ownNetns } from "../../lib/pins.ts"
+
+test("the allowlist parser splits on commas and whitespace without duplicates", () => {
+  assert.deepEqual(parseAllowlist("a.example, b.example  c.example,a.example"), ["a.example", "b.example", "c.example"])
+  assert.deepEqual(parseAllowlist(undefined), [])
+})
+
+test("the default allowlist carries the registries and the provider", () => {
+  const hosts = defaultAllowHosts("api.deepseek.com")
+  assert.ok(hosts.includes("registry.npmjs.org"))
+  assert.ok(hosts.includes("dl-cdn.alpinelinux.org"))
+  assert.ok(hosts.includes("api.deepseek.com"))
+  assert.equal(new Set(hosts).size, hosts.length, "no duplicates")
+})
+
+test("resolution keeps IP literals, expands names, and skips unresolvable hosts", () => {
+  return (async () => {
+    const ips = await resolveAllowlist(["1.2.3.4", "ok.example", "missing.example"], async (host) => {
+      if (host === "ok.example") return ["5.6.7.8", "9.10.11.12"]
+      throw new Error("ENOTFOUND")
+    })
+    assert.deepEqual(ips, ["1.2.3.4", "5.6.7.8", "9.10.11.12"])
+  })()
+})
+
+test("the ruleset drops by default and allows only DNS and the allowlist", () => {
+  const rules = renderNftRules(["5.6.7.8", "9.10.11.12"])
+  assert.match(rules, /policy drop;/)
+  assert.match(rules, /elements = { 5.6.7.8, 9.10.11.12 }/)
+  assert.match(rules, /ip daddr @allowed4 tcp dport { 80, 443 } accept/)
+  assert.match(rules, /ip daddr 10.0.2.3 udp dport 53 accept/)
+  assert.match(rules, /oif lo accept/)
+  assert.match(rules, /ct state established,related accept/)
+  // An empty allowlist must still be a valid, maximally strict ruleset.
+  const empty = renderNftRules([])
+  assert.match(empty, /policy drop;/)
+  assert.equal(empty.includes("@allowed4"), false)
+  assert.equal(empty.includes("elements"), false)
+})
 
 test("slirp closes the host-loopback gateway and takes an API socket", () => {
   const args = slirpArgs(4242, { apiSocket: "/tmp/slirp.sock" })
@@ -64,10 +115,85 @@ test("an error reply from slirp rejects instead of pretending to forward", async
   await assert.rejects(() => addHostForward(socketPath, 12345), /refused the port forward/)
 })
 
+test("a socket file with no listener is not ready", async (t) => {
+  // The bug this guards, measured: every boot used the same API socket path, so
+  // a restart found the previous slirp's socket file, `existsSync` said "ready",
+  // and the port forward failed with ECONNREFUSED (slirp itself could not bind
+  // over the corpse). Readiness has to be a connection, not a stat().
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "moat-dead-socket-"))
+  const dead = path.join(dir, "slirp-1-dead.sock")
+  fs.writeFileSync(dead, "")
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  assert.equal(await waitForSocket(dead, 150, { exitCode: null }), false)
+})
+
+test("a listening API socket is ready, and only dead ones are reaped", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "moat-live-socket-"))
+  const live = path.join(dir, "slirp-2-live.sock")
+  const dead = path.join(dir, "slirp-3-dead.sock")
+  fs.writeFileSync(dead, "")
+  const server = net.createServer(() => {})
+  await new Promise<void>((resolve) => server.listen(live, resolve))
+  t.after(() => {
+    server.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+  assert.equal(await waitForSocket(live, 500, { exitCode: null }), true)
+  await pruneDeadSockets(dir)
+  assert.equal(fs.existsSync(dead), false)
+  assert.equal(fs.existsSync(live), true)
+})
+
+test("waiting stops as soon as the process that owns the socket dies", async () => {
+  const missing = path.join(os.tmpdir(), "moat-no-such-socket-" + process.pid + ".sock")
+  fs.rmSync(missing, { force: true })
+  const started = Date.now()
+  assert.equal(await waitForSocket(missing, 5000, { exitCode: 1 }), false)
+  assert.ok(Date.now() - started < 4000, "a dead process must not be waited out")
+})
+
 test("only an isolated sandbox gets its own network namespace", () => {
   assert.ok(unshareArgs("boot.sh", { net: true }).includes("--net"))
   assert.equal(unshareArgs("boot.sh", { net: false }).includes("--net"), false)
   assert.equal(unshareArgs("boot.sh").includes("--net"), false)
+})
+
+test("filtered egress is isolated egress plus a ruleset", () => {
+  // The bug this guards, measured: `filtered` was not counted as having its own
+  // network namespace, so the boot kept the host's netns and nft ran there as an
+  // unprivileged user -> "netlink: Error: cache initialization failed". The box
+  // would have been unfiltered even if nft had somehow succeeded.
+  assert.equal(ownNetns("open"), false)
+  assert.equal(ownNetns("isolated"), true)
+  assert.equal(ownNetns("filtered"), true)
+  const binary = "/usr/local/bin/slirp4netns"
+  assert.equal(bootIsolation({ egress: "open" }), false)
+  assert.equal(bootIsolation({ egress: "isolated", slirpBinary: binary }), true)
+  assert.equal(
+    bootIsolation({ egress: "filtered", slirpBinary: binary, egressRules: "/.moat/egress.nft" }),
+    true,
+  )
+})
+
+test("a boot that cannot isolate itself refuses instead of running unfiltered", () => {
+  assert.throws(() => bootIsolation({ egress: "isolated" }), /needs the slirp4netns binary/)
+  assert.throws(() => bootIsolation({ egress: "filtered" }), /needs the slirp4netns binary/)
+  assert.throws(
+    () => bootIsolation({ egress: "open", egressRules: "/.moat/egress.nft" }),
+    /own network namespace/,
+  )
+})
+
+test("a new environment defaults to filtered, except for a loopback provider", () => {
+  // The default is the product decision: a fresh box gets the allowlist. The one
+  // exception is a provider on the host's loopback, which the sandbox's own
+  // namespace cannot reach at all, so filtering it would only break the box.
+  assert.equal(defaultEgress("https://api.deepseek.com"), "filtered")
+  assert.equal(defaultEgress("http://192.168.1.10:8000/v1"), "filtered")
+  assert.equal(defaultEgress("http://127.0.0.1:8080/v1"), "open")
+  assert.equal(defaultEgress("http://localhost:11434/v1"), "open")
+  assert.equal(defaultEgress("http://[::1]:8080/v1"), "open")
+  assert.equal(defaultEgress("not a url"), "filtered")
 })
 
 test("open egress needs no datapath binary", () => {

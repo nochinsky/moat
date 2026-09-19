@@ -35,6 +35,10 @@ export const PROVISION_PACKAGES = [
   "findutils",
   "diffutils",
   "patch",
+  // The egress filter, applied inside the sandbox's own network namespace when
+  // egress is filtered. BASE_PACKAGES in sandbox/profiles.ts is the list a normal
+  // `moat up` provisions with, and it carries this too; keep them in sync.
+  "nftables",
 ]
 
 export const NPM_REGISTRY = "https://registry.npmjs.org"
@@ -74,10 +78,79 @@ export const SLIRP4NETNS_SHA256 = "8e54132bc80fc60d53af4b544dae63a81151774b56f12
  * own namespace with slirp4netns as the datapath: it keeps outbound access but
  * loses the host's network position, including the host's loopback.
  */
-export type EgressMode = "open" | "isolated"
+export type EgressMode = "open" | "isolated" | "filtered"
+
+/**
+ * Every mode except `open` runs the sandbox in its own network namespace with
+ * slirp4netns as the only datapath; `filtered` adds the nftables allowlist on top
+ * of exactly the same namespace. One definition, because treating `filtered` as
+ * "open plus rules" is how the rules end up being applied in the host's
+ * namespace, where an unprivileged user cannot load them at all.
+ */
+export function ownNetns(egress: EgressMode): boolean {
+  return egress !== "open"
+}
+
+/**
+ * The policy a *new* environment gets, from where its provider lives.
+ *
+ * `filtered` is the default: the sandbox keeps outbound access to the provider
+ * and the package registries and nothing else. The exception is a provider on
+ * the host's own loopback (a local stub, a gateway you run yourself). Slirp's
+ * route to the host's loopback is closed on purpose, so such an endpoint is
+ * unreachable from the sandbox's namespace by construction; those environments
+ * get `open` instead of a box that cannot call the model.
+ *
+ * An existing environment keeps the mode recorded in its state: this only picks
+ * a policy the first time a project is sandboxed.
+ */
+export function defaultEgress(providerBaseUrl: string): EgressMode {
+  let host = ""
+  try {
+    host = new URL(providerBaseUrl).hostname.toLowerCase()
+  } catch {
+    return "filtered"
+  }
+  const loopback =
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "[::1]"
+  return loopback ? "open" : "filtered"
+}
 
 /** slirp4netns answers DNS here inside an isolated namespace. */
 export const SLIRP_DNS = "10.0.2.3"
+
+/**
+ * Hosts a filtered sandbox may reach by default, beyond the provider itself.
+ *
+ * These are the package sources a coding agent needs to install dependencies:
+ * npm, the Alpine CDNs the profile installer rotates between, PyPI, the Go and
+ * Rust module proxies, Maven Central and GitHub. The list is deliberately
+ * explicit: anything else is dropped, and `--egress-allow` adds to it.
+ */
+export const EGRESS_REGISTRY_HOSTS = [
+  "registry.npmjs.org",
+  "dl-cdn.alpinelinux.org",
+  "mirror.leaseweb.com",
+  "uk.alpinelinux.org",
+  "pypi.org",
+  "files.pythonhosted.org",
+  "proxy.golang.org",
+  "storage.googleapis.com",
+  "index.crates.io",
+  "static.crates.io",
+  "repo1.maven.org",
+  "github.com",
+  "codeload.github.com",
+  "objects.githubusercontent.com",
+  "raw.githubusercontent.com",
+]
+
+/** Ports allowed to an allowlisted address. DNS is handled separately. */
+export const EGRESS_ALLOWED_PORTS = [80, 443]
 export const OPENCODE_TARBALL_INTEGRITY =
   "sha512-TxKfcJII53MZ17NSrJ0p51wx0dJtZrX8By60N5O5/M+eP0oO4jCXKIkdBpP/Bku44gm8QZkTNLBWpPc2OTJweg=="
 

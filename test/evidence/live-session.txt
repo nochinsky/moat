@@ -4,34 +4,34 @@
 ==============================================================
 
 == 1. a fixture that genuinely fails
-fixture: a9ec950, src: cli.js slugify.js  test: slugify.test.js 
+fixture: 0867802, src: cli.js slugify.js  test: slugify.test.js 
 before: ℹ pass 1 ℹ fail 5 
 
 == 2. boot with the real provider
 
---- $ node /home/user/Projects/moat/cmd/main.ts destroy --yes
-nothing to destroy
+--- $ node /home/ektor/Projects/moat/cmd/main.ts destroy --yes
+✓ destroyed /home/ektor/.moat/envs/1ade356a6e72
 --- exit 0
 
---- $ node /home/user/Projects/moat/cmd/main.ts up --model deepseek-flash --profile node --credential-env DEEPSEEK_API_KEY
+--- $ node /home/ektor/Projects/moat/cmd/main.ts up --model deepseek-flash --profile node --credential-env DEEPSEEK_API_KEY
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31 + node)
-→ provisioning from the cached image alpine-3.21.4-2ad428c5ad62.tar.gz
-✓ image provisioned in 1.41s (extract cached image 1.41s)
+→ provisioning from the cached image alpine-3.21.4-085c49949f85.tar.gz
+✓ image provisioned in 1.60s (extract cached image 1.34s)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 4 files, 1.2 KiB, digest 12dba387081516f5
 model: deepseek/deepseek-flash (context 1M, out 384k)
-! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-01-07
+! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-19-15-15
 checks: npm run test
-→ sandbox booted (pid 199111, port 35089); waiting for opencode serve
-✓ sandbox up, cold start 14.59s (image built)
+→ sandbox booted (pid 67008, port 46705); waiting for opencode serve
+✓ sandbox up, cold start 17.98s (image built)
 
-  project    /home/user/moat-demo/live-project
-  env        /home/user/.moat/envs/1ade356a6e72
-  opencode   http://127.0.0.1:35089  (basic auth user "opencode")
-  password   vYlntPcqHaCPFbi3TqVn6fiOYdpLyz97
+  project    /home/ektor/moat-demo/live-project
+  env        /home/ektor/.moat/envs/1ade356a6e72
+  opencode   http://127.0.0.1:46705  (basic auth user "opencode")
+  password   o1lh7aJa3alg_2izXSqkYxh6QPXWi4EX
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T05:07:20.187Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T19:15:35.697Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -41,35 +41,29 @@ checks: npm run test
 == 3. the agent does the work
 note: no output appears until the turn completes; watch the sandbox log for progress
 
---- $ timeout 1800 node /home/user/Projects/moat/cmd/main.ts attach --show-output --prompt npm test is failing. Run it, find the bug in src/slugify.js, and fix it so the whole suite passes. Then run npm install and verify the CLI works end to end. Commit everything to the branch you are on, and report the final test output.
+--- $ timeout 1800 node /home/ektor/Projects/moat/cmd/main.ts attach --show-output --prompt npm test is failing. Run it, find the bug in src/slugify.js, and fix it so the whole suite passes. Then run npm install and verify the CLI works end to end. Commit everything to the branch you are on, and report the final test output.
 [tool] bash (running) 
 [tool] read (running) 
-[tool] read (running) 
-[tool] read (completed) package.json
-[tool-output] <path>/work/package.json</path>
-<type>file</type>
-<content>
-1: {
-2:   "name": "slugkit",
-3:   "version": "1.0.0",
-4:   "type": "module",
-5:   "scripts": { "test": "node --test" },
-6:   "dependencies": { "picocolors": "^1.1.1" }
-7: }
-
-(End of file - total 7 lines)
-</content>
-[tool] bash (completed) git status && git log --oneline -5 && ls -la
-[tool-output] On branch moat-session-2026-09-19-01-07
-nothing to commit, working tree clean
-a9ec950 slugkit: initial commit (test suite currently failing)
+[tool] bash (completed) cat package.json; echo "---"; ls -la; echo "---"; git status; git log --oneline -5
+[tool-output] {
+  "name": "slugkit",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": { "test": "node --test" },
+  "dependencies": { "picocolors": "^1.1.1" }
+}
+---
 total 24
-drwxr-xr-x  5 root root 4096 Sep 19 01:07 .
-drwxr-xr-x 22 root root 4096 Sep 19 01:07 ..
-drwxr-xr-x  7 root root 4096 Sep 19 01:07 .git
--rw-r--r--  1 root root  152 Sep 19 01:07 package.json
-drwxr-xr-x  2 root root 4096 Sep 19 01:07 src
-drwxr-xr-x  2 root root 4096 Sep 19 01:07 test
+drwxr-xr-x  5 root root 4096 Sep 19 15:15 .
+drwxr-xr-x 22 root root 4096 Sep 19 15:15 ..
+drwxr-xr-x  7 root root 4096 Sep 19 15:15 .git
+-rw-r--r--  1 root root  152 Sep 19 15:15 package.json
+drwxr-xr-x  2 root root 4096 Sep 19 15:15 src
+drwxr-xr-x  2 root root 4096 Sep 19 15:15 test
+---
+On branch moat-session-2026-09-19-15-15
+nothing to commit, working tree clean
+0867802 slugkit: initial commit (test suite currently failing)
 [tool] read (completed) src/slugify.js
 [tool-output] <path>/work/src/slugify.js</path>
 <type>file</type>
@@ -82,32 +76,21 @@ drwxr-xr-x  2 root root 4096 Sep 19 01:07 test
 (End of file - total 4 lines)
 </content>
 [tool] bash (running) 
-[tool] bash (completed) ls -la src test && cat test/*.js
+[tool] glob (running) 
+[tool] glob (completed) 
+[tool-output] /work/test/slugify.test.js
+/work/package.json
+/work/src/slugify.js
+/work/src/cli.js
+[tool] bash (completed) ls -R src test; echo "---"; npm test 2>&1 | head -100
 [tool-output] src:
-total 16
-drwxr-xr-x 2 root root 4096 Sep 19 01:07 .
-drwxr-xr-x 5 root root 4096 Sep 19 01:07 ..
--rw-r--r-- 1 root root  322 Sep 19 01:07 cli.js
--rw-r--r-- 1 root root  162 Sep 19 01:07 slugify.js
+cli.js
+slugify.js
 
 test:
-total 12
-drwxr-xr-x 2 root root 4096 Sep 19 01:07 .
-drwxr-xr-x 5 root root 4096 Sep 19 01:07 ..
--rw-r--r-- 1 root root  628 Sep 19 01:07 slugify.test.js
-import test from "node:test"
-import assert from "node:assert/strict"
-import { slugify } from "../src/slugify.js"
+slugify.test.js
+---
 
-test("lowercases", () => assert.equal(slugify("Hello"), "hello"))
-test("collapses runs of whitespace", () => assert.equal(slugify("Hello   World"), "hello-world"))
-test("trims", () => assert.equal(slugify("  Hello World  "), "hello-world"))
-test("drops punctuation", () => assert.equal(slugify("Hello, World!"), "hello-world"))
-test("no trailing hyphen", () => assert.equal(slugify("Hello World --- "), "hello-world"))
-test("transliterates accents", () => assert.equal(slugify("Crème Brûlée"), "creme-brulee"))
-[tool] bash (running) 
-[tool] bash (completed) npm test 2>&1
-[tool-output] 
 > slugkit@1.0.0 test
 > node --test
 
@@ -115,13 +98,13 @@ TAP version 13
 # Subtest: lowercases
 ok 1 - lowercases
   ---
-  duration_ms: 1.235961
+  duration_ms: 1.019805
   type: 'test'
   ...
 # Subtest: collapses runs of whitespace
 not ok 2 - collapses runs of whitespace
   ---
-  duration_ms: 1.315694
+  duration_ms: 1.196413
   type: 'test'
   location: '/work/test/slugify.test.js:6:1'
   failureType: 'testCodeFailure'
@@ -150,7 +133,7 @@ not ok 2 - collapses runs of whitespace
 # Subtest: trims
 not ok 3 - trims
   ---
-  duration_ms: 0.424124
+  duration_ms: 0.721152
   type: 'test'
   location: '/work/test/slugify.test.js:7:1'
   failureType: 'testCodeFailure'
@@ -175,9 +158,26 @@ not ok 3 - trims
     Test.run (node:internal/test_runner/test:1101:12)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
-# Subtest: drops punctuation
-not ok 4 - drops punctuatio
+# Subt
 …<truncated>
+[tool] read (running) 
+[tool] read (completed) test/slugify.test.js
+[tool-output] <path>/work/test/slugify.test.js</path>
+<type>file</type>
+<content>
+1: import test from "node:test"
+2: import assert from "node:assert/strict"
+3: import { slugify } from "../src/slugify.js"
+4: 
+5: test("lowercases", () => assert.equal(slugify("Hello"), "hello"))
+6: test("collapses runs of whitespace", () => assert.equal(slugify("Hello   World"), "hello-world"))
+7: test("trims", () => assert.equal(slugify("  Hello World  "), "hello-world"))
+8: test("drops punctuation", () => assert.equal(slugify("Hello, World!"), "hello-world"))
+9: test("no trailing hyphen", () => assert.equal(slugify("Hello World --- "), "hello-world"))
+10: test("transliterates accents", () => assert.equal(slugify("Crème Brûlée"), "creme-brulee"))
+
+(End of file - total 10 lines)
+</content>
 [tool] read (running) 
 [tool] read (completed) src/cli.js
 [tool-output] <path>/work/src/cli.js</path>
@@ -197,46 +197,16 @@ not ok 4 - drops punctuatio
 [tool-output] Edit applied successfully.
 [tool] bash (running) 
 [tool] bash (running) 
-[tool] bash (completed) npm test 2>&1
-[tool-output] 
-> slugkit@1.0.0 test
-> node --test
-
-TAP version 13
-# Subtest: lowercases
-ok 1 - lowercases
+[tool] bash (completed) npm test 2>&1 | tail -20
+[tool-output] ok 5 - no trailing hyphen
   ---
-  duration_ms: 1.228316
-  type: 'test'
-  ...
-# Subtest: collapses runs of whitespace
-ok 2 - collapses runs of whitespace
-  ---
-  duration_ms: 0.23098
-  type: 'test'
-  ...
-# Subtest: trims
-ok 3 - trims
-  ---
-  duration_ms: 0.182395
-  type: 'test'
-  ...
-# Subtest: drops punctuation
-ok 4 - drops punctuation
-  ---
-  duration_ms: 0.158052
-  type: 'test'
-  ...
-# Subtest: no trailing hyphen
-ok 5 - no trailing hyphen
-  ---
-  duration_ms: 0.155149
+  duration_ms: 0.147168
   type: 'test'
   ...
 # Subtest: transliterates accents
 ok 6 - transliterates accents
   ---
-  duration_ms: 0.292938
+  duration_ms: 0.901143
   type: 'test'
   ...
 1..6
@@ -247,90 +217,111 @@ ok 6 - transliterates accents
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 103.56136
-[tool] bash (completed) npm install 2>&1
+# duration_ms 92.297569
+[tool] bash (completed) npm install 2>&1 | tail -15
 [tool-output] 
-added 1 package, and audited 2 packages in 806ms
+added 1 package, and audited 2 packages in 750ms
 
 found 0 vulnerabilities
 [tool] bash (running) 
-[tool] bash (completed) node src/cli.js --version && node src/cli.js "  Crème Brûlée, World!  " && node src/cli.js; echo "exit=$?"
-[tool-output] slugkit 1.0.0
-creme-brulee-world
+[tool] bash (completed) node src/cli.js "  Crème Brûlée  " ; node src/cli.js --version; node src/cli.js 2>&1; echo "exit=$?"
+[tool-output] creme-brulee
+slugkit 1.0.0
 usage: slugkit <title>
 exit=1
 [tool] bash (running) 
-[tool] bash (completed) git status --porcelain && ls -a
-[tool-output]  M src/slugify.js
-?? node_modules/
-?? package-lock.json
-.
-..
-.git
-node_modules
-package-lock.json
-package.json
-src
-test
-[tool] bash (running) 
-[tool] bash (completed) cat package-lock.json | head -30 && du -sh node_modules
-[tool-output] {
-  "name": "slugkit",
-  "version": "1.0.0",
-  "lockfileVersion": 3,
-  "requires": true,
-  "packages": {
-    "": {
-      "name": "slugkit",
-      "version": "1.0.0",
-      "dependencies": {
-        "picocolors": "^1.1.1"
-      }
-    },
-    "node_modules/picocolors": {
-      "version": "1.1.1",
-      "resolved": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
-      "integrity": "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==",
-      "license": "ISC"
-    }
-  }
-}
-40K	node_modules
+[tool] bash (completed) git add -A && git status --short && git commit -q -m "fix(slugify): handle whitespace, punctuation, trimming and accents" && git log --oneline -3
+[tool-output] A  node_modules/.package-lock.json
+A  node_modules/picocolors/LICENSE
+A  node_modules/picocolors/README.md
+A  node_modules/picocolors/package.json
+A  node_modules/picocolors/picocolors.browser.js
+A  node_modules/picocolors/picocolors.d.ts
+A  node_modules/picocolors/picocolors.js
+A  node_modules/picocolors/types.d.ts
+A  package-lock.json
+M  src/slugify.js
+05f49ba fix(slugify): handle whitespace, punctuation, trimming and accents
+0867802 slugkit: initial commit (test suite currently failing)
 [tool] write (running) 
 [tool] write (completed) .gitignore
 [tool-output] Wrote file successfully.
 [tool] bash (running) 
-[tool] bash (completed) git add .gitignore package-lock.json src/slugify.js && git status --short && git commit -m "Fix slugify to handle whitespace, punctuation, trim, and accents
+[tool] bash (completed) git rm -r -q --cached node_modules && git add .gitignore package-lock.json && git commit -q -m "chore: ignore node_modules" && git status --short && git log --oneline -3 && git ls-files
+[tool-output] ccd43b3 chore: ignore node_modules
+05f49ba fix(slugify): handle whitespace, punctuation, trimming and accents
+0867802 slugkit: initial commit (test suite currently failing)
+.gitignore
+package-lock.json
+package.json
+src/cli.js
+src/slugify.js
+test/slugify.test.js
+[tool] bash (running) 
+[tool] bash (completed) npm test 2>&1
+[tool-output] 
+> slugkit@1.0.0 test
+> node --test
 
-Normalize to NFD and strip combining diacritics, replace runs of
-non-alphanumeric characters with a single hyphen, and trim leading
-and trailing hyphens. Add package-lock.json from npm install and
-ignore node_modules."
-[tool-output] A  .gitignore
-A  package-lock.json
-M  src/slugify.js
-[moat-session-2026-09-19-01-07 4df092a] Fix slugify to handle whitespace, punctuation, trim, and accents
- 3 files changed, 28 insertions(+), 2 deletions(-)
- create mode 100644 .gitignore
- create mode 100644 package-lock.json
-Fixed. The bug was `slugify` only lowercased and replaced spaces, ignoring whitespace runs, punctuation, trim, and accents. Now it normalizes/strips diacritics, collapses non-alphanumerics to single hyphens, and trims hyphens.
+TAP version 13
+# Subtest: lowercases
+ok 1 - lowercases
+  ---
+  duration_ms: 1.399189
+  type: 'test'
+  ...
+# Subtest: collapses runs of whitespace
+ok 2 - collapses runs of whitespace
+  ---
+  duration_ms: 0.289457
+  type: 'test'
+  ...
+# Subtest: trims
+ok 3 - trims
+  ---
+  duration_ms: 0.126329
+  type: 'test'
+  ...
+# Subtest: drops punctuation
+ok 4 - drops punctuation
+  ---
+  duration_ms: 0.13287
+  type: 'test'
+  ...
+# Subtest: no trailing hyphen
+ok 5 - no trailing hyphen
+  ---
+  duration_ms: 0.147925
+  type: 'test'
+  ...
+# Subtest: transliterates accents
+ok 6 - transliterates accents
+  ---
+  duration_ms: 0.353281
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 99.8479
+Fixed `src/slugify.js:1` — it only replaced literal spaces. Now it NFD-normalizes and strips diacritics, lowercases, replaces any non-alphanumeric run with `-`, then trims leading/trailing hyphens.
 
-`npm test` — 6/6 pass, 0 fail:
+Committed to `moat-session-2026-09-19-15-15`: `05f49ba` (fix) and `ccd43b3` (gitignore node_modules; package-lock.json tracked). `npm install` added picocolors. CLI verified: `node src/cli.js "  Crème Brûlée  "` → `creme-brulee`; `--version` → `slugkit 1.0.0`; no args exits 1 with usage.
+
+Final `npm test`:
 ```
 # tests 6
 # pass 6
 # fail 0
 ```
 
-CLI verified end to end:
-- `node src/cli.js --version` → `slugkit 1.0.0`
-- `node src/cli.js "  Crème Brûlée, World!  "` → `creme-brulee-world`
-- no args → `usage: slugkit <title>`, exit 1
 
-Committed as `4df092a` on `moat-session-2026-09-19-01-07` (plus `.gitignore` and `package-lock.json`; `node_modules/` ignored).
-
-
-session ses_f48cbb010ffeHLsWG6jEh0nB0H   14 tool call(s)
+session ses_f45c308edffeQr4bL5FYLuwtPD   14 tool call(s)
 --- exit 0
 
 == 4. verify the agent's claims independently
@@ -340,7 +331,7 @@ session ses_f48cbb010ffeHLsWG6jEh0nB0H   14 tool call(s)
 export function slugify(input) {
   return input
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\p{M}/gu, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
@@ -354,39 +345,54 @@ export function slugify(input) {
 --- the CLI, end to end ---
 hello-world-creme-brulee
 
-== 5. copy the work back, without touching the working tree
+== 5. the network policy this session actually ran under
+the environment was booted with no --egress flag, so it took the default.
+Measured in the same box that just did the work, not reported by moat: the
+allowlisted provider must answer and an address outside the list must not.
 
---- $ node /home/user/Projects/moat/cmd/main.ts fetch
-→ copy-out: git fetch /home/user/.moat/envs/1ade356a6e72/rootfs/work +refs/heads/moat-session-2026-09-19-01-07:refs/moat/moat-session-2026-09-19-01-07
-✓ fetched moat-session-2026-09-19-01-07 -> refs/moat/moat-session-2026-09-19-01-07 (4df092a5c1af)
-  2 commit(s) reachable, HEAD a9ec950e7f8f -> a9ec950e7f8f
-    4df092a5c1af  Fix slugify to handle whitespace, punctuation, trim, and accents
-    a9ec950e7f8f  slugkit: initial commit (test suite currently failing)
+--- the allowlisted provider (401 is the answer without a key) ---
+http 401
+
+--- an address outside the allowlist ---
+curl: (28) Connection timed out after 6002 milliseconds
+code 000
+curl-exit=28
+
+== 6. copy the work back, without touching the working tree
+
+--- $ node /home/ektor/Projects/moat/cmd/main.ts fetch
+→ copy-out: git fetch /home/ektor/.moat/envs/1ade356a6e72/rootfs/work +refs/heads/moat-session-2026-09-19-15-15:refs/moat/moat-session-2026-09-19-15-15
+✓ fetched moat-session-2026-09-19-15-15 -> refs/moat/moat-session-2026-09-19-15-15 (ccd43b35aee2)
+  3 commit(s) reachable, HEAD 08678029e6e6 -> 08678029e6e6
+    ccd43b35aee2  chore: ignore node_modules
+    05f49badeaeb  fix(slugify): handle whitespace, punctuation, trimming and accents
+    08678029e6e6  slugkit: initial commit (test suite currently failing)
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-19-01-07
-  apply with:    moat apply moat-session-2026-09-19-01-07  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-19-15-15
+  apply with:    moat apply moat-session-2026-09-19-15-15  (or --checkout)
 --- exit 0
-host HEAD before: a9ec950e7f8fafd26ec424fd01d31c0b6fd2d36c
-host HEAD after : a9ec950e7f8fafd26ec424fd01d31c0b6fd2d36c
+host HEAD before: 08678029e6e60fd4ada422143de03fca8a979ad0
+host HEAD after : 08678029e6e60fd4ada422143de03fca8a979ad0
 HEAD unchanged: yes
 working tree unchanged: yes
 
 --- what the agent produced, as the host now sees it ---
-4df092a Fix slugify to handle whitespace, punctuation, trim, and accents
-a9ec950 (HEAD -> main) slugkit: initial commit (test suite currently failing)
+ccd43b3 chore: ignore node_modules
+05f49ba fix(slugify): handle whitespace, punctuation, trimming and accents
+0867802 (HEAD -> main) slugkit: initial commit (test suite currently failing)
  .gitignore        |  1 +
  package-lock.json | 21 +++++++++++++++++++++
  src/slugify.js    |  8 ++++++--
  3 files changed, 28 insertions(+), 2 deletions(-)
 
-== 6. teardown
+== 7. teardown
 
---- $ node /home/user/Projects/moat/cmd/main.ts down
-✓ sandbox stopped (pid 199111); the environment and its snapshots are kept
+--- $ node /home/ektor/Projects/moat/cmd/main.ts down
+✓ sandbox stopped (pid 67008); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- exit 0
 
-evidence: /home/user/Projects/moat/test/evidence/live-session.txt
+evidence: /home/ektor/Projects/moat/test/evidence/live-session.txt
 REMINDER: revoke the DEEPSEEK_API_KEY you used for this run.

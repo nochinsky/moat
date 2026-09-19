@@ -62,6 +62,8 @@ export type EnvState = {
   pidStart: string | null
   /** How much network the environment gets: the host's namespace, or its own. */
   egress: EgressMode
+  /** Extra hosts the filtered allowlist permits, beyond the defaults. */
+  egressAllow: string[]
   /** slirp4netns pid for an isolated environment, and its identity. */
   slirpPid: number | null
   slirpStart: string | null
@@ -98,7 +100,10 @@ export function initialState(p: EnvPaths, versions: { opencode: string; alpine: 
     profiles: [],
     pid: null,
     pidStart: null,
+    // A placeholder until `moat up` resolves the policy (filtered by default,
+    // open for a loopback provider) and records it before the first boot.
     egress: "open",
+    egressAllow: [],
     slirpPid: null,
     slirpStart: null,
     baselineDigest: null,
@@ -122,6 +127,7 @@ export function readState(p: EnvPaths): EnvState | null {
     if (raw.agent === undefined) raw.agent = null
     if (raw.pidStart === undefined) raw.pidStart = null
     if (raw.egress === undefined) raw.egress = "open"
+    if (raw.egressAllow === undefined) raw.egressAllow = []
     if (raw.slirpPid === undefined) raw.slirpPid = null
     if (raw.slirpStart === undefined) raw.slirpStart = null
     return raw

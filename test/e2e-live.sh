@@ -138,7 +138,21 @@ $MOAT exec -- /bin/sh -c 'cd /work && node src/cli.js "Hello   World, CrÃ¨me BrÃ
 
 # ---------------------------------------------------------------------------
 say ""
-say "== 5. copy the work back, without touching the working tree"
+say "== 5. the network policy this session actually ran under"
+# ---------------------------------------------------------------------------
+say "the environment was booted with no --egress flag, so it took the default."
+say "Measured in the same box that just did the work, not reported by moat: the"
+say "allowlisted provider must answer and an address outside the list must not."
+say ""
+say "--- the allowlisted provider (401 is the answer without a key) ---"
+$MOAT exec -- /bin/sh -c 'curl -sS -o /dev/null -w "http %{http_code}\n" --max-time 25 https://api.deepseek.com/models' 2>&1 | tee -a "$LOG"
+say ""
+say "--- an address outside the allowlist ---"
+$MOAT exec -- /bin/sh -c 'curl -sS --max-time 6 -o /dev/null -w "code %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"' 2>&1 | tee -a "$LOG"
+
+# ---------------------------------------------------------------------------
+say ""
+say "== 6. copy the work back, without touching the working tree"
 # ---------------------------------------------------------------------------
 BEFORE_HEAD=$(git rev-parse HEAD)
 BEFORE_STATUS=$(git status --porcelain)
@@ -154,7 +168,7 @@ git diff --stat "$BEFORE_HEAD" "$(git for-each-ref --format='%(objectname)' 'ref
 
 # ---------------------------------------------------------------------------
 say ""
-say "== 6. teardown"
+say "== 7. teardown"
 # ---------------------------------------------------------------------------
 run $MOAT down
 say ""

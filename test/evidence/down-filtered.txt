@@ -1,7 +1,8 @@
+
 --- $ node /home/user/Projects/moat/cmd/main.ts down
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 63602); the environment and its snapshots are kept
+✓ sandbox stopped (pid 60606); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy

@@ -16,6 +16,8 @@ import {
   OPENCODE_VERSION,
   SANDBOX_WORKDIR,
   UNADVERTISED_GAPS,
+  defaultEgress,
+  ownNetns,
   type EgressMode,
 } from "../lib/pins.ts"
 import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, isDeepSeekHost } from "../lib/provider.ts"
@@ -23,7 +25,7 @@ import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/ca
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from "../sandbox/profiles.ts"
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
 import { runChecks, summarise } from "../sandbox/checks.ts"
-import { ensureSlirp4netns, runtimeForEgress } from "../sandbox/egress.ts"
+import { defaultAllowHosts, parseAllowlist, runtimeForEgress, type EgressRuntime } from "../sandbox/egress.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import {
@@ -153,6 +155,7 @@ const SPEC: Spec = {
   "no-credential": "boolean",
   port: "number",
   egress: "string",
+  "egress-allow": "string",
   fresh: "boolean",
   sync: "boolean",
   "log-level": "string",
@@ -208,15 +211,43 @@ function sandboxAlive(state: EnvState, paths: EnvPaths): boolean {
   return sandboxPidStatus(state.pid, { startTime: state.pidStart, envId: paths.id }) === "ours"
 }
 
+/** Where to prove an allowlisted endpoint is still reachable, for the doctor. */
+function providerProbe(baseUrl: string): { host: string; port: number } | undefined {
+  try {
+    const url = new URL(baseUrl)
+    if (!url.hostname) return undefined
+    return { host: url.hostname, port: Number(url.port) || (url.protocol === "https:" ? 443 : 80) }
+  } catch {
+    return undefined
+  }
+}
+
+/** The provider host an allowlist must include, from the recorded base URL. */
+function providerHost(baseUrl: string | null | undefined): string | undefined {
+  if (!baseUrl) return undefined
+  try {
+    return new URL(baseUrl).hostname || undefined
+  } catch {
+    return undefined
+  }
+}
+
 /**
- * The datapath an environment's fresh boots need.
+ * The datapath and (for filtered egress) the ruleset a fresh boot needs.
  *
- * An isolated environment resolves the pinned slirp4netns binary here, once, so
- * every ephemeral boot (doctor, exec, checks) runs in the same kind of network
- * as the long-running box rather than quietly measuring a different one.
+ * An own-namespace environment resolves the pinned slirp4netns binary here, once,
+ * so every ephemeral boot (doctor, exec, checks) runs in the same kind of network
+ * as the long-running box rather than quietly measuring a different one. The
+ * allowlist is the default registry/provider set plus whatever the user added,
+ * and resolution happens here on the host, on every boot, so rotated addresses
+ * are picked up.
  */
-async function egressRuntime(state: EnvState): Promise<{ egress: EgressMode; slirpBinary?: string }> {
-  return await runtimeForEgress(state.egress)
+async function egressRuntime(state: EnvState, paths: EnvPaths): Promise<EgressRuntime> {
+  const hosts = [
+    ...defaultAllowHosts(providerHost(state.providerBaseUrl ?? DEEPSEEK.baseUrl)),
+    ...(state.egressAllow ?? []),
+  ]
+  return await runtimeForEgress(state.egress, { rootfs: paths.rootfs, allowHosts: hosts })
 }
 
 function requireRunning(p: EnvPaths): { state: EnvState; password: string } {
@@ -426,15 +457,30 @@ async function cmdUp(argv: string[]): Promise<number> {
   const sync = flag<boolean>(p, "sync") ?? false
   const needsProvision = fresh || !envExists(paths) || !state
 
+  // Where the provider lives decides the default network policy, so resolve it
+  // first; nothing below this point changes it.
+  const provider = resolveProvider(p, state)
+
   // Network policy is part of the environment's identity: it is persisted, and a
   // change means the box has to be booted again in different namespaces.
-  const egressCandidate = flag<string>(p, "egress") ?? state?.egress ?? "open"
-  if (egressCandidate !== "open" && egressCandidate !== "isolated") {
+  const egressFlag = flag<string>(p, "egress")
+  const egressCandidate = egressFlag ?? state?.egress ?? defaultEgress(provider.baseUrl)
+  if (egressCandidate !== "open" && egressCandidate !== "isolated" && egressCandidate !== "filtered") {
     log.fail(
-      `unknown --egress "${egressCandidate}". Use "open" (the host's network namespace) or "isolated" (its own, through slirp4netns).`,
+      `unknown --egress "${egressCandidate}". Use "open" (the host's network namespace), "isolated" ` +
+        `(its own, through slirp4netns) or "filtered" (isolated, with a default-deny allowlist).`,
     )
   }
   const egress: EgressMode = egressCandidate
+  if (egressFlag === undefined && !state?.egress && egress === "open") {
+    log.info(
+      `egress: open, because the provider is on the host's loopback (${provider.baseUrl}) and the sandbox's ` +
+        "own namespace cannot reach it. Pass --egress filtered to filter it anyway.",
+    )
+  }
+  // The allowlist is per environment: an empty flag keeps what is recorded.
+  const allowFlag = flag<string>(p, "egress-allow")
+  const egressAllow = allowFlag !== undefined ? parseAllowlist(allowFlag) : (state?.egressAllow ?? [])
 
   // `moat` on its own is typed anywhere, so the obvious wrong directories are
   // caught before a byte is copied. This runs before provisioning, because
@@ -532,8 +578,14 @@ async function cmdUp(argv: string[]): Promise<number> {
 
   // Changing egress mode changes the namespaces the sandbox runs in, so the box
   // is restarted rather than reused under a policy it was not booted with.
-  if (state!.pid && sandboxAlive(state!, paths) && state!.egress !== egress) {
-    log.warn(`egress mode changed (${state!.egress} -> ${egress}); restarting the sandbox`)
+  const allowChanged =
+    JSON.stringify([...egressAllow].sort()) !== JSON.stringify([...(state!.egressAllow ?? [])].sort())
+  if (state!.pid && sandboxAlive(state!, paths) && (state!.egress !== egress || allowChanged)) {
+    log.warn(
+      state!.egress !== egress
+        ? `egress mode changed (${state!.egress} -> ${egress}); restarting the sandbox`
+        : "the egress allowlist changed; restarting the sandbox to apply it",
+    )
     await stopSandbox(state!.pid!, {
       startTime: state!.pidStart,
       envId: paths.id,
@@ -680,7 +732,6 @@ ${command}
 
   // --- provider, model, catalog ---------------------------------------------
   const catalog = flag<boolean>(p, "refresh") ? await loadCatalog({ refresh: true }) : await loadCatalog()
-  const provider = resolveProvider(p, state)
   const baseUrl = provider.baseUrl
   const resolvedModel = await resolveModel(provider, catalog)
   const toolPreset = resolveToolPreset(p)
@@ -743,7 +794,7 @@ ${command}
           `  or pass --credential-env NAME if it lives under a different name`,
       )
     } else {
-      log.warn(credentialRiskNotice(credential))
+      log.warn(credentialRiskNotice(credential, egress))
     }
   }
 
@@ -788,6 +839,7 @@ ${command}
       installedPackages: resolvedProfiles.profiles.length > 0 ? resolvedProfiles.packages : BASE_PACKAGES,
       hasCredential: Boolean(credential),
       canAsk: interactive,
+      egress,
       checks: projectChecks.map((c) => ({ label: c.label, command: c.command })),
     },
     installedPackages: resolvedProfiles.profiles.length > 0 ? resolvedProfiles.packages : BASE_PACKAGES,
@@ -815,9 +867,10 @@ ${command}
     port,
     logLevel: flag<string>(p, "log-level") as "INFO" | undefined,
     credentialTtlSeconds: credential ? credential.ttlSeconds : null,
-    // In an isolated namespace a loopback bind is unreachable through slirp's
-    // forward, so the server has to listen on the tap address.
-    hostname: egress === "isolated" ? "0.0.0.0" : "127.0.0.1",
+    // In the sandbox's own namespace a loopback bind is unreachable through
+    // slirp's forward, so the server has to listen on the tap address. That
+    // covers `filtered` too: it is the same namespace with a ruleset on top.
+    hostname: ownNetns(egress) ? "0.0.0.0" : "127.0.0.1",
   })
 
   const managedEnv: Record<string, string> = {
@@ -834,15 +887,30 @@ ${command}
   }
 
   report.egress = egress
-  const slirpBinary = egress === "isolated" ? await ensureSlirp4netns() : undefined
+  if (egress === "filtered" && !fs.existsSync(path.join(paths.rootfs, "usr/sbin/nft"))) {
+    // An environment provisioned before nftables was in the base packages: add
+    // it now, on the host's time, rather than booting a box that cannot filter.
+    log.step("installing nftables for filtered egress")
+    await ensurePackages(paths, ["nftables"], { post: [], onOutput: (chunk) => log.debug(chunk.trimEnd()) })
+  }
+  const egressConfig = await runtimeForEgress(egress, {
+    rootfs: paths.rootfs,
+    allowHosts: [...defaultAllowHosts(providerHost(baseUrl)), ...egressAllow],
+  })
   const bootStart = Date.now()
-  const sandbox = await startSandbox(paths, entry, sandboxEnvVars, { egress, port, slirpBinary })
+  const sandbox = await startSandbox(paths, entry, sandboxEnvVars, {
+    egress,
+    port,
+    slirpBinary: egressConfig.slirpBinary,
+    egressRules: egressConfig.egressRules,
+  })
   state = {
     ...(state as EnvState),
     status: "running",
     pid: sandbox.pid,
     pidStart: sandbox.startTime,
     egress,
+    egressAllow,
     slirpPid: sandbox.slirp?.pid ?? null,
     slirpStart: sandbox.slirp?.startTime ?? null,
     port,
@@ -1286,7 +1354,7 @@ async function cmdVerify(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   const state = requireState(paths)
-  const runtime = await egressRuntime(state)
+  const runtime = await egressRuntime(state, paths)
 
   const checks = detectChecks(paths.projectDir)
   if (checks.length === 0) {
@@ -1324,7 +1392,7 @@ async function cmdTake(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   const state = requireState(paths)
-  const runtime = await egressRuntime(state)
+  const runtime = await egressRuntime(state, paths)
   if (!(await isGitRepo(paths.projectDir))) log.fail(`${paths.projectDir} is not a git repository; nothing to take into`)
 
   const branches = await listSandboxBranches(paths)
@@ -1651,9 +1719,13 @@ async function cmdStatus(argv: string[]): Promise<number> {
     log.info(`opencode     ${state!.opencodeVersion} / alpine ${state!.alpineVersion}`)
     if (state!.model) log.info(`model        ${state!.model}${state!.provider ? ` (${state!.provider})` : ""}`)
     if (state!.branch) log.info(`branch       ${state!.branch}`)
-    log.info(
-      `egress       ${state!.egress === "isolated" ? "isolated (own network namespace)" : "open (host network namespace)"}`,
-    )
+    const egressLabel =
+      state!.egress === "filtered"
+        ? "filtered (own network namespace, default-deny allowlist)"
+        : state!.egress === "isolated"
+          ? "isolated (own network namespace)"
+          : "open (host network namespace)"
+    log.info(`egress       ${egressLabel}`)
     if (state!.profiles && state!.profiles.length > 0) log.info(`profiles     ${state!.profiles.join(", ")}`)
     log.info(`rootfs       ${human(payload.rootfsBytes)}`)
     if (state!.credential) {
@@ -1807,13 +1879,16 @@ async function cmdDoctor(argv: string[]): Promise<number> {
     log.step("running in-sandbox isolation checks")
     // The probe boot runs in the same kind of network as the real box, so
     // "host loopback reachable" measures the policy the agent actually gets.
-    const runtime = await egressRuntime(state)
+    const runtime = await egressRuntime(state, paths)
     isolation = await runIsolationChecks(paths, {
       hostHome: process.env.HOME ?? "",
       // The provider variable is injected under its real name in a live boot, so
       // the probe injects it too; otherwise the check tests an environment the
       // agent never sees.
       injectedVarNames: [...INJECTED_ENV_NAMES, "OPENCODE_SERVER_PASSWORD", DEEPSEEK.envVar],
+      // In filtered mode the doctor proves both sides: an arbitrary address is
+      // refused and the provider the environment actually uses is reachable.
+      allowedProbe: providerProbe(state.providerBaseUrl ?? DEEPSEEK.baseUrl),
       ...runtime,
     })
     out.isolation = isolation
@@ -1871,7 +1946,7 @@ async function cmdExec(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   const state = requireState(paths)
-  const runtime = await egressRuntime(state)
+  const runtime = await egressRuntime(state, paths)
   const command = p._
   if (command.length === 0) log.fail("usage: moat exec -- <command> [args...]")
   const body = `#!/bin/sh
@@ -1888,7 +1963,7 @@ async function cmdShell(argv: string[]): Promise<number> {
   parse(argv, SPEC) // validates flags; `shell` takes no options of its own
   const paths = resolveEnv()
   const state = requireState(paths)
-  const runtime = await egressRuntime(state)
+  const runtime = await egressRuntime(state, paths)
   const body = `#!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/root
@@ -2132,7 +2207,7 @@ The environment
   moat snapshot [name]   save the rootfs; moat restore <name> brings it back
 
 Diagnostics
-  moat doctor            host support, 14 isolation checks, and the measured exposures
+  moat doctor            host support, the in-sandbox isolation checks, the measured exposures
   moat tools             the declared tools, and what opencode actually offers
   moat env               connection details (url, password, auth header)
   moat logs [sandbox|audit]
@@ -2152,6 +2227,12 @@ Options that apply to up/run
                          or a proxy you are inspecting). Unlike --base-url this
                          keeps the catalog: context window, price, effort levels.
   --credential-env NAME  host env var holding the key   --credential-ttl 4h
+  --egress MODE          open, isolated or filtered. Default: filtered, which puts
+                         the box in its own namespace behind a default-deny
+                         allowlist (provider + package registries). A provider on
+                         the host's loopback defaults to open instead, because the
+                         box cannot reach it there.
+  --egress-allow HOSTS   extra hosts the filtered allowlist permits, comma-separated
   --continue             continue the last session instead of starting a new one
   --show-output          print each tool's output as it runs
   --json                 machine-readable output on stdout

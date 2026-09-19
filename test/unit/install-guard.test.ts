@@ -22,6 +22,7 @@ function options(checks: { label: string; command: string }[]) {
       installedPackages: [] as string[],
       hasCredential: true,
       canAsk: false,
+      egress: "open" as const,
       checks,
     },
     installedPackages: [] as string[],

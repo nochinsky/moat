@@ -178,7 +178,18 @@ export function findCredential(opts: MintOptions): { provider: string; credentia
  * the accurate description is short: the agent can read the key,
  * so the key must be disposable.
  */
-export function credentialRiskNotice(minted: MintedCredential): string {
+export function credentialRiskNotice(
+  minted: MintedCredential,
+  egress: "open" | "isolated" | "filtered" = "open",
+): string {
+  const reach =
+    egress === "filtered"
+      ? "The agent can read this value; its egress is restricted to an allowlist, but anything on that " +
+        "allowlist — and DNS — can still carry it out."
+      : egress === "isolated"
+        ? "The agent can read this value and send it anywhere: its namespace is isolated from yours, its " +
+          "egress is not filtered."
+        : "The agent can read this value and, with the network open, exfiltrate it."
   const where = minted.targetEnvVars.length > 0 ? ` as ${minted.targetEnvVars[0]}` : ""
   const argv =
     minted.source === "--credential flag"
@@ -187,8 +198,7 @@ export function credentialRiskNotice(minted: MintedCredential): string {
       : ""
   return (
     `injecting ${minted.provider} credential ${minted.fingerprint} (ttl ${minted.ttlSeconds}s)${where}. ` +
-    `The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key ` +
-    `with a low limit. See docs/SPEC.md §1.2.${argv}`
+    `${reach} Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.${argv}`
   )
 }
 

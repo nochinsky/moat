@@ -30,6 +30,23 @@ test("the literal-flag notice names argv and shell history", () => {
   assert.doesNotMatch(credentialRiskNotice(fromEnv), /shell history/)
 })
 
+test("the credential notice describes the network the box actually has", () => {
+  const minted = {
+    provider: "deepseek",
+    fingerprint: "sha256:abc",
+    ttlSeconds: 60,
+    targetEnvVars: ["DEEPSEEK_API_KEY"],
+    source: "env:DEEPSEEK_API_KEY",
+  } as unknown as MintedCredential
+  // A filtered box does not have an open network; saying so would train the
+  // reader to ignore the notice.
+  const filtered = credentialRiskNotice(minted, "filtered")
+  assert.match(filtered, /allowlist/)
+  assert.doesNotMatch(filtered, /network open/)
+  assert.match(credentialRiskNotice(minted, "open"), /network open/)
+  assert.match(credentialRiskNotice(minted, "isolated"), /not filtered/)
+})
+
 test("the rootfs scan finds the value only when it is on disk", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "moat-scan-"))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))

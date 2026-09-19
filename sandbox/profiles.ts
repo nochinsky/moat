@@ -58,6 +58,11 @@ export const BASE_PACKAGES = [
   // runtimes ship glibc-only builds, and without this they fail with a confusing
   // "not found" that has nothing to do with the file being missing.
   "gcompat",
+  // The egress filter. It is baked into the image rather than installed at boot,
+  // because a default-deny policy must not depend on the network being reachable
+  // when the box starts. PROVISION_PACKAGES in lib/pins.ts carries it too, so
+  // both entry points to an image agree; keep them in sync.
+  "nftables",
 ]
 
 export const PROFILES: Profile[] = [
