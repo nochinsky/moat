@@ -163,6 +163,19 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 * `moat up --fresh` deletes `/work`. It refuses while a sandbox is live and
   refuses without `--yes` when the box holds unfetched commits or uncommitted
   files.
+* `state.json` is metadata; the environment is the rootfs. Reading a missing or
+  unreadable state as "no environment" made `moat up` provision over the rootfs,
+  and provisioning *replaces* it: measured, deleting `state.json` and booting again
+  destroyed a committed agent branch and an untracked file, silently, with exit 0 — which
+  also contradicts SPEC §2.2 ("`moat destroy` is the only operation that deletes
+  data"). `moat up` now recovers the state from disk when `rootfs/work/.git` is
+  there (`sandbox/recover.ts`, `recoveredState`), which is also what proves
+  provisioning *and* copy-in finished; the credential is not carried over (a new one
+  is minted), the recorded host baseline is not invented (the drift check says it
+  cannot run and names `--sync`), and an unreadable file is kept as
+  `state.json.corrupt-<timestamp>`. `up --fresh` still means replace, gated as before.
+  `test/unit/env-recovery.test.ts` guards the reconstruction; extras section T
+  deletes the real file and boots again.
 * `moat restore` stages beside the rootfs and swaps with renames, so a bad
   snapshot cannot destroy the environment. Do not go back to deleting the live
   rootfs first: that is how an afternoon of installed packages and an agent's

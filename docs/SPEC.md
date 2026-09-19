@@ -130,7 +130,16 @@ rootfs (installs, caches), never the project. See §8.
 
 `stopped` is a real, useful state: the rootfs and the project copy survive, so
 the next `moat up` is a warm boot that preserves everything the agent installed.
-`moat destroy` is the only operation that deletes data.
+`moat destroy` is the only command that deletes an environment; `moat up --fresh`
+replaces the rootfs instead, and is gated twice for exactly that reason (§2.3).
+
+`state.json` is metadata, not the environment: the rootfs is. If it is missing or
+unreadable while `rootfs/work` is still there, `moat up` rebuilds it from the disk
+(`sandbox/recover.ts`): the branch and the copy-in baseline from the sandbox
+repository, the Alpine version from the rootfs. What cannot be derived is not
+invented — a new credential is minted, and with no recorded host baseline the drift
+check reports that it cannot run rather than comparing against a guess. An
+unreadable state file is kept beside the new one as `state.json.corrupt-<time>`.
 
 ### 2.3 Boot sequence, the exact commands
 

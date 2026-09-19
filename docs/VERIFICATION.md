@@ -1824,6 +1824,62 @@ What this does not cover: a stream that stays open and simply goes quiet, with n
 FIN and no error. The box dying closes its sockets, which is what was measured;
 a silence watchdog on the server's 10s heartbeat does not exist.
 
+### Q. An environment whose state.json is gone is recovered, not replaced
+
+`state.json` is the only thing that says an environment exists, but it is not where
+the environment's data lives: the rootfs holds everything the agent installed, and
+`rootfs/work` holds its branch, its commits and its uncommitted files. `moat up`
+read a missing state as "no environment", and provisioning then *replaces* the
+rootfs. Measured, with a committed agent branch and an untracked file in place:
+deleting `state.json` and booting again printed "provisioning from the cached image"
+and "copy-in: git clone", exited 0, and the commit and the file were gone from the
+object store — with no warning at all. SPEC §2.2 says the opposite in as many words:
+`moat destroy` is the only operation that deletes data.
+
+`moat up` now rebuilds the state from the disk when `rootfs/work/.git` is there —
+which is also what proves provisioning *and* copy-in finished — and boots what it
+finds instead of replacing it:
+
+```
+$ moat up          # state.json deleted by hand; /work untouched
+! state.json is missing, but the sandbox's working tree is still there, so the environment was recovered from disk instead of replaced.
+  branch   moat-session-2026-09-19-18-25
+  baseline 5b12b845c8f4
+  everything installed in it, and every commit it holds, are intact; this boot mints a fresh credential.
+  the host-drift check cannot run without the recorded baseline: `moat up --sync` re-copies the project and restores it.
+  to discard the sandbox's copy instead: moat up --fresh --yes
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+✓ sandbox up, warm start 4.17s (image reused)
+```
+
+Nothing that cannot be derived is invented: the credential is minted fresh (the old
+one is dead anyway), and with no recorded host baseline the drift check *reports that
+it cannot run* on every boot rather than comparing against a guess. An unreadable
+(rather than absent) file is kept beside the new one as
+`state.json.corrupt-<timestamp>`.
+
+Extras section T deletes the real file, boots again, and fetches what the agent had
+committed:
+
+```
+✓ fetched moat-session-2026-09-19-18-25 -> refs/moat/moat-session-2026-09-19-18-25 (53df7f804d05)
+  2 commit(s) reachable, HEAD e6088eeb8b2f -> e6088eeb8b2f
+    53df7f804d05  agent: work the host has never seen
+    e6088eeb8b2f  init
+state recovery: the rootfs was kept and its working tree reused, not re-copied
+state recovery: the recovered commit fetched to the host (refs/moat/*)
+```
+
+Both of those checks were watched failing with the recovery removed (2 FAILED).
+`test/unit/env-recovery.test.ts` covers the reconstruction without a sandbox: the
+branch and the copy-in baseline read back out of the sandbox repository, the version
+read through the symlink guard, a detached head reported as no branch, and the three
+things that must not be invented — a credential, a host baseline, an opencode version.
+
+One deliberate limit: recovery happens on the next `moat up`. `moat fetch`, `moat take`
+and `moat verify` still require a readable state, so a lost file means one boot before
+the work can be brought across through moat.
+
 ---
 
 ## Requirement-by-requirement
