@@ -267,6 +267,25 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   0600 patterns file, because every process on the machine can read `ps`. It is a
   warning, not a gate — `moat apply` still writes the file, and extras section AB checks
   both halves (the leak is named; clean content stays quiet).
+* "What does the sandbox hold that the host cannot reach?" is a question about
+  **every ref in the box**, not about HEAD. `countUnfetched` (`sync/copyout.ts`) used
+  to resolve the sandbox HEAD only, so an agent that left a commit on `experiment` and
+  switched back to the session branch looked like an empty box: the next `moat up` after
+  the host project changed re-copied the project over it, and the branch, the commit and
+  the file were gone, with a warning that said the sandbox "holds nothing that is not
+  already on the host". The same undercount disabled the `--fresh` gate, which exists to
+  demand `--yes` when the box holds unfetched work. It now takes every `refs/heads` and
+  `refs/tags` tip, asks the host which it knows (`cat-file -e`), counts the known ones
+  with `rev-list --count … --not --all` on the host, and counts the unknown ones inside
+  the box against the clone-time remotes *and* the host refs the box can see
+  (`refs/moat/*`, the user's branches, tags) — without that second set, a branch that was
+  fetched and then advanced counts twice. When the host is not a repository at all, every
+  commit the agent added counts. Two traps inside that: a count of `0` is a real answer, so
+  never write `parseInt(x) || fallback` (it turns 0 into the fallback), and the warning
+  must follow the *count*, not the decision — the old code printed "holds nothing" based
+  on which branch of the drift check it took. `test/unit/unfetched-count.test.ts` has
+  the side-branch, multi-branch, tag and non-git cases; extras section AD is the
+  two-boot proof, with a control that fetched work is still re-copied over.
 * `moat restore` stages beside the rootfs and swaps with renames, so a bad
   snapshot cannot destroy the environment. Do not go back to deleting the live
   rootfs first: that is how an afternoon of installed packages and an agent's

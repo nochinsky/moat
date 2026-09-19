@@ -690,6 +690,53 @@ else
   echo "the control FAILED: a usable URL was refused" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$NB" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "AD. a re-copy cannot silently discard work on another sandbox branch"
+# countUnfetched looked only at the sandbox's HEAD, so a commit on a side branch was
+# invisible to the drift check: after the host project changed, `moat up` re-copied over
+# it — the branch, the commit and the file were gone — while the warning said the sandbox
+# "holds nothing that is not already on the host". Measured before the fix. The same
+# undercount disabled the --fresh gate, which is meant to demand --yes when the box holds
+# unfetched work.
+BL="$WORK/branchloss"
+rm -rf "$BL"; mkdir -p "$BL"
+( cd "$BL" && git init -q -b main . && printf 'base\n' > base.txt && git add -A \
+  && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
+( cd "$BL" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$BL" && capture branchloss-up $MOAT up --quiet --no-detect --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+# The agent leaves work on a branch it is not standing on: the case HEAD-only counting missed.
+( cd "$BL" && $MOAT exec -- /bin/sh -c 'BASE=$(git -C /work rev-parse --abbrev-ref HEAD); \
+  git -C /work checkout -q -b experiment; echo important > /work/experiment.txt; \
+  git -C /work add -A; git -C /work -c user.email=a@b -c user.name=agent commit -qm "important work on a side branch"; \
+  git -C /work checkout -q "$BASE"' >/dev/null 2>&1 )
+( cd "$BL" && $MOAT down >/dev/null 2>&1 )
+( cd "$BL" && echo changed-on-the-host >> base.txt )
+( cd "$BL" && capture branchloss-up-again $MOAT up --quiet --no-detect --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+( cd "$BL" && capture branchloss-branches $MOAT exec -- /bin/sh -c \
+  'git -C /work branch; echo "--- all commits ---"; git -C /work log --oneline --all | head -4' )
+if grep -q "sandbox holds 1 commit(s)" "$EVIDENCE/branchloss-up-again.txt" \
+   && grep -q "reusing the sandbox working tree" "$EVIDENCE/branchloss-up-again.txt" \
+   && grep -q "experiment" "$EVIDENCE/branchloss-branches.txt" \
+   && grep -q "important work on a side branch" "$EVIDENCE/branchloss-branches.txt"; then
+  echo "side branch: a sandbox holding unfetched work is kept, and the warning names it" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "side branch: FAILED — the re-copy discarded it, or nothing said so" | tee -a "$EVIDENCE/extras.txt"
+fi
+# The control: once the work *is* on the host (fetched), the same host change re-copies
+# automatically — the guard must not block the lossless path it exists for.
+( cd "$BL" && $MOAT fetch --all >/dev/null 2>&1 )
+( cd "$BL" && $MOAT down >/dev/null 2>&1 )
+( cd "$BL" && echo changed-again >> base.txt )
+( cd "$BL" && capture branchloss-fetched $MOAT up --quiet --no-detect --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+if grep -q "holds nothing that is not already on the host" "$EVIDENCE/branchloss-fetched.txt" \
+   && grep -q "copy-in via git" "$EVIDENCE/branchloss-fetched.txt"; then
+  echo "the control: fetched work is re-copied over, because the host already has it" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "the control FAILED: a lossless re-copy was blocked" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$BL" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

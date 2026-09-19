@@ -90,9 +90,9 @@ import { copyIn, ensureSandboxRepo, hostState, isGitRepo, recordBaseline, SANITI
 import {
   applyBranch,
   commitSandboxWorktree,
+  countUnfetched,
   fetchBranch,
   listSandboxBranches,
-  sandboxHead,
   sandboxWorktreeChanges,
   suggestBranch,
 } from "../sync/copyout.ts"
@@ -830,18 +830,36 @@ ${command}
   const safeToRecopy = drift?.changed === true && drift.sandboxCommits === 0 && drift.sandboxFiles === 0
   const mustCopy = needsProvision || sync || !sandboxRepoExists || safeToRecopy
 
-  if (drift?.changed && mustCopy) {
+  // Say what a copy would discard, and take it from the *count*, not from the
+  // decision that was made with it. A copy happens when the host changed and nothing
+  // is held (the automatic case), when the user asked with --sync, or when there is
+  // no repository yet; the warning has to follow the count either way, or it can
+  // promise safety it never checked. Measured: this said "the sandbox holds nothing
+  // that is not already on the host" while destroying a commit on a side branch — and
+  // the --sync-only variant of the warning missed the same commit entirely.
+  const heldParts: string[] = []
+  if (drift) {
+    if (drift.sandboxCommits > 0) heldParts.push(`${drift.sandboxCommits} commit(s)`)
+    if (drift.sandboxFiles > 0) heldParts.push(`${drift.sandboxFiles} uncommitted file(s)`)
+  } else if (mustCopy && sandboxRepoExists) {
+    const commits = await countUnfetched(paths)
+    const files = (await sandboxWorktreeChanges(paths)).length
+    if (commits > 0) heldParts.push(`${commits} commit(s)`)
+    if (files > 0) heldParts.push(`${files} uncommitted file(s)`)
+  }
+  const held = heldParts.join(" and ")
+
+  if (mustCopy && held) {
+    log.warn(
+      `re-copying the project will discard ${held} that exist only inside the sandbox — the sandbox working tree ` +
+        "is replaced from the host. `moat fetch` (add --commit-worktree for uncommitted work) keeps it.",
+    )
+  } else if (drift?.changed && mustCopy) {
     log.warn(
       "the host project has changed since it was copied in, and the sandbox holds nothing that is not already " +
         "on the host. Re-copying it now.",
     )
-  } else if (drift?.changed && !mustCopy) {
-    const held = [
-      drift.sandboxCommits > 0 ? `${drift.sandboxCommits} commit(s)` : null,
-      drift.sandboxFiles > 0 ? `${drift.sandboxFiles} uncommitted file(s)` : null,
-    ]
-      .filter(Boolean)
-      .join(" and ")
+  } else if (drift?.changed) {
     log.warn(
       `the host project has changed since it was copied in, but the sandbox holds ${held} that the host does not ` +
         "have. The agent will work on the OLD copy. Run `moat fetch` (add --commit-worktree to include " +
@@ -850,10 +868,6 @@ ${command}
   }
 
   if (mustCopy) {
-    if (sync && fs.existsSync(path.join(paths.work, ".git"))) {
-      const ahead = await countUnfetched(paths)
-      if (ahead > 0) log.warn(`discarding ${ahead} commit(s) that exist only inside the sandbox`)
-    }
     const copied = await copyIn(paths)
     await ensureSandboxRepo(paths)
     const baselineCommit = await recordBaseline(paths)
@@ -1178,44 +1192,6 @@ ${command}
     })
 
   return 0
-}
-
-/**
- * How many commits exist in the sandbox that the host cannot already reach.
- *
- * "Cannot reach" means unreachable from *any* host ref, including the
- * `refs/moat/*` refs that `moat fetch` creates. That distinction matters: once
- * the user has fetched, the work is safely on the host and re-copying the
- * project is lossless, so moat can do it automatically instead of nagging.
- */
-async function countUnfetched(paths: EnvPaths): Promise<number> {
-  const head = await sandboxHead(paths)
-  if (!head) return 0
-
-  // If the sandbox's head is already present on the host, ask git precisely.
-  const known = await run("git", ["-C", paths.projectDir, "cat-file", "-e", `${head}^{commit}`], {
-    env: SANITIZED_GIT_ENV,
-    allowFailure: true,
-  })
-  if (known.code === 0) {
-    const count = await run("git", ["-C", paths.projectDir, "rev-list", "--count", head, "--not", "--all"], {
-      env: SANITIZED_GIT_ENV,
-      allowFailure: true,
-    })
-    return Number.parseInt(count.stdout.trim(), 10) || 0
-  }
-
-  // Otherwise the sandbox has commits the host has never seen. Fall back to
-  // counting them relative to the shared base.
-  const base = await run("git", ["-C", paths.projectDir, "rev-parse", "HEAD"], {
-    env: SANITIZED_GIT_ENV,
-    allowFailure: true,
-  })
-  if (base.code !== 0) return 0
-  const count = await sandboxGit(paths.work, ["rev-list", "--count", `${base.stdout.trim()}..${head}`], {
-    allowFailure: true,
-  })
-  return Number.parseInt(count.stdout.trim(), 10) || 0
 }
 
 /**

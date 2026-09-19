@@ -1,21 +1,21 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --port 43677 --timeout 30 --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --port 41865 --timeout 30 --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.02s (extract cached image 869ms)
+✓ image provisioned in 1.03s (extract cached image 867ms)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 865809f62c0ed714
 model: moat/deepseek-flash
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-21-33
-✓ sandbox up, cold start 12.41s (image built)
+agent branch: moat-session-2026-09-19-22-06
+✓ sandbox up, cold start 9.60s (image built)
 
   project    /home/user/moat-demo/portbusy
   env        /home/user/.moat/envs/84ac2fa2f5c5
-  opencode   http://127.0.0.1:43677  (basic auth user "opencode")
-  password   4BXGuhAHfj_2XBDMXGLOCPCmhiUG8Ekk
+  opencode   http://127.0.0.1:41865  (basic auth user "opencode")
+  password   lb9o-9qFJPUcc-aiMOS8l1iztYnx-y8N
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-20T01:33:49.330Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-20T02:06:16.025Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

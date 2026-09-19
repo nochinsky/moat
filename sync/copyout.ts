@@ -255,6 +255,110 @@ export async function fetchBranch(
 }
 
 /**
+ * How many commits exist in the sandbox that the host cannot already reach.
+ *
+ * "Cannot reach" means unreachable from *any* host ref, including the
+ * `refs/moat/*` refs that `moat fetch` creates: once the user has fetched, the work
+ * is safely on the host, and re-copying the project is lossless.
+ *
+ * **Every branch counts, not just the sandbox's HEAD.** Measured: an agent left a
+ * commit on `experiment` and switched back to the session branch; the next `moat up`
+ * after the host project changed re-copied the project over it, and the branch, the
+ * commit and the file were gone. This function looked only at HEAD, found nothing the
+ * host lacked, and told the user the sandbox "holds nothing that is not already on
+ * the host". The same undercount disabled the `--fresh` gate, which is supposed to
+ * demand `--yes` when the sandbox holds unfetched work.
+ *
+ * A host that is not a git repository has no refs to compare against, so every
+ * commit the agent added to the sandbox repository counts; the old code returned 0
+ * there, which is the same false "nothing to lose".
+ */
+export async function countUnfetched(p: EnvPaths): Promise<number> {
+  if (!(await sandboxRepoExists(p))) return 0
+  // Tags too: `git fetch --no-tags` never brings them across, and a commit kept
+  // alive only by a tag in the box is still work that a re-copy would destroy.
+  const tips = (
+    await sandboxGit(p.work, ["for-each-ref", "--format=%(objectname)", "refs/heads", "refs/tags"], { allowFailure: true })
+  ).stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  if (tips.length === 0) return 0
+
+  // A count of 0 is a real answer, not a failed command: `|| fallback` reads it as
+  // falsy and reports work that is not there. Parse, then fall back only on NaN.
+  const parseCount = (stdout: string, fallback: number): number => {
+    const parsed = Number.parseInt(stdout.trim(), 10)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  if (!(await isGitRepo(p.projectDir))) {
+    // No host repository: nothing in the sandbox is on the host. Count what the
+    // agent added, relative to the baseline moat recorded at copy-in. If the
+    // baseline is gone too, the tip count is the safe lower bound.
+    const count = await sandboxGit(p.work, ["rev-list", "--count", ...tips, "--not", "refs/moat/baseline"], {
+      allowFailure: true,
+    })
+    return parseCount(count.stdout, tips.length)
+  }
+
+  const known: string[] = []
+  const unknown: string[] = []
+  for (const tip of tips) {
+    const present = await run("git", ["-C", p.projectDir, "cat-file", "-e", `${tip}^{commit}`], {
+      env: SANITIZED_GIT_ENV,
+      allowFailure: true,
+    })
+    ;(present.code === 0 ? known : unknown).push(tip)
+  }
+
+  let total = 0
+  if (known.length > 0) {
+    // The host has the objects, so it can answer precisely: commits reachable from
+    // these tips but from no host ref.
+    const count = await run("git", ["-C", p.projectDir, "rev-list", "--count", ...known, "--not", "--all"], {
+      env: SANITIZED_GIT_ENV,
+      allowFailure: true,
+    })
+    total += parseCount(count.stdout, 0)
+  }
+  if (unknown.length > 0) {
+    // Tips the host has never seen. Count them against everything the sandbox can prove
+    // the host already has: the clone-time remotes, plus the tips the host holds objects
+    // for. The second half matters for a half-fetched branch — the old tip is on the
+    // host under refs/moat/*, the new one is not, and only the new one is work. A later
+    // host fetch cannot contain these tips (the host does not have their objects at
+    // all), so this cannot undercount.
+    const remoteTips = (
+      await sandboxGit(p.work, ["for-each-ref", "--format=%(objectname)", "refs/remotes"], { allowFailure: true })
+    ).stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+    // Refs the host holds that the sandbox also has objects for: refs/moat/* from an
+    // earlier fetch, the user's own branches, tags. Without these, a branch that was
+    // fetched and then advanced is counted twice — the old tip is on the host, the new
+    // one is not, and only the new one is work.
+    const hostTips: string[] = []
+    const hostRefs = await run(
+      "git",
+      ["-C", p.projectDir, "for-each-ref", "--format=%(objectname)", "refs/moat", "refs/heads", "refs/tags"],
+      { env: SANITIZED_GIT_ENV, allowFailure: true },
+    )
+    for (const tip of hostRefs.stdout.split("\n").map((line) => line.trim()).filter((line) => line.length > 0)) {
+      const here = await sandboxGit(p.work, ["cat-file", "-e", `${tip}^{commit}`], { allowFailure: true })
+      if (here.code === 0) hostTips.push(tip)
+    }
+    const exclude = [...remoteTips, ...known, ...hostTips]
+    const args = ["rev-list", "--count", ...unknown]
+    if (exclude.length > 0) args.push("--not", ...exclude)
+    const count = await sandboxGit(p.work, args, { allowFailure: true })
+    total += parseCount(count.stdout, unknown.length)
+  }
+  return total
+}
+
+/**
  * The explicit second step: turn a fetched ref into a local branch. Refuses to
  * move a dirty working tree, and never checks anything out unless asked.
  */

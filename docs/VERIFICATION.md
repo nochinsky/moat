@@ -2311,6 +2311,66 @@ An environment whose `state.json` recorded a hostless address *before* this fix 
 booting — the address is metadata, and the sandbox may hold work — but its doctor reports
 the filtered check as one-sided, and `moat up --fresh` is the way to replace it.
 
+### AB. A re-copy cannot discard work on another sandbox branch
+
+`countUnfetched` answers "how many commits does the sandbox hold that the host cannot
+reach?" — and it used to answer for the sandbox's **HEAD only**. An agent that leaves a
+commit on a branch it is not standing on therefore looked like an empty box. Measured
+before the fix, on a real boot: a commit on `experiment`, `git checkout` back to the
+session branch, the host project edited, `moat up` again:
+
+```
+! the host project has changed since it was copied in, and the sandbox holds nothing that is not already on the host. Re-copying it now.
+✓ copy-in via git: 1 files, 0.0 KiB, digest ada4876b6cd3fa95 (dirty tree: 1 modified, 0 untracked)
+
+$ moat exec -- git -C /work branch
+  main
+* moat-session-2026-09-19-21-46
+$ moat exec -- git -C /work log --oneline --all
+0e38269 moat: state copied from the host
+766ea08 base
+$ ls /work/experiment.txt
+ls: cannot access '/work/experiment.txt': No such file or directory
+```
+
+The branch, the commit and the file were gone, and the warning had promised the sandbox
+held nothing. The same count gates `--fresh`, which is supposed to demand `--yes` when
+the box holds unfetched work, and it returned 0 for a host that is not a repository at
+all (a plain directory), where nothing in the sandbox is on the host.
+
+The count now takes every `refs/heads` and `refs/tags` tip, asks the host which tips it
+has (`cat-file -e`), counts the known ones on the host (`rev-list --count … --not --all`,
+so an already-fetched ref counts as zero) and the unknown ones inside the box against the
+clone-time remotes. The same scenario after the fix:
+
+```
+! the host project has changed since it was copied in, but the sandbox holds 1 commit(s) that the host does not have. The agent will work on the OLD copy. Run `moat fetch` (add --commit-worktree to include uncommitted work) to keep it, or `moat up --sync` to discard it and re-copy.
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+
+$ moat exec -- git -C /work branch
+  experiment
+  main
+  moat-session-2026-09-19-21-45
+$ moat exec -- git -C /work log --oneline --all
+437952c important work on a side branch
+ab61966 moat: state copied from the host
+a77d608 base
+```
+
+The warning also follows the *count* now, not the branch of the drift check that was
+taken: the old code printed "holds nothing" for any copy it had already decided to do,
+and its `--sync`-only variant of the discard warning missed the same commit entirely.
+
+Extras section AD is that pair of boots plus the control: after `moat fetch --all` the
+same host change re-copies automatically (`holds nothing that is not already on the
+host`, `copy-in via git`), because the work is on the host under `refs/moat/*` and the
+re-copy is lossless. `test/unit/unfetched-count.test.ts` covers the count without a
+sandbox — a commit on a side branch, two branches with one commit each, a commit kept
+alive only by a tag, the fetched case dropping back to zero, and a host that is not a
+repository. The side-branch, multi-branch and tag tests were watched failing with the
+HEAD-only version restored. One trap inside the fix itself, caught by the non-git test:
+`parseInt("0") || fallback` reads a legitimate count of zero as a failed command.
+
 ---
 
 ## Requirement-by-requirement
@@ -2377,7 +2437,7 @@ Listed so that absence is not mistaken for success.
 | Model quality, as opposed to model reachability | a real DeepSeek session is verified above. That is one task, one model, one run — a smoke test with teeth, not a benchmark. |
 | That a reasoning-effort level changes any particular answer | the level provably reaches the provider (see "Secondary claims" H). Whether `max` answers better than `default` is model behaviour, and one sample per level shows nothing. |
 | Non-DeepSeek providers | moat is DeepSeek-only by design; `--base-url` exists for a gateway or a local model and is exercised against a stub, but no second hosted provider was wired up or called. |
-| The `countUnfetched` / host-drift logic under adversarial git states | both branches were exercised (drift with unpreserved sandbox commits → warning; drift with everything already fetched → automatic re-copy), but not things like a rebased sandbox branch or a detached host HEAD. |
+| The `countUnfetched` / host-drift logic under adversarial git states | §AB covers multiple branches, tags, an already-fetched ref, a non-git host and a detached host HEAD; a *rebased* sandbox branch, and commits that survive only in the sandbox reflog after a `reset --hard`, are still not staged. |
 | The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |
 | The absolute correctness of a cost figure against a DeepSeek invoice | it is the published table applied to the billed token counts, and it reconciles exactly with opencode's own arithmetic on the same numbers (above). It is not compared against a real bill. |
 | Rendering in terminals other than the ones tested | verified through a pty at 80 and 100 columns, and in plain mode via `NO_COLOR`. Narrow widths, unusual `TERM` values and terminal resize mid-turn were not exercised. |

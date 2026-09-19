@@ -1,0 +1,12 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c git -C /work branch; echo "--- all commits ---"; git -C /work log --oneline --all | head -4
+--- exit 0
+--- stdout ---
+  experiment
+  main
+  moat-session-2026-09-19-22-06
+* moat-session-2026-09-19-22-07
+--- all commits ---
+18fa746 important work on a side branch
+5637e74 moat: state copied from the host
+d3056da base
+--- stderr ---
