@@ -2,5 +2,4 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/main:refs/moat/main
 ✓ created local branch e2e-checkout at refs/moat/main
