@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts models bogus
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ moat has one provider (deepseek); there is no "bogus" to list

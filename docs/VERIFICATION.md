@@ -1728,6 +1728,35 @@ directories in `envs/` that must be ignored, and that `envPathsForId` touches no
 filesystem. The suite's three failing assertions were watched failing with the old
 `listEnvs` restored.
 
+### O. Arguments that used to be joined into paths or trusted as numbers
+
+Five small defects of the same shape: an argv that becomes a path or a number
+without being checked, plus one flag whose unit depended on where it was read. They
+are asserted where they cost nothing — the extras suite, section R — and the pure
+part has a unit test.
+
+```
+log name: refused instead of reading a host file
+--tail: refused instead of silently printing the whole log
+models <provider>: refused instead of silently listing DeepSeek
+--port: refused before provisioning, not ninety seconds into a boot
+--timeout: seconds, not milliseconds, for the boot readiness wait
+```
+
+What they replace, measured: `moat logs ../../../../../tmp/moat-traversal` printed
+`/tmp/moat-traversal.log`, a host file outside the environment (`moat logs` joined
+argv into the environment's log directory); `--tail abc` parsed to NaN and silently
+meant "the whole file"; `moat models bogus` ignored its argument and listed DeepSeek
+with exit 0; and a typo in `--port` survived provisioning, booted a server that could
+not bind, and surfaced ninety seconds later as "opencode serve did not come up".
+
+`--timeout` is the same kind of mistake with a worse symptom: the agent loop and
+the checks runner take it as **seconds** (the turn default is 2700), and the boot
+readiness wait read it as **milliseconds**, so `moat up --timeout 600` failed with
+`opencode serve did not come up (GET /config -> TypeError after 600ms)` — a
+ten-minute budget turned into an instant failure. One flag, one unit: seconds
+everywhere, documented in `moat --help`.
+
 ---
 
 ## Requirement-by-requirement

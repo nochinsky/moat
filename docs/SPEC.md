@@ -403,10 +403,15 @@ Concretely:
 ### 5.3 How it expires
 
 Every mint records `expiresAt = now + ttl` (default `4h`, `--credential-ttl`).
-The sandbox receives the TTL and runs a watchdog: when it elapses, the entry
-script's background timer stops the agent process. The next `moat up` mints a
-fresh credential; an expired one is never reused. `moat status` shows the
-remaining seconds.
+The box receives that timestamp (`MOAT_CREDENTIAL_EXPIRES_EPOCH`) as well as the
+TTL, and the entry script computes how long is left **before** it starts the agent:
+a credential that is already dead stops the boot instead of producing an agent
+whose every model call can only fail, and a live one is stopped on time by a
+background watchdog. Counting the TTL from the script's own start, as v0 did at
+first, let the box outlive its key by however long the boot took. The TTL remains
+the fallback for an environment whose state predates the epoch variable. The next
+`moat up` mints a fresh credential; an expired one is never reused. `moat status`
+shows the remaining seconds.
 
 One limitation: v0 enforces the TTL by *terminating the agent*, not by
 revoking the token at the provider. Provider-side scoping and revocation, plus

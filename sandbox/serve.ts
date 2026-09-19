@@ -77,9 +77,32 @@ export function serveEntryScript(opts: ServeOptions): string {
   //  2. The watchdog is spawned AFTER the pid is known. An earlier version
   //     started it before `AGENT_PID=$!`, so under `set -u` the subshell died
   //     with "AGENT_PID: parameter not set" at the exact moment it mattered.
+  //
+  //  3. The deadline comes from the credential's own expiry timestamp
+  //     (MOAT_CREDENTIAL_EXPIRES_EPOCH, from the host), not from the TTL counted
+  //     from this script's start. A cold boot takes time, and the old arithmetic
+  //     gave the agent the full TTL *after* a credential minted before the boot:
+  //     with a short TTL the box outlived its key. The TTL remains the fallback for
+  //     an environment whose state predates the epoch variable.
+  //
+  // The deadline is computed BEFORE the agent is spawned, so a credential that is
+  // already dead stops the boot instead of starting an agent whose every model call
+  // must fail.
+  const expiryCheck = ttl
+    ? `EXPIRES_EPOCH=\${MOAT_CREDENTIAL_EXPIRES_EPOCH:-0}
+REMAIN=0
+if [ "$EXPIRES_EPOCH" -gt 0 ]; then
+  REMAIN=$((EXPIRES_EPOCH - $(date +%s)))
+  if [ "$REMAIN" -le 0 ]; then
+    echo "[moat] the injected credential expired before the agent started; not starting it"
+    exit 0
+  fi
+fi
+`
+    : ""
   const watchdog = ttl
     ? `(
-  sleep ${ttl}
+  if [ "$EXPIRES_EPOCH" -gt 0 ]; then sleep "$REMAIN"; else sleep ${ttl}; fi
   echo "[moat] injected credential expired (ttl=${ttl}s); stopping agent"
   kill -TERM "$AGENT_PID" 2>/dev/null || true
   sleep 5
@@ -98,7 +121,7 @@ echo "[moat] kernel=$(uname -r) rootfs=$(cat /etc/alpine-release 2>/dev/null || 
 echo "[moat] credential fingerprint=\${MOAT_CREDENTIAL_FINGERPRINT:-none} expires=\${MOAT_CREDENTIAL_EXPIRES_AT:-never}"
 cd ${SANDBOX_WORKDIR}
 echo "[moat] starting opencode serve on ${hostname}:${opts.port}"
-env ${agentEnv} ${agent} &
+${expiryCheck}env ${agentEnv} ${agent} &
 AGENT_PID=$!
 echo "[moat] agent pid=$AGENT_PID"
 ${watchdog}wait "$AGENT_PID"

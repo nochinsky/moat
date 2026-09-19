@@ -1,0 +1,23 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --timeout 30
+--- exit 0
+--- stdout ---
+--- stderr ---
+no project manifest found; booting with the base image only (see `moat profiles`)
+profiles: everything requested is already installed
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+model: deepseek/deepseek-flash (context 1M, out 384k)
+! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-19-17-13
+→ sandbox booted (pid 141725, port 37959); waiting for opencode serve
+✓ sandbox up, warm start 4.18s (image reused)
+
+  project    /home/user/moat-demo/project
+  env        /home/user/.moat/envs/18620c2c4f34
+  opencode   http://127.0.0.1:37959  (basic auth user "opencode")
+  password   7qRlugn89hdvzfQcMcmRmEWb-4h0RPgY
+  workspace  /work (inside the sandbox)
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T21:13:32.212Z
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)

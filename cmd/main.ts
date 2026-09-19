@@ -8,7 +8,7 @@ import { spawn } from "node:child_process"
 import * as log from "../lib/log.ts"
 import { hashTree } from "../lib/hash.ts"
 import { probeHost, assertHostUsable, describeHost } from "../lib/host.ts"
-import { ensureMoatHome, envPaths, type EnvPaths } from "../lib/paths.ts"
+import { ensureMoatHome, envPaths, validateLogName, type EnvPaths } from "../lib/paths.ts"
 import {
   ALPINE_VERSION,
   CURATED_TOOLS,
@@ -190,6 +190,27 @@ const SPEC: Spec = {
 function flag<T>(p: Parsed, key: string): T | undefined {
   const value = p.flags[key]
   return value === undefined ? undefined : (value as T)
+}
+
+/**
+ * A numeric flag that has to be a positive integer.
+ *
+ * The parser stores `Number(value)` for anything numeric, so `--tail abc` became
+ * NaN (which silently means "the whole file") and `--port 99999` sailed through
+ * provisioning to fail ninety seconds later as "opencode serve did not come up".
+ * A typo should be a message, not a slow failure.
+ */
+function optionalPositiveIntFlag(p: Parsed, key: string, max?: number): number | undefined {
+  const value = flag<number>(p, key)
+  if (value === undefined) return undefined
+  if (!Number.isInteger(value) || value <= 0 || (max !== undefined && value > max)) {
+    log.fail(`--${key} must be a positive integer${max !== undefined ? ` no larger than ${max}` : ""}`)
+  }
+  return value
+}
+
+function positiveIntFlag(p: Parsed, key: string, fallback: number, max?: number): number {
+  return optionalPositiveIntFlag(p, key, max) ?? fallback
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +540,17 @@ async function cmdUp(argv: string[]): Promise<number> {
 
   const fresh = flag<boolean>(p, "fresh") ?? false
   const sync = flag<boolean>(p, "sync") ?? false
+  // Validate the port here, before provisioning: a typo used to survive the copy-in,
+  // boot a server that cannot bind, and surface ninety seconds later as "opencode
+  // serve did not come up". The port itself is still chosen as late as possible,
+  // which keeps the window between "free" and "bound" small.
+  const portFlag = flag<number>(p, "port")
+  if (portFlag !== undefined && (!Number.isInteger(portFlag) || portFlag < 1 || portFlag > 65535)) {
+    log.fail("--port must be an integer between 1 and 65535")
+  }
+  // --timeout is seconds everywhere. Validating it here means a typo fails before
+  // provisioning rather than after the boot.
+  optionalPositiveIntFlag(p, "timeout")
   const needsProvision = fresh || !envExists(paths) || !state
 
   // Where the provider lives decides the default network policy, so resolve it
@@ -687,7 +719,7 @@ async function cmdUp(argv: string[]): Promise<number> {
           agent: flag<string>(p, "agent"),
           effort: flag<string>(p, "effort"),
           showOutput: flag<boolean>(p, "show-output") ?? false,
-          timeoutSeconds: flag<number>(p, "timeout"),
+          timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
         })
         if (json) log.emit(result)
         else {
@@ -938,7 +970,7 @@ ${command}
   }
 
   // --- boot -----------------------------------------------------------------
-  const port = flag<number>(p, "port") ?? (await freePort())
+  const port = portFlag ?? (await freePort())
   const password = randomPassword()
   writePassword(paths, password)
 
@@ -1009,7 +1041,11 @@ ${command}
   writeState(paths, state)
   log.step(`sandbox booted (pid ${sandbox.pid}, port ${port}); waiting for opencode serve`)
 
-  const ready = await waitForServer(state, password, { timeoutMs: flag<number>(p, "timeout") ?? 90000 })
+  // --timeout is SECONDS (driveTask and the checks runner take it as timeoutSeconds).
+  // Reading it as milliseconds here capped the boot readiness wait at the value the
+  // user meant for the whole turn: measured, `moat up --timeout 600` failed with
+  // "opencode serve did not come up ... after 600ms".
+  const ready = await waitForServer(state, password, { timeoutMs: (optionalPositiveIntFlag(p, "timeout") ?? 90) * 1000 })
   const bootMs = Date.now() - bootStart
   if (!ready.ok) {
     const tail = sandboxLogTail(paths, 40)
@@ -1066,7 +1102,7 @@ ${command}
       agent: flag<string>(p, "agent"),
       effort: flag<string>(p, "effort"),
       showOutput: flag<boolean>(p, "show-output") ?? false,
-      timeoutSeconds: flag<number>(p, "timeout"),
+      timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
     })
     if (json) log.emit(result)
     else {
@@ -1213,7 +1249,7 @@ async function cmdAttach(argv: string[]): Promise<number> {
     modelID: flag<string>(p, "model-id"),
     effort: flag<string>(p, "effort"),
     showOutput: flag<boolean>(p, "show-output") ?? false,
-    timeoutSeconds: flag<number>(p, "timeout"),
+    timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
   })
 
   if (flag<boolean>(p, "json")) log.emit(result)
@@ -1922,16 +1958,22 @@ async function cmdLogs(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   requireState(paths)
+  const lines = positiveIntFlag(p, "tail", 80)
   const which_ = p._[0] ?? "sandbox"
   if (which_ === "sandbox") {
-    log.info(sandboxLogTail(paths, flag<number>(p, "tail") ?? 80))
+    log.info(sandboxLogTail(paths, lines))
     return 0
   }
   if (which_ === "audit") {
-    log.info(rootfsLogTail(paths, "/var/log/moat/tools.jsonl", flag<number>(p, "tail") ?? 80))
+    log.info(rootfsLogTail(paths, "/var/log/moat/tools.jsonl", lines))
     return 0
   }
-  log.info(tailFile(path.join(paths.logs, `${which_}.log`), flag<number>(p, "tail") ?? 80))
+  try {
+    validateLogName(which_)
+  } catch (error) {
+    log.fail((error as Error).message)
+  }
+  log.info(tailFile(path.join(paths.logs, `${which_}.log`), lines))
   return 0
 }
 
@@ -2110,6 +2152,13 @@ async function cmdEnv(argv: string[]): Promise<number> {
 /** `moat models`, what DeepSeek actually offers, straight from the catalog. */
 async function cmdModels(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
+  // One provider by design (SPEC section 1, invariant 8). This used to ignore the
+  // argument entirely: `moat models bogus` listed DeepSeek and exited 0, which
+  // reads as "bogus is a provider moat knows".
+  const requested = p._[0]
+  if (requested !== undefined && requested.toLowerCase() !== DEEPSEEK.opencodeID) {
+    log.fail(`moat has one provider (${DEEPSEEK.opencodeID}); there is no "${requested}" to list`)
+  }
   const catalog = await loadCatalog({ refresh: flag<boolean>(p, "refresh") ?? false })
 
   const entry = catalog?.get(DEEPSEEK.opencodeID)
@@ -2369,6 +2418,8 @@ Options that apply to up/run
                          the host's loopback defaults to open instead, because the
                          box cannot reach it there.
   --egress-allow HOSTS   extra hosts the filtered allowlist permits, comma-separated
+  --timeout SECONDS      how long one turn may take (default 2700) and how long a
+                         boot waits for opencode serve (default 90). Seconds, always.
   --continue             continue the last session instead of starting a new one
   --show-output          print each tool's output as it runs
   --json                 machine-readable output on stdout

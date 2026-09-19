@@ -149,6 +149,17 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   and the boot-failure tail read the rootfs file through the guard, capped at
   512 KiB so a log the agent grew cannot exhaust host memory; `logs/sandbox.log`
   only holds the lines before the dup.
+* The credential deadline is the credential's **own timestamp**, not the boot's
+  start. The host passes `MOAT_CREDENTIAL_EXPIRES_EPOCH`, and the entry script
+  checks it before spawning the agent (an already-dead credential must not start
+  one) and then sleeps the remaining seconds; the TTL is only the fallback for state
+  that predates the variable. Counting the TTL from the script's start let the box
+  outlive its key by however long the boot took.
+* `--timeout` is **seconds** everywhere (`driveTask` and the checks runner take
+  `timeoutSeconds`; the turn default is 2700). The boot readiness wait read it as
+  *milliseconds*, so `moat up --timeout 600` capped the wait at 600 ms and failed
+  with "opencode serve did not come up ... after 600ms" — a ten-minute budget turned
+  into an instant failure. One flag, one unit: the readiness default is 90 seconds.
 * `moat up --fresh` deletes `/work`. It refuses while a sandbox is live and
   refuses without `--yes` when the box holds unfetched commits or uncommitted
   files.
@@ -158,6 +169,14 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   work disappears together.
 * Snapshot names meet `path.join` only after `validateSnapshotName`. A raw argv
   join is how `../evil` writes outside `envs/<id>/snapshots`.
+* The same rule covers every other argv that becomes a path or a number: `moat logs
+  <name>` goes through `validateLogName` (`lib/paths.ts`) — measured, without it
+  `moat logs ../../../../../tmp/x` printed `/tmp/x.log`, a host file outside the
+  environment — `--tail` through `positiveIntFlag` (a bad value used to mean "the
+  whole file"), `--port` validated before provisioning (a typo used to survive the
+  copy-in and surface ninety seconds later as "opencode serve did not come up"),
+  and `moat models <provider>` checked against the one provider instead of silently
+  listing DeepSeek and exiting 0.
 
 **The agent-controlled rootfs**
 

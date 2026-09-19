@@ -77,6 +77,26 @@ export type EnvPaths = {
   auditDir: string
 }
 
+/** A `moat logs <name>` argument: one file name inside the environment's log directory. */
+export const LOG_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
+/**
+ * Validate a log name before it meets `path.join`.
+ *
+ * `moat logs` joins argv into the environment's log directory, and argv is
+ * arbitrary: measured, `moat logs ../../../../../tmp/x` printed `/tmp/x.log`, a
+ * host file outside the environment entirely. Same trap as snapshot names, same
+ * rule: validate first, join second.
+ */
+export function validateLogName(name: string): string {
+  if (!LOG_NAME.test(name)) {
+    throw new Error(
+      `invalid log name "${name}": use 1-64 characters of letters, digits, dot, dash or underscore`,
+    )
+  }
+  return name
+}
+
 /** What an environment directory is named: the first 12 hex of the project hash. */
 export const ENV_ID = /^[0-9a-f]{12}$/
 
