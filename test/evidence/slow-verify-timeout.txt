@@ -1,0 +1,15 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts verify --timeout 1
+--- exit 1
+--- stdout ---
+--- stderr ---
+→ running npm run test inside the sandbox
+$ npm run test
+
+> test
+> sleep 3
+
+[moat] TIMED OUT after 1s
+[moat] exit 124
+
+  FAIL  npm test                 1.0s (timed out)
+

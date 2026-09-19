@@ -494,6 +494,37 @@ python3 "$REPO/test/repl-diff-hardening.py" 2>&1 | scrub > "$EVIDENCE/repl-diff-
 DIFF_RC=$?
 tail -8 "$EVIDENCE/repl-diff-hardening.txt" | tee -a "$EVIDENCE/extras.txt"
 echo "diff hardening exit: $DIFF_RC" | tee -a "$EVIDENCE/extras.txt"
+section "Y. --timeout shortens a check that hangs"
+# `--timeout` is seconds everywhere and the checks runner takes it as timeoutSeconds,
+# but neither `moat verify` nor `moat take` passed it: a suite that hangs ran to the
+# ten-minute default, and the documented flag that should shorten it did nothing.
+# The project here sleeps for three seconds; with --timeout 1 moat has to kill it,
+# report it as timed out, and exit 1.
+SLOW="$WORK/slowchecks"
+rm -rf "$SLOW"; mkdir -p "$SLOW"
+cat > "$SLOW/package.json" <<'EOF'
+{
+  "name": "slowchecks",
+  "scripts": { "test": "sleep 3" }
+}
+EOF
+( cd "$SLOW" && git init -q -b main . && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
+( cd "$SLOW" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$SLOW" && capture slow-up $MOAT up --quiet --no-detect --profile node --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+( cd "$SLOW" && capture slow-verify-default $MOAT verify )
+( cd "$SLOW" && capture slow-verify-timeout $MOAT verify --timeout 1 )
+SLOW_DUR=$(grep "npm test" "$EVIDENCE/slow-verify-timeout.txt" | grep -oE "[0-9]+\.[0-9]s" | head -1 | tr -d "s")
+echo "the check itself was reported at ${SLOW_DUR}s (it sleeps 3; --timeout 1 was asked for)" | tee -a "$EVIDENCE/extras.txt"
+if grep -q "^--- exit 0$" "$EVIDENCE/slow-verify-default.txt" \
+   && grep -q "^--- exit 1$" "$EVIDENCE/slow-verify-timeout.txt" \
+   && grep -q "timed out" "$EVIDENCE/slow-verify-timeout.txt" \
+   && awk -v d="${SLOW_DUR:-99}" 'BEGIN{exit !(d < 2.5)}'; then
+  echo "--timeout: a 3-second check is killed at 1s and reported as timed out" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--timeout: FAILED, the flag did not shorten the check (reported ${SLOW_DUR}s)" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$SLOW" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

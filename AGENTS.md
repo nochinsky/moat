@@ -193,10 +193,22 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   that predates the variable. Counting the TTL from the script's start let the box
   outlive its key by however long the boot took.
 * `--timeout` is **seconds** everywhere (`driveTask` and the checks runner take
-  `timeoutSeconds`; the turn default is 2700). The boot readiness wait read it as
-  *milliseconds*, so `moat up --timeout 600` capped the wait at 600 ms and failed
-  with "opencode serve did not come up ... after 600ms" — a ten-minute budget turned
-  into an instant failure. One flag, one unit: the readiness default is 90 seconds.
+  `timeoutSeconds`; the turn default is 2700, the checks runner's is 600). The boot
+  readiness wait read it as *milliseconds*, so `moat up --timeout 600` capped the wait
+  at 600 ms and failed with "opencode serve did not come up ... after 600ms" — a
+  ten-minute budget turned into an instant failure. One flag, one unit: the readiness
+  default is 90 seconds.
+* The checks runner *took* `timeoutSeconds` from the beginning and **no caller passed
+  it**: `moat verify --timeout 1` was accepted and ignored, so a project whose test
+  sleeps 3s ran to completion in 3.2s and reported pass. `verify` and `take` pass the
+  flag now (measured after the fix: `TIMED OUT after 1s`, exit 124, `FAIL npm test
+  1.0s (timed out)`); extras section Y is the check. The REPL's `/verify` has no flag
+  and keeps the default.
+* The flag table (`SPEC` in `cmd/main.ts`) is **global**: every command parses the same
+  keys, so a flag a command does not read is accepted and silently ignored
+  (`moat fetch --timeout 5` does nothing). Two of those were real bugs (`--timeout` on
+  the checks above; `--tools`/`--log-level` were validated late rather than never).
+  When adding a flag, read it where it is meant to act, or it does not act at all.
 * `moat up --fresh` deletes `/work`. It refuses while a sandbox is live and
   refuses without `--yes` when the box holds unfetched commits or uncommitted
   files.

@@ -1587,7 +1587,14 @@ async function cmdVerify(argv: string[]): Promise<number> {
   }
 
   log.step(`running ${checks.map((c) => c.command).join(", ")} inside the sandbox`)
-  const results = await runChecks(paths, checks, { onOutput: (chunk) => process.stderr.write(chunk), ...runtime })
+  // `--timeout` is seconds, and the runner already takes it: without this it was
+  // accepted and ignored, so a suite that hangs ran to the ten-minute default with
+  // no way to shorten it from the CLI.
+  const results = await runChecks(paths, checks, {
+    onOutput: (chunk) => process.stderr.write(chunk),
+    timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
+    ...runtime,
+  })
 
   if (flag<boolean>(p, "json")) {
     log.emit(results)
@@ -1649,7 +1656,10 @@ async function cmdTake(argv: string[]): Promise<number> {
     const checks = detectChecks(paths.projectDir)
     if (checks.length > 0) {
       log.step(`verifying: ${checks.map((c) => c.command).join(", ")}`)
-      const results = await runChecks(paths, checks, runtime)
+      const results = await runChecks(paths, checks, {
+        timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
+        ...runtime,
+      })
       verified = { ok: results.every((r) => r.ok), summary: summarise(results) }
       log.info("")
       for (const check of results) {

@@ -1,0 +1,14 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts verify
+--- exit 0
+--- stdout ---
+--- stderr ---
+→ running npm run test inside the sandbox
+$ npm run test
+
+> test
+> sleep 3
+
+[moat] exit 0
+
+  pass  npm test                 3.2s
+

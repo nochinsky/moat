@@ -2055,6 +2055,45 @@ that does not carry a `raw-git-ok:` reason, and reports the file and line. It fo
 `git init` in `sync/copyin.ts`, marked with its reason. Extras section X is the pty
 proof, and it fails with the raw call back.
 
+### V. `--timeout` shortens a check that hangs
+
+`--timeout` is seconds everywhere, and `runChecks` has taken a `timeoutSeconds`
+argument from the beginning — but no caller passed one. `moat verify --timeout 1`
+was accepted by the global flag table and then ignored, so a project whose test
+sleeps for three seconds ran to completion and reported pass:
+
+```
+$ moat verify --timeout 1
+→ running npm run test inside the sandbox
+[moat] exit 0
+  pass  npm test                 3.2s
+--- exit 0
+```
+
+The only way to shorten a hung suite was to wait out the ten-minute default, per
+check. `moat verify` and `moat take` pass the flag through now:
+
+```
+$ moat verify --timeout 1
+→ running npm run test inside the sandbox
+[moat] TIMED OUT after 1s
+[moat] exit 124
+  FAIL  npm test                 1.0s (timed out)
+--- exit 1
+```
+
+Extras section Y is that pair: the same project with the default budget (pass, 3.2s)
+and with `--timeout 1` (timed out, 1.0s, exit 1). It fails with the wiring reverted.
+The runner's own mechanics — the kill, the escalation for a process that traps
+SIGTERM, and a command with quotes and substitution arriving intact — were already
+covered by `test/unit/checks-runner.test.ts`. The REPL's `/verify` has no flag and
+keeps the default.
+
+The general wart this came from is worth stating: the flag table is global, so any
+command accepts any declared flag and silently ignores the ones it does not read
+(`moat fetch --timeout 5` does nothing). Two of those turned out to be real bugs —
+this one and `--tools`/`--log-level`, which were validated late or not at all.
+
 ---
 
 ## Requirement-by-requirement

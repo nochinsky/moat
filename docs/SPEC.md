@@ -883,6 +883,11 @@ on work no test had looked at, and the agent was told to run it. Scaffolding
 placeholders and bare `echo`s (which can only pass) are filtered out, so a project
 with no tests is reported as having no checks rather than as failing them.
 
+`--timeout` bounds each check, in seconds, and `moat verify` and `moat take` pass it
+through; the default is 600 seconds per check, after which the command is killed
+(`--kill-after` escalates, so a check that traps SIGTERM still dies) and reported as
+timed out rather than as a failure of the project.
+
 No model is involved in the verdict: moat runs the declared command in the sandbox
 and reports the exit code. A check that times out is reported as timed out rather
 than as a failure, because those are different things.

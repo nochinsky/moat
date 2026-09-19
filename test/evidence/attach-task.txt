@@ -6,12 +6,12 @@
 [tool] bash (completed) pwd && ls -la && cat README.md
 [tool-output] /work
 total 24
-drwxr-xr-x  3 root root 4096 Sep 19 19:44 .
-drwxr-xr-x 22 root root 4096 Sep 19 19:44 ..
-drwxr-xr-x  7 root root 4096 Sep 19 19:44 .git
--rw-r--r--  1 root root   71 Sep 19 19:44 README.md
--rwxr-xr-x  1 root root   45 Sep 19 19:44 greet.sh
--rw-r--r--  1 root root   10 Sep 19 19:44 notes.txt
+drwxr-xr-x  3 root root 4096 Sep 19 20:07 .
+drwxr-xr-x 22 root root 4096 Sep 19 20:07 ..
+drwxr-xr-x  7 root root 4096 Sep 19 20:07 .git
+-rw-r--r--  1 root root   71 Sep 19 20:07 README.md
+-rwxr-xr-x  1 root root   45 Sep 19 20:07 greet.sh
+-rw-r--r--  1 root root   10 Sep 19 20:07 notes.txt
 # demo project
 
 A tiny project used to exercise moat.
@@ -29,9 +29,9 @@ written by the agent, inside the sandbox, via the edit tool
 line two
 [tool] bash (running) 
 [tool] bash (completed) git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && git log --oneline -1 && git rev-parse HEAD
-[tool-output] c8cda8e agent: add agent-output.txt from inside the sandbox
-c8cda8e146245d0bbd6c34b6a739fbcb41b2f2dc
+[tool-output] eddcab3 agent: add agent-output.txt from inside the sandbox
+eddcab3b73d988dca7fa507a078b2007a993224a
 Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
 
 
-session ses_f44cca06affeXmSUnGJigS1IYk   5 tool call(s)
+session ses_f44b7dcb5ffeSTEBZRxXFkU6LY   5 tool call(s)
