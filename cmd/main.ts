@@ -36,6 +36,7 @@ import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import { recoverStateFromDisk } from "../sandbox/recover.ts"
 import { beginBoot, bootAgeSeconds, bootInFlight, endBoot, waitForBoot } from "../sandbox/boot.ts"
+import { stripAnsi } from "./display.ts"
 import { readRootfsFile, readRootfsFileHead, readRootfsFileTail } from "../lib/rootfs-fs.ts"
 import {
   credentialExpired,
@@ -1514,7 +1515,7 @@ async function cmdFetch(argv: string[]): Promise<number> {
       log.warn(
         `the sandbox has ${dirty.length} uncommitted change(s); \`git fetch\` reads a branch ref and cannot see them.`,
       )
-      for (const line of dirty.slice(0, 10)) log.info(`    ${line}`)
+      for (const line of dirty.slice(0, 10)) log.info(`    ${stripAnsi(line)}`)
       if (dirty.length > 10) log.info(`    … and ${dirty.length - 10} more`)
       log.info("")
       log.info(`  to collect them:  moat fetch --commit-worktree   ${log.dim("(commits them in the sandbox, then fetches)")}`)
@@ -1537,7 +1538,9 @@ async function cmdFetch(argv: string[]): Promise<number> {
     if (!branch) continue
     const known = branches.find((b) => b.name === branch)
     if (!known) {
-      log.fail(`no branch "${branch}" in the sandbox. Available: ${branches.map((b) => b.name).join(", ")}`)
+      log.fail(
+        `no branch "${stripAnsi(branch)}" in the sandbox. Available: ${branches.map((b) => stripAnsi(b.name)).join(", ")}`,
+      )
     }
     results.push(await fetchBranch(paths, branch))
   }
@@ -1551,10 +1554,10 @@ async function cmdFetch(argv: string[]): Promise<number> {
   }
 
   for (const result of results) {
-    log.success(`fetched ${result.branch} -> ${result.hostRef} (${result.sha.slice(0, 12)})`)
+    log.success(`fetched ${stripAnsi(result.branch)} -> ${stripAnsi(result.hostRef)} (${result.sha.slice(0, 12)})`)
     log.info(`  ${result.commits} commit(s) reachable, HEAD ${result.headBefore?.slice(0, 12)} -> ${result.headAfter?.slice(0, 12)}`)
     for (const commit of result.commitsFetched.slice(0, 10)) {
-      log.info(`    ${commit.sha.slice(0, 12)}  ${commit.subject}`)
+      log.info(`    ${commit.sha.slice(0, 12)}  ${stripAnsi(commit.subject)}`)
     }
   }
   log.info("")
@@ -1627,7 +1630,7 @@ async function cmdTake(argv: string[]): Promise<number> {
   log.info("")
   log.info(`${log.bold(target)}  ${result.commits} commit(s), ${result.sha.slice(0, 12)}`)
   for (const commit of result.commitsFetched.slice(0, 15)) {
-    log.info(`  ${log.dim(commit.sha.slice(0, 10))}  ${commit.subject}`)
+    log.info(`  ${log.dim(commit.sha.slice(0, 10))}  ${stripAnsi(commit.subject)}`)
   }
 
   const changed = await run("git", ["-C", paths.projectDir, "diff", "--stat", result.headBefore ?? "HEAD", result.hostRef], {
@@ -1710,7 +1713,11 @@ async function cmdApply(argv: string[]): Promise<number> {
     }
     const result = await applyBranch(paths, branch, { name: localName, checkout })
     if (json) log.emit({ ...result, checkout })
-    else log.success(`${checkout ? "checked out" : "created"} local branch ${result.branch} at ${result.ref}`)
+    else {
+      log.success(
+        `${checkout ? "checked out" : "created"} local branch ${stripAnsi(result.branch)} at ${stripAnsi(result.ref)}`,
+      )
+    }
     return 0
   }
   if (checkout) log.fail("--checkout needs a branch: moat apply <branch> --checkout")
@@ -1740,9 +1747,9 @@ async function cmdApply(argv: string[]): Promise<number> {
 
   if (!flag<boolean>(p, "json")) {
     log.info("")
-    for (const line of describePlan(plan)) log.info(`  ${line}`)
+    for (const line of describePlan(plan)) log.info(`  ${stripAnsi(line)}`)
     for (const conflict of plan.conflicts) {
-      log.info(`  ${log.yellow("skip")}    ${conflict.path}  ${log.dim(conflict.note ?? "conflict")}`)
+      log.info(`  ${log.yellow("skip")}    ${stripAnsi(conflict.path)}  ${log.dim(conflict.note ?? "conflict")}`)
     }
     log.info("")
   }
@@ -1995,7 +2002,9 @@ async function cmdStatus(argv: string[]): Promise<number> {
     }
     log.info(`snapshots    ${snapshots.map((s) => s.name).join(", ") || "none"}`)
     if (payload.sandboxBranches.length > 0) {
-      log.info(`branches     ${payload.sandboxBranches.map((b) => `${b.name}${b.current ? "*" : ""}`).join(", ")}`)
+      log.info(
+      `branches     ${payload.sandboxBranches.map((b) => `${stripAnsi(b.name)}${b.current ? "*" : ""}`).join(", ")}`,
+    )
     }
   }
   return 0
@@ -2069,7 +2078,7 @@ function tailText(text: string, lines: number): string {
 
 function tailFile(file: string, lines: number): string {
   if (!fs.existsSync(file)) return "(no log)"
-  return tailText(fs.readFileSync(file, "utf8"), lines)
+  return tailText(stripAnsi(fs.readFileSync(file, "utf8")), lines)
 }
 
 /** Read at most this much of an agent-controlled log: it decides the file's size. */
@@ -2088,7 +2097,9 @@ function rootfsLogTail(paths: EnvPaths, target: string, lines: number): string {
   // make it are in logs/sandbox.log outside the box. Report "(no log)" and let the
   // caller fall back to it, as it did when the file was not created at all.
   if (text === null || text.trim().length === 0) return "(no log)"
-  return tailText(text, lines)
+  // The agent can write anything into its own log, escape sequences included,
+  // and this text goes to the user's terminal.
+  return tailText(stripAnsi(text), lines)
 }
 
 /**

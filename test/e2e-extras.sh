@@ -436,6 +436,26 @@ else
   echo "after down: FAILED, status=$RACE_STATE processes=$RACE_PROCS marker=$([ -f "$RACE_MARKER" ] && echo present || echo gone)" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$RACE" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "V. agent text cannot drive the terminal it is printed on"
+# The answer, the reasoning, commit subjects, change paths and the sandbox log all come
+# from inside the box, and a terminal reads escape sequences in them: OSC 0 retitles the
+# window, OSC 52 writes the clipboard where the terminal allows it, CSI 2J clears the
+# screen, and a carriage return overwrites the row. Tool output was already stripped; the
+# model's own words were not. The pty test drives a real session with a distinct sequence
+# in the answer, in a commit subject and in a file name; the check below writes one into
+# the sandbox's own log, which the agent can write to at will, and reads it back.
+python3 "$REPO/test/repl-escapes.py" 2>&1 | scrub > "$EVIDENCE/repl-escapes.txt"
+ESCAPES_RC=$?
+tail -10 "$EVIDENCE/repl-escapes.txt" | tee -a "$EVIDENCE/extras.txt"
+echo "terminal escapes exit: $ESCAPES_RC" | tee -a "$EVIDENCE/extras.txt"
+
+capture logs-inject $MOAT exec -- /bin/sh -c "printf 'LOG-INJECT \033]0;pwned-log\007 end\n' >> /var/log/moat/boot.log"
+capture logs-escape $MOAT logs sandbox --tail 3
+if grep -q "LOG-INJECT" "$EVIDENCE/logs-escape.txt" && ! grep -q "$(printf '\033]0;pwned-log')" "$EVIDENCE/logs-escape.txt"; then
+  echo "sandbox log: the agent's own escape bytes are stripped, its text is not" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "sandbox log: FAILED, an escape sequence in the log reached the terminal" | tee -a "$EVIDENCE/extras.txt"
+fi
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

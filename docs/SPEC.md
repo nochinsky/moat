@@ -724,10 +724,19 @@ interactive session was impossible unless opencode was also installed on the
 host. The sandbox already runs the server, so that dependency was never
 necessary.
 
+Nothing the sandbox prints is trusted as terminal input. The answer, the
+reasoning, tool output, commit subjects, branch names, change paths and the boot
+log all arrive as bytes, and a terminal acts on the escape sequences in them: a
+window title, a clipboard write, an erased screen. They are stripped at the print
+boundary (`stripAnsi`, `cmd/display.ts`) — per delta for the streamed answer, so a
+sequence split across two deltas cannot be reassembled on screen. What remains is
+text.
+
 The pty suites drive the CLI through a real terminal and assert on what comes
 back: `repl-smoke.py` (the session, the layout, the turn footer),
 `repl-questions.py`, `repl-apply.py`, `repl-controls.py` (model, effort, agent,
-undo) and `repl-effort.py` (against a real provider). Piping stdin is not a
+undo), `repl-escapes.py` (escape sequences from the answer, a commit subject and
+a file name) and `repl-effort.py` (against a real provider). Piping stdin is not a
 substitute: readline behaves differently without a terminal, and the live view is
 the whole point of the mode.
 

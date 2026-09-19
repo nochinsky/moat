@@ -795,7 +795,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
           const lines = [`uncommitted (not fetched by moat fetch):`]
           if (stat.stdout.trim()) lines.push(stat.stdout.trimEnd())
           for (const entry of uncommitted.filter((l) => l.startsWith("??"))) {
-            lines.push(`  new file: ${entry.slice(3)}`)
+            lines.push(`  new file: ${stripAnsi(entry.slice(3))}`)
           }
           sections.push(lines.join("\n"))
         }
@@ -803,7 +803,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
         if (sections.length === 0) return say("nothing changed yet")
         say("")
         for (const section of sections) {
-          for (const line of section.split("\n")) say(`  ${line}`)
+          for (const line of section.split("\n")) say(`  ${stripAnsi(line)}`)
           say("")
         }
       },
@@ -819,14 +819,14 @@ export async function runRepl(options: ReplOptions): Promise<number> {
         const fetched = await fetchBranch(options.paths, target)
         const after = hashTree(options.paths.projectDir)
         say("")
-        say(`  ${BOLD}${target}${RESET}  ${fetched.commits} commit(s), ${fetched.sha.slice(0, 12)}`)
+        say(`  ${BOLD}${stripAnsi(target)}${RESET}  ${fetched.commits} commit(s), ${fetched.sha.slice(0, 12)}`)
         for (const commit of fetched.commitsFetched.slice(0, 10)) {
-          say(`    ${DIM}${commit.sha.slice(0, 10)}${RESET}  ${commit.subject}`)
+          say(`    ${DIM}${commit.sha.slice(0, 10)}${RESET}  ${stripAnsi(commit.subject)}`)
         }
         say("")
         say(`  working tree ${before.digest === after.digest ? `${GREEN}untouched${RESET}` : `${RED}changed${RESET}`}`)
         say(`  accept:  ${BOLD}moat apply ${target} --checkout${RESET}`)
-        say(`  reject:  git update-ref -d ${fetched.hostRef}`)
+        say(`  reject:  git update-ref -d ${stripAnsi(fetched.hostRef)}`)
       },
     },
     status: {
@@ -1035,7 +1035,7 @@ export async function runRepl(options: ReplOptions): Promise<number> {
         say("")
         for (const s of sessions.slice(0, 15)) {
           const marker = s.id === sessionID ? `${GREEN}\u203a${RESET}` : " "
-          say(`  ${marker} ${s.id}  ${DIM}${(s.title ?? "").slice(0, 60)}${RESET}`)
+          say(`  ${marker} ${s.id}  ${DIM}${stripAnsi((s.title ?? "").slice(0, 60))}${RESET}`)
         }
         say("")
         say(`  switch with ${BOLD}/use <id>${RESET}`)
@@ -1082,9 +1082,9 @@ exec /bin/bash -l
         if (plan.baselineProblem) return say(plan.baselineProblem)
         if (plan.empty) return say("nothing to apply: your directory already matches the sandbox")
         say("")
-        for (const line of describePlan(plan)) say(`  ${line}`)
+        for (const line of describePlan(plan)) say(`  ${stripAnsi(line)}`)
         for (const conflict of plan.conflicts) {
-          say(`  ${YELLOW}skip${RESET}    ${conflict.path}  ${DIM}${conflict.note ?? "conflict"}${RESET}`)
+          say(`  ${YELLOW}skip${RESET}    ${stripAnsi(conflict.path)}  ${DIM}${conflict.note ?? "conflict"}${RESET}`)
         }
         say("")
         if (plan.conflicts.length > 0) {

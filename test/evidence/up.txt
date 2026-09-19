@@ -4,13 +4,13 @@
 {
   "project": "/home/user/moat-demo/project",
   "envId": "18620c2c4f34",
-  "provisionMs": 1035,
+  "provisionMs": 1029,
   "provisionFromImageCache": true,
   "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-50303c72c8d1.tar.gz",
   "provisionSteps": [
     {
       "name": "extract cached image",
-      "ms": 879
+      "ms": 870
     }
   ],
   "baselineSnapshot": {
@@ -20,7 +20,7 @@
   },
   "copyIn": {
     "transport": "git",
-    "head": "0333f0c9a7e2d4381de2066c8fcf3b6684f44c89",
+    "head": "95d69ed86af03650ace847a76be7693c145875f2",
     "branch": "main",
     "dirty": true,
     "trackedChanges": 1,
@@ -30,9 +30,9 @@
     "bytes": 126,
     "suspectSecrets": [],
     "skippedFromCopy": [],
-    "hostState": "git:0333f0c9a7e2d4381de2066c8fcf3b6684f44c89:af703fa3b275a51f"
+    "hostState": "git:95d69ed86af03650ace847a76be7693c145875f2:af703fa3b275a51f"
   },
-  "copyInMs": 81,
+  "copyInMs": 73,
   "provider": {
     "opencodeID": "moat",
     "native": false,
@@ -63,15 +63,15 @@
   },
   "egress": "open",
   "status": "running",
-  "port": 40073,
-  "pid": 190225,
-  "bootMs": 8667,
-  "totalMs": 9928,
+  "port": 45139,
+  "pid": 202511,
+  "bootMs": 7728,
+  "totalMs": 8967,
   "readyCheck": "GET /config -> 200",
   "credential": {
     "provider": "moat",
     "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-19T22:44:20.809Z",
+    "expiresAt": "2026-09-19T23:09:16.399Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -93,10 +93,10 @@ egress: open, because the provider is on the host's loopback (http://127.0.0.1:5
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-50303c72c8d1.tar.gz
-✓ image provisioned in 1.03s (extract cached image 879ms)
+✓ image provisioned in 1.03s (extract cached image 870ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 3 files, 0.1 KiB, digest c73dfe12c6e22b9f (dirty tree: 1 modified, 1 untracked)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-18-44
-→ sandbox booted (pid 190225, port 40073); waiting for opencode serve
+agent branch: moat-session-2026-09-19-19-09
+→ sandbox booted (pid 202511, port 45139); waiting for opencode serve

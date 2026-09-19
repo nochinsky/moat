@@ -302,7 +302,16 @@ export class AnswerRenderer {
   }
 
   push(delta: string): void {
-    this.buffer += delta
+    // The answer and the reasoning are the model's words, and the model is no
+    // more trusted than the tools it runs: an escape sequence in an answer can
+    // clear the screen, move the cursor, retitle the window or (where the
+    // terminal allows it) set the clipboard, and a `\r` can overwrite the line.
+    // Tool output was already stripped at its own boundary; this is the same
+    // rule for the answer. Stripping a delta is safe against a sequence split
+    // across two deltas: `stripAnsi` removes every ESC byte either as part of a
+    // sequence or as a control character, so nothing can be reassembled on
+    // screen. `test/unit/terminal-text.test.ts` and extras section V hold it there.
+    this.buffer += stripAnsi(delta)
     let index = this.buffer.indexOf("\n")
     while (index !== -1) {
       const line = this.buffer.slice(0, index)
