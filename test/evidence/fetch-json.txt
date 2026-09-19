@@ -4,23 +4,24 @@
 {
   "fetched": [
     {
-      "branch": "moat-session-2026-09-19-20-47",
-      "hostRef": "refs/moat/moat-session-2026-09-19-20-47",
-      "sha": "e08af7518756783f5f9f31542fe99748ff9e4c8a",
+      "branch": "moat-session-2026-09-19-21-08",
+      "hostRef": "refs/moat/moat-session-2026-09-19-21-08",
+      "sha": "2cff6d23b0bc08d61ad64cf126c3f4e76f47fd0a",
       "commits": 2,
-      "headBefore": "6a620e75c59126a2a8765c5215ed46dafaafcf67",
-      "headAfter": "6a620e75c59126a2a8765c5215ed46dafaafcf67",
+      "headBefore": "54709a42972d1d0c6396da33837efea8098c7567",
+      "headAfter": "54709a42972d1d0c6396da33837efea8098c7567",
       "headUnchanged": true,
       "commitsFetched": [
         {
-          "sha": "e08af7518756783f5f9f31542fe99748ff9e4c8a",
+          "sha": "2cff6d23b0bc08d61ad64cf126c3f4e76f47fd0a",
           "subject": "agent: add agent-output.txt from inside the sandbox"
         },
         {
-          "sha": "6a620e75c59126a2a8765c5215ed46dafaafcf67",
+          "sha": "54709a42972d1d0c6396da33837efea8098c7567",
           "subject": "initial demo project"
         }
-      ]
+      ],
+      "credentialLeaks": []
     }
   ],
   "worktreeUntouched": true,
@@ -28,4 +29,4 @@
   "projectDigestAfter": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158"
 }
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-20-47:refs/moat/moat-session-2026-09-19-20-47
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-21-08:refs/moat/moat-session-2026-09-19-21-08

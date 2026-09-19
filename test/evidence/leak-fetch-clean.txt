@@ -1,0 +1,13 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts fetch
+--- exit 0
+--- stdout ---
+--- stderr ---
+→ copy-out: git fetch /home/user/.moat/envs/345dfb73d559/rootfs/work +refs/heads/moat-session-2026-09-19-21-18:refs/moat/moat-session-2026-09-19-21-18
+✓ fetched moat-session-2026-09-19-21-18 -> refs/moat/moat-session-2026-09-19-21-18 (b089b2cafb16)
+  2 commit(s) reachable, HEAD 49a034bb114f -> 49a034bb114f
+    b089b2cafb16  clean change
+    49a034bb114f  init
+
+  the host working tree was recomputed and is byte-identical
+  inspect with:  git log refs/moat/moat-session-2026-09-19-21-18
+  apply with:    moat apply moat-session-2026-09-19-21-18  (or --checkout)

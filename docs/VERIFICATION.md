@@ -2212,6 +2212,47 @@ file that asks for environment variables does not depend on there being a creden
 steal. `test/unit/instructions.test.ts` holds both halves and both `db` states, and was
 watched failing with either paragraph made unconditional again.
 
+### Z. Copy-out names the credential it carries
+
+The agent has to read the injected credential to call the model, and the brief tells it
+not to commit it. Nothing checked: `moat fetch` copied every object the agent committed
+into the host repository, and `moat apply` wrote the agent's files into the working tree,
+with no scan at all. Measured in extras section AB, with the exact value the box was
+booted with written into the project and committed the way the agent commits:
+
+```
+! 1 file(s) in the branch just fetched contain the credential moat injected into the sandbox:
+    leaked.env
+  The agent has to read that value to call the model, and it can write it anywhere. moat names
+  it instead of dropping it: review (or delete) the file before you commit or push, and rotate
+  the key if that content has already reached a remote.
+✓ fetched moat-session-2026-09-19-21-07 -> refs/moat/moat-session-2026-09-19-21-07 (b40a898396bf)
+
+$ moat apply
+! 1 file(s) about to be written into your working tree contain the credential moat injected
+  into the sandbox:
+    leaked.env
+  add     feature.ts
+  add     leaked.env
+✓ applied 2 change(s) to /home/user/moat-demo/leakscan
+```
+
+The fetch search covers every commit the fetch brought in, not only the tip, so a key
+committed and deleted again is still named: `test/unit/leak-scan.test.ts` builds exactly that
+history (the working tree is clean at the tip and the blob is in the fetched objects) and
+fails if the scan looks at the tip alone. The control runs the same boot and the same commit
+path without the value and requires silence (`grep -c 'credential moat injected'` → `0`), so
+the check cannot pass by warning about everything. The file is still written — a warning, not
+a gate, because a half-apply would be worse than a named exposure. Both positive halves were
+watched failing with the scan disabled (the two leak assertions fail; the controls pass).
+
+The paths in the warning are the agent's, so they go through `stripAnsi` like every other
+string that came out of the sandbox, and the value never reaches argv — `git grep` reads it
+from a 0600 patterns file, because `ps` is world-readable. What the scan cannot see is in
+SPEC §4 and the closing table: a key rotated since the boot (the sandbox holds only a
+fingerprint), a secret the agent found elsewhere, commits older than the most recent 50, and
+files over the apply scan's size limit — each bound is named when it is reached.
+
 ---
 
 ## Requirement-by-requirement
@@ -2286,4 +2327,5 @@ Listed so that absence is not mistaken for success.
 | Exfiltration through an allowed channel | §L verifies that the allowlist admits the provider and refuses an arbitrary address, and that the host's loopback is unreachable on both routes. It does not attempt to push data out *through* an allowlisted address or over DNS, both of which remain possible by construction. |
 | Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), but a reboot mid-session was not staged. |
 | Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all — a refusal, not support, and not a silent drop. |
+| What the copy-out credential scan cannot see | it compares against the values the host holds at fetch/apply time (`DEEPSEEK_API_KEY`, `MOAT_CREDENTIAL`, the credential store) and searches the commits a fetch brought in (the most recent 50) or the files an apply plan would write (up to 64 MiB each). A key rotated since the boot, a secret the agent obtained somewhere else, older commits and larger files are outside it — each bound is named when it is reached (extras §AB, `test/unit/leak-scan.test.ts`). A file that does not match is not a claim that it is clean. |
 | A live event stream that stays open and goes quiet | the *end* of the stream is detected and reported (secondary claim P), and the box dying closes its sockets, which is the case measured. A connection that stays open while delivering nothing — no FIN, no error — is not detected: there is no watchdog on the server's 10s heartbeat. Nothing observed produced one. |

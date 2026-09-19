@@ -5,6 +5,13 @@ import path from "node:path"
 import { partPath, type EnvPaths } from "../lib/paths.ts"
 import { run } from "../lib/shell.ts"
 import { SANITIZED_GIT_ENV, sandboxGit, sandboxGitRaw } from "../lib/git.ts"
+import {
+  knownCredentialValues,
+  leakingFiles,
+  noteFilesTooLargeToScan,
+  noteScanSkipped,
+  warnAboutCredentialLeak,
+} from "./leak-scan.ts"
 
 /**
  * Bring the agent's work into the user's directory.
@@ -67,6 +74,12 @@ export type ApplyPlan = {
   baselineProblem: string | null
   /** Commit refs/moat/baseline pointed at when the plan was made. */
   baselineCommit: string | null
+  /**
+   * Files this plan would write whose content contains the credential moat
+   * injected into the sandbox. Populated by the scan in `planApply`; empty when
+   * the host has no credential value to compare against.
+   */
+  credentialLeaks: string[]
 }
 
 type Entry =
@@ -340,6 +353,7 @@ export async function planApply(p: EnvPaths): Promise<ApplyPlan> {
     empty: true,
     baselineProblem: baseline.problem,
     baselineCommit: baseline.commit,
+    credentialLeaks: [],
   }
   if (baseline.problem) return empty
 
@@ -442,6 +456,30 @@ export async function planApply(p: EnvPaths): Promise<ApplyPlan> {
     })
   }
 
+  // Name the credential before it moves, not after. The value can only come from
+  // the host's own sources — the sandbox stores no credential, only a fingerprint —
+  // so a key rotated since the boot is invisible here. docs/SPEC.md §4 says so.
+  // Conflicts are skipped: moat never writes them, so it must not claim they leak.
+  let credentialLeaks: string[] = []
+  const values = knownCredentialValues()
+  if (values.length === 0) {
+    noteScanSkipped("apply")
+  } else {
+    const entries = changes
+      .filter((change) => !change.conflict && (change.kind === "add" || change.kind === "modify" || change.kind === "merge"))
+      .map((change) => ({
+        path: change.path,
+        file: change.kind === "merge" ? (change.mergedFile ?? "") : path.join(p.work, change.path),
+      }))
+      .filter((entry) => entry.file.length > 0)
+    const scanned = leakingFiles(entries, values)
+    credentialLeaks = scanned.leaks
+    noteFilesTooLargeToScan(scanned.skipped, "apply")
+    if (credentialLeaks.length > 0) {
+      warnAboutCredentialLeak(credentialLeaks, "about to be written into your working tree")
+    }
+  }
+
   const conflicts = changes.filter((change) => change.conflict)
   return {
     changes,
@@ -450,6 +488,7 @@ export async function planApply(p: EnvPaths): Promise<ApplyPlan> {
     empty: changes.length === 0,
     baselineProblem: null,
     baselineCommit: baseline.commit,
+    credentialLeaks,
   }
 }
 

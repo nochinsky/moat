@@ -20,6 +20,10 @@
  * (see AnswerRenderer.push).
  */
 
+import { stripAnsi } from "../lib/terminal.ts"
+
+export { stripAnsi }
+
 const ESC = "\u001b["
 
 export type Theme = {
@@ -72,24 +76,6 @@ export function makeTheme(enabled: boolean): Theme {
     gutter: enabled ? `${ESC}90m\u2502${ESC}0m ` : "\u2502 ",
     thoughtGutter: enabled ? `${ESC}90m\u2502${ESC}0m ${ESC}36mthinking${ESC}0m ` : "\u2502 thinking ",
   }
-}
-
-/**
- * Remove escape sequences from text moat did not produce.
- *
- * Tool output comes from arbitrary programs, and a stray `\r`, cursor-up or
- * colour change will corrupt the transcript around it. Everything the agent
- * prints is passed through here first. Escape sequences are dropped rather than
- * escaped so that, for example, a test runner's coloured output reads as plain
- * text instead of arriving as literal `[32m` noise.
- */
-export function stripAnsi(text: string): string {
-  return text
-    .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, "") // OSC … BEL/ST
-    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "") // CSI
-    .replace(/\u001b[@-Z\\-_]/g, "") // other two-byte sequences
-    .replace(/\r/g, "") // carriage returns overwrite the current row
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "") // control chars
 }
 
 /** Truncate to a visible width, appending an ellipsis when something was cut. */

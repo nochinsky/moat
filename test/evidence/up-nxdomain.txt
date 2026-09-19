@@ -1,15 +1,15 @@
 
---- $ node /home/user/Projects/moat/cmd/main.ts up --base-url https://nxdomain-12954.invalid/v1
+--- $ node /home/user/Projects/moat/cmd/main.ts up --base-url https://nxdomain-13790.invalid/v1
 --- exit 1
 --- stdout ---
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-50303c72c8d1.tar.gz
-✓ image provisioned in 1.04s (extract cached image 875ms)
+✓ image provisioned in 1.03s (extract cached image 868ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 5ea85862e8d72055
 model: moat/deepseek-flash
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s). The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-20-46
-✗ could not resolve nxdomain-12954.invalid, so a filtered sandbox would not reach the model. Check DNS and try again, or pass --egress open to boot without the allowlist.
+agent branch: moat-session-2026-09-19-21-19
+✗ could not resolve nxdomain-13790.invalid, so a filtered sandbox would not reach the model. Check DNS and try again, or pass --egress open to boot without the allowlist.

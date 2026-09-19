@@ -3,4 +3,5 @@
 --- stdout ---
 in-sandbox /opt now contains:
 moat-extra
+moat-marker
 --- stderr ---

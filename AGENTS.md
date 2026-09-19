@@ -258,6 +258,15 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   `db` is never auto-detected, and detection never adds it. Adding a claim to the brief
   means rendering it from an input and writing both branches;
   `test/unit/instructions.test.ts` fails if either paragraph goes unconditional again.
+* Copy-out scans for the credential it carries, and the value can only come from the
+  host: the sandbox stores a fingerprint, never the key. `sync/leak-scan.ts` compares
+  against `DEEPSEEK_API_KEY`/`MOAT_CREDENTIAL`/the credential store at fetch/apply time,
+  so a key rotated between boot and fetch is invisible to it — that limit is in
+  SPEC §4 and in the "Not verified" table, and the scan says when it did not run at all
+  (`noteScanSkipped`). The value must never reach argv: `git grep` gets it through a
+  0600 patterns file, because every process on the machine can read `ps`. It is a
+  warning, not a gate — `moat apply` still writes the file, and extras section AB checks
+  both halves (the leak is named; clean content stays quiet).
 * `moat restore` stages beside the rootfs and swaps with renames, so a bad
   snapshot cannot destroy the environment. Do not go back to deleting the live
   rootfs first: that is how an afternoon of installed packages and an agent's

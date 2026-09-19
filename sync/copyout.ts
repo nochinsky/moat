@@ -4,6 +4,13 @@ import type { EnvPaths } from "../lib/paths.ts"
 import { run } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
 import { SANITIZED_GIT_ENV, resolveGitDir, sandboxGit, withSanitizedSandboxRepo } from "../lib/git.ts"
+import {
+  fetchedRevs,
+  knownCredentialValues,
+  noteScanSkipped,
+  scanCommittedForCredentials,
+  warnAboutCredentialLeak,
+} from "./leak-scan.ts"
 
 /**
  * Copy-out.
@@ -40,6 +47,12 @@ export type FetchResult = {
   /** The host's HEAD did not move. The full tree proof is the digest in cmd/main.ts. */
   headUnchanged: boolean
   commitsFetched: { sha: string; subject: string }[]
+  /**
+   * Files in the fetched commits whose content contains the credential moat
+   * injected into the sandbox. Those objects are now in the host repository's
+   * `.git`; empty when the host has no credential value to compare against.
+   */
+  credentialLeaks: string[]
 }
 
 export async function sandboxRepoExists(p: EnvPaths): Promise<boolean> {
@@ -206,6 +219,28 @@ export async function fetchBranch(
 
   const headAfter = await hostHead(p.projectDir)
 
+  // What just landed is the agent's content, and the agent can read the credential.
+  // The scan covers every commit the fetch brought in, not just the tip, so content
+  // committed and then deleted in a later commit is still named. It compares against
+  // the credential values this host can see now — a rotated key is invisible.
+  let credentialLeaks: string[] = []
+  const values = knownCredentialValues()
+  if (values.length === 0) {
+    noteScanSkipped("fetch")
+  } else {
+    const searched = await fetchedRevs(p.projectDir, hostRef, headBefore)
+    if (searched.truncated) {
+      log.warn(
+        `copy-out: only the ${searched.revs.length} most recent commit(s) were searched for the credential; ` +
+          "the older commits this fetch brought in were not. Review them, or ask for a smaller branch.",
+      )
+    }
+    credentialLeaks = await scanCommittedForCredentials(p.projectDir, searched.revs, values)
+    if (credentialLeaks.length > 0) {
+      warnAboutCredentialLeak(credentialLeaks, "in the branch just fetched")
+    }
+  }
+
   return {
     branch,
     hostRef,
@@ -215,6 +250,7 @@ export async function fetchBranch(
     headAfter,
     headUnchanged: headBefore === headAfter,
     commitsFetched,
+    credentialLeaks,
   }
 }
 

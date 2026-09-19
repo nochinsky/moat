@@ -182,6 +182,9 @@ the result before showing it to you. No model is involved in that verdict.
   sealed: an allowlisted address, or DNS, can still carry data out, and the agent
   is root in the box, so it can flush the ruleset it runs under (measured). The
   fence bounds where the box sends data during normal work, not a hostile agent.
+  Copy-out compares what it carries against the credential moat holds and names
+  the files that contain it (`moat fetch` and `moat apply`), but that is a
+  warning, not a gate: content you asked for still crosses.
 - The allowlist is an IP snapshot resolved when the box boots, so a host that
   rotates to an address outside it is unreachable until the next `moat up`, and
   it cannot express per-host ports. `moat up --egress isolated` drops the

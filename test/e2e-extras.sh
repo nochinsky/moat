@@ -600,6 +600,61 @@ else
   echo "the control FAILED: a free port was refused, so the check above proves nothing" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$PORTBUSY" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "AB. copy-out names a credential the agent could have committed"
+# The agent has to read the injected credential to call the model, and the brief tells it
+# not to commit it. Nothing checked: `moat fetch` copied every object the agent committed
+# into the host repository, and `moat apply` wrote the agent's files into the working tree,
+# with no scan at all — a key pasted into a config file travelled to the host and on to the
+# next push. This boots a fixture, plants the exact value the box was given, and reads what
+# copy-out says. The middle part is the control: clean content must stay quiet, or the
+# warning is noise nobody reads.
+LEAK="$WORK/leakscan"
+rm -rf "$LEAK"; mkdir -p "$LEAK"
+( cd "$LEAK" && git init -q -b main . && printf '{"name":"leakscan"}\n' > package.json \
+  && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
+( cd "$LEAK" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$LEAK" && capture leak-up $MOAT up --quiet --no-detect --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+# Control first: an ordinary commit, no credential anywhere in it.
+( cd "$LEAK" && $MOAT exec -- /bin/sh -c 'printf "export const x = 1\n" > /work/feature.ts \
+  && git -C /work -c user.email=a@b -c user.name=agent add -A \
+  && git -C /work -c user.email=a@b -c user.name=agent commit -qm "clean change"' >/dev/null 2>&1 )
+export MOAT_CREDENTIAL="$CREDENTIAL"
+( cd "$LEAK" && capture leak-fetch-clean $MOAT fetch )
+# The same commit path, with the value the box was booted with written into the project.
+( cd "$LEAK" && $MOAT exec -- /bin/sh -c "printf 'DEEPSEEK_API_KEY=%s\n' '$CREDENTIAL' > /work/leaked.env \
+  && git -C /work -c user.email=a@b -c user.name=agent add -A \
+  && git -C /work -c user.email=a@b -c user.name=agent commit -qm 'oops, the key'" >/dev/null 2>&1 )
+( cd "$LEAK" && capture leak-fetch $MOAT fetch )
+( cd "$LEAK" && capture leak-apply $MOAT apply )
+unset MOAT_CREDENTIAL
+
+{
+  echo "$ grep -c 'credential moat injected' leak-fetch-clean.txt    # the control, expect 0"
+  grep -c "credential moat injected" "$EVIDENCE/leak-fetch-clean.txt" || true
+  echo ""
+  echo "$ grep -B1 leaked.env leak-fetch.txt"
+  grep -B1 "leaked.env" "$EVIDENCE/leak-fetch.txt" || true
+  echo ""
+  echo "$ grep -B1 leaked.env leak-apply.txt"
+  grep -B1 "leaked.env" "$EVIDENCE/leak-apply.txt" || true
+  echo ""
+  echo "$ test -f $LEAK/leaked.env    # named, not blocked: the user asked for the work"
+  if [ -f "$LEAK/leaked.env" ]; then echo "the file was still written to the host tree"; else echo "MISSING"; fi
+} | scrub | tee -a "$EVIDENCE/extras.txt"
+
+if grep -q "credential moat injected" "$EVIDENCE/leak-fetch.txt" \
+   && grep -q "leaked.env" "$EVIDENCE/leak-fetch.txt" \
+   && grep -q "credential moat injected" "$EVIDENCE/leak-apply.txt" \
+   && grep -q "leaked.env" "$EVIDENCE/leak-apply.txt" \
+   && [ -f "$LEAK/leaked.env" ] \
+   && ! grep -q "credential moat injected" "$EVIDENCE/leak-fetch-clean.txt"; then
+  echo "copy-out: fetch and apply both name the credential in the agent's commit, and the" | tee -a "$EVIDENCE/extras.txt"
+  echo "          clean commit stays quiet; the file is still applied (a warning, not a gate)" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "copy-out: FAILED — either the leak was silent, or clean content warned" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$LEAK" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

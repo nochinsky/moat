@@ -1,0 +1,12 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts apply
+--- exit 0
+--- stdout ---
+--- stderr ---
+! 1 file(s) about to be written into your working tree contain the credential moat injected into the sandbox:
+    leaked.env
+  The agent has to read that value to call the model, and it can write it anywhere. moat names it instead of dropping it: review (or delete) the file before you commit or push, and rotate the key if that content has already reached a remote.
+
+  add     feature.ts
+  add     leaked.env
+
+✓ applied 2 change(s) to /home/user/moat-demo/leakscan

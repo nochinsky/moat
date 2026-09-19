@@ -86,7 +86,7 @@ export const DEFAULT_TTL_SECONDS = 4 * 60 * 60
  * make the user say which key to use. `MOAT_CREDENTIAL` is kept as an override
  * for when the key lives under a different name (CI, a secret manager).
  */
-const AUTO_ENV = ["DEEPSEEK_API_KEY", "MOAT_CREDENTIAL"]
+export const CREDENTIAL_ENV_NAMES = ["DEEPSEEK_API_KEY", "MOAT_CREDENTIAL"]
 
 /** Names the sandbox's environment will contain. Values are never needed. */
 export const INJECTED_ENV_NAMES = [
@@ -113,7 +113,7 @@ export function readStore(file = credentialsFile()): Store {
 
 export function describeSources(store: Store): CredentialSource[] {
   const sources: CredentialSource[] = [{ kind: "flag" }]
-  for (const name of AUTO_ENV) {
+  for (const name of CREDENTIAL_ENV_NAMES) {
     if (process.env[name]) sources.push({ kind: "env", name })
   }
   if (Object.keys(store).length > 0) sources.push({ kind: "store", path: credentialsFile() })
@@ -154,7 +154,7 @@ export function findCredential(opts: MintOptions): { provider: string; credentia
     }
   }
 
-  for (const name of AUTO_ENV) {
+  for (const name of CREDENTIAL_ENV_NAMES) {
     const value = process.env[name]
     if (!value) continue
     const fromStore = store.moat

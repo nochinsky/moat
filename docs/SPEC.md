@@ -347,6 +347,29 @@ Guarantees, both verified in `docs/VERIFICATION.md`:
 * **Nothing is applied automatically.** After `moat fetch`, the user's checkout
   is exactly as it was; the agent's work is visible at `refs/moat/<branch>`.
 
+**Copy-out names the credential it carries.** The agent has to read the injected
+credential to call the model, so it can also write it into the project; the brief's
+instruction not to is advice, not a control. Both copy-out paths therefore compare
+what they are about to hand over against the credential values the host can see at
+that moment — the environment names moat itself reads (`DEEPSEEK_API_KEY`,
+`MOAT_CREDENTIAL`) and the credential store — and print the paths that match:
+
+* `moat fetch` searches the commits the fetch brought in, not only the tip, so a key
+  committed and later deleted is still named. By then the objects are in the host
+  repository's `.git`; the warning is what says which ref must not be pushed and
+  which key to rotate.
+* `moat apply` searches the content it is about to write, before writing it, and names
+  the files in the plan.
+
+It is a warning, not a gate: the user asked for the work and still gets it, because a
+half-apply would be worse than a named exposure. What it does **not** cover, stated so
+that silence is not read as approval: a credential rotated between the boot and the
+copy-out (the sandbox holds only a fingerprint, by design), a secret the agent found
+somewhere other than its own environment, commits older than the most recent 50 in the
+fetched branch, and — for `apply` — a file larger than the scan limit. Every one of
+those bounds is named when it is reached. A file that does not match is not a claim
+that it is clean.
+
 A note on the transport: the sandbox's repository is a directory on the host's
 filesystem (`envs/<id>/rootfs/work`), so the host can name it as a git remote.
 That is still a plain `git fetch` from the sandbox's repository, with no mount
