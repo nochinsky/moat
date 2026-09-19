@@ -4,8 +4,10 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
+import { fileURLToPath } from "node:url"
 
-import { safeConfigFor, sandboxGit } from "../../lib/git.ts"
+import { SANITIZED_GIT_ENV, safeConfigFor, sandboxGit } from "../../lib/git.ts"
+import { run } from "../../lib/shell.ts"
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" })
@@ -120,4 +122,139 @@ test("the sanitized config keeps only the repository-format keys", (t) => {
   assert.equal(safe.includes("filter"), false)
   assert.equal(safe.includes("alias"), false)
   assert.match(safe, /repositoryformatversion = 0/)
+})
+/** A commit carrying a bogus signature header, so git tries to verify it. */
+function signedCommit(repo: string): string {
+  const raw = execFileSync("git", ["-C", repo, "cat-file", "commit", "HEAD"], { encoding: "utf8" })
+  const [head = "", ...body] = raw.split("\n\n")
+  const lines = head.split("\n")
+  lines.push("gpgsig -----BEGIN PGP SIGNATURE-----")
+  lines.push(" ")
+  lines.push("iQEcBAABCAAGBQJ" + "A".repeat(60))
+  lines.push(" -----END PGP SIGNATURE-----")
+  const crafted = `${lines.join("\n")}\n\n${body.join("\n\n")}`
+  return execFileSync("git", ["-C", repo, "hash-object", "-t", "commit", "-w", "--stdin"], {
+    encoding: "utf8",
+    input: crafted,
+  }).trim()
+}
+
+test("a signed commit plus log.showSignature does not run the agent's gpg on the host", (t) => {
+  // The bug, measured: `/diff` in the REPL called `run("git", ["-C", work, "log", ...])`
+  // directly. The global config was nulled, but the *repository* config belongs to the
+  // agent, and git obeys `log.showSignature` from it: on a commit with any `gpgsig`
+  // header, git runs `gpg.program` — which the agent can point at a script it wrote
+  // into /work, whose host path it reads out of /proc/self/mountinfo — as the host user.
+  // `/diff` was the one host-side git call left outside `sandboxGit`.
+  const f = makeRepo()
+  t.after(() => fs.rmSync(f.root, { recursive: true, force: true }))
+  const base = git(f.repo, "rev-parse", "--abbrev-ref", "HEAD").trim()
+  git(f.repo, "checkout", "-q", "-b", "agent")
+  fs.writeFileSync(path.join(f.repo, "b.txt"), "b\n")
+  git(f.repo, "add", "-A")
+  git(f.repo, "commit", "-qm", "agent change")
+  git(f.repo, "update-ref", "refs/heads/agent", signedCommit(f.repo))
+  plantScript(path.join(f.repo, "gpg.sh"), f.marker)
+  git(f.repo, "config", "log.showSignature", "true")
+  git(f.repo, "config", "gpg.program", path.join(f.repo, "gpg.sh"))
+
+  return (async () => {
+    // Control: the shape `/diff` used. It runs the agent's program, so this test is
+    // capable of failing.
+    const raw = await run("git", ["-C", f.repo, "log", "--oneline", `${base}..agent`], {
+      env: SANITIZED_GIT_ENV,
+      allowFailure: true,
+    })
+    assert.equal(raw.code, 0)
+    assert.ok(fs.existsSync(f.marker), "control: the raw call runs the agent's gpg")
+    fs.rmSync(f.marker, { force: true })
+
+    const hardened = await sandboxGit(f.repo, ["log", "--oneline", `${base}..agent`], { allowFailure: true })
+    assert.equal(hardened.code, 0)
+    assert.match(hardened.stdout, /agent change/, "the log still renders")
+    assert.equal(fs.existsSync(f.marker), false, "hardened git must not run the agent's gpg")
+    // ...and the agent's own config is put back afterwards, so its repository is
+    // untouched by moat looking at it.
+    assert.equal(git(f.repo, "config", "log.showSignature").trim(), "true")
+    assert.equal(git(f.repo, "config", "gpg.program").trim(), path.join(f.repo, "gpg.sh"))
+  })()
+})
+
+/**
+ * Line numbers of raw `run("git", ["-C", <…>.work, …])` calls without a marker.
+ *
+ * The behavioural tests above prove the hardened runner is safe; this proves it is
+ * *used*. It exists because `/diff` called `run("git", ["-C", paths.work, ...])`
+ * directly — the exact call the rule in AGENTS.md forbids — and that took a live
+ * exploit to notice (see the gpg test above). A raw call is easy to add and invisible
+ * in review, so the shape is checked mechanically.
+ *
+ * `git clone` into the work tree has no `-C` and is a different thing: the destination
+ * is created, and no existing repository config is read. A call that must be raw
+ * carries `raw-git-ok: <reason>` on its line or the line above it.
+ */
+export function rawWorkTreeGitCalls(source: string): number[] {
+  const lines = source.split("\n")
+  const found: number[] = []
+  const call = /(?:^|[^\w.])(run|runRaw)\(\s*"git"/g
+  let match: RegExpExecArray | null
+  while ((match = call.exec(source)) !== null) {
+    const chunk = source.slice(match.index, match.index + 400)
+    if (!/-C",?\s*[\w.$\[\]"\']*\.work\b/.test(chunk)) continue
+    const line = source.slice(0, match.index).split("\n").length
+    const marked = (lines[line - 2] ?? "").includes("raw-git-ok") || (lines[line - 1] ?? "").includes("raw-git-ok")
+    if (!marked) found.push(line)
+  }
+  return found
+}
+
+test("the scanner finds a raw call, and honours both the marker and sandboxGit", () => {
+  // The control for the guard below: a check that cannot fail is not a check.
+  const violation = [
+    'const commits = await run(',
+    '  "git",',
+    '  ["-C", options.paths.work, "log", "--oneline", range],',
+    '  { env: SANITIZED_GIT_ENV },',
+    ')',
+  ].join("\n")
+  // The call's own line, which is where the marker goes when one is needed.
+  assert.deepEqual(rawWorkTreeGitCalls(violation), [1])
+
+  assert.deepEqual(rawWorkTreeGitCalls('await run("git", ["-C", p.work, "init"], { env })'), [1], "still found")
+  assert.deepEqual(
+    rawWorkTreeGitCalls('// raw-git-ok: .git does not exist yet\nawait run("git", ["-C", p.work, "init"], { env })'),
+    [],
+    "a marked call is allowed",
+  )
+  assert.deepEqual(rawWorkTreeGitCalls('await sandboxGit(paths.work, ["status"])'), [], "sandboxGit is the point")
+  assert.deepEqual(
+    rawWorkTreeGitCalls('await run("git", ["-C", p.projectDir, "status"], { env: SANITIZED_GIT_ENV })'),
+    [],
+    "the host project repository is not agent-controlled",
+  )
+  assert.deepEqual(
+    rawWorkTreeGitCalls('await run("git", ["clone", "--no-hardlinks", p.projectDir, p.work], { env })'),
+    [],
+    "a clone into the work tree reads no existing config",
+  )
+})
+
+test("no raw git call against the sandbox work tree outside lib/git.ts", () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..")
+  const offenders: string[] = []
+  for (const dir of ["cmd", "lib", "sandbox", "sync", "secrets", "bundle"]) {
+    for (const name of fs.readdirSync(path.join(root, dir))) {
+      if (!name.endsWith(".ts")) continue
+      const file = path.join(root, dir, name)
+      if (file.endsWith(path.join("lib", "git.ts"))) continue
+      const source = fs.readFileSync(file, "utf8")
+      for (const line of rawWorkTreeGitCalls(source)) offenders.push(`${dir}/${name}:${line}`)
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `these call host git against the agent-controlled repository; use sandboxGit from lib/git.ts, ` +
+      `or mark a deliberate exception with raw-git-ok:\n${offenders.join("\n")}`,
+  )
 })

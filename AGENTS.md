@@ -114,9 +114,21 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   made `moat fetch` run `x.sh` as the user. Every host-side call against that
   repository goes through `lib/git.ts` (`sandboxGit`), which swaps in a minimal
   host-owned config, forces the execution keys off, parks
-  `objects/info/alternates`, and restores the agent's config afterwards. Do not
-  add a raw `run("git", ["-C", paths.work, ...])` call; it will typecheck and
-  quietly reintroduce the bug. `test/unit/git-hardening.test.ts` guards it.
+  `objects/info/alternates`, and restores the agent's config afterwards.
+* `log.showSignature` plus `gpg.program` is the same bug with a longer fuse, and it
+  was live in the interactive session: `/diff` called `run("git", ["-C",
+  options.paths.work, "log", ...])` directly. The global config was nulled, but the
+  *repository* config is the agent's, and on a commit carrying any `gpgsig` header
+  git runs `gpg.program` — which the agent points at a script it wrote into
+  `/work`, whose host path it reads out of `/proc/self/mountinfo`. Measured: the
+  script ran as the host user the moment `/diff` was typed; through `sandboxGit` the
+  same repository is inert. So: do not add a raw `run("git", ["-C", <…>.work, ...])`
+  call. It typechecks, it reviews as ordinary code, and it is no longer only a matter
+  of discipline: `test/unit/git-hardening.test.ts` scans the source for that shape
+  (`rawWorkTreeGitCalls`) and fails on it. A call that must be raw — `git init`
+  before `.git` exists, which the hardened runner refuses to run — carries a
+  `raw-git-ok: <reason>` comment on its line or the line above. `repl-diff-hardening.py`
+  (extras section X) is the pty proof, and it fails with the raw call back.
 * The sanitized config drops `user.*` like everything else. Any host-side commit
   must pass `GIT_AUTHOR_*`/`GIT_COMMITTER_*` explicitly, as the three commit
   paths in `sync/` already do.

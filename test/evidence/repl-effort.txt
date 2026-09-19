@@ -24,11 +24,11 @@ effort is now max (applies to the next message)
 › › /status
 
 ›   project     /home/user/moat-demo/effort
-›   endpoint    http://127.0.0.1:37959
+›   endpoint    http://127.0.0.1:40175
 ›   model       deepseek/deepseek-v4-pro  (effort max)
 ›   agent       default
 ›   thinking    hidden
-›   branch      moat-session-2026-09-19-19-18
+›   branch      moat-session-2026-09-19-19-37
 ›   session     none yet
 ›   profiles    base only
 ›   credential  14377s left
@@ -39,16 +39,16 @@ effort is now max (applies to the next message)
 showing reasoning (/thinking to hide)
 › › How many times does the letter r appear in strawberry? Answer with just the number.
 
-  ⠋ thinking 1s  ⠙ thinking 1s  ⠹ thinking 1s  ⠸ thinking 1s  ⠼ thinking 1s  ⠴ thinking 2s  ⠦ thinking 2s  ⠧ thinking 2s  ⠇ thinking 2s  ⠏ thinking 2s  ⠋ thinking 2s  ⠙ thinking 2s  ⠹ thinking 2s  ⠸ thinking 2s  ⠼ thinking 2s  ⠴ thinking 3s│   3
+  ⠋ thinking 1s  ⠙ thinking 1s  ⠹ thinking 1s  ⠸ thinking 1s  ⠼ thinking 1s  ⠴ thinking 2s  ⠦ thinking 2s  ⠧ thinking 2s  ⠇ thinking 2s  ⠏ thinking 2s│   3
 
-  ─ 8.9k in · 2.3k cached · 2 out · 0 tools · 2.5s  <1% of context  $0.0044 off-peak
+  ─ 8.9k in · 2.3k cached · 2 out · 0 tools · 1.9s  <1% of context  $0.0044 off-peak
 › › /think off
 effort is now off (applies to the next message)
 › › How many times does the letter r appear in strawberry? Answer with just the number.
 
-  ⠴ thinking 1s│   3
+  ⠏ thinking 1s  ⠋ thinking 1s  ⠙ thinking 1s  ⠹ thinking 1s  ⠸ thinking 1s│   2
 
-  ─ 8.8k in · 2.3k cached · 1 out · 0 tools · 1.1s  <1% of context  $0.0043 off-peak
+  ─ 8.8k in · 2.3k cached · 1 out · 0 tools · 1.5s  <1% of context  $0.0043 off-peak
 › › /quit
 
 

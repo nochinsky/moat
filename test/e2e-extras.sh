@@ -482,6 +482,18 @@ else
   echo "no-tests project: FAILED, npm's placeholder was still treated as a test suite" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$NOTESTS" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "X. the interactive /diff cannot run the agent's programs on the host"
+# The sandbox repository is agent-controlled and git executes programs named by its
+# config. `/diff` was the one host-side git call left outside the hardened runner, so
+# the repository config was live for it: with log.showSignature=true and gpg.program
+# pointed at a script inside /work (whose host path the agent reads from
+# /proc/self/mountinfo), a commit carrying any gpgsig header made git run that script
+# as the user the moment /diff was typed. The pty test plants exactly that and checks
+# the script did not run while the diff still rendered.
+python3 "$REPO/test/repl-diff-hardening.py" 2>&1 | scrub > "$EVIDENCE/repl-diff-hardening.txt"
+DIFF_RC=$?
+tail -8 "$EVIDENCE/repl-diff-hardening.txt" | tee -a "$EVIDENCE/extras.txt"
+echo "diff hardening exit: $DIFF_RC" | tee -a "$EVIDENCE/extras.txt"
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.
