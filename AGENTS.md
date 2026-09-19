@@ -124,6 +124,11 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   path. Without `-z`, `a  b` parses as `a b` and moat touches the wrong file;
   with one shared temp file, every merge after the first gets the last file's
   content. Both are covered by `test/unit/apply.test.ts`.
+* Merge temps are unique per *call* (`partPath`), and cleanup only reaps files
+  older than an hour. They were named by path alone and every `planApply` deleted
+  every temp it could find, so a plan made while another apply was in flight lost
+  its merged inputs under it and `applyPlan` skipped the change without a word.
+  `test/unit/apply.test.ts` plans twice and applies the first plan.
 
 **Processes, scripts and logs**
 
@@ -249,6 +254,20 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   Every boot re-applies the ruleset and `moat doctor` re-measures it, so this is
   detected on the next run, never prevented. Do not describe the policy as
   containment; SPEC §7.3 says what it does buy.
+* An allowlist host that does not resolve is dropped from the ruleset. Fine for an
+  extra registry, fatal for the provider: a filtered box with no provider address
+  boots happily and fails only when the agent calls the model. `moat up` fails with
+  "could not resolve <host>" and names the way out, other unresolved hosts are a
+  warning, and ephemeral boots warn rather than fail (`moat exec` may be the
+  diagnosis). `resolveAllowlistDetailed` reports the failures; `resolveAllowlist`
+  is the addresses-only wrapper.
+* A project file name that is not valid UTF-8 is refused by `assertAddressableNames`
+  (lib/fs-names.ts) at the start of `copyIn` and `hashTree`, naming the bytes. Node
+  decodes such a name to U+FFFD, which is not the name on disk, so the next `lstat`
+  reports ENOENT for a file that is right there (measured: `hashTree` on
+  `bad\xffname`). Supporting them means Buffer paths through every host-side walk
+  (hashing, the untracked-file pass, apply's tree reads); that does not exist yet,
+  and pretending otherwise would drop files silently.
 * A filtered boot needs `nft` inside the image, and *every* path that boots one
   has to ensure it (`ensureFilterTool` in `cmd/main.ts`), not just `moat up`. An
   environment restored from a snapshot taken before nftables was baked in used to
@@ -357,6 +376,11 @@ Not built, in rough order of how much they matter:
 * **Cost ceilings.** The turn footer reports what a turn cost; nothing stops it.
 * **v1: a microVM.** The current isolation is namespaces, which is v0. `/dev/kvm`
   exists on this host but is not accessible to the user.
+* **Byte paths for file names that are not valid UTF-8.** `assertAddressableNames`
+  refuses them today with a clear message instead of an ENOENT for a file that
+  exists; supporting them means Buffer paths through hashing, the untracked-file
+  pass and apply's tree reads, plus a digest encoding that keeps today's hashes for
+  UTF-8 names.
 * **Exact tool advertisement**, which needs an upstream change (see
   `docs/UPSTREAM-CANDIDATES.md`).
 

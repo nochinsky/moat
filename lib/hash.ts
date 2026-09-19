@@ -1,4 +1,5 @@
 import crypto from "node:crypto"
+import { assertAddressableNames } from "./fs-names.ts"
 import fs from "node:fs"
 import path from "node:path"
 
@@ -26,6 +27,9 @@ export type TreeHash = {
  * Pass `{ skip: [] }` to hash the git directory too.
  */
 export function hashTree(root: string, opts: { skip?: string[] } = {}): TreeHash {
+  // Before anything else: a name Node cannot address would surface as ENOENT deep
+  // in the walk, for a file that exists. Say what is actually wrong.
+  assertAddressableNames(root)
   const skip = new Set(opts.skip ?? [".git"])
   const hash = crypto.createHash("sha256")
   let files = 0

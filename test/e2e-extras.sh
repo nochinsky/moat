@@ -246,6 +246,29 @@ if grep -q "sandbox boot" "$EVIDENCE/logs-sandbox.txt"; then
 else
   echo "boot log: FAILED, no boot banner in the captured output" | tee -a "$EVIDENCE/extras.txt"
 fi
+section "Q. a project file name that is not valid UTF-8 is refused with a reason"
+# Node addresses files by name as text, so a raw 0xff byte in a name is undecidable
+# for every host-side walk. moat names the file and the bytes instead of failing
+# later with ENOENT for a file that is plainly there.
+BADNAME_PROJECT="$WORK/bad-name-project"
+rm -rf "$BADNAME_PROJECT"
+mkdir -p "$BADNAME_PROJECT"
+cd "$BADNAME_PROJECT"
+git init -q -b main
+git config user.email e2e@example.com
+git config user.name "E2E"
+printf 'x' > "$(printf 'bad\xffname')"
+git add -A >/dev/null 2>&1
+git commit -qm "a name Node cannot address" >/dev/null 2>&1
+capture up-badname $MOAT up
+if grep -q "not a valid UTF-8 file name" "$EVIDENCE/up-badname.txt"; then
+  echo "bad file name: refused with the offending bytes, before anything is copied" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "bad file name: FAILED, no explanation in the output" | tee -a "$EVIDENCE/extras.txt"
+fi
+capture destroy-badname $MOAT destroy --yes
+cd "$PROJECT"
+
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

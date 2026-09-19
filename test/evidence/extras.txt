@@ -11,16 +11,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-16-23
-→ sandbox booted (pid 108627, port 33973); waiting for opencode serve
-✓ sandbox up, warm start 4.18s (image reused)
+agent branch: moat-session-2026-09-19-16-41
+→ sandbox booted (pid 124045, port 37141); waiting for opencode serve
+✓ sandbox up, warm start 4.16s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:33973  (basic auth user "opencode")
-  password   xPEp5SqPhvlyFPm-MS0I3rhj4OUQFx7R
+  opencode   http://127.0.0.1:37141  (basic auth user "opencode")
+  password   kLegs6oZ8fRJ1jzpn3yt41KwkWPZ7ATH
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-19T20:23:07.855Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-19T20:41:13.187Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -56,7 +56,7 @@ total entries         : 5968
 --- exit 0
 --- stdout ---
 --- stderr ---
-stopped sandbox pid 108627 before restoring
+stopped sandbox pid 124045 before restoring
 ✓ restored rootfs snapshot before-extras (the project copy in /work was preserved)
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c echo 'in-sandbox /opt after restore:'; ls /opt; echo '--- /work preserved? ---'; ls /work; echo '--- agent commit still present? ---'; git -C /work log --oneline -1
 --- exit 0
@@ -69,7 +69,7 @@ agent-output.txt
 greet.sh
 notes.txt
 --- agent commit still present? ---
-58bed21 agent: add agent-output.txt from inside the sandbox
+ff4ad1e agent: add agent-output.txt from inside the sandbox
 --- stderr ---
 
 ==============================================================
@@ -84,16 +84,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-16-23
-→ sandbox booted (pid 108893, port 33069); waiting for opencode serve
-✓ sandbox up, warm start 4.45s (image reused)
+agent branch: moat-session-2026-09-19-16-41
+→ sandbox booted (pid 124305, port 33645); waiting for opencode serve
+✓ sandbox up, warm start 4.16s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:33069  (basic auth user "opencode")
-  password   TimUA7ltE-XwiIEqfcH2DbqkfGmNP0f7
+  opencode   http://127.0.0.1:33645  (basic auth user "opencode")
+  password   z77HEwsXrLHINX7czY1DOyYX3kkqKE6x
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-19T20:23:26.599Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-19T20:41:31.742Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -102,15 +102,15 @@ agent branch: moat-session-2026-09-19-16-23
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-16-23:refs/moat/moat-session-2026-09-19-16-23
-✓ fetched moat-session-2026-09-19-16-23 -> refs/moat/moat-session-2026-09-19-16-23 (58bed2199c89)
-  2 commit(s) reachable, HEAD 3bf58305f513 -> 3bf58305f513
-    58bed2199c89  agent: add agent-output.txt from inside the sandbox
-    3bf58305f513  initial demo project
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-16-41:refs/moat/moat-session-2026-09-19-16-41
+✓ fetched moat-session-2026-09-19-16-41 -> refs/moat/moat-session-2026-09-19-16-41 (ff4ad1efda01)
+  2 commit(s) reachable, HEAD 74e3e5b20c97 -> 74e3e5b20c97
+    ff4ad1efda01  agent: add agent-output.txt from inside the sandbox
+    74e3e5b20c97  initial demo project
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-19-16-23
-  apply with:    moat apply moat-session-2026-09-19-16-23  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-19-16-41
+  apply with:    moat apply moat-session-2026-09-19-16-41  (or --checkout)
 --- $ node /home/user/Projects/moat/cmd/main.ts apply main --name e2e-checkout
 --- exit 0
 --- stdout ---
@@ -121,7 +121,7 @@ $ git -C /home/user/moat-demo/project branch --list 'e2e-checkout'
   e2e-checkout
   pass  the local branch was created from the fetched ref
 $ git -C /home/user/moat-demo/project rev-parse HEAD   # unchanged: apply did not check anything out
-3bf58305f51374ce8ffa26b570da1f6bbc1dac77
+74e3e5b20c9783bb11da77285750ced74663a26a
 $ git -C /home/user/moat-demo/project status --porcelain   # only the user's own pre-existing dirt
  M README.md
 ?? notes.txt
@@ -133,11 +133,11 @@ $ git -C /home/user/moat-demo/project status --porcelain   # only the user's own
 --- exit 0
 --- stdout ---
 --- stderr ---
-url           http://127.0.0.1:33069
+url           http://127.0.0.1:33645
 username      opencode
-password      TimUA7ltE-XwiIEqfcH2DbqkfGmNP0f7
+password      z77HEwsXrLHINX7czY1DOyYX3kkqKE6x
 directory     /work
-authorization Basic b3BlbmNvZGU6VGltVUE3bHRFLVh3aUlFcWZjSDJEYnFrZkdtTlAwZjc=
+authorization Basic b3BlbmNvZGU6ejc3SEV3c1hyTEhJTlg3Y3pZMURPeVlYM2trcUtFNng=
 
 ==============================================================
 == E. the injected credential is short-lived, and expiry is enforced
@@ -147,7 +147,7 @@ booting with --credential-ttl 6s and watching the sandbox stop on its own...
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 108893); the environment and its snapshots are kept
+✓ sandbox stopped (pid 124305); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts up --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL --credential-ttl 6s
@@ -159,16 +159,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 6s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-16-23
-→ sandbox booted (pid 109127, port 44785); waiting for opencode serve
-✓ sandbox up, warm start 4.21s (image reused)
+agent branch: moat-session-2026-09-19-16-41
+→ sandbox booted (pid 124538, port 35911); waiting for opencode serve
+✓ sandbox up, warm start 4.17s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:44785  (basic auth user "opencode")
-  password   R5eo1wHcCmOCa7uq7GwVILSbfrX3epfH
+  opencode   http://127.0.0.1:35911  (basic auth user "opencode")
+  password   MEa4Ph_Kg0ovind5xDlAOVAgp-E248Zz
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-19T16:23:37.869Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-19T16:41:42.692Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -183,19 +183,19 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 opencode     1.18.31 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-19-16-23
+branch       moat-session-2026-09-19-16-41
 egress       open (host network namespace)
 rootfs       382.4 MiB
 credential   moat sha256:7726b438889c7f57 expires in -10s (EXPIRED, the sandbox watchdog stops the agent)
 snapshots    before-extras, baseline
-branches     main, moat-session-2026-09-19-16-21, moat-session-2026-09-19-16-23*
+branches     main, moat-session-2026-09-19-16-39, moat-session-2026-09-19-16-41*
 
 --- sandbox log: the expiry notice ---
 $ grep -iE 'expired|stopping agent' $HOME/.moat/envs/*/rootfs/var/log/moat/boot.log
-/home/user/.moat/envs/18620c2c4f34/rootfs/var/log/moat/boot.log:[moat] agent exited with status 143
-/home/user/.moat/envs/a5b7670da9ae/rootfs/var/log/moat/boot.log:[moat] agent exited with status 143
-/home/user/.moat/envs/a5b7670da9ae/rootfs/var/log/moat/boot.log:[moat] agent exited with status 143
-/home/user/.moat/envs/a5b7670da9ae/rootfs/var/log/moat/boot.log:[moat] agent exited with status 143
+[moat] agent exited with status 143
+[moat] agent exited with status 143
+[moat] injected credential expired (ttl=6s); stopping agent
+[moat] agent exited with status 143
 
 $ moat status  -> status line above shows the box is stopped, which it did to itself
 
@@ -371,12 +371,12 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 opencode     1.18.31 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-19-16-23
+branch       moat-session-2026-09-19-16-41
 egress       open (host network namespace)
 rootfs       382.4 MiB
 credential   moat sha256:7726b438889c7f57 expires in -420s (EXPIRED, the sandbox watchdog stops the agent)
 snapshots    before-extras, baseline
-branches     main, moat-session-2026-09-19-16-21, moat-session-2026-09-19-16-23*
+branches     main, moat-session-2026-09-19-16-39, moat-session-2026-09-19-16-41*
 --- $ node /home/user/Projects/moat/cmd/main.ts down
 --- exit 0
 --- stdout ---
@@ -390,86 +390,105 @@ sandbox is not running
 --- exit 0
 --- stdout ---
 --- stderr ---
-timestamp=2026-09-19T16:23:06.701Z level=INFO run=1813ed08 message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T16:23:06.708Z level=INFO run=1813ed08 message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:06.708Z level=INFO run=1813ed08 message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T16:23:06.709Z level=INFO run=1813ed08 message=loading path=/usr/local/share/moat/opencode.json
-timestamp=2026-09-19T16:23:06.728Z level=INFO run=1813ed08 message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:06.729Z level=INFO run=1813ed08 message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T16:23:06.771Z level=INFO run=1813ed08 message="all LSPs are disabled"
-timestamp=2026-09-19T16:23:06.772Z level=INFO run=1813ed08 message="all formatters are disabled"
-timestamp=2026-09-19T16:23:06.772Z level=INFO run=1813ed08 message=init
+timestamp=2026-09-19T16:41:12.068Z level=INFO run=d7666896 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T16:41:12.069Z level=INFO run=d7666896 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:12.069Z level=INFO run=d7666896 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T16:41:12.076Z level=INFO run=d7666896 message=loading path=/usr/local/share/moat/opencode.json
+timestamp=2026-09-19T16:41:12.085Z level=INFO run=d7666896 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:12.086Z level=INFO run=d7666896 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T16:41:12.132Z level=INFO run=d7666896 message="all LSPs are disabled"
+timestamp=2026-09-19T16:41:12.134Z level=INFO run=d7666896 message="all formatters are disabled"
+timestamp=2026-09-19T16:41:12.134Z level=INFO run=d7666896 message=init
 Terminated
 [moat] agent exited with status 143
-[moat] sandbox boot 2026-09-19T16:23:07Z
+[moat] sandbox boot 2026-09-19T16:41:13Z
 [moat] kernel=6.18.33.2-microsoft-standard-WSL2 rootfs=3.21.4
-[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T20:23:07.855Z
-[moat] starting opencode serve on 127.0.0.1:33973
+[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T20:41:13.187Z
+[moat] starting opencode serve on 127.0.0.1:37141
 [moat] agent pid=25
-timestamp=2026-09-19T16:23:08.859Z level=INFO run=42920223 message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T16:23:08.864Z level=INFO run=42920223 message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:08.865Z level=INFO run=42920223 message=loading path=/root/.config/opencode/opencode.jsonc
-opencode server listening on http://127.0.0.1:33973
-timestamp=2026-09-19T16:23:11.664Z level=INFO run=42920223 message="creating instance" directory=/work
-timestamp=2026-09-19T16:23:11.666Z level=INFO run=42920223 message=fromDirectory directory=/work
-timestamp=2026-09-19T16:23:11.710Z level=INFO run=42920223 message=bootstrapping directory=/work
-timestamp=2026-09-19T16:23:11.723Z level=INFO run=42920223 message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T16:23:11.724Z level=INFO run=42920223 message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:11.724Z level=INFO run=42920223 message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T16:23:11.725Z level=INFO run=42920223 message=loading path=/usr/local/share/moat/opencode.json
-timestamp=2026-09-19T16:23:11.742Z level=INFO run=42920223 message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:11.742Z level=INFO run=42920223 message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T16:23:11.782Z level=INFO run=42920223 message="all LSPs are disabled"
-timestamp=2026-09-19T16:23:11.783Z level=INFO run=42920223 message="all formatters are disabled"
-timestamp=2026-09-19T16:23:11.783Z level=INFO run=42920223 message=init
-[moat] sandbox boot 2026-09-19T16:23:26Z
+timestamp=2026-09-19T16:41:14.159Z level=INFO run=cb07e108 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T16:41:14.164Z level=INFO run=cb07e108 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:14.176Z level=INFO run=cb07e108 message=loading path=/root/.config/opencode/opencode.jsonc
+opencode server listening on http://127.0.0.1:37141
+timestamp=2026-09-19T16:41:16.989Z level=INFO run=cb07e108 message="creating instance" directory=/work
+timestamp=2026-09-19T16:41:16.990Z level=INFO run=cb07e108 message=fromDirectory directory=/work
+timestamp=2026-09-19T16:41:17.030Z level=INFO run=cb07e108 message=bootstrapping directory=/work
+timestamp=2026-09-19T16:41:17.037Z level=INFO run=cb07e108 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T16:41:17.037Z level=INFO run=cb07e108 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:17.044Z level=INFO run=cb07e108 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T16:41:17.045Z level=INFO run=cb07e108 message=loading path=/usr/local/share/moat/opencode.json
+timestamp=2026-09-19T16:41:17.062Z level=INFO run=cb07e108 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:17.062Z level=INFO run=cb07e108 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T16:41:17.106Z level=INFO run=cb07e108 message="all LSPs are disabled"
+timestamp=2026-09-19T16:41:17.108Z level=INFO run=cb07e108 message="all formatters are disabled"
+timestamp=2026-09-19T16:41:17.108Z level=INFO run=cb07e108 message=init
+[moat] sandbox boot 2026-09-19T16:41:31Z
 [moat] kernel=6.18.33.2-microsoft-standard-WSL2 rootfs=3.21.4
-[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T20:23:26.599Z
-[moat] starting opencode serve on 127.0.0.1:33069
+[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T20:41:31.742Z
+[moat] starting opencode serve on 127.0.0.1:33645
 [moat] agent pid=25
-timestamp=2026-09-19T16:23:27.799Z level=INFO run=8d9c408f message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T16:23:27.817Z level=INFO run=8d9c408f message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:27.818Z level=INFO run=8d9c408f message=loading path=/root/.config/opencode/opencode.jsonc
-opencode server listening on http://127.0.0.1:33069
-timestamp=2026-09-19T16:23:30.662Z level=INFO run=8d9c408f message="creating instance" directory=/work
-timestamp=2026-09-19T16:23:30.663Z level=INFO run=8d9c408f message=fromDirectory directory=/work
-timestamp=2026-09-19T16:23:30.705Z level=INFO run=8d9c408f message=bootstrapping directory=/work
-timestamp=2026-09-19T16:23:30.712Z level=INFO run=8d9c408f message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T16:23:30.712Z level=INFO run=8d9c408f message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:30.720Z level=INFO run=8d9c408f message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T16:23:30.721Z level=INFO run=8d9c408f message=loading path=/usr/local/share/moat/opencode.json
-timestamp=2026-09-19T16:23:30.738Z level=INFO run=8d9c408f message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:30.739Z level=INFO run=8d9c408f message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T16:23:30.790Z level=INFO run=8d9c408f message="all LSPs are disabled"
-timestamp=2026-09-19T16:23:30.792Z level=INFO run=8d9c408f message="all formatters are disabled"
-timestamp=2026-09-19T16:23:30.792Z level=INFO run=8d9c408f message=init
+timestamp=2026-09-19T16:41:32.706Z level=INFO run=b22d9925 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T16:41:32.711Z level=INFO run=b22d9925 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:32.712Z level=INFO run=b22d9925 message=loading path=/root/.config/opencode/opencode.jsonc
+opencode server listening on http://127.0.0.1:33645
+timestamp=2026-09-19T16:41:35.546Z level=INFO run=b22d9925 message="creating instance" directory=/work
+timestamp=2026-09-19T16:41:35.547Z level=INFO run=b22d9925 message=fromDirectory directory=/work
+timestamp=2026-09-19T16:41:35.589Z level=INFO run=b22d9925 message=bootstrapping directory=/work
+timestamp=2026-09-19T16:41:35.603Z level=INFO run=b22d9925 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T16:41:35.603Z level=INFO run=b22d9925 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:35.604Z level=INFO run=b22d9925 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T16:41:35.605Z level=INFO run=b22d9925 message=loading path=/usr/local/share/moat/opencode.json
+timestamp=2026-09-19T16:41:35.621Z level=INFO run=b22d9925 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:35.622Z level=INFO run=b22d9925 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T16:41:35.663Z level=INFO run=b22d9925 message="all LSPs are disabled"
+timestamp=2026-09-19T16:41:35.665Z level=INFO run=b22d9925 message="all formatters are disabled"
+timestamp=2026-09-19T16:41:35.665Z level=INFO run=b22d9925 message=init
 Terminated
 [moat] agent exited with status 143
-[moat] sandbox boot 2026-09-19T16:23:31Z
+[moat] sandbox boot 2026-09-19T16:41:36Z
 [moat] kernel=6.18.33.2-microsoft-standard-WSL2 rootfs=3.21.4
-[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T16:23:37.869Z
-[moat] starting opencode serve on 127.0.0.1:44785
+[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T16:41:42.692Z
+[moat] starting opencode serve on 127.0.0.1:35911
 [moat] agent pid=25
-timestamp=2026-09-19T16:23:32.883Z level=INFO run=8fe4d43c message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T16:23:32.900Z level=INFO run=8fe4d43c message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:32.900Z level=INFO run=8fe4d43c message=loading path=/root/.config/opencode/opencode.jsonc
-opencode server listening on http://127.0.0.1:44785
-timestamp=2026-09-19T16:23:35.679Z level=INFO run=8fe4d43c message="creating instance" directory=/work
-timestamp=2026-09-19T16:23:35.681Z level=INFO run=8fe4d43c message=fromDirectory directory=/work
-timestamp=2026-09-19T16:23:35.741Z level=INFO run=8fe4d43c message=bootstrapping directory=/work
-timestamp=2026-09-19T16:23:35.755Z level=INFO run=8fe4d43c message=loading path=/root/.config/opencode/config.json
-timestamp=2026-09-19T16:23:35.756Z level=INFO run=8fe4d43c message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:35.756Z level=INFO run=8fe4d43c message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T16:23:35.757Z level=INFO run=8fe4d43c message=loading path=/usr/local/share/moat/opencode.json
-timestamp=2026-09-19T16:23:35.774Z level=INFO run=8fe4d43c message=loading path=/root/.config/opencode/opencode.json
-timestamp=2026-09-19T16:23:35.774Z level=INFO run=8fe4d43c message=loading path=/root/.config/opencode/opencode.jsonc
-timestamp=2026-09-19T16:23:35.830Z level=INFO run=8fe4d43c message="all LSPs are disabled"
-timestamp=2026-09-19T16:23:35.831Z level=INFO run=8fe4d43c message="all formatters are disabled"
-timestamp=2026-09-19T16:23:35.831Z level=INFO run=8fe4d43c message=init
+timestamp=2026-09-19T16:41:37.654Z level=INFO run=19b034c9 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T16:41:37.658Z level=INFO run=19b034c9 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:37.671Z level=INFO run=19b034c9 message=loading path=/root/.config/opencode/opencode.jsonc
+opencode server listening on http://127.0.0.1:35911
+timestamp=2026-09-19T16:41:40.499Z level=INFO run=19b034c9 message="creating instance" directory=/work
+timestamp=2026-09-19T16:41:40.501Z level=INFO run=19b034c9 message=fromDirectory directory=/work
+timestamp=2026-09-19T16:41:40.542Z level=INFO run=19b034c9 message=bootstrapping directory=/work
+timestamp=2026-09-19T16:41:40.555Z level=INFO run=19b034c9 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-09-19T16:41:40.555Z level=INFO run=19b034c9 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:40.556Z level=INFO run=19b034c9 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T16:41:40.556Z level=INFO run=19b034c9 message=loading path=/usr/local/share/moat/opencode.json
+timestamp=2026-09-19T16:41:40.574Z level=INFO run=19b034c9 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-09-19T16:41:40.575Z level=INFO run=19b034c9 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-09-19T16:41:40.615Z level=INFO run=19b034c9 message="all LSPs are disabled"
+timestamp=2026-09-19T16:41:40.617Z level=INFO run=19b034c9 message="all formatters are disabled"
+timestamp=2026-09-19T16:41:40.617Z level=INFO run=19b034c9 message=init
 [moat] injected credential expired (ttl=6s); stopping agent
 Terminated
 [moat] agent exited with status 143
 
 boot log: the banner the box wrote is readable back on the host
+
+==============================================================
+== Q. a project file name that is not valid UTF-8 is refused with a reason
+==============================================================
+--- $ node /home/user/Projects/moat/cmd/main.ts up
+--- exit 1
+--- stdout ---
+--- stderr ---
+no project manifest found; booting with the base image only (see `moat profiles`)
+→ provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
+→ provisioning from the cached image alpine-3.21.4-50303c72c8d1.tar.gz
+✓ image provisioned in 1.04s (extract cached image 880ms)
+✗ /home/user/moat-demo/bad-name-project/bad�name is not a valid UTF-8 file name (bytes: 626164ff6e616d65). moat addresses files by name as text, so this name cannot be handled reliably: rename it, or keep it out of the project directory.
+bad file name: refused with the offending bytes, before anything is copied
+--- $ node /home/user/Projects/moat/cmd/main.ts destroy --yes
+--- exit 0
+--- stdout ---
+--- stderr ---
+✓ destroyed /home/user/.moat/envs/5af9905378da
 
 extras evidence written to /home/user/Projects/moat/test/evidence/extras.txt

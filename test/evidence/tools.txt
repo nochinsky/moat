@@ -2,7 +2,7 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-bundle (from the plugin's config-time record)
+bundle (installed bundle config + plugin load record + plugin config record)
   curated    read, write, edit, apply_patch, glob, grep, bash, todowrite, question
   excluded   skill, webfetch, websearch, task
   omissions confirmed by opencode: skill, webfetch, websearch, task

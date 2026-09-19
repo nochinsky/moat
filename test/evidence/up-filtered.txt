@@ -8,16 +8,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-16-33
-→ sandbox booted (pid 115420, port 42937); waiting for opencode serve
-✓ sandbox up, warm start 2.44s (image reused)
+agent branch: moat-session-2026-09-19-16-37
+→ sandbox booted (pid 120263, port 38917); waiting for opencode serve
+✓ sandbox up, warm start 4.67s (image reused)
 
   project    /home/user/moat-demo/egress-project
   env        /home/user/.moat/envs/16a525996d67
-  opencode   http://127.0.0.1:42937  (basic auth user "opencode")
-  password   IG4LtosB5ESa4XjPClzWD5fD7jKXUnsW
+  opencode   http://127.0.0.1:38917  (basic auth user "opencode")
+  password   d5E5zllDE7yrzo9cfMFDxdJw94E9cArS
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T20:33:59.397Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T20:37:59.402Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

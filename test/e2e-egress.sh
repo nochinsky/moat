@@ -213,5 +213,14 @@ capture down-default $M down
 capture destroy-default $M destroy --yes
 
 say ""
+say "--- a filtered boot refuses to start when the provider does not resolve ---"
+say "the allowlist is built from the provider host. If that name resolves to"
+say "nothing, a boot would leave a box with no way to reach the model; it fails"
+say "instead, naming the host and the way out."
+capture up-nxdomain $M up --base-url "https://nxdomain-$RANDOM.invalid/v1"
+check "an unresolvable provider fails the boot" "could not resolve" "$EVIDENCE/up-nxdomain.txt"
+capture destroy-nxdomain $M destroy --yes
+
+say ""
 say "egress checks $( [ "$FAIL" = "0" ] && echo passed || echo FAILED )"
 exit "$FAIL"

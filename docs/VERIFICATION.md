@@ -1409,6 +1409,7 @@ workflow that cannot create user namespaces.
 ```
 $ npm run test:unit
 ✔ two files merged cleanly each keep their own merge
+✔ a second plan does not invalidate the first plan's merge inputs
 ✔ a filename with two spaces is not misattributed to another file
 ✔ a file the user deleted and the agent changed is a conflict
 ✔ a mode-only change is planned and applied
@@ -1527,6 +1528,7 @@ $ bash test/e2e-egress.sh
   pass  the default policy still allows the provider (401 without a key)
   pass  the default-policy probe ran inside the box
   pass  the default policy blocks an address outside the allowlist
+  pass  an unresolvable provider fails the boot
 egress checks passed
 ```
 
@@ -1603,6 +1605,26 @@ prompt-injected `curl`, an accidental upload — not containment of an agent tha
 trying to leave. Containing that one means the agent losing root, which is
 incompatible with handing it a package manager, or the v1 microVM. SPEC §7.3 says
 this in the contract, not only here.
+
+#### A provider that does not resolve fails the boot instead of boxing it
+
+The allowlist is resolved on the host before the boot, and a host that resolves to
+nothing is dropped from the ruleset. For an extra registry that is fine; for the
+provider it means a filtered box that boots, looks healthy, and cannot call the
+model at all. Measured before the fix: `moat up --base-url
+https://nxdomain-<random>.invalid/v1` booted with `egress filtered` and an allowlist
+that did not contain the provider. It now exits non-zero:
+
+```
+$ moat up --base-url https://nxdomain-1234.invalid/v1
+✗ could not resolve nxdomain-1234.invalid, so a filtered sandbox would not reach the
+  model. Check DNS and try again, or pass --egress open to boot without the allowlist.
+```
+
+The suite asserts the message (`an unresolvable provider fails the boot`). Other
+unresolved hosts are a warning; ephemeral boots only warn, because `moat exec` may
+be exactly how the box is being diagnosed and `moat doctor`'s two-sided check
+reports the result as a failure.
 
 #### The reinstall check, and what it found
 
@@ -1728,7 +1750,7 @@ them (verified above), so the *behaviour* is exact; the *advertisement* is not.
 `moat tools` prints the gap on every invocation:
 
 ```
-bundle (from the plugin's config-time record)
+bundle (installed bundle config + plugin load record + plugin config record)
   curated    read, write, edit, apply_patch, glob, grep, bash, todowrite, question
   excluded   skill, webfetch, websearch, task
   omissions confirmed by opencode: skill, webfetch, websearch, task
@@ -1741,6 +1763,13 @@ registry (everything opencode knows about, NOT what the model sees)
 ! opencode 1.18.31 cannot stop advertising: webfetch, skill, task.
   The bundle refuses to execute them (docs/UPSTREAM-CANDIDATES.md).
 ```
+
+The header names the three records the claims come from: the config moat installed,
+what the plugin loaded, and the plugin's `config` record — which is what opencode
+handed the plugin at load time. Until this round that third record was never read
+(`moat tools` looked in the wrong file for it) and the plugin's config hook had
+never completed, so "omissions confirmed by opencode" was moat's own declaration
+wearing the plugin's name. It is now the plugin's account of the merged config.
 
 Note also `apply_patch`: it is in the bundle and in the registry, but opencode
 only offers it to `gpt-*` models, so it is *not* advertised for the stub model.
@@ -1772,3 +1801,4 @@ Listed so that absence is not mistaken for success.
 | `/undo`, `/redo` and `/compact` against a real model | the calls are exercised against the stub and the server accepts them, but summarisation is model-driven and the stub cannot summarise: it answers `/compact` by trying to call a tool, which the server rejects with `Tool call not allowed while generating summary`. |
 | Exfiltration through an allowed channel | §L verifies that the allowlist admits the provider and refuses an arbitrary address, and that the host's loopback is unreachable on both routes. It does not attempt to push data out *through* an allowlisted address or over DNS, both of which remain possible by construction. |
 | Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), but a reboot mid-session was not staged. |
+| Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all — a refusal, not support, and not a silent drop. |

@@ -245,6 +245,13 @@ Transport, for a git project: `git clone --no-hardlinks <project> <rootfs>/work`
   and `GIT_LFS_SKIP_SMUDGE=1` so the result does not depend on the user's git
   configuration (`sync/copyin.ts:SANITIZED_GIT_ENV`).
 
+File names are addressed as text. A name that is not valid UTF-8 (a raw byte such
+as 0xff) cannot be read back reliably by the host-side walks — Node decodes it to
+U+FFFD, which is not the name on disk, so the next lstat reports ENOENT for a file
+that is plainly there. moat up refuses such a project before anything is cloned,
+naming the bytes. Full support would mean byte paths through every one of those
+walks (hashing, the untracked-file pass, apply's tree reads); it does not exist yet.
+
 `git clone` reproduces committed state only, so the **uncommitted working tree is
 replayed on top, using git itself**:
 
@@ -505,7 +512,11 @@ is plain ESM JavaScript on purpose: the rootfs ships no build toolchain.
    fails silently and confines nothing, so the guard accepts both. `docs/VERIFICATION.md`
    records the full argument-name table.
 3. **Audit.** Every tool call is appended to an append-only JSONL log at
-   `/var/log/moat/tools.jsonl`, with the injected credential redacted.
+   `/var/log/moat/tools.jsonl`, with the injected credential redacted. Its first
+   line is the `config` record: the effective permission map and the tool omissions
+   opencode actually handed the plugin. `moat tools` prints that record's claims
+   and names the records it read, so "omissions confirmed by opencode" is the
+   plugin's account of the merged config, not moat's own declaration.
 4. **Permission accounting.** A `permission.ask` hook records and allows. With
    `permission: {"*": "allow"}` it never fires; the verification asserts that the
    log file does not exist, i.e. **zero permission requests were raised**.
@@ -921,6 +932,14 @@ is not would be worse than a box that does not start. The image carries `nft`; a
 environment whose rootfs lacks it — restored from a snapshot taken before that,
 or one whose agent removed it — has it installed again on the host before the
 next boot, from every command, not just `moat up`.
+
+The allowlist is resolved on the host before the boot. A host that does not
+resolve is dropped from the ruleset — and for the provider that is fatal: a
+filtered box with no provider address would boot and then fail on the agent's first
+model call. moat up refuses with "could not resolve <host>" and names --egress open
+as the way out; any other unresolved host is a warning. Ephemeral boots warn rather
+than fail, because moat exec may be exactly how the box is being diagnosed, and
+moat doctor's two-sided check reports the result.
 
 **The filter is a rule the agent can change.** The sandbox owns its network
 namespace, so uid 0 inside holds `CAP_NET_ADMIN` there. Measured: `nft flush

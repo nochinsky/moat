@@ -3,6 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
+import { assertAddressableNames } from "../lib/fs-names.ts"
 import { hashTree } from "../lib/hash.ts"
 import type { EnvPaths } from "../lib/paths.ts"
 import { ok, run, runRaw } from "../lib/shell.ts"
@@ -146,6 +147,9 @@ export async function isGitRepo(dir: string): Promise<boolean> {
 }
 
 export async function copyIn(p: EnvPaths): Promise<CopyInResult> {
+  // Fail before cloning when a name cannot be addressed: git carries the bytes,
+  // but every host-side walk after it (untracked files, hashing, drift) does not.
+  assertAddressableNames(p.projectDir)
   fs.mkdirSync(path.dirname(p.work), { recursive: true })
   if (fs.existsSync(p.work)) fs.rmSync(p.work, { recursive: true, force: true })
 
