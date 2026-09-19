@@ -4,9 +4,29 @@ import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
 
-import { scanRootfsForCredential, credentialRiskNotice, type MintedCredential } from "../../secrets/broker.ts"
+import {
+  scanRootfsForCredential,
+  credentialRiskNotice,
+  ttlToSeconds,
+  type MintedCredential,
+} from "../../secrets/broker.ts"
 import { saveCredential } from "../../secrets/onboard.ts"
+import { parseAllowlist } from "../../sandbox/egress.ts"
 import { credentialExpired } from "../../sandbox/state.ts"
+
+test("a TTL a Date cannot represent is refused instead of minted", () => {
+  assert.equal(ttlToSeconds("8h"), 28800)
+  assert.equal(ttlToSeconds("90s"), 90)
+  assert.throws(() => ttlToSeconds("soon"), /invalid duration/)
+  // Past the Date range, toISOString() throws RangeError and JSON.stringify
+  // writes expiresAt as null: a crash, or a credential that never expires.
+  assert.throws(() => ttlToSeconds("99999999999d"), /longer than 30 days/)
+  assert.equal(ttlToSeconds("30d"), 2592000)
+})
+
+test("a lowercased allowlist entry is still the same host", () => {
+  assert.deepEqual(parseAllowlist("API.DeepSeek.com, api.deepseek.com"), ["api.deepseek.com"])
+})
 
 test("TTL expiry is decided by the recorded timestamp", () => {
   const state = (expiresAt: string | null) => ({ credential: expiresAt ? { expiresAt } : null }) as never

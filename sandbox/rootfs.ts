@@ -16,7 +16,8 @@ import {
   SANDBOX_TRIPLE,
   SANDBOX_WORKDIR,
 } from "../lib/pins.ts"
-import { cacheDir, envPaths, opencodeCachePath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
+import { cacheDir, opencodeCachePath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
+import { chmodRootfsDir, ensureRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { out, run } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
 import { runInSandbox } from "./launcher.ts"
@@ -382,18 +383,19 @@ function mkdirsForRootfs(rootfs: string): void {
     ".moat",
     "root/.config/opencode",
   ]) {
-    fs.mkdirSync(path.join(rootfs, dir), { recursive: true })
+    ensureRootfsDir(rootfs, `/${dir}`)
   }
-  fs.writeFileSync(path.join(rootfs, "etc/hosts"), "127.0.0.1 localhost\n::1 localhost\n")
-  fs.chmodSync(path.join(rootfs, "tmp"), 0o1777)
+  writeRootfsFile(rootfs, "/etc/hosts", "127.0.0.1 localhost\n::1 localhost\n")
+  chmodRootfsDir(rootfs, "/tmp", 0o1777)
 
   // A sandbox-owned git identity. Written as a file on the host, which needs no
   // privileges, and baked into the image so it survives across boots and across
   // environments. The host's ~/.gitconfig is never read or copied, that is the
   // point: the agent's commits are attributable to moat, not to the user.
-  fs.mkdirSync(path.join(rootfs, "root"), { recursive: true })
-  fs.writeFileSync(
-    path.join(rootfs, "root/.gitconfig"),
+  ensureRootfsDir(rootfs, "/root")
+  writeRootfsFile(
+    rootfs,
+    "/root/.gitconfig",
     [
       "[user]",
       "\tname = moat agent",
@@ -432,17 +434,24 @@ async function saveImage(p: EnvPaths, dest: string): Promise<void> {
 export async function ensurePackages(
   p: EnvPaths,
   packages: string[],
-  opts: { post?: string[]; onOutput?: (chunk: string) => void } = {},
+  opts: { post?: string[]; onOutput?: (chunk: string) => void; resetFirst?: boolean } = {},
 ): Promise<{ installed: string[]; alreadyPresent: string[] }> {
   const post = (opts.post ?? []).join("\n")
+  // `apk add` trusts the package database, and the database can be right while the
+  // files are gone: the agent is root inside the box and can delete a binary
+  // without touching apk's records. `resetFirst` clears the entry so the install
+  // actually restores the files.
+  const installedTest = opts.resetFirst ? "false" : 'apk info -e "$pkg" >/dev/null 2>&1'
+  const reset = opts.resetFirst ? "apk del $wanted >/dev/null 2>&1 || true" : ""
   const script = `#!/bin/sh
 set -u
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 wanted="${packages.join(" ")}"
+${reset}
 missing=""
 present=""
 for pkg in $wanted; do
-  if apk info -e "$pkg" >/dev/null 2>&1; then present="$present $pkg"; else missing="$missing $pkg"; fi
+  if ${installedTest}; then present="$present $pkg"; else missing="$missing $pkg"; fi
 done
 echo "[moat] already present:$present"
 if [ -z "$missing" ]; then
@@ -564,8 +573,14 @@ export async function restoreEnv(p: EnvPaths, name: string): Promise<void> {
   }
 }
 
-export function destroyEnv(projectDir: string): boolean {
-  const p = envPaths(projectDir)
+/**
+ * Remove an environment's directory.
+ *
+ * Takes paths rather than a project directory on purpose: an environment whose
+ * project directory no longer exists is precisely the one that has to be
+ * deletable, and `envPaths` cannot build paths for it.
+ */
+export function destroyEnv(p: EnvPaths): boolean {
   if (!fs.existsSync(p.dir)) return false
   fs.rmSync(p.dir, { recursive: true, force: true })
   return true

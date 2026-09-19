@@ -25,9 +25,16 @@ import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/ca
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from "../sandbox/profiles.ts"
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
 import { runChecks, summarise } from "../sandbox/checks.ts"
-import { defaultAllowHosts, parseAllowlist, runtimeForEgress, type EgressRuntime } from "../sandbox/egress.ts"
+import {
+  allowHostProblem,
+  defaultAllowHosts,
+  parseAllowlist,
+  runtimeForEgress,
+  type EgressRuntime,
+} from "../sandbox/egress.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
+import { readRootfsFile } from "../lib/rootfs-fs.ts"
 import {
   credentialExpired,
   envExists,
@@ -242,7 +249,34 @@ function providerHost(baseUrl: string | null | undefined): string | undefined {
  * and resolution happens here on the host, on every boot, so rotated addresses
  * are picked up.
  */
+/**
+ * A filtered boot loads its rules with `nft` from inside the box, so the binary
+ * has to be there. The image carries it, but an environment restored from a
+ * snapshot taken before it did — or one whose agent ran `apk del nftables` —
+ * would fail *every* boot with "[moat] failed to apply the egress policy", which
+ * reads like a moat bug rather than a missing package. Every path that boots a
+ * filtered box goes through here, not just `moat up`.
+ */
+async function ensureFilterTool(paths: EnvPaths): Promise<void> {
+  const binary = path.join(paths.rootfs, "usr/sbin/nft")
+  if (fs.existsSync(binary)) return
+  log.step("installing nftables for filtered egress")
+  await ensurePackages(paths, ["nftables"], { post: [], onOutput: (chunk) => log.debug(chunk.trimEnd()) })
+  if (fs.existsSync(binary)) return
+  // The database can say "installed" while the file is gone — the agent can
+  // delete it without touching apk's records, and then `apk add` has nothing to
+  // do. Clear the stale entry and install again.
+  log.step("repairing the nftables install (its files were removed, its package entry was not)")
+  await ensurePackages(paths, ["nftables"], {
+    post: [],
+    resetFirst: true,
+    onOutput: (chunk) => log.debug(chunk.trimEnd()),
+  })
+  if (!fs.existsSync(binary)) log.fail("nftables could not be installed, so this environment cannot boot filtered")
+}
+
 async function egressRuntime(state: EnvState, paths: EnvPaths): Promise<EgressRuntime> {
+  if (state.egress === "filtered") await ensureFilterTool(paths)
   const hosts = [
     ...defaultAllowHosts(providerHost(state.providerBaseUrl ?? DEEPSEEK.baseUrl)),
     ...(state.egressAllow ?? []),
@@ -481,6 +515,21 @@ async function cmdUp(argv: string[]): Promise<number> {
   // The allowlist is per environment: an empty flag keeps what is recorded.
   const allowFlag = flag<string>(p, "egress-allow")
   const egressAllow = allowFlag !== undefined ? parseAllowlist(allowFlag) : (state?.egressAllow ?? [])
+  if (allowFlag !== undefined) {
+    // An entry the resolver will drop is worse than a rejected one: the boot
+    // succeeds, the box looks filtered, and the thing the user allowed is
+    // unreachable with no explanation anywhere.
+    for (const host of egressAllow) {
+      const problem = allowHostProblem(host)
+      if (problem) log.fail(`--egress-allow ${host}: ${problem}`)
+    }
+  }
+  if (egressAllow.length > 0 && egress !== "filtered") {
+    log.info(
+      `egress: ${egressAllow.length} allowlist host(s) are recorded, but they only apply to filtered egress; ` +
+        `this environment is ${egress}.`,
+    )
+  }
 
   // `moat` on its own is typed anywhere, so the obvious wrong directories are
   // caught before a byte is copied. This runs before provisioning, because
@@ -887,12 +936,7 @@ ${command}
   }
 
   report.egress = egress
-  if (egress === "filtered" && !fs.existsSync(path.join(paths.rootfs, "usr/sbin/nft"))) {
-    // An environment provisioned before nftables was in the base packages: add
-    // it now, on the host's time, rather than booting a box that cannot filter.
-    log.step("installing nftables for filtered egress")
-    await ensurePackages(paths, ["nftables"], { post: [], onOutput: (chunk) => log.debug(chunk.trimEnd()) })
-  }
+  if (egress === "filtered") await ensureFilterTool(paths)
   const egressConfig = await runtimeForEgress(egress, {
     rootfs: paths.rootfs,
     allowHosts: [...defaultAllowHosts(providerHost(baseUrl)), ...egressAllow],
@@ -1624,7 +1668,7 @@ async function cmdDestroy(argv: string[]): Promise<number> {
           slirpStart: envState.slirpStart,
         })
       }
-      if (destroyEnv(env.projectDir)) {
+      if (destroyEnv(env)) {
         freed += size
         log.info(`  removed ${env.id}  ${human(size)}  ${env.projectDir}`)
       }
@@ -1645,7 +1689,7 @@ async function cmdDestroy(argv: string[]): Promise<number> {
       slirpStart: state.slirpStart,
     })
   }
-  const removed = destroyEnv(paths.projectDir)
+  const removed = destroyEnv(paths)
   if (removed) log.success(`destroyed ${paths.dir}`)
   else log.info("nothing to destroy")
   return 0
@@ -1661,15 +1705,19 @@ async function cmdStatus(argv: string[]): Promise<number> {
     const envs = listEnvs()
     const rows = []
     for (const env of envs) {
+      // An environment with no readable state is not "nothing to show": it is a
+      // directory holding disk that the user has to be able to see and reclaim.
       const state = readState(env)
-      if (!state) continue
+      // "orphaned" is the state that matters here: the environment still holds
+      // disk, but its project directory is gone, so nothing can boot or apply.
+      const orphaned = !state || !fs.existsSync(env.projectDir)
       rows.push({
-        id: state.id,
-        project: state.projectDir,
-        status: sandboxAlive(state, env) ? "running" : "stopped",
-        port: state.port,
-        pid: state.pid,
-        credential: state.credential?.expiresAt ?? null,
+        id: state?.id ?? env.id,
+        project: state?.projectDir ?? env.projectDir,
+        status: orphaned ? "orphaned" : sandboxAlive(state, env) ? "running" : "stopped",
+        port: state?.port ?? null,
+        pid: state?.pid ?? null,
+        credential: state?.credential?.expiresAt ?? null,
         bytes: await rootfsSizeBytes(env),
       })
     }
@@ -1682,6 +1730,9 @@ async function cmdStatus(argv: string[]): Promise<number> {
         log.info(`${row.status.padEnd(8)} ${human(row.bytes).padStart(9)}  ${row.project}`)
       }
       log.info(`${"".padEnd(8)} ${human(total).padStart(9)}  total, across ${rows.length} environment(s)`)
+      if (rows.some((row) => row.status === "orphaned")) {
+        log.info(`  ${log.dim("orphaned: the project directory is gone; moat destroy --all reclaims them")}`)
+      }
       log.info(`  ${log.dim("reclaim it with: moat destroy --all")}`)
     }
     return 0
@@ -1793,10 +1844,23 @@ async function cmdRestore(argv: string[]): Promise<number> {
   return 0
 }
 
+function tailText(text: string, lines: number): string {
+  return text.split("\n").slice(-lines).join("\n")
+}
+
 function tailFile(file: string, lines: number): string {
   if (!fs.existsSync(file)) return "(no log)"
-  const content = fs.readFileSync(file, "utf8").split("\n")
-  return content.slice(-lines).join("\n")
+  return tailText(fs.readFileSync(file, "utf8"), lines)
+}
+
+/**
+ * The boot log lives inside the rootfs, which the agent can write to: a symlink
+ * there would make this read a host file and print it. `readRootfsFile` refuses
+ * to follow one, so a redirected path reads as "(no log)".
+ */
+function rootfsLogTail(paths: EnvPaths, target: string, lines: number): string {
+  const text = readRootfsFile(paths.rootfs, target)
+  return text === null ? "(no log)" : tailText(text, lines)
 }
 
 /**
@@ -1808,7 +1872,7 @@ function tailFile(file: string, lines: number): string {
  * the fallback when the boot died before it got there.
  */
 function sandboxLogTail(paths: EnvPaths, lines: number): string {
-  const boot = tailFile(path.join(paths.rootfs, "var/log/moat/boot.log"), lines)
+  const boot = rootfsLogTail(paths, "/var/log/moat/boot.log", lines)
   if (boot !== "(no log)") return boot
   return tailFile(path.join(paths.logs, "sandbox.log"), lines)
 }
@@ -1822,8 +1886,11 @@ async function cmdLogs(argv: string[]): Promise<number> {
     log.info(sandboxLogTail(paths, flag<number>(p, "tail") ?? 80))
     return 0
   }
-  const file = which_ === "audit" ? path.join(paths.auditDir, "tools.jsonl") : path.join(paths.logs, `${which_}.log`)
-  log.info(tailFile(file, flag<number>(p, "tail") ?? 80))
+  if (which_ === "audit") {
+    log.info(rootfsLogTail(paths, "/var/log/moat/tools.jsonl", flag<number>(p, "tail") ?? 80))
+    return 0
+  }
+  log.info(tailFile(path.join(paths.logs, `${which_}.log`), flag<number>(p, "tail") ?? 80))
   return 0
 }
 
@@ -2144,11 +2211,12 @@ function readBundleReport(paths: EnvPaths): {
   permission?: Record<string, string>
   source?: string
 } | null {
-  const installed = path.join(paths.rootfs, "usr/local/share/moat/opencode.json")
   const pluginReport = path.join(paths.auditDir, "bundle.json")
+  const installed = readRootfsFile(paths.rootfs, "/usr/local/share/moat/opencode.json")
+  if (installed === null) return null
   let declared: Record<string, boolean> = {}
   try {
-    declared = (JSON.parse(fs.readFileSync(installed, "utf8")) as { tools?: Record<string, boolean> }).tools ?? {}
+    declared = (JSON.parse(installed) as { tools?: Record<string, boolean> }).tools ?? {}
   } catch {
     return null
   }

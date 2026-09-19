@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { envPaths, envsDir, type EnvPaths } from "../lib/paths.ts"
+import { ENV_ID, envPathsForId, envsDir, type EnvPaths } from "../lib/paths.ts"
 import type { EgressMode } from "../lib/pins.ts"
 import { DEEPSEEK } from "../lib/provider.ts"
 
@@ -176,20 +176,35 @@ export function readPassword(p: EnvPaths): string | null {
   return fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : null
 }
 
+/** Printed when an environment's recorded project directory is not usable. */
+export const PROJECT_GONE = "<the project directory this environment recorded is gone>"
+
+/**
+ * Every environment on disk.
+ *
+ * The *directory name* is the id, and it is authoritative. This used to rebuild
+ * the paths from the project directory in state.json, through `envPaths`, which
+ * resolves the real path of that directory and throws when it is gone: the env
+ * was dropped by the `catch`, so `moat status --all` could not report it and
+ * `moat destroy --all` could not reclaim it. Two environments holding 800 MiB
+ * were invisible that way. A directory whose state cannot be read is listed too,
+ * for the same reason.
+ */
 export function listEnvs(): EnvPaths[] {
   const root = envsDir()
   if (!fs.existsSync(root)) return []
   const result: EnvPaths[] = []
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue
+    if (!entry.isDirectory() || !ENV_ID.test(entry.name)) continue
     const stateFile = path.join(root, entry.name, "state.json")
-    if (!fs.existsSync(stateFile)) continue
+    let projectDir = PROJECT_GONE
     try {
-      const raw = JSON.parse(fs.readFileSync(stateFile, "utf8")) as EnvState
-      result.push(envPaths(raw.projectDir))
+      const raw = JSON.parse(fs.readFileSync(stateFile, "utf8")) as { projectDir?: unknown }
+      if (typeof raw.projectDir === "string" && raw.projectDir.length > 0) projectDir = raw.projectDir
     } catch {
-      /* ignore unreadable envs */
+      /* no readable state: still an environment directory, still holding disk */
     }
+    result.push(envPathsForId(entry.name, projectDir))
   }
-  return result
+  return result.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }

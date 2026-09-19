@@ -299,13 +299,23 @@ export function credentialCandidates(envVars: string[]): string[] {
   return ["MOAT_CREDENTIAL", ...envVars]
 }
 
+/** Longest TTL a JavaScript Date can still represent as a real instant. */
+const MAX_TTL_SECONDS = 30 * 24 * 3600
+
 export function ttlToSeconds(text: string): number {
   const match = /^(\d+)([smhd]?)$/.exec(text.trim())
   if (!match) throw new Error(`invalid duration "${text}" (use e.g. 90s, 30m, 8h)`)
   const value = Number.parseInt(match[1]!, 10)
   const unit = match[2] || "s"
   const multiplier = unit === "s" ? 1 : unit === "m" ? 60 : unit === "h" ? 3600 : 86400
-  return value * multiplier
+  const seconds = value * multiplier
+  // Past the Date range the expiry becomes an Invalid Date, which is a RangeError
+  // from toISOString() and a null expiresAt in state.json — either a crash or a
+  // credential that never expires. Refuse the input instead.
+  if (seconds > MAX_TTL_SECONDS) {
+    throw new Error(`duration "${text}" is longer than ${MAX_TTL_SECONDS / 86400} days, which a credential expiry cannot represent`)
+  }
+  return seconds
 }
 
 export function describe(minted: MintedCredential): string {

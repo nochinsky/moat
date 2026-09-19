@@ -10,6 +10,7 @@ import {
   SLIRP_NAMESERVER_LINE,
   addHostForward,
   defaultAllowHosts,
+  allowHostProblem,
   parseAllowlist,
   pruneDeadSockets,
   renderNftRules,
@@ -19,7 +20,7 @@ import {
   waitForSocket,
 } from "../../sandbox/egress.ts"
 import { bootIsolation, unshareArgs } from "../../sandbox/launcher.ts"
-import { defaultEgress, ownNetns } from "../../lib/pins.ts"
+import { defaultEgress, isLoopbackHost, ownNetns } from "../../lib/pins.ts"
 
 test("the allowlist parser splits on commas and whitespace without duplicates", () => {
   assert.deepEqual(parseAllowlist("a.example, b.example  c.example,a.example"), ["a.example", "b.example", "c.example"])
@@ -194,6 +195,46 @@ test("a new environment defaults to filtered, except for a loopback provider", (
   assert.equal(defaultEgress("http://localhost:11434/v1"), "open")
   assert.equal(defaultEgress("http://[::1]:8080/v1"), "open")
   assert.equal(defaultEgress("not a url"), "filtered")
+})
+
+test("loopback is the whole 127/8 range, in every spelling", () => {
+  // 127.0.0.1 was the only address recognised. A local model server on
+  // 127.0.0.2 was then treated as remote, the environment defaulted to
+  // "filtered", and the sandbox could not reach the provider at all — the
+  // allowlist named an address that means "this box" inside the namespace.
+  assert.equal(isLoopbackHost("127.0.0.1"), true)
+  assert.equal(isLoopbackHost("127.0.0.2"), true)
+  assert.equal(isLoopbackHost("127.255.255.254"), true)
+  assert.equal(isLoopbackHost("128.0.0.1"), false)
+  assert.equal(isLoopbackHost("0.0.0.0"), true)
+  assert.equal(isLoopbackHost("localhost"), true)
+  assert.equal(isLoopbackHost("ollama.localhost"), true)
+  assert.equal(isLoopbackHost("::1"), true)
+  assert.equal(isLoopbackHost("[::1]"), true)
+  assert.equal(isLoopbackHost("[::ffff:127.0.0.1]"), true)
+  assert.equal(isLoopbackHost("api.deepseek.com"), false)
+  assert.equal(isLoopbackHost("10.1.2.3"), false)
+  // The URL parser normalises the short forms, so these arrive as 127.0.0.1.
+  assert.equal(defaultEgress("http://127.1:11434/v1"), "open")
+  assert.equal(defaultEgress("http://0.0.0.0:11434/v1"), "open")
+  assert.equal(defaultEgress("http://[::ffff:127.0.0.1]:11434/v1"), "open")
+})
+
+test("an allowlist entry that cannot work is refused, not silently dropped", () => {
+  // The resolver skips anything that is not a name or an address, so a URL or a
+  // host:port looked accepted and the box then could not reach what the user
+  // believed they had allowed.
+  assert.match(allowHostProblem("https://internal.example")!, /URL/)
+  assert.match(allowHostProblem("internal.example:8443")!, /ports 80 and 443/)
+  assert.match(allowHostProblem("*.internal.example")!, /wildcards/)
+  assert.match(allowHostProblem("10.0.0.0/8")!, /CIDR/)
+  assert.match(allowHostProblem("not a host")!, /not a hostname/)
+  assert.match(allowHostProblem("[2001:db8::1")!, /bracket/)
+  assert.equal(allowHostProblem("registry.npmjs.org"), null)
+  assert.equal(allowHostProblem("api.deepseek.com"), null)
+  assert.equal(allowHostProblem("10.1.2.3"), null)
+  assert.equal(allowHostProblem("2001:db8::1"), null)
+  assert.equal(allowHostProblem("[2001:db8::1]"), null)
 })
 
 test("open egress needs no datapath binary", () => {

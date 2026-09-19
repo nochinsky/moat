@@ -1,0 +1,9 @@
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c nft list chain inet moat_egress output >/dev/null 2>&1; echo "filter-present-exit=$?"; nft flush ruleset; echo "flush-exit=$?"; sleep 0.3; curl -sS --max-time 6 -o /dev/null -w "http %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"
+--- exit 0
+--- stdout ---
+filter-present-exit=0
+flush-exit=0
+http 301
+curl-exit=0
+--- stderr ---

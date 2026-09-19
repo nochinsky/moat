@@ -1,0 +1,11 @@
+--- an environment whose project directory is gone, and one whose state is unreadable
+$ MOAT_HOME=<temporary> moat status --all
+orphaned   0.0 KiB  <the project directory this environment recorded is gone>
+orphaned   0.0 KiB  /gone/forever
+           0.0 KiB  total, across 2 environment(s)
+  orphaned: the project directory is gone; moat destroy --all reclaims them
+  reclaim it with: moat destroy --all
+$ MOAT_HOME=<temporary> moat destroy --all
+  removed cafebabe5678  0.0 KiB  <the project directory this environment recorded is gone>
+  removed deadbeef1234  0.0 KiB  /gone/forever
+✓ destroyed 2 environment(s), about 0.0 KiB

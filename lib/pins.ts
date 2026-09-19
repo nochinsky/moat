@@ -107,17 +107,38 @@ export function ownNetns(egress: EgressMode): boolean {
 export function defaultEgress(providerBaseUrl: string): EgressMode {
   let host = ""
   try {
-    host = new URL(providerBaseUrl).hostname.toLowerCase()
+    host = new URL(providerBaseUrl).hostname
   } catch {
     return "filtered"
   }
-  const loopback =
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host === "127.0.0.1" ||
-    host === "::1" ||
-    host === "[::1]"
-  return loopback ? "open" : "filtered"
+  return isLoopbackHost(host) ? "open" : "filtered"
+}
+
+/**
+ * Is this provider address on the host's own loopback?
+ *
+ * The whole `127.0.0.0/8` range, not just `127.0.0.1` — a local model server on
+ * `127.0.0.2` is just as unreachable from the sandbox's namespace, and treating it
+ * as remote would silently give the box an allowlist it cannot use. `0.0.0.0` is
+ * included because connecting to it on Linux reaches the local host, and the
+ * bracketed and IPv4-mapped IPv6 spellings of `::1` are the same address.
+ */
+export function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "")
+  if (host === "localhost" || host.endsWith(".localhost")) return true
+  if (host === "::1") return true
+  // IPv4-mapped IPv6 in either spelling. This matters because the URL parser
+  // rewrites ::ffff:127.0.0.1 to ::ffff:7f00:1, so the hex form has to decode.
+  const mapped = /^(?:0:0:0:0:0:ffff:|::ffff:)(.+)$/.exec(host)?.[1]
+  if (mapped !== undefined) {
+    if (mapped.includes(".")) return mapped.startsWith("127.")
+    const groups = mapped.split(":")
+    const high = groups.length === 2 ? Number.parseInt(groups[0]!, 16) : Number.NaN
+    return Number.isFinite(high) && high >> 8 === 127
+  }
+  if (host === "0.0.0.0") return true
+  const parts = host.split(".")
+  return parts.length === 4 && parts[0] === "127"
 }
 
 /** slirp4netns answers DNS here inside an isolated namespace. */

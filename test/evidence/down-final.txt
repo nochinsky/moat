@@ -2,4 +2,6 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-sandbox is not running
+✓ sandbox stopped (pid 87548); the environment and its snapshots are kept
+  resume with: moat up
+  remove with: moat destroy
