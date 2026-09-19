@@ -194,6 +194,13 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   `state.json.corrupt-<timestamp>`. `up --fresh` still means replace, gated as before.
   `test/unit/env-recovery.test.ts` guards the reconstruction; extras section T
   deletes the real file and boots again.
+* A detected check must be able to fail *and* able to pass. `npm init` scaffolds
+  `test: echo "Error: no test specified" && exit 1`, and moat offered it as the
+  project's own check: `moat verify` printed FAIL as the project's verdict on work no
+  test had looked at, and the agent's brief told it to run that command. An `echo`
+  with nothing else is the same problem the other way round (it can only pass).
+  `detectChecks` filters both (`isRealScript`); `test/unit/checks-detect.test.ts` and
+  extras section W hold it there.
 * `moat restore` stages beside the rootfs and swaps with renames, so a bad
   snapshot cannot destroy the environment. Do not go back to deleting the live
   rootfs first: that is how an afternoon of installed packages and an agent's

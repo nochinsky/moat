@@ -456,6 +456,32 @@ if grep -q "LOG-INJECT" "$EVIDENCE/logs-escape.txt" && ! grep -q "$(printf '\033
 else
   echo "sandbox log: FAILED, an escape sequence in the log reached the terminal" | tee -a "$EVIDENCE/extras.txt"
 fi
+section "W. a project with no tests is not reported as failing its tests"
+# `npm init` writes `test: echo "Error: no test specified" && exit 1`. moat offered that
+# as the project's own check: the agent was told to run it, and `moat verify` ran it and
+# printed FAIL — a verdict on a test suite that does not exist. It is filtered now, so
+# the honest answer is that this project declares no check at all.
+NOTESTS="$WORK/notests"
+rm -rf "$NOTESTS"; mkdir -p "$NOTESTS"
+cat > "$NOTESTS/package.json" <<'EOF'
+{
+  "name": "notests",
+  "scripts": { "test": "echo \"Error: no test specified\" && exit 1" }
+}
+EOF
+( cd "$NOTESTS" && git init -q -b main . && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
+( cd "$NOTESTS" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$NOTESTS" && capture notests-up $MOAT up --quiet --no-detect --profile node --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+( cd "$NOTESTS" && capture notests-verify $MOAT verify )
+if ! grep -q "checks:" "$EVIDENCE/notests-up.err" \
+   && grep -q "no test, lint or typecheck command found" "$EVIDENCE/notests-verify.txt" \
+   && grep -q "^--- exit 0$" "$EVIDENCE/notests-verify.txt"; then
+  echo "no-tests project: nothing advertised as a check, and verify says so instead of failing" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "no-tests project: FAILED, npm's placeholder was still treated as a test suite" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$NOTESTS" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

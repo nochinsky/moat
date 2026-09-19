@@ -1977,6 +1977,34 @@ neither half can begin one. An `AnswerRenderer` case asserts the same at the
 renderer, with colour off, so every escape in that output would have come from the
 model.
 
+### T. A project with no tests is not reported as failing its tests
+
+`npm init` (and yarn's and pnpm's) scaffolds a test script that exits 1 on purpose:
+`echo "Error: no test specified" && exit 1`. `detectChecks` matched it like any other
+script, so moat offered it to the agent as the project's check and ran it itself:
+`moat verify` printed `FAIL npm test (exit 1)` as the project's own verdict on work no
+test had looked at, and `moat up` announced `checks: npm run test` for a project with
+no tests at all.
+
+Placeholders are filtered now (`isRealScript`), and so are bare `echo`s, which are the
+same problem pointing the other way: they can only pass. The project above reports
+what it is:
+
+```
+$ moat verify
+! no test, lint or typecheck command found for this project
+  moat looks at package.json scripts, Makefile targets, pyproject.toml, Cargo.toml and go.mod
+--- exit 0
+```
+
+and `moat up` prints no `checks:` line for it. Extras section W is that pair of checks;
+both fail with the filter reverted (measured: `checks: npm run test` at boot, then
+`FAIL npm test 0.1s (exit 1)`). `test/unit/checks-detect.test.ts` covers the rule
+without a sandbox: npm's placeholder in three quotings, `echo` alone, real scripts that
+happen to echo first (`echo starting && node --test`, `echo starting; jest`) kept, a
+placeholder test that does not hide the lint and typecheck scripts, and the package
+manager still read from the lockfile. Four of its six fail with the filter reverted.
+
 ---
 
 ## Requirement-by-requirement

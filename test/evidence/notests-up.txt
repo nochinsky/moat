@@ -1,0 +1,26 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --profile node --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- exit 0
+--- stdout ---
+--- stderr ---
+egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
+→ provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31 + node)
+→ provisioning from the cached image alpine-3.21.4-085c49949f85.tar.gz
+✓ image provisioned in 1.52s (extract cached image 1.30s)
+→ copy-in: git clone --no-hardlinks
+✓ copy-in via git: 1 files, 0.1 KiB, digest f1d2a213f3604201
+model: moat/mock-model
+! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-19-19-23
+→ sandbox booted (pid 210890, port 37557); waiting for opencode serve
+✓ sandbox up, cold start 15.20s (image built)
+
+  project    /home/user/moat-demo/notests
+  env        /home/user/.moat/envs/9dd0ae9a1fa3
+  opencode   http://127.0.0.1:37557  (basic auth user "opencode")
+  password   XRvI_zZKIgzXeucqW3JSc1vnsHDDm-da
+  workspace  /work (inside the sandbox)
+  credential moat sha256:7726b438889c7f57 expires 2026-09-19T23:23:45.790Z
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)

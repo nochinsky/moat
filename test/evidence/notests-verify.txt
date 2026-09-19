@@ -1,0 +1,6 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts verify
+--- exit 0
+--- stdout ---
+--- stderr ---
+! no test, lint or typecheck command found for this project
+  moat looks at package.json scripts, Makefile targets, pyproject.toml, Cargo.toml and go.mod
