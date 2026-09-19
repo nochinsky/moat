@@ -177,6 +177,14 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   copy-in and surface ninety seconds later as "opencode serve did not come up"),
   and `moat models <provider>` checked against the one provider instead of silently
   listing DeepSeek and exiting 0.
+* Flags are validated **before provisioning**, because the ones validated at their
+  use site fail after the copy-in and read as a boot failure: `--tools` was checked
+  in the provider section (after provisioning), and `--log-level` was never checked
+  at all — an unknown level fell through `ALLOWED_LOG_LEVELS` in `serveEntryScript`
+  and silently became INFO, and a lowercase `--log-level debug` did too.
+  `--model ""` and `--base-url ""` booted a config with an empty model id or an empty
+  base URL and failed much later. All five now fail in under a second, and the level
+  is upper-cased on both sides.
 
 **The agent-controlled rootfs**
 

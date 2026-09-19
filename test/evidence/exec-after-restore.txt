@@ -2,12 +2,10 @@
 --- exit 0
 --- stdout ---
 in-sandbox /opt after restore:
-moat-marker
 --- /work preserved? ---
 README.md
-agent-output.txt
 greet.sh
 notes.txt
 --- agent commit still present? ---
-ac0d341 agent: add agent-output.txt from inside the sandbox
+889a539 initial demo project
 --- stderr ---

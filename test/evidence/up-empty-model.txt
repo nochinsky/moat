@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --model 
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ --model needs a model id

@@ -6,13 +6,13 @@
 [tool] bash (completed) pwd && ls -la && cat README.md && echo '--- host access attempt ---' && for p in /home/user/.moat/canary /home/user/.ssh/id_ed25519 /home/user/.gitconfig /home/user/.aws/credentials /home/user/moat-demo/project/README.md; do if cat "$p" >/dev/null 2>&1; then echo "LEAK        $p"; else echo "blocked     $p"; fi; done; echo '--- host environment ---'; echo "AWS_SECRET_ACCESS_KEY=[${AWS_SECRET_ACCESS_KEY:-unset}] SSH_AUTH_SOCK=[${SSH_AUTH_SOCK:-unset}]"
 [tool-output] /work
 total 28
-drwxr-xr-x  3 root root 4096 Sep 19 17:14 .
-drwxr-xr-x 22 root root 4096 Sep 19 17:13 ..
-drwxr-xr-x  7 root root 4096 Sep 19 17:14 .git
--rw-r--r--  1 root root   71 Sep 19 17:13 README.md
--rw-r--r--  1 root root   69 Sep 19 17:14 agent-output.txt
--rwxr-xr-x  1 root root   45 Sep 19 17:13 greet.sh
--rw-r--r--  1 root root   10 Sep 19 17:13 notes.txt
+drwxr-xr-x  3 root root 4096 Sep 19 17:35 .
+drwxr-xr-x 22 root root 4096 Sep 19 17:35 ..
+drwxr-xr-x  7 root root 4096 Sep 19 17:35 .git
+-rw-r--r--  1 root root   71 Sep 19 17:35 README.md
+-rw-r--r--  1 root root   69 Sep 19 17:35 agent-output.txt
+-rwxr-xr-x  1 root root   45 Sep 19 17:35 greet.sh
+-rw-r--r--  1 root root   10 Sep 19 17:35 notes.txt
 # demo project
 
 A tiny project used to exercise moat.
@@ -28,4 +28,4 @@ AWS_SECRET_ACCESS_KEY=[unset] SSH_AUTH_SOCK=[unset]
 Attempted to read host-only credentials and paths from inside the sandbox; see the tool output above.
 
 
-session ses_f45565661ffeoxI4wdA34bd2MR   1 tool call(s)
+session ses_f45429b66ffea4lZ0vDm30z5Zu   1 tool call(s)
