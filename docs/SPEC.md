@@ -141,6 +141,15 @@ invented — a new credential is minted, and with no recorded host baseline the 
 check reports that it cannot run rather than comparing against a guess. An
 unreadable state file is kept beside the new one as `state.json.corrupt-<time>`.
 
+While a boot is running, the environment is in the `provisioning` state of the
+diagram above: `state.json` still describes the state *before* it, so `moat status`
+reports `booting (pid N, Ns in)` rather than `stopped`, and `moat down`, `moat
+destroy`, `moat restore` and a second `moat up` wait for that boot to finish rather
+than acting on the stale file. The marker is a pid *and* its start time
+(`sandbox/boot.ts`), so a boot that was interrupted leaves nothing to wait for. Only
+the long-running boot takes it: ephemeral boots (`moat exec`, `moat doctor`,
+`moat shell`, the checks runner) are meant to run alongside it.
+
 ### 2.3 Boot sequence, the exact commands
 
 `moat up` performs, in order:

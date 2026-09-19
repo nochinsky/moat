@@ -6,21 +6,21 @@ egress: open, because the provider is on the host's loopback (http://127.0.0.1:5
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-50303c72c8d1.tar.gz
-✓ image provisioned in 1.04s (extract cached image 875ms)
+✓ image provisioned in 1.01s (extract cached image 864ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 3 files, 0.1 KiB, digest c73dfe12c6e22b9f (dirty tree: 1 modified, 1 untracked)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-18-16
-→ sandbox booted (pid 174412, port 46485); waiting for opencode serve
-✓ sandbox up, cold start 10.79s (image built)
+agent branch: moat-session-2026-09-19-18-33
+→ sandbox booted (pid 184240, port 36693); waiting for opencode serve
+✓ sandbox up, cold start 10.22s (image built)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:46485  (basic auth user "opencode")
-  password   P3vJjIpuDR7cjWud7HSz_M8q83vAMOQK
+  opencode   http://127.0.0.1:36693  (basic auth user "opencode")
+  password   lgY_W3yjE6pjEyTS6T61ebHUVfplzjk9
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-19T22:16:57.312Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-19T22:33:47.824Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

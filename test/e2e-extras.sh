@@ -388,6 +388,54 @@ else
   echo "state recovery: FAILED, the recovered commit did not reach the host" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$STATELESS" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "U. a boot in progress is visible, and the lifecycle commands wait for it"
+# A boot spends most of its time looking exactly like an idle environment: state.json
+# still says stopped with no pid, because that is what it said before the boot began.
+# Measured in that window: `moat down` printed "sandbox is not running" and the box then
+# came up and stayed up; `moat destroy` deleted the rootfs out from under the boot; and a
+# second `moat up` booted a second box over the same rootfs. The boot now writes a marker
+# first, and this check polls for that marker rather than sleeping, so it acts inside the
+# window whenever the window happens to be.
+RACE="$WORK/race"
+rm -rf "$RACE"; mkdir -p "$RACE"
+( cd "$RACE" && git init -q -b main . && printf '{"name":"race"}\n' > package.json \
+  && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
+( cd "$RACE" && $MOAT destroy --yes >/dev/null 2>&1 )
+RACE_ID=$( cd "$RACE" && node --input-type=module -e "import { envPaths } from '$REPO/lib/paths.ts'; console.log(envPaths(process.cwd()).id)" )
+RACE_MARKER="$HOME/.moat/envs/$RACE_ID/runtime/boot.json"
+( cd "$RACE" && $MOAT up --quiet --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL > "$EVIDENCE/race-up.out" 2> "$EVIDENCE/race-up.err" ) &
+RACE_UP=$!
+RACE_WAIT=0
+while [ ! -f "$RACE_MARKER" ] && [ "$RACE_WAIT" -lt 300 ]; do sleep 0.1; RACE_WAIT=$((RACE_WAIT + 1)); done
+if [ -f "$RACE_MARKER" ]; then
+  echo "the boot marker appeared after ~$((RACE_WAIT / 10))s (state.json written yet: $([ -f "$HOME/.moat/envs/$RACE_ID/state.json" ] && echo yes || echo no))" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "boot marker: FAILED, no marker appeared within 30s" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$RACE" && capture race-status $MOAT status )
+( cd "$RACE" && capture race-down $MOAT down )
+wait "$RACE_UP"; RACE_UP_RC=$?
+echo "the background moat up exited $RACE_UP_RC" | tee -a "$EVIDENCE/extras.txt"
+if grep -q "booting (pid" "$EVIDENCE/race-status.txt"; then
+  echo "status during a boot: reports booting, not stopped" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "status during a boot: FAILED, it did not mention the boot" | tee -a "$EVIDENCE/extras.txt"
+fi
+if grep -q "waiting for it before stopping the sandbox" "$EVIDENCE/race-down.txt" \
+   && ! grep -q "is not running" "$EVIDENCE/race-down.txt" \
+   && ! grep -q "no moat environment" "$EVIDENCE/race-down.txt"; then
+  echo "down during a boot: waited for the boot and stopped what it produced" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "down during a boot: FAILED, it acted on the stale state instead of waiting" | tee -a "$EVIDENCE/extras.txt"
+fi
+RACE_STATE=$( cd "$RACE" && $MOAT status 2>&1 | sed -n "s/^status *//p" )
+RACE_PROCS=$(ps -eo cmd | grep -c "[u]nshare --user.*$RACE_ID" || true)
+if [ "$RACE_STATE" = "stopped" ] && [ "$RACE_PROCS" = "0" ] && [ ! -f "$RACE_MARKER" ]; then
+  echo "after down: the box is stopped, nothing is left running, and the marker is gone" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "after down: FAILED, status=$RACE_STATE processes=$RACE_PROCS marker=$([ -f "$RACE_MARKER" ] && echo present || echo gone)" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$RACE" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

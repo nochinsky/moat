@@ -1,0 +1,9 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts down
+--- exit 0
+--- stdout ---
+--- stderr ---
+→ moat up is already booting this environment (pid 188203, 0s in); waiting for it before stopping the sandbox
+the boot finished
+✓ sandbox stopped (pid 188275); the environment and its snapshots are kept
+  resume with: moat up
+  remove with: moat destroy

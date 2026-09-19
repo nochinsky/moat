@@ -35,6 +35,7 @@ import {
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import { recoverStateFromDisk } from "../sandbox/recover.ts"
+import { beginBoot, bootAgeSeconds, bootInFlight, endBoot, waitForBoot } from "../sandbox/boot.ts"
 import { readRootfsFile, readRootfsFileHead, readRootfsFileTail } from "../lib/rootfs-fs.ts"
 import {
   credentialExpired,
@@ -220,6 +221,39 @@ function positiveIntFlag(p: Parsed, key: string, fallback: number, max?: number)
 
 function resolveEnv(): EnvPaths {
   return envPaths(process.cwd())
+}
+
+/** How long a command waits for another boot of the same environment. */
+const BOOT_WAIT_MS = 5 * 60 * 1000
+
+/**
+ * Wait out a boot another process is doing, or fail saying so.
+ *
+ * `down`, `destroy`, `restore` and a second `up` all read state.json, and
+ * during a boot it still describes the state *before* it: stopped, no pid. That
+ * is what made `moat down` report "sandbox is not running" while a boot was
+ * provisioning (the box then came up and stayed up), what let `moat destroy`
+ * delete a rootfs out from under one, and what let a second `moat up` boot a
+ * second box over the same rootfs -- after which state.json records whichever
+ * finished last and the other sandbox is alive with nothing tracking it.
+ * Waiting is what the user meant: the boot finishes, then the command acts on
+ * the environment that exists.
+ */
+async function awaitBoot(paths: EnvPaths, doing: string): Promise<void> {
+  const record = bootInFlight(paths)
+  if (!record || record.pid === process.pid) return
+  log.step(
+    `${record.command} is already booting this environment (pid ${record.pid}, ${bootAgeSeconds(record)}s in); ` +
+      `waiting for it before ${doing}`
+  )
+  const outcome = await waitForBoot(paths, { timeoutMs: BOOT_WAIT_MS })
+  if (outcome === "timeout") {
+    log.fail(
+      `a boot is still in progress (pid ${record.pid}, ${bootAgeSeconds(record)}s in), so ${doing} would race it.\n` +
+        "  wait for `moat up` to finish, or interrupt it (ctrl-c) and run this again.",
+    )
+  }
+  log.info("the boot finished")
 }
 
 function requireState(p: EnvPaths): EnvState {
@@ -526,6 +560,11 @@ async function cmdUp(argv: string[]): Promise<number> {
   const host = await assertHostUsable()
   const paths = resolveEnv()
 
+  // Another boot of this environment may already be provisioning it. Two at
+  // once race over one rootfs, and state.json ends up describing whichever
+  // finished last, leaving the other sandbox alive and untracked.
+  await awaitBoot(paths, "booting it")
+
   const json = flag<boolean>(p, "json") ?? false
   const report: Record<string, unknown> = { project: paths.projectDir, envId: paths.id }
 
@@ -695,6 +734,11 @@ async function cmdUp(argv: string[]): Promise<number> {
   if (resolvedProfiles.unknown.length > 0) {
     log.fail(`unknown --profile: ${resolvedProfiles.unknown.join(", ")}.\n\n${describeProfiles()}`)
   }
+
+  // From here to the end of the readiness wait this environment is being rebuilt.
+  // The marker is what lets `down`, `destroy`, `restore` and a second `up` see
+  // that instead of reading state.json and concluding nothing is happening.
+  beginBoot(paths, task.length > 0 ? "moat up (with a task)" : "moat up")
 
   if (needsProvision) {
     log.step(
@@ -1142,6 +1186,9 @@ ${command}
 
   state.lastBootMs = bootMs
   writeState(paths, state)
+  // The boot is over: from here on this process may sit in a session for hours,
+  // and the environment is not "being booted" any more.
+  endBoot(paths)
 
   // `moat up "fix the tests"` and `moat run "fix the tests"` are the same thing:
   // bringing up a box you are not going to use is not a step worth having.
@@ -1739,6 +1786,9 @@ async function cmdApply(argv: string[]): Promise<number> {
 async function cmdDown(argv: string[]): Promise<number> {
   parse(argv, SPEC) // validates flags; `down` takes no options of its own
   const paths = resolveEnv()
+  // A boot in flight would make the state below read as "not running". Wait for
+  // it, then stop the box it produced: that is what "down" was asked to do.
+  await awaitBoot(paths, "stopping the sandbox")
   const state = requireState(paths)
   const status = sandboxPidStatus(state.pid, { startTime: state.pidStart, envId: paths.id })
   if (status === "gone") {
@@ -1775,6 +1825,7 @@ async function cmdDown(argv: string[]): Promise<number> {
 async function cmdDestroy(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
+  await awaitBoot(paths, "destroying the environment")
 
   // `--all` exists because cleaning up one directory at a time is no way to
   // reclaim disk, and because a single mistake (moat in $HOME) can cost tens of
@@ -1786,7 +1837,16 @@ async function cmdDestroy(argv: string[]): Promise<number> {
       return 0
     }
     let freed = 0
+    let removed = 0
     for (const env of envs) {
+      // One environment booting must not make `--all` wait for minutes, and
+      // deleting one mid-boot is how a live sandbox ends up with a deleted
+      // rootfs. It is skipped with a reason and is reclaimable next run.
+      const booting = bootInFlight(env)
+      if (booting) {
+        log.warn(`skipping ${env.id}: ${booting.command} is booting it (pid ${booting.pid})`)
+        continue
+      }
       const envState = readState(env)
       const size = await rootfsSizeBytes(env)
       if (envState?.pid) {
@@ -1799,10 +1859,14 @@ async function cmdDestroy(argv: string[]): Promise<number> {
       }
       if (destroyEnv(env)) {
         freed += size
+        removed += 1
         log.info(`  removed ${env.id}  ${human(size)}  ${env.projectDir}`)
       }
     }
-    log.success(`destroyed ${envs.length} environment(s), about ${human(freed)}`)
+    log.success(`destroyed ${removed} environment(s), about ${human(freed)}`)
+    if (removed < envs.length) {
+      log.warn(`${envs.length - removed} environment(s) were left alone; run this again when the boot is done`)
+    }
     return 0
   }
 
@@ -1867,7 +1931,20 @@ async function cmdStatus(argv: string[]): Promise<number> {
     return 0
   }
 
+  const booting = bootInFlight(paths)
   const state = readState(paths)
+  if (!state && booting) {
+    // state.json is written after provisioning, so "no environment" is the wrong
+    // answer while a boot is in progress: the environment is being created now.
+    if (flag<boolean>(p, "json")) {
+      log.emit({ project: paths.projectDir, envDir: paths.dir, status: "provisioning", boot: booting })
+    } else {
+      log.info(`project      ${paths.projectDir}`)
+      log.info(`env          ${paths.dir}`)
+      log.info(`status       ${log.cyan(`booting (pid ${booting.pid}, ${bootAgeSeconds(booting)}s in)`)}`)
+    }
+    return 0
+  }
   if (!state) log.fail(`no moat environment for ${paths.projectDir}. Run \`moat up\` first.`)
   const running = sandboxAlive(state!, paths)
   if (running !== (state!.status === "running")) {
@@ -1884,6 +1961,7 @@ async function cmdStatus(argv: string[]): Promise<number> {
     envDir: paths.dir,
     rootfsDir: paths.rootfs,
     running,
+    booting: booting ? { pid: booting.pid, startedAt: booting.startedAt, command: booting.command } : null,
     url: running ? baseUrl(state!) : null,
     snapshots: snapshots.map((s) => s.name),
     rootfsBytes: await rootfsSizeBytes(paths),
@@ -1893,7 +1971,9 @@ async function cmdStatus(argv: string[]): Promise<number> {
   else {
     log.info(`project      ${state!.projectDir}`)
     log.info(`env          ${paths.dir}`)
-    log.info(`status       ${running ? log.green("running") : log.yellow("stopped")}`)
+    log.info(
+      `status       ${booting ? log.cyan(`booting (pid ${booting.pid}, ${bootAgeSeconds(booting)}s in)`) : running ? log.green("running") : log.yellow("stopped")}`,
+    )
     if (running) log.info(`endpoint     ${baseUrl(state!)}`)
     if (state!.pid) log.info(`pid          ${state!.pid}`)
     log.info(`opencode     ${state!.opencodeVersion} / alpine ${state!.alpineVersion}`)
@@ -1926,9 +2006,16 @@ async function cmdSnapshot(argv: string[]): Promise<number> {
   const paths = resolveEnv()
   const state = requireState(paths)
   const name = p._[0] ?? `snap-${new Date().toISOString().replace(/[:.]/g, "-")}`
-  // Tarring a live rootfs can capture a torn state (a half-written package
-  // database, for example). Snapshots are not destructive, so this is a gate
-  // that --yes can open rather than a refusal.
+  // Tarring a live or half-built rootfs can capture a torn state: a half-written
+  // package database, a provisioning step in progress. Snapshots are not
+  // destructive, so this is a gate --yes can open rather than a refusal.
+  const booting = bootInFlight(paths)
+  if (booting && !flag<boolean>(p, "yes")) {
+    log.fail(
+      `a boot of this environment is in progress (pid ${booting.pid}, ${bootAgeSeconds(booting)}s in); a snapshot ` +
+        "taken now can capture a torn rootfs.\n  wait for `moat up` to finish, or pass --yes to snapshot it as it is.",
+    )
+  }
   if (state.pid && sandboxAlive(state, paths) && !flag<boolean>(p, "yes")) {
     log.fail(
       `the sandbox is running (pid ${state.pid}); a snapshot of a live rootfs can capture a torn state.\n` +
@@ -1943,6 +2030,9 @@ async function cmdSnapshot(argv: string[]): Promise<number> {
 async function cmdRestore(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
+  // Replacing the rootfs while a boot is writing it is the same mistake as
+  // restoring under a running box, one step earlier.
+  await awaitBoot(paths, "restoring the rootfs")
   const state = requireState(paths)
   const name = p._[0]
   if (!name) log.fail(`usage: moat restore <name>\navailable: ${(await listSnapshots(paths)).map((s) => s.name).join(", ")}`)

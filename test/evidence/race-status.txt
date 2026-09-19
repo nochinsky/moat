@@ -1,0 +1,7 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts status
+--- exit 0
+--- stdout ---
+--- stderr ---
+project      /home/user/moat-demo/race
+env          /home/user/.moat/envs/abbcf717bc1f
+status       booting (pid 188203, 0s in)

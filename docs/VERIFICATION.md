@@ -1880,6 +1880,61 @@ One deliberate limit: recovery happens on the next `moat up`. `moat fetch`, `moa
 and `moat verify` still require a readable state, so a lost file means one boot before
 the work can be brought across through moat.
 
+### R. A boot in progress is visible, and the lifecycle commands wait for it
+
+A boot spends most of its time looking exactly like an idle environment.
+`state.json` says stopped with no pid and is only rewritten once the box is
+spawned, so the window that provisioning, copy-in and the readiness wait occupy is
+indistinguishable from "nothing is happening" to every other command. Measured in
+that window, before this: `moat down` printed "sandbox is not running" and exited
+0, and the box came up and stayed up; `moat destroy` deleted the rootfs out from
+under the boot (which then waited out the full 90-second readiness budget and
+failed); and a second `moat up` booted a second box over the same rootfs, after
+which `state.json` records whichever finished last and the other sandbox is alive
+with nothing tracking it.
+
+The long-running boot now writes `runtime/boot.json` before its first slow step —
+pid and start time, the same identity rule the sandbox pid follows — and clears it
+when the boot is over:
+
+```
+$ moat status          # while moat up is still provisioning
+status       booting (pid 188203, 0s in)
+
+$ moat down
+→ moat up is already booting this environment (pid 188203, 0s in); waiting for it before stopping the sandbox
+the boot finished
+✓ sandbox stopped (pid 188275); the environment and its snapshots are kept
+```
+
+`down`, `destroy`, `restore` and a second `up` wait for that marker (five minutes,
+then a refusal that names the pid); `snapshot` refuses without `--yes`, because a
+torn rootfs is what a snapshot must not capture; and `destroy --all` skips a
+booting environment with a reason instead of blocking the whole run. A marker whose
+process is gone (ctrl-c, a crash, a `log.fail`) is reaped by the next reader, so
+nothing waits five minutes for a boot that no longer exists.
+
+Extras section U polls for the marker rather than sleeping, so the check acts
+inside the window whenever the window is:
+
+```
+the boot marker appeared after ~0s (state.json written yet: no)
+status during a boot: reports booting, not stopped
+down during a boot: waited for the boot and stopped what it produced
+after down: the box is stopped, nothing is left running, and the marker is gone
+```
+
+All three of those checks were watched failing with the marker reads disabled (3
+FAILED, and the run ended with the sandbox still running, which is the bug).
+`test/unit/boot-marker.test.ts` covers the marker without a sandbox: the record and
+its pid identity, a marker whose process died being reaped rather than waited on, a
+reused pid not being believed, waiting returning `finished` when the other boot ends
+and `timeout` while it runs, and the age the message reports.
+
+Ephemeral boots (`moat exec`, `moat doctor`, `moat shell`, the checks runner)
+deliberately take no marker: they are meant to run alongside a boot (AGENTS.md, on
+unique boot scripts), and serialising them would be a worse trade.
+
 ---
 
 ## Requirement-by-requirement
