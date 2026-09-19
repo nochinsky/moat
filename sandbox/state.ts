@@ -129,6 +129,20 @@ export function envExists(p: EnvPaths): boolean {
   return fs.existsSync(p.rootfs)
 }
 
+/**
+ * Has the injected credential's TTL elapsed?
+ *
+ * The in-sandbox watchdog stops the agent, but the host is the party that must
+ * refuse to keep driving: a box whose credential is dead cannot serve a turn,
+ * and silently trying produces a confusing provider error instead.
+ */
+export function credentialExpired(state: EnvState, now = Date.now()): boolean {
+  const expires = state.credential?.expiresAt
+  if (!expires) return false
+  const at = Date.parse(expires)
+  return Number.isFinite(at) && at <= now
+}
+
 /** The per-boot server password lives outside the rootfs, readable only by the user. */
 export function passwordPath(p: EnvPaths): string {
   return path.join(p.dir, "server-password")

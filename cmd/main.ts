@@ -8,7 +8,7 @@ import { spawn } from "node:child_process"
 import * as log from "../lib/log.ts"
 import { hashTree } from "../lib/hash.ts"
 import { probeHost, assertHostUsable, describeHost } from "../lib/host.ts"
-import { envPaths, type EnvPaths } from "../lib/paths.ts"
+import { ensureMoatHome, envPaths, type EnvPaths } from "../lib/paths.ts"
 import { ALPINE_VERSION, CURATED_TOOLS, EXCLUDED_TOOLS, OPENCODE_VERSION, SANDBOX_WORKDIR, UNADVERTISED_GAPS } from "../lib/pins.ts"
 import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, isDeepSeekHost } from "../lib/provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
@@ -18,6 +18,7 @@ import { runChecks, summarise } from "../sandbox/checks.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import {
+  credentialExpired,
   envExists,
   initialState,
   listEnvs,
@@ -38,6 +39,7 @@ import {
   snapshotEnv,
 } from "../sandbox/rootfs.ts"
 import {
+  extraSandboxEnv,
   runInSandbox,
   sandboxEnv,
   sandboxPidStatus,
@@ -57,6 +59,7 @@ import {
   INJECTED_ENV_NAMES,
   credentialRiskNotice,
   mint,
+  scanRootfsForCredential,
   ttlToSeconds,
   toSandboxEnv,
   type MintedCredential,
@@ -199,6 +202,14 @@ function requireRunning(p: EnvPaths): { state: EnvState; password: string } {
   if (!sandboxAlive(state, p)) {
     writeState(p, { ...state, status: "stopped", pid: null, pidStart: null })
     log.fail(`the sandbox for ${p.projectDir} is not running. Run \`moat up\` first.`)
+  }
+  // The in-sandbox watchdog kills the agent at the TTL; the host must not keep
+  // driving afterwards and produce a provider error instead of the real reason.
+  if (credentialExpired(state)) {
+    log.fail(
+      `the injected credential expired at ${state.credential!.expiresAt}, and the sandbox watchdog has stopped the agent.\n` +
+        "  run \`moat up\` to boot again with a fresh credential.",
+    )
   }
   const password = readPassword(p)
   if (!password) log.fail("no server password on disk; run `moat up` again")
@@ -472,6 +483,16 @@ async function cmdUp(argv: string[]): Promise<number> {
     writeState(paths, state)
   }
 
+  // An expired credential means the watchdog has already stopped the agent.
+  // Reusing the pid would hand back a box that cannot serve a turn, so stop it
+  // and fall through to a fresh boot, which mints a new credential.
+  if (state!.pid && sandboxAlive(state!, paths) && credentialExpired(state!)) {
+    log.warn("the injected credential for this sandbox has expired; restarting it to mint a fresh one")
+    await stopSandbox(state!.pid!, { startTime: state!.pidStart, envId: paths.id })
+    state = { ...state!, status: "stopped", pid: null, pidStart: null }
+    writeState(paths, state)
+  }
+
   // A stopped sandbox may still be draining; make sure the recorded pid is gone.
   if (state!.pid && sandboxAlive(state!, paths)) {
     log.info(`sandbox already running (pid ${state!.pid}) on port ${state!.port}`)
@@ -740,11 +761,17 @@ ${command}
     credentialTtlSeconds: credential ? credential.ttlSeconds : null,
   })
 
-  const sandboxEnvVars: Record<string, string> = {
+  const managedEnv: Record<string, string> = {
     OPENCODE_SERVER_PASSWORD: password,
     MOAT_PORT: String(port),
     ...(credential ? toSandboxEnv(credential) : {}),
-    ...extraSandboxEnv(),
+  }
+  // The escape hatch is spread first and the managed values last, and it may not
+  // claim a managed name: MOAT_SANDBOX_ENV must not be able to replace the
+  // credential or the server password inside the box.
+  const sandboxEnvVars: Record<string, string> = {
+    ...extraSandboxEnv(process.env.MOAT_SANDBOX_ENV, Object.keys(managedEnv)),
+    ...managedEnv,
   }
 
   const bootStart = Date.now()
@@ -781,6 +808,21 @@ ${command}
     await stopSandbox(sandbox.pid, { startTime: sandbox.startTime, envId: paths.id })
     writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
     log.fail(`opencode serve did not come up (${ready.detail}).\n--- sandbox log ---\n${tail}`)
+  }
+
+  // The value is only ever meant to exist in the sandbox process environment.
+  // If it reached a file inside the rootfs, "no credential in the image" is
+  // already false and the boot must not be reported as healthy.
+  if (credential) {
+    const leaks = scanRootfsForCredential(paths.rootfs, credential.value)
+    if (leaks.length > 0) {
+      await stopSandbox(sandbox.pid, { startTime: sandbox.startTime, envId: paths.id })
+      writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
+      log.fail(
+        `the credential was found on disk inside the sandbox:\n  ${leaks.slice(0, 5).join("\n  ")}\n` +
+          "  moat refuses to continue: the value is only meant to exist in the sandbox process environment.",
+      )
+    }
   }
 
   state.lastBootMs = bootMs
@@ -838,29 +880,6 @@ ${command}
     })
 
   return 0
-}
-
-/**
- * Escape hatch for experiments: extra KEY=VALUE pairs to place in the sandbox
- * environment. Names are restricted to the OPENCODE_/MOAT_ prefixes so this can
- * never become a channel that forwards host environment into the box, the
- * property the isolation test checks for.
- */
-function extraSandboxEnv(): Record<string, string> {
-  const raw = process.env.MOAT_SANDBOX_ENV
-  if (!raw) return {}
-  const result: Record<string, string> = {}
-  for (const pair of raw.split(/[,\n]/).map((s) => s.trim()).filter(Boolean)) {
-    const index = pair.indexOf("=")
-    if (index === -1) continue
-    const key = pair.slice(0, index)
-    if (!/^(OPENCODE_|MOAT_)/.test(key)) {
-      log.warn(`ignoring MOAT_SANDBOX_ENV entry ${key}: only OPENCODE_/MOAT_ prefixed names may enter the sandbox`)
-      continue
-    }
-    result[key] = pair.slice(index + 1)
-  }
-  return result
 }
 
 /**
@@ -1282,15 +1301,56 @@ async function cmdTake(argv: string[]): Promise<number> {
   }
   log.info(`  your working tree is ${before.digest === after.digest ? log.green("untouched") : log.red("CHANGED")}`)
   log.info(`  review:  git log ${result.hostRef}`)
-  log.info(`  accept:  moat apply ${target} --checkout`)
+  log.info(`  accept:  moat apply` + log.dim("   (three-way merge into your tree)"))
+  log.info(`           moat apply ${target} --checkout` + log.dim("   (or switch to the agent's branch)"))
   log.info(`  reject:  git update-ref -d ${result.hostRef}`)
   return before.digest === after.digest ? 0 : 1
+}
+
+/** Accept `moat apply <branch>`, `refs/moat/<branch>` or `refs/heads/<branch>`. */
+function normaliseBranchRef(input: string): string {
+  return input.replace(/^refs\/moat\//, "").replace(/^refs\/heads\//, "")
 }
 
 async function cmdApply(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   const state = requireState(paths)
+
+  const branchArg = p._[0]
+  const checkout = flag<boolean>(p, "checkout") ?? false
+  const localName = flag<string>(p, "name")
+  const json = flag<boolean>(p, "json") ?? false
+
+  // `moat apply <branch>` acts on a fetched ref: it creates the local branch,
+  // and only switches to it when --checkout is passed. This is what SPEC §2.4
+  // and `moat take` have said all along; before, the branch argument, --checkout
+  // and --name were accepted and ignored, and the command silently ran the
+  // live-tree merge instead.
+  if (branchArg) {
+    const branch = normaliseBranchRef(branchArg)
+    const ref = `refs/moat/${branch}`
+    const exists = await run("git", ["-C", paths.projectDir, "rev-parse", "--verify", "--quiet", ref], {
+      env: SANITIZED_GIT_ENV,
+      allowFailure: true,
+    })
+    if (exists.code !== 0) {
+      // Fetch it rather than telling the user to run a second command; the ref
+      // is the whole input this mode needs.
+      await fetchBranch(paths, branch)
+    }
+    if (flag<boolean>(p, "dry-run")) {
+      if (json) log.emit({ branch, ref, checkout, local: localName ?? null, dryRun: true })
+      else log.info(`would ${checkout ? "check out" : "create"} a local branch from ${ref}`)
+      return 0
+    }
+    const result = await applyBranch(paths, branch, { name: localName, checkout })
+    if (json) log.emit({ ...result, checkout })
+    else log.success(`${checkout ? "checked out" : "created"} local branch ${result.branch} at ${result.ref}`)
+    return 0
+  }
+  if (checkout) log.fail("--checkout needs a branch: moat apply <branch> --checkout")
+  if (localName) log.fail("--name needs a branch: moat apply <branch> --name <local>")
 
   const plan = await planApply(paths)
 
@@ -1991,6 +2051,9 @@ Docs: docs/SPEC.md, docs/VERIFICATION.md
 `
 
 async function main(): Promise<number> {
+  // ~/.moat holds the credential store and the server password; make sure it is
+  // 0700 before anything reads or writes there.
+  ensureMoatHome()
   const argv = process.argv.slice(2)
   const command = argv[0]
   const rest = argv.slice(1)

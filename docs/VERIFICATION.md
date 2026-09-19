@@ -1376,8 +1376,24 @@ $ npm run test:unit
 ✔ a pid is only 'ours' when the recorded start time matches
 ✔ two reads of the same process agree on its start time
 ✔ the curated tool list has one source of truth
-ℹ tests 22
-ℹ pass 22
+✔ the plugin refuses a permission rule that is not exactly allow-all
+✔ the plugin rejects a patch move out of the workspace and allows one inside it
+✔ a completed call is recorded as completed, not as success
+✔ the permission invariant is exactly allow-all, not merely non-deny
+✔ MOAT_SANDBOX_ENV only carries OPENCODE_/MOAT_ names and never a managed one
+✔ the sandbox environment is a pure whitelist
+✔ TTL expiry is decided by the recorded timestamp
+✔ the literal-flag notice names argv and shell history
+✔ the rootfs scan finds the value only when it is on disk
+✔ the credential store is 0600 inside a repaired 0700 directory
+✔ applyBranch creates the local branch without moving HEAD
+✔ applyBranch checkout switches to it, and refuses a dirty tree
+✔ applyBranch refuses a ref that was never fetched
+✔ suggestBranch prefers a branch whose tip the host cannot reach
+✔ a check command with quotes, dollars and command substitution arrives intact
+✔ a check that ignores SIGTERM is killed after the grace period
+ℹ tests 38
+ℹ pass 38
 ℹ fail 0
 ```
 

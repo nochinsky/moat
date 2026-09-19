@@ -39,7 +39,7 @@
  * the permission hook is `permission.ask`, NOT `permission.asked`.
  */
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { dirname, isAbsolute, relative, resolve } from "node:path"
+import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 
 const TOOLS_FILE = "/usr/local/share/moat/tools.json"
 
@@ -68,10 +68,13 @@ const POLICY = loadToolPolicy()
 const CURATED = POLICY.curated
 const EXCLUDED = POLICY.excluded
 
-const AUDIT = "/var/log/moat/tools.jsonl"
-const PERMISSIONS = "/var/log/moat/permissions.jsonl"
-const BUNDLE_REPORT = "/var/log/moat/bundle.json"
-const EXPOSURE = "/var/log/moat/exposure.json"
+// The entry script already exports MOAT_AUDIT_LOG; honouring it keeps the
+// plugin and the boot script pointing at the same directory (and lets the unit
+// tests write into a temp dir instead of /var/log). The default is the path the
+// sandbox uses in production.
+const DEFAULT_AUDIT = "/var/log/moat/tools.jsonl"
+const auditFile = () => process.env.MOAT_AUDIT_LOG || DEFAULT_AUDIT
+const auditDir = () => dirname(auditFile())
 
 /**
  * Names that look like secrets. moat's threat model is explicit: the agent runs
@@ -140,14 +143,17 @@ const MUTATING_PATH_ARGS = {
 }
 
 const ABSOLUTE_PATH_IN_PATCH = /^\*\*\* (?:Update|Add|Delete) File: (\S+)$/gm
+// apply_patch can move a file as well as update it. The destination was not
+// checked, so a move out of the workspace slipped past the guard.
+const PATCH_MOVE_TARGET = /^\*\*\* Move to: (\S+)$/gm
 
 export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
   const root = worktree || directory
   try {
-    mkdirSync(dirname(EXPOSURE), { recursive: true })
+    mkdirSync(auditDir(), { recursive: true })
     const serveEnvNames = Object.keys(process.env).sort()
     writeFileSync(
-      EXPOSURE,
+      join(auditDir(), "exposure.json"),
       `${JSON.stringify(
         {
           plugin: "moat-bundle",
@@ -174,7 +180,7 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
 
   try {
     writeFileSync(
-      BUNDLE_REPORT,
+      join(auditDir(), "bundle.json"),
       `${JSON.stringify(
         {
           plugin: "moat-bundle",
@@ -184,6 +190,10 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
           excludedFromBuiltins: EXCLUDED,
           opencodeServer: String(serverUrl ?? ""),
           startedAt: new Date().toISOString(),
+          // This file, like everything under /var/log/moat, lives inside the
+          // agent-writable rootfs. It is a record of what the plugin did, not
+          // tamper-proof evidence: a root process in the box can rewrite it.
+          caveat: "written inside the sandbox rootfs; a root process in the box can modify or delete it",
         },
         null,
         2,
@@ -195,6 +205,19 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
 
   return {
     config: async (config) => {
+      // Invariant 3, re-checked inside the box. This runs in the agent's own
+      // process, so a config that somehow reached the box without passing
+      // render.ts's assertion still cannot start the session with an approval
+      // rule in it.
+      const permission = config.permission ?? {}
+      const permissionKeys = Object.keys(permission)
+      if (permissionKeys.length !== 1 || permission["*"] !== "allow") {
+        throw new Error(
+          `moat: refusing to run with permission ${JSON.stringify(permission)}; ` +
+            'the bundle requires exactly {"*":"allow"} and nothing else',
+        )
+      }
+
       // Curation assertion. If a future opencode changes the filter semantics,
       // this is where moat finds out instead of silently shipping more tools.
       const declared = Object.entries(config.tools ?? {})
@@ -202,9 +225,9 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
         .map(([name]) => name)
       const missing = EXCLUDED.filter((name) => !declared.includes(name))
       try {
-        mkdirSync(dirname(AUDIT), { recursive: true })
+        mkdirSync(auditDir(), { recursive: true })
         appendFileSync(
-          AUDIT,
+          auditFile(),
           `${JSON.stringify({
             seq: seq++,
             ts: new Date().toISOString(),
@@ -224,7 +247,7 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
 
     "permission.ask": async (input, output) => {
       permissionAsks += 1
-      append(PERMISSIONS, { ts: new Date().toISOString(), seq: permissionAsks, input: redact(input), granted: "allow" })
+      append(join(auditDir(), "permissions.jsonl"), { ts: new Date().toISOString(), seq: permissionAsks, input: redact(input), granted: "allow" })
       // Local sessions only, single user, disposable box: allow unconditionally.
       // With `"permission": {"*": "allow"}` this hook should never fire at all;
       // the verification suite asserts the count stays at zero.
@@ -237,7 +260,7 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
       // exactly the tools the bundle declares" true in behaviour, even though
       // opencode still advertises a superset.
       if (!CURATED.includes(input.tool)) {
-        append(AUDIT, {
+        append(auditFile(), {
           seq: seq++,
           ts: new Date().toISOString(),
           phase: "curation-refusal",
@@ -255,11 +278,13 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
         assertConfined(`${input.tool}.${key}`, args[key], root)
       }
       if (input.tool === "apply_patch" && typeof args.patchText === "string") {
-        for (const match of args.patchText.matchAll(ABSOLUTE_PATH_IN_PATCH)) {
-          assertConfined("apply_patch.patchText", match[1], root)
+        for (const pattern of [ABSOLUTE_PATH_IN_PATCH, PATCH_MOVE_TARGET]) {
+          for (const match of args.patchText.matchAll(pattern)) {
+            assertConfined("apply_patch.patchText", match[1], root)
+          }
         }
       }
-      append(AUDIT, {
+      append(auditFile(), {
         seq: seq++,
         ts: new Date().toISOString(),
         phase: "before",
@@ -271,7 +296,14 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
     },
 
     "tool.execute.after": async (input, output) => {
-      append(AUDIT, {
+      // This hook runs when a tool call completes; opencode does not pass a
+      // failure flag here, and a thrown tool surfaces as an error event rather
+      // than as this hook with ok:false. The record used to say "ok": true,
+      // which was always true and told a reader nothing. It now says only what
+      // this hook can attest: the call completed. A failed call is a missing
+      // after-record, and the audit log as a whole is best-effort: it lives in
+      // the agent-writable rootfs, so it is a record, not tamper-proof evidence.
+      append(auditFile(), {
         seq: seq++,
         ts: new Date().toISOString(),
         phase: "after",
@@ -279,7 +311,7 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
         sessionID: input.sessionID,
         callID: input.callID,
         title: output.title,
-        ok: true,
+        completed: true,
         output: redact(output.output ?? ""),
       })
     },
@@ -303,7 +335,7 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
     },
 
     dispose: async () => {
-      append(PERMISSIONS, { ts: new Date().toISOString(), summary: true, permissionAsks })
+      append(join(auditDir(), "permissions.jsonl"), { ts: new Date().toISOString(), summary: true, permissionAsks })
     },
   }
 }

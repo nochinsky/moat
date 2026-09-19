@@ -1,5 +1,7 @@
+import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
+import path from "node:path"
 
 import { fingerprint } from "../lib/hash.ts"
 import { credentialsFile } from "../lib/paths.ts"
@@ -178,11 +180,51 @@ export function findCredential(opts: MintOptions): { provider: string; credentia
  */
 export function credentialRiskNotice(minted: MintedCredential): string {
   const where = minted.targetEnvVars.length > 0 ? ` as ${minted.targetEnvVars[0]}` : ""
+  const argv =
+    minted.source === "--credential flag"
+      ? " It is also on this command line (visible in ps to other local users) and in your shell history; " +
+        "prefer --credential-env NAME or ~/.moat/credentials.json."
+      : ""
   return (
     `injecting ${minted.provider} credential ${minted.fingerprint} (ttl ${minted.ttlSeconds}s)${where}. ` +
     `The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key ` +
-    `with a low limit. See docs/SPEC.md §1.2.`
+    `with a low limit. See docs/SPEC.md §1.2.${argv}`
   )
+}
+
+/**
+ * Look for the credential value on disk inside the rootfs.
+ *
+ * The value is only ever meant to exist in the sandbox process environment. If
+ * opencode or the agent persists it anywhere (auth state, a log, a session
+ * file), "no credential in the image" is already false, so a boot that finds it
+ * must not be reported as healthy. The pattern is fed to grep on stdin, so the
+ * value never appears in a host process's argv.
+ */
+export function scanRootfsForCredential(rootfs: string, value: string): string[] {
+  if (!value) return []
+  const candidates = [
+    "root/.local/share/opencode",
+    "root/.config",
+    "root/.cache",
+    "usr/local/share/moat",
+    "var/log/moat",
+    ".moat",
+    "tmp",
+  ]
+    .map((rel) => path.join(rootfs, rel))
+    .filter((dir) => fs.existsSync(dir))
+  if (candidates.length === 0) return []
+  const result = spawnSync("grep", ["-rlF", "-f", "-", "--binary-files=text", ...candidates], {
+    input: `${value}\n`,
+    encoding: "utf8",
+  })
+  if (result.status !== 0) return []
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .sort()
 }
 
 export function mint(opts: MintOptions): MintedCredential | null {

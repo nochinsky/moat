@@ -10,6 +10,26 @@ export function moatHome(): string {
   return process.env.MOAT_HOME || path.join(os.homedir(), ".moat")
 }
 
+/**
+ * Create the state directory with mode 0700, and repair one that is group- or
+ * world-accessible.
+ *
+ * `readStore` refuses a credentials file others can read, but that check is
+ * worth nothing if another local user can replace the file: a permissive
+ * directory lets them swap a credential in, which the broker would then inject.
+ */
+export function ensureMoatHome(): string {
+  const home = moatHome()
+  fs.mkdirSync(home, { recursive: true, mode: 0o700 })
+  try {
+    const mode = fs.statSync(home).mode & 0o777
+    if (mode & 0o077) fs.chmodSync(home, mode & ~0o077)
+  } catch {
+    /* best effort; readStore still refuses a readable credentials file */
+  }
+  return home
+}
+
 export function cacheDir(): string {
   return path.join(moatHome(), "cache")
 }

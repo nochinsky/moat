@@ -1,6 +1,7 @@
 import type { Check } from "../lib/detect.ts"
 import type { EnvPaths } from "../lib/paths.ts"
 import { SANDBOX_WORKDIR } from "../lib/pins.ts"
+import { shellQuote } from "../lib/shell.ts"
 import { runInSandbox } from "./launcher.ts"
 
 /**
@@ -30,6 +31,33 @@ export type CheckResult = {
 
 const DEFAULT_TIMEOUT_SECONDS = 600
 
+/**
+ * The inner script for one check.
+ *
+ * Exported so it can be tested without a sandbox: the command is the project's
+ * own shell command, so what matters is that it arrives intact and that the
+ * timeout can actually kill a process which ignores signals.
+ */
+export function checkScript(
+  command: string,
+  timeoutSeconds: number,
+  workdir: string = SANDBOX_WORKDIR,
+  killAfterSeconds = 10,
+): string {
+  return `#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+export CI=1
+cd ${workdir}
+echo ${shellQuote(`$ ${command}`)}
+timeout --kill-after=${killAfterSeconds} ${timeoutSeconds} sh -c ${shellQuote(command)}
+code=$?
+if [ "$code" = "124" ] || [ "$code" = "137" ]; then echo "[moat] TIMED OUT after ${timeoutSeconds}s"; fi
+echo "[moat] exit $code"
+exit $code
+`
+}
+
 export async function runChecks(
   paths: EnvPaths,
   checks: Check[],
@@ -43,20 +71,15 @@ export async function runChecks(
     const started = Date.now()
     // `timeout` is coreutils and present in the base image, so a hung test suite
     // cannot hang moat.
-    const script = `#!/bin/sh
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export HOME=/root
-export CI=1
-cd ${SANDBOX_WORKDIR}
-echo "[moat] $ ${check.command}"
-timeout ${timeout} sh -c ${JSON.stringify(check.command)}
-code=$?
-if [ "$code" = "124" ]; then echo "[moat] TIMED OUT after ${timeout}s"; fi
-echo "[moat] exit $code"
-exit $code
-`
-    const result = await runInSandbox(paths, script, { onOutput: opts.onOutput })
-    const timedOut = result.output.includes("[moat] TIMED OUT")
+    const script = checkScript(check.command, timeout)
+    const result = await runInSandbox(paths, script, {
+      onOutput: opts.onOutput,
+      // The inner timeout is the real limit; this is the backstop for a boot or a
+      // shell that ignores every signal. --kill-after makes the inner timeout
+      // escalate too, so a check that traps SIGTERM still dies.
+      timeoutMs: (timeout + 30) * 1000,
+    })
+    const timedOut = result.timedOut || result.output.includes("[moat] TIMED OUT")
     const lines = result.output.split("\n").filter((line) => line.trim().length > 0)
     results.push({
       label: check.label,

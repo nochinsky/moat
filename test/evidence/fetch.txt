@@ -2,12 +2,12 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-00-11:refs/moat/moat-session-2026-09-19-00-11
-✓ fetched moat-session-2026-09-19-00-11 -> refs/moat/moat-session-2026-09-19-00-11 (185d1c1275c4)
-  2 commit(s) reachable, HEAD 640e8aa0e2a3 -> 640e8aa0e2a3
-    185d1c1275c4  agent: add agent-output.txt from inside the sandbox
-    640e8aa0e2a3  initial demo project
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-00-35:refs/moat/moat-session-2026-09-19-00-35
+✓ fetched moat-session-2026-09-19-00-35 -> refs/moat/moat-session-2026-09-19-00-35 (d88b55913922)
+  2 commit(s) reachable, HEAD 060fc0eace00 -> 060fc0eace00
+    d88b55913922  agent: add agent-output.txt from inside the sandbox
+    060fc0eace00  initial demo project
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-19-00-11
-  apply with:    moat apply moat-session-2026-09-19-00-11  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-19-00-35
+  apply with:    moat apply moat-session-2026-09-19-00-35  (or --checkout)

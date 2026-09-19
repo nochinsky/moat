@@ -37,7 +37,8 @@ export type FetchResult = {
   commits: number
   headBefore: string | null
   headAfter: string | null
-  worktreeUntouched: boolean
+  /** The host's HEAD did not move. The full tree proof is the digest in cmd/main.ts. */
+  headUnchanged: boolean
   commitsFetched: { sha: string; subject: string }[]
 }
 
@@ -121,7 +122,24 @@ export async function suggestBranch(p: EnvPaths): Promise<string | null> {
   const branches = await listSandboxBranches(p)
   if (branches.length === 0) return null
   const current = branches.find((b) => b.current)
+
+  // Prefer a branch whose tip the host cannot already reach: offering a branch
+  // that was fetched on a previous run would look like new work and not be.
+  const unknown = async (b: SandboxBranch): Promise<boolean> => !(await hostHasCommit(p.projectDir, b.sha))
+  if (current && (await unknown(current))) return current.name
+  for (const branch of branches) {
+    if (await unknown(branch)) return branch.name
+  }
   return current?.name ?? branches[0]!.name
+}
+
+/** Does the host repository already contain this commit? */
+async function hostHasCommit(projectDir: string, sha: string): Promise<boolean> {
+  const known = await run("git", ["-C", projectDir, "cat-file", "-e", `${sha}^{commit}`], {
+    env: SANITIZED_GIT_ENV,
+    allowFailure: true,
+  })
+  return known.code === 0
 }
 
 export async function hostHead(projectDir: string): Promise<string | null> {
@@ -192,16 +210,9 @@ export async function fetchBranch(
     commits: commitsFetched.length,
     headBefore,
     headAfter,
-    worktreeUntouched: headBefore === headAfter,
+    headUnchanged: headBefore === headAfter,
     commitsFetched,
   }
-}
-
-export async function countCommitsAhead(p: EnvPaths, branch: string): Promise<number> {
-  const result = await sandboxGit(p.work, ["rev-list", "--count", `refs/heads/${branch}`, "--not", "--all"], {
-    allowFailure: true,
-  })
-  return Number.parseInt(result.stdout.trim(), 10) || 0
 }
 
 /**

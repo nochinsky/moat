@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { moatHome, type EnvPaths } from "../lib/paths.ts"
+import { shellQuote } from "../lib/shell.ts"
 import { runInSandbox } from "./launcher.ts"
 
 /**
@@ -167,10 +168,10 @@ for ns in mnt pid user net uts ipc; do
   echo "MOAT_NS_$(echo $ns | tr a-z A-Z)=$(readlink /proc/self/ns/$ns 2>/dev/null || echo unknown)"
 done
 echo "MOAT_UIDMAP=$(cat /proc/self/uid_map | tr -s ' ')"
-if [ -e ${JSON.stringify(opts.hostProject)} ]; then echo "MOAT_HOST_PROJECT=READABLE"; else echo "MOAT_HOST_PROJECT=absent"; fi
-if [ -e ${JSON.stringify(opts.hostHome)} ]; then echo "MOAT_HOST_HOME=READABLE"; else echo "MOAT_HOST_HOME=absent"; fi
-if cat ${JSON.stringify(opts.canary)} >/dev/null 2>&1; then echo "MOAT_CANARY=READABLE"; else echo "MOAT_CANARY=unreadable"; fi
-if [ -e ${JSON.stringify(path.join(opts.hostHome, ".ssh"))} ]; then echo "MOAT_HOST_SSH=READABLE"; else echo "MOAT_HOST_SSH=absent"; fi
+if [ -e ${shellQuote(opts.hostProject)} ]; then echo "MOAT_HOST_PROJECT=READABLE"; else echo "MOAT_HOST_PROJECT=absent"; fi
+if [ -e ${shellQuote(opts.hostHome)} ]; then echo "MOAT_HOST_HOME=READABLE"; else echo "MOAT_HOST_HOME=absent"; fi
+if cat ${shellQuote(opts.canary)} >/dev/null 2>&1; then echo "MOAT_CANARY=READABLE"; else echo "MOAT_CANARY=unreadable"; fi
+if [ -e ${shellQuote(path.join(opts.hostHome, ".ssh"))} ]; then echo "MOAT_HOST_SSH=READABLE"; else echo "MOAT_HOST_SSH=absent"; fi
 if [ -e /root/.ssh ]; then echo "MOAT_ROOT_SSH=present"; else echo "MOAT_ROOT_SSH=absent"; fi
 echo "MOAT_ENV_B64=$(env | base64 | tr -d '\\n')"
 MOAT_SECRET_ENV_NAMES=""
@@ -272,7 +273,14 @@ export async function runIsolationChecks(
 
   // A listener the host deliberately opens on loopback. If the sandbox can
   // reach it, the agent can reach every other service you are running locally.
-  const probe = await openLoopbackProbe()
+  // A failure here must not leave the canary behind.
+  let probe: LoopbackProbe
+  try {
+    probe = await openLoopbackProbe()
+  } catch (error) {
+    if (!opts.keepCanary) fs.rmSync(canary.path, { force: true })
+    throw error
+  }
 
   const script = innerScript({
     hostHome: opts.hostHome,
@@ -287,6 +295,9 @@ export async function runIsolationChecks(
     result = await runInSandbox(p, script, { env: injected })
   } finally {
     await probe.close()
+    // A throwing check must not leave the host canary behind. The success path
+    // removes it again below; rm with force is idempotent.
+    if (!opts.keepCanary) fs.rmSync(canary.path, { force: true })
   }
   const parsed = parseLines(result.output)
 
@@ -310,6 +321,10 @@ export async function runIsolationChecks(
 
   const { suspicious, deviceBinds } = analyseMounts(mounts, moatHome())
 
+  // An unset HOME made the two home checks pass vacuously: there is no path to
+  // look for, so "absent" proved nothing. Fail them instead.
+  const homeKnown = opts.hostHome.startsWith("/")
+
   const checks: IsolationCheck[] = [
     {
       name: "host project not reachable",
@@ -318,8 +333,10 @@ export async function runIsolationChecks(
     },
     {
       name: "host home not reachable",
-      ok: parsed.MOAT_HOST_HOME === "absent",
-      detail: `${opts.hostHome} is ${parsed.MOAT_HOST_HOME ?? "?"} inside the sandbox`,
+      ok: homeKnown && parsed.MOAT_HOST_HOME === "absent",
+      detail: homeKnown
+        ? `${opts.hostHome} is ${parsed.MOAT_HOST_HOME ?? "?"} inside the sandbox`
+        : "the host HOME is unset, so this check cannot be performed; failing rather than passing vacuously",
     },
     {
       name: "host canary unreadable",
@@ -328,7 +345,7 @@ export async function runIsolationChecks(
     },
     {
       name: "no host ssh directory",
-      ok: parsed.MOAT_HOST_SSH === "absent" && parsed.MOAT_ROOT_SSH === "absent",
+      ok: homeKnown && parsed.MOAT_HOST_SSH === "absent" && parsed.MOAT_ROOT_SSH === "absent",
       detail: `host ${opts.hostHome}/.ssh ${parsed.MOAT_HOST_SSH ?? "?"}; sandbox /root/.ssh ${parsed.MOAT_ROOT_SSH ?? "?"}`,
     },
     {
