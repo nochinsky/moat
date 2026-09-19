@@ -1,6 +1,6 @@
 import type { Check } from "../lib/detect.ts"
 import type { EnvPaths } from "../lib/paths.ts"
-import { SANDBOX_WORKDIR } from "../lib/pins.ts"
+import { SANDBOX_WORKDIR, type EgressMode } from "../lib/pins.ts"
 import { shellQuote } from "../lib/shell.ts"
 import { runInSandbox } from "./launcher.ts"
 
@@ -61,7 +61,13 @@ exit $code
 export async function runChecks(
   paths: EnvPaths,
   checks: Check[],
-  opts: { timeoutSeconds?: number; onOutput?: (chunk: string) => void } = {},
+  opts: {
+    timeoutSeconds?: number
+    onOutput?: (chunk: string) => void
+    /** Run the checks in the same kind of network as the environment. */
+    egress?: EgressMode
+    slirpBinary?: string
+  } = {},
 ): Promise<CheckResult[]> {
   if (checks.length === 0) return []
   const timeout = opts.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
@@ -74,6 +80,8 @@ export async function runChecks(
     const script = checkScript(check.command, timeout)
     const result = await runInSandbox(paths, script, {
       onOutput: opts.onOutput,
+      egress: opts.egress,
+      slirpBinary: opts.slirpBinary,
       // The inner timeout is the real limit; this is the backstop for a boot or a
       // shell that ignores every signal. --kill-after makes the inner timeout
       // escalate too, so a check that traps SIGTERM still dies.

@@ -1431,6 +1431,47 @@ uncommitted file and no `--yes` refuses and names the count; `--fresh --yes`
 reboots over the re-copied project; and `moat down` with `state.json` pointed
 at an unrelated live process warns and leaves that process running.
 
+### L. Egress policy: an isolated network namespace
+
+`bash test/e2e-egress.sh` needs no key: reachability is proven by the provider
+answering 401 to an unauthenticated request, which a stub on the host's loopback
+cannot fake from inside the namespace.
+
+```
+$ bash test/e2e-egress.sh
+  pass  the box booted with isolated egress
+  pass  status reports running
+  pass  status reports isolated egress
+  pass  the port forward works
+  pass  the provider answers through slirp (401 without a key)
+  pass  slirp's 10.0.2.2 gateway cannot reach the host's loopback
+  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's
+                                       loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway
+  pass  network namespace isolated     sandbox net:net:[4026532448] differs from host net:net:[4026531833]
+  pass  doctor reports the isolated namespace
+  pass  doctor reports loopback unreachable
+  pass  doctor no longer says the namespace is shared
+  pass  slirp stopped with the box
+egress checks passed
+```
+
+The gateway check exists because the obvious probe was vacuous. Testing
+`127.0.0.1:<host port>` from inside an isolated namespace only proves that the
+namespace's own loopback is empty, not that the host's is unreachable. With
+slirp's default settings the guest reaches a host service through the 10.0.2.2
+gateway. Measured on this host, with the same guest and host listener:
+
+```
+default slirp:            guest -> 10.0.2.2:45681 -> HTTP 200
+--disable-host-loopback:  guest -> 10.0.2.2:45681 -> connection refused
+```
+
+So the launcher passes the flag, and `moat doctor` measures both addresses and
+fails the isolated check if either answers. What is still open, and reported as
+an exposure in both modes, is unrestricted egress: the namespace belongs to moat
+(so it holds `CAP_NET_ADMIN` inside it), but nothing filters what leaves it yet.
+That allowlist is the next tranche.
+
 ---
 
 ## Requirement-by-requirement

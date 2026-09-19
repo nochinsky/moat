@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { moatHome, type EnvPaths } from "../lib/paths.ts"
+import type { EgressMode } from "../lib/pins.ts"
 import { shellQuote } from "../lib/shell.ts"
 import { runInSandbox } from "./launcher.ts"
 
@@ -181,12 +182,19 @@ for name in $(env | cut -d= -f1); do
   esac
 done
 echo "MOAT_SECRET_ENV_NAMES=$MOAT_SECRET_ENV_NAMES"
-# The sandbox shares the host's network namespace in v0. These two probes measure
-# what that means instead of describing it.
+# How reachable the host's loopback is, measured two ways. The direct probe is
+# the shared-namespace case; 10.0.2.2 is slirp's gateway, which by default
+# forwards straight to the host's loopback even from an isolated namespace.
+# Only --disable-host-loopback closes that second route, so it is measured.
 if /bin/bash -c 'exec 3<>/dev/tcp/127.0.0.1/${opts.hostLoopbackPort}' 2>/dev/null; then
   echo "MOAT_HOST_LOOPBACK=REACHABLE"
 else
   echo "MOAT_HOST_LOOPBACK=blocked"
+fi
+if /bin/bash -c 'exec 3<>/dev/tcp/10.0.2.2/${opts.hostLoopbackPort}' 2>/dev/null; then
+  echo "MOAT_HOST_LOOPBACK_GATEWAY=REACHABLE"
+else
+  echo "MOAT_HOST_LOOPBACK_GATEWAY=blocked"
 fi
 if /bin/bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null; then
   echo "MOAT_EGRESS_OPEN=yes"
@@ -266,6 +274,9 @@ export async function runIsolationChecks(
      * than a cleaner one this test invented for itself.
      */
     injectedVarNames?: string[]
+    /** Run the probe in the same kind of network as the environment under test. */
+    egress?: EgressMode
+    slirpBinary?: string
   },
 ): Promise<IsolationReport> {
   const hostNamespaces = opts.hostNamespaces ?? hostNamespaceIds()
@@ -292,7 +303,7 @@ export async function runIsolationChecks(
   const injected = Object.fromEntries((opts.injectedVarNames ?? []).map((name) => [name, "REDACTED-BY-DOCTOR"]))
   let result: { output: string; code: number }
   try {
-    result = await runInSandbox(p, script, { env: injected })
+    result = await runInSandbox(p, script, { env: injected, egress: opts.egress, slirpBinary: opts.slirpBinary })
   } finally {
     await probe.close()
     // A throwing check must not leave the host canary behind. The success path
@@ -414,12 +425,25 @@ export async function runIsolationChecks(
           `secret-looking names for shell commands, but the values remain in the opencode process ` +
           `environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token.`,
   })
+  // With an isolated namespace this stops being a documented exposure and
+  // becomes a property that must hold: the host's loopback must be unreachable.
+  const isolated = opts.egress === "isolated"
+  const loopbackDirect = parsed.MOAT_HOST_LOOPBACK === "REACHABLE"
+  const loopbackGateway = parsed.MOAT_HOST_LOOPBACK_GATEWAY === "REACHABLE"
+  const loopbackReachable = loopbackDirect || loopbackGateway
+  const loopbackWhere = [loopbackDirect ? "127.0.0.1" : null, loopbackGateway ? "10.0.2.2 (slirp gateway)" : null]
+    .filter(Boolean)
+    .join(" and ")
   checks.push({
-    kind: "exposure",
+    kind: isolated ? "check" : "exposure",
     name: "host loopback reachable",
-    ok: true,
-    detail:
-      parsed.MOAT_HOST_LOOPBACK === "REACHABLE"
+    ok: isolated ? !loopbackReachable : true,
+    detail: isolated
+      ? loopbackReachable
+        ? `the sandbox reached the host's loopback through ${loopbackWhere} despite an isolated network namespace`
+        : `the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor ` +
+          `slirp's 10.0.2.2 gateway (port ${probe.port})`
+      : loopbackReachable
         ? `the sandbox connected to a service the host opened on 127.0.0.1:${probe.port}. Every service you ` +
           `run locally (databases, dev servers, notebooks) is reachable by the agent.`
         : `the sandbox could not reach 127.0.0.1:${probe.port} on the host`,
@@ -429,23 +453,25 @@ export async function runIsolationChecks(
     name: "egress unrestricted",
     ok: true,
     detail:
-      parsed.MOAT_EGRESS_OPEN === "yes"
-        ? "the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it " +
-          "can read, including the project and the injected credential. Egress policy is v2."
-        : "no outbound connectivity observed",
+      parsed.MOAT_EGRESS_OPEN !== "yes"
+        ? "no outbound connectivity observed"
+        : isolated
+          ? "the sandbox reached 1.1.1.1:443 through slirp. It has its own network namespace, but its " +
+            "egress is not filtered yet: an allowlist applied inside the namespace is the next step."
+          : "the sandbox reached 1.1.1.1:443. The agent can install dependencies AND exfiltrate anything it " +
+            "can read, including the project and the injected credential. Egress policy is v2.",
   })
 
-  // Deliberate, measured v0 limitation rather than a hidden one: the network
-  // namespace is the host's, because rootless port forwarding needs either
-  // setuid helpers or a hypervisor, neither of which is available here.
+  // In open mode the shared namespace is a documented limitation (a note). In
+  // isolated mode it is a property that must hold.
+  const netIsolated = (parsed.MOAT_NS_NET ?? "") !== "unknown" && (parsed.MOAT_NS_NET ?? "") !== hostNamespaces.net
   checks.push({
-    kind: "note",
-    name: "network namespace shared",
-    ok: (parsed.MOAT_NS_NET ?? "") !== "unknown",
-    detail:
-      (parsed.MOAT_NS_NET ?? "") === hostNamespaces.net
-        ? `sandbox and host share ${parsed.MOAT_NS_NET}. The agent has the host's network position. Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md).`
-        : `sandbox has its own network namespace (${parsed.MOAT_NS_NET})`,
+    kind: isolated ? "check" : "note",
+    name: isolated ? "network namespace isolated" : "network namespace shared",
+    ok: isolated ? netIsolated : (parsed.MOAT_NS_NET ?? "") !== "unknown",
+    detail: netIsolated
+      ? `sandbox net:${parsed.MOAT_NS_NET} differs from host net:${hostNamespaces.net}; slirp4netns carries its traffic`
+      : `sandbox and host share ${parsed.MOAT_NS_NET}. The agent has the host's network position (egress mode open).`,
   })
 
   // This used to be hardcoded `ok: true` and only pushed when binds were found,

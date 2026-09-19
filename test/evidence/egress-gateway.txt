@@ -1,0 +1,7 @@
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c curl -sS --max-time 6 -o /dev/null http://10.0.2.2:47311; echo gateway-exit=$?
+--- exit 0
+--- stdout ---
+curl: (7) Failed to connect to 10.0.2.2 port 47311 after 0 ms: Could not connect to server
+gateway-exit=7
+--- stderr ---

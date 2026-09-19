@@ -32,6 +32,12 @@ export type ServeOptions = {
   credentialTtlSeconds: number | null
   /** Override the tool to exec; used by tests to run a shell instead of the server. */
   execOverride?: string
+  /**
+   * Address opencode binds. 127.0.0.1 in the shared network namespace; 0.0.0.0
+   * when the sandbox has its own, because a loopback bind inside the namespace
+   * is not reachable through slirp's port forward.
+   */
+  hostname?: string
 }
 
 const ALLOWED_LOG_LEVELS = new Set(["DEBUG", "INFO", "WARN", "ERROR"])
@@ -39,7 +45,8 @@ const ALLOWED_LOG_LEVELS = new Set(["DEBUG", "INFO", "WARN", "ERROR"])
 export function serveEntryScript(opts: ServeOptions): string {
   const level = opts.logLevel && ALLOWED_LOG_LEVELS.has(opts.logLevel) ? opts.logLevel : "INFO"
   const ttl = opts.credentialTtlSeconds && opts.credentialTtlSeconds > 0 ? Math.floor(opts.credentialTtlSeconds) : 0
-  const agent = opts.execOverride ?? `opencode serve --port ${opts.port} --hostname 127.0.0.1 --print-logs --log-level ${level}`
+  const hostname = opts.hostname === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1"
+  const agent = opts.execOverride ?? `opencode serve --port ${opts.port} --hostname ${hostname} --print-logs --log-level ${level}`
 
   // One line, no backslash continuations: an earlier version used them and the
   // escaping survived into the generated script, silently joining every
@@ -90,7 +97,7 @@ echo "[moat] sandbox boot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "[moat] kernel=$(uname -r) rootfs=$(cat /etc/alpine-release 2>/dev/null || echo unknown)"
 echo "[moat] credential fingerprint=\${MOAT_CREDENTIAL_FINGERPRINT:-none} expires=\${MOAT_CREDENTIAL_EXPIRES_AT:-never}"
 cd ${SANDBOX_WORKDIR}
-echo "[moat] starting opencode serve on 127.0.0.1:${opts.port}"
+echo "[moat] starting opencode serve on ${hostname}:${opts.port}"
 env ${agentEnv} ${agent} &
 AGENT_PID=$!
 echo "[moat] agent pid=$AGENT_PID"

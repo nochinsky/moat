@@ -4,6 +4,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import type { EnvPaths } from "../lib/paths.ts"
+import { SLIRP_DNS, type EgressMode } from "../lib/pins.ts"
 import { shellQuote } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
 
@@ -126,6 +127,12 @@ export type OuterScriptOptions = {
    * host log only ever sees the handful of lines before the redirect.
    */
   bootLog?: string
+  /**
+   * Wait for slirp4netns to attach tap0 and resolve through it. Set when the
+   * sandbox has its own network namespace: the tap appears asynchronously from
+   * the host, and the host's resolver is unreachable from inside.
+   */
+  waitForTap?: boolean
 }
 
 export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string {
@@ -164,6 +171,17 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
   lines.push(`mount -t tmpfs -o mode=755,nosuid,nodev tmpfs "$N/run"`)
   // A copy, not a mount: the sandbox needs a resolver and has no host netns of its own.
   lines.push(`cp /etc/resolv.conf "$N/etc/resolv.conf" 2>/dev/null || true`)
+  if (opts.waitForTap) {
+    // The sandbox is in its own network namespace. slirp4netns attaches tap0
+    // from the host, and the box resolves through slirp, not the host resolver.
+    lines.push("i=0")
+    lines.push("while ! grep -q tap0 /proc/net/dev; do")
+    lines.push("  i=$((i+1))")
+    lines.push("  if [ \"$i\" -ge 100 ]; then echo '[moat] slirp tap0 did not appear' >&2; exit 1; fi")
+    lines.push("  sleep 0.1")
+    lines.push("done")
+    lines.push("echo nameserver " + SLIRP_DNS + " > \"$N/etc/resolv.conf\"")
+  }
   lines.push(`exec chroot "$N" /bin/sh ${inner}`)
   return `${lines.join("\n")}\n`
 }
@@ -279,7 +297,7 @@ export function extraSandboxEnv(
   return result
 }
 
-export function unshareArgs(inner: string): string[] {
+export function unshareArgs(inner: string, opts: { net?: boolean } = {}): string[] {
   return [
     "--user",
     "--map-root-user",
@@ -288,10 +306,39 @@ export function unshareArgs(inner: string): string[] {
     "--fork",
     "--uts",
     "--ipc",
+    // A private network namespace is what takes away the host's network
+    // position; slirp4netns is then the only way out.
+    ...(opts.net ? ["--net"] : []),
     "--kill-child",
     "sh",
     inner,
   ]
+}
+
+/**
+ * Wait until a child has actually entered its new network namespace.
+ *
+ * slirp4netns is pointed at the child's pid, and attaching before the child's
+ * unshare(2) has run would configure the *host's* namespace instead. The
+ * namespace symlink differs the moment the child is in place.
+ */
+export async function waitForNewNetns(pid: number, timeoutMs = 5000): Promise<boolean> {
+  let ours: string | null = null
+  try {
+    ours = fs.readlinkSync("/proc/self/ns/net")
+  } catch {
+    return false
+  }
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      if (fs.readlinkSync(`/proc/${pid}/ns/net`) !== ours) return true
+    } catch {
+      return false
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  return false
 }
 
 export type RunInSandboxResult = { code: number; output: string; timedOut: boolean }
@@ -303,46 +350,128 @@ const MAX_CAPTURED_OUTPUT = 4 * 1024 * 1024
 const OUTPUT_HEAD = 256 * 1024
 const OUTPUT_TAIL = 512 * 1024
 
+export type SandboxRunOptions = {
+  env?: SandboxEnv
+  onOutput?: (chunk: string) => void
+  timeoutMs?: number
+  egress?: EgressMode
+  /** Host port to forward into the namespace; only needed for a server. */
+  port?: number
+  /** Path to the slirp4netns binary; required when egress is isolated. */
+  slirpBinary?: string
+}
+
 /** Run a script inside a *fresh, ephemeral* boot of the sandbox and wait for it. */
 export async function runInSandbox(
   p: EnvPaths,
   innerBody: string,
-  opts: { env?: SandboxEnv; onOutput?: (chunk: string) => void; timeoutMs?: number } = {},
+  opts: SandboxRunOptions = {},
 ): Promise<RunInSandboxResult> {
+  const isolated = opts.egress === "isolated"
+  if (isolated && !opts.slirpBinary) throw new Error("isolated egress needs the slirp4netns binary")
   const inner = writeInnerScript(p, innerBody)
-  const boot = writeOuterScript(p, { innerScript: inner })
-  return await new Promise((resolve, reject) => {
-    const child = spawn("unshare", unshareArgs(boot), {
-      env: sandboxEnv(opts.env),
-      stdio: ["ignore", "pipe", "pipe"],
-    })
-    let output = ""
-    let timedOut = false
-    const sink = (chunk: string) => {
-      output += chunk
-      if (output.length > MAX_CAPTURED_OUTPUT + 64 * 1024) {
-        output =
-          output.slice(0, OUTPUT_HEAD) +
-          "\n[moat] output truncated by the host\n" +
-          output.slice(-OUTPUT_TAIL)
-      }
-      opts.onOutput?.(chunk)
+  const boot = writeOuterScript(p, { innerScript: inner, waitForTap: isolated })
+  const child = spawn("unshare", unshareArgs(boot, { net: isolated }), {
+    env: sandboxEnv(opts.env),
+    stdio: ["ignore", "pipe", "pipe"],
+  })
+
+  let slirp: { stop: () => void } | null = null
+  try {
+    if (isolated) {
+      const egress = await import("./egress.ts")
+      const ready = child.pid ? await waitForNewNetns(child.pid) : false
+      if (!ready) throw new Error("the sandbox did not enter its network namespace")
+      const runtime = path.join(p.dir, "runtime")
+      fs.mkdirSync(runtime, { recursive: true })
+      const apiSocket = path.join(runtime, `slirp-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sock`)
+      slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { apiSocket, port: opts.port })
     }
-    child.stdout.setEncoding("utf8")
-    child.stderr.setEncoding("utf8")
-    child.stdout.on("data", sink)
-    child.stderr.on("data", sink)
-    child.on("error", reject)
-    const timer = opts.timeoutMs
-      ? setTimeout(() => {
-          timedOut = true
-          // unshare --kill-child takes the namespace down with it.
-          child.kill("SIGKILL")
-        }, opts.timeoutMs)
-      : null
-    child.on("close", (code) => {
+  } catch (error) {
+    child.kill("SIGKILL")
+    throw error
+  }
+
+  let output = ""
+  let timedOut = false
+  const sink = (chunk: string) => {
+    output += chunk
+    if (output.length > MAX_CAPTURED_OUTPUT + 64 * 1024) {
+      output =
+        output.slice(0, OUTPUT_HEAD) +
+        "\n[moat] output truncated by the host\n" +
+        output.slice(-OUTPUT_TAIL)
+    }
+    opts.onOutput?.(chunk)
+  }
+  child.stdout.setEncoding("utf8")
+  child.stderr.setEncoding("utf8")
+  child.stdout.on("data", sink)
+  child.stderr.on("data", sink)
+  const timer = opts.timeoutMs
+    ? setTimeout(() => {
+        timedOut = true
+        // unshare --kill-child takes the namespace down with it.
+        child.kill("SIGKILL")
+      }, opts.timeoutMs)
+    : null
+
+  return await new Promise((resolve, reject) => {
+    const cleanup = () => {
       if (timer) clearTimeout(timer)
+      slirp?.stop()
+    }
+    child.on("error", (error) => {
+      cleanup()
+      reject(error)
+    })
+    child.on("close", (code) => {
+      cleanup()
       resolve({ code: code ?? -1, output, timedOut })
+    })
+  })
+}
+
+/**
+ * Run an interactive script in a boot of the sandbox, with the terminal
+ * inherited (used by moat shell and the session /shell).
+ */
+export async function runInteractive(
+  p: EnvPaths,
+  innerBody: string,
+  opts: SandboxRunOptions = {},
+): Promise<number> {
+  const isolated = opts.egress === "isolated"
+  if (isolated && !opts.slirpBinary) throw new Error("isolated egress needs the slirp4netns binary")
+  const inner = writeInnerScript(p, innerBody)
+  const boot = writeOuterScript(p, { innerScript: inner, waitForTap: isolated })
+  const child = spawn("unshare", unshareArgs(boot, { net: isolated }), {
+    stdio: "inherit",
+    env: sandboxEnv(opts.env),
+  })
+  let slirp: { stop: () => void } | null = null
+  try {
+    if (isolated) {
+      const egress = await import("./egress.ts")
+      const ready = child.pid ? await waitForNewNetns(child.pid) : false
+      if (!ready) throw new Error("the sandbox did not enter its network namespace")
+      const runtime = path.join(p.dir, "runtime")
+      fs.mkdirSync(runtime, { recursive: true })
+      const apiSocket = path.join(runtime, `slirp-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sock`)
+      slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { apiSocket, port: opts.port })
+    }
+  } catch (error) {
+    child.kill("SIGKILL")
+    throw error
+  }
+  return await new Promise<number>((resolve, reject) => {
+    child.on("error", (error) => {
+      slirp?.stop()
+      reject(error)
+    })
+    child.on("close", (code) => {
+      slirp?.stop()
+      resolve(code ?? 0)
     })
   })
 }
@@ -353,19 +482,35 @@ export type SandboxProcess = {
   /** Identity of the process we started, so a reused pid is never signalled. */
   startTime: string | null
   logFile: string
+  /** The datapath process when egress is isolated, recorded so down can clean it up. */
+  slirp: { pid: number; startTime: string | null } | null
+}
+
+export type SandboxStartOptions = {
+  egress?: EgressMode
+  port?: number
+  /** Path to the slirp4netns binary; required when egress is isolated. */
+  slirpBinary?: string
 }
 
 /** Boot the sandbox as a long-running server, detached into its own process group. */
-export function startSandbox(p: EnvPaths, innerBody: string, env: SandboxEnv): SandboxProcess {
+export async function startSandbox(
+  p: EnvPaths,
+  innerBody: string,
+  env: SandboxEnv,
+  opts: SandboxStartOptions = {},
+): Promise<SandboxProcess> {
+  const isolated = opts.egress === "isolated"
+  if (isolated && !opts.slirpBinary) throw new Error("isolated egress needs the slirp4netns binary")
   const inner = writeInnerScript(p, innerBody)
   // The boot log lives inside the rootfs, so the long-running box does not hold
   // an append fd on a host file outside itself.
   const bootLog = path.join(p.rootfs, "var", "log", "moat", "boot.log")
-  const boot = writeOuterScript(p, { innerScript: inner, bootLog })
+  const boot = writeOuterScript(p, { innerScript: inner, bootLog, waitForTap: isolated })
   fs.mkdirSync(p.logs, { recursive: true })
   const logFile = path.join(p.logs, "sandbox.log")
   const fd = fs.openSync(logFile, "a", 0o600)
-  const child = spawn("unshare", unshareArgs(boot), {
+  const child = spawn("unshare", unshareArgs(boot, { net: isolated }), {
     env: sandboxEnv(env),
     stdio: ["ignore", fd, fd],
     detached: true,
@@ -373,7 +518,25 @@ export function startSandbox(p: EnvPaths, innerBody: string, env: SandboxEnv): S
   child.unref()
   fs.closeSync(fd)
   if (!child.pid) throw new Error("failed to spawn sandbox: no pid")
-  return { child, pid: child.pid, startTime: processStartTime(child.pid), logFile }
+
+  let slirp: SandboxProcess["slirp"] = null
+  if (isolated) {
+    const egress = await import("./egress.ts")
+    const ready = await waitForNewNetns(child.pid)
+    if (!ready) {
+      child.kill("SIGKILL")
+      throw new Error("the sandbox did not enter its network namespace")
+    }
+    fs.mkdirSync(path.join(p.dir, "runtime"), { recursive: true })
+    const handle = await egress.startSlirp(opts.slirpBinary!, child.pid, {
+      apiSocket: path.join(p.dir, "runtime", "slirp.sock"),
+      port: opts.port,
+      logFile: path.join(p.logs, "slirp.log"),
+    })
+    slirp = { pid: handle.pid, startTime: processStartTime(handle.pid) }
+  }
+
+  return { child, pid: child.pid, startTime: processStartTime(child.pid), logFile, slirp }
 }
 
 /**
@@ -383,10 +546,48 @@ export function startSandbox(p: EnvPaths, innerBody: string, env: SandboxEnv): S
  * reaches unshare, the boot script and opencode together; `--kill-child` on
  * unshare then guarantees the PID-namespace init cannot outlive it.
  */
-export async function stopSandbox(
-  pid: number,
-  opts: { timeoutMs?: number; startTime?: string | null; envId?: string } = {},
-): Promise<boolean> {
+export type StopSandboxOptions = {
+  timeoutMs?: number
+  startTime?: string | null
+  envId?: string
+  /** slirp4netns process belonging to this environment, if any. */
+  slirpPid?: number | null
+  slirpStart?: string | null
+}
+
+/**
+ * Stop a sandbox and its datapath.
+ *
+ * The datapath stops after the box, so the tap fd closes first; a recorded
+ * slirp pid is only signalled when its start time still matches.
+ */
+export async function stopSandbox(pid: number, opts: StopSandboxOptions = {}): Promise<boolean> {
+  const stopped = await stopSandboxProcess(pid, opts)
+  await stopSlirp(opts.slirpPid ?? null, opts.slirpStart ?? null)
+  return stopped
+}
+
+/** Stop a slirp4netns process; never signal a pid that is no longer ours. */
+export async function stopSlirp(pid: number | null, startTime: string | null): Promise<void> {
+  if (!pid || !isRunning(pid)) return
+  if (startTime && processStartTime(pid) !== startTime) return
+  try {
+    process.kill(pid, "SIGTERM")
+  } catch {
+    return
+  }
+  for (let i = 0; i < 20; i += 1) {
+    if (!isRunning(pid)) return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  try {
+    process.kill(pid, "SIGKILL")
+  } catch {
+    /* already gone */
+  }
+}
+
+async function stopSandboxProcess(pid: number, opts: StopSandboxOptions): Promise<boolean> {
   const timeoutMs = opts.timeoutMs ?? 5000
   const alive = (): boolean => {
     try {

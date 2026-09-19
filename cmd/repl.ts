@@ -13,6 +13,8 @@ import { fetchBranch, listSandboxBranches, sandboxWorktreeChanges, suggestBranch
 import { detectChecks } from "../lib/detect.ts"
 import { applyPlan, describePlan, planApply, type ApplyPlan } from "../sync/apply.ts"
 import { runChecks } from "../sandbox/checks.ts"
+import { runtimeForEgress } from "../sandbox/egress.ts"
+import { runInteractive } from "../sandbox/launcher.ts"
 import { computeCost, describeRate, isRetiredModel, usageOf } from "../lib/pricing.ts"
 import {
   AnswerRenderer,
@@ -994,25 +996,17 @@ export async function runRepl(options: ReplOptions): Promise<number> {
     shell: {
       help: "open a shell inside the sandbox (ctrl-d to come back)",
       run: async () => {
-        const { spawn } = await import("node:child_process")
-        const { writeInnerScript, writeOuterScript, unshareArgs, sandboxEnv } = await import("../sandbox/launcher.ts")
-        const inner = writeInnerScript(
-          options.paths,
-          `#!/bin/sh
+        const body = `#!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/root
 cd ${SANDBOX_WORKDIR}
 echo "[moat] inside the sandbox. ctrl-d returns to the moat prompt."
 exec /bin/bash -l
-`,
-        )
-        const boot = writeOuterScript(options.paths, { innerScript: inner })
+`
+        // The shell runs in the same kind of network as the session's box.
+        const runtime = await runtimeForEgress(options.state.egress)
         rl.pause()
-        await new Promise<void>((resolve) => {
-          const child = spawn("unshare", unshareArgs(boot), { stdio: "inherit", env: sandboxEnv() })
-          child.on("close", () => resolve())
-          child.on("error", () => resolve())
-        })
+        await runInteractive(options.paths, body, runtime)
         rl.resume()
         say("back in moat")
       },
@@ -1045,7 +1039,10 @@ exec /bin/bash -l
         const checks = detectChecks(options.paths.projectDir)
         if (checks.length === 0) return say("no test, lint or typecheck command found for this project")
         say(`running ${checks.map((c) => c.command).join(", ")} inside the sandbox...`)
-        const results = await runChecks(options.paths, checks, { onOutput: () => undefined })
+        const results = await runChecks(options.paths, checks, {
+          onOutput: () => undefined,
+          ...(await runtimeForEgress(options.state.egress)),
+        })
         say("")
         for (const result of results) {
           const mark = result.ok ? `${GREEN}pass${RESET}` : `${RED}FAIL${RESET}`
