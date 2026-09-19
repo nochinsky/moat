@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts logs ../../../../../tmp/moat-traversal
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ invalid log name "../../../../../tmp/moat-traversal": use 1-64 characters of letters, digits, dot, dash or underscore

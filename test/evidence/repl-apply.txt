@@ -4,19 +4,19 @@
 › 
 › › create a file and commit it
 
-  ⠇ bash  ⠏ bash  ✓ bash       pwd && ls -la && cat README.md                                                 134ms
+  ⠏ bash  ⠋ bash  ✓ bash       pwd && ls -la && cat README.md                                                 143ms
 
-  ⠋ thinking 1s  ⠙ thinking 1s  ⠙ write  ✓ write      agent-output.txt                                                             +1 19ms
+  ⠙ thinking 1s  ⠹ thinking 1s  ⠹ write  ✓ write      agent-output.txt                                                             +1 28ms
 
-  ⠹ thinking 1s  ⠸ thinking 1s  ⠸ edit  ✓ edit       agent-output.txt                                                          +1 -1 24ms
+  ⠸ thinking 1s  ⠸ edit  ⠼ edit  ✓ edit       agent-output.txt                                                          +1 -1 29ms
 
-  ⠼ thinking 1s  ⠴ thinking 2s  ⠴ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agen…  28ms
+  ⠴ thinking 2s  ⠦ thinking 2s  ⠦ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agen…  27ms
 
-  ⠦ thinking 2s  ⠧ thinking 2s  ⠧ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the s…  22ms
+  ⠧ thinking 2s  ⠇ thinking 2s  ⠇ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the s…  26ms
 
-  ⠇ thinking 2s  ⠏ thinking 2s│   Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
+  ⠏ thinking 2s  ⠋ thinking 2s│   Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
 
-  ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 2.0s  6% of context  cost unknown
+  ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 2.1s  6% of context  cost unknown
 › › /apply
 
 ›   add     agent-output.txt

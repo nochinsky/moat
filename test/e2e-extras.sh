@@ -269,6 +269,48 @@ fi
 capture destroy-badname $MOAT destroy --yes
 cd "$PROJECT"
 
+section "R. arguments that used to be joined into paths or trusted as numbers"
+# These are cheap checks on the argument surface, not sandbox behaviour: `moat logs`
+# joined argv into the environment's log directory (measured: a "../../../.."
+# argument printed a host file outside the environment), `--tail abc` silently
+# meant "the whole file", `moat models bogus` listed DeepSeek and exited 0, and a
+# typo in `--port` survived provisioning to fail ninety seconds into a boot.
+capture logs-traversal $MOAT logs ../../../../../tmp/moat-traversal
+if grep -q "invalid log name" "$EVIDENCE/logs-traversal.txt"; then
+  echo "log name: refused instead of reading a host file" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "log name: FAILED, no refusal in the output" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+capture logs-bad-tail $MOAT logs sandbox --tail abc
+if grep -q "must be a positive integer" "$EVIDENCE/logs-bad-tail.txt"; then
+  echo "--tail: refused instead of silently printing the whole log" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--tail: FAILED, no refusal in the output" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+capture models-bogus $MOAT models bogus
+if grep -q "one provider" "$EVIDENCE/models-bogus.txt"; then
+  echo "models <provider>: refused instead of silently listing DeepSeek" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "models <provider>: FAILED, no refusal in the output" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+capture up-bad-port $MOAT up --port 99999
+if grep -q "must be an integer between 1 and 65535" "$EVIDENCE/up-bad-port.txt"; then
+  echo "--port: refused before provisioning, not ninety seconds into a boot" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--port: FAILED, no refusal in the output" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+capture up-timeout $MOAT up --timeout 30
+if grep -q "sandbox up" "$EVIDENCE/up-timeout.txt"; then
+  echo "--timeout: seconds, not milliseconds, for the boot readiness wait" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--timeout: FAILED, a 30-second budget did not cover a warm boot" | tee -a "$EVIDENCE/extras.txt"
+fi
+capture down-timeout $MOAT down
+
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

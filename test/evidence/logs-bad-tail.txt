@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts logs sandbox --tail abc
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ --tail must be a positive integer

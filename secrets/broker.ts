@@ -284,6 +284,10 @@ export function toSandboxEnv(minted: MintedCredential): Record<string, string> {
     MOAT_MODEL_ID: minted.modelId,
     MOAT_MODEL: minted.model,
     MOAT_CREDENTIAL_EXPIRES_AT: minted.expiresAt.toISOString(),
+    // The box computes how long its credential has left from this, rather than
+    // counting the TTL from its own start: a slow boot used to give the agent the
+    // full TTL *after* a credential that had been minted seconds earlier.
+    MOAT_CREDENTIAL_EXPIRES_EPOCH: String(Math.floor(minted.expiresAt.getTime() / 1000)),
     MOAT_CREDENTIAL_TTL_SECONDS: String(minted.ttlSeconds),
     MOAT_CREDENTIAL_FINGERPRINT: minted.fingerprint,
   }
