@@ -129,6 +129,13 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   before `.git` exists, which the hardened runner refuses to run — carries a
   `raw-git-ok: <reason>` comment on its line or the line above. `repl-diff-hardening.py`
   (extras section X) is the pty proof, and it fails with the raw call back.
+* `extensions.worktreeConfig` is deliberately **not** preserved by the config swap, and
+  that is load-bearing rather than tidiness: git reads `.git/config.worktree` only while
+  that extension is set, so it is the second place the same keys can hide. Dropping the
+  extension is what keeps a per-worktree `log.showSignature` + `gpg.program` inert
+  (measured with the extension kept: the program runs at repository format version 0
+  *and* 1). `test/unit/git-hardening.test.ts` asserts it is dropped and that the
+  per-worktree config is not read.
 * The sanitized config drops `user.*` like everything else. Any host-side commit
   must pass `GIT_AUTHOR_*`/`GIT_COMMITTER_*` explicitly, as the three commit
   paths in `sync/` already do.
