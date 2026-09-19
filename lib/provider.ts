@@ -60,3 +60,41 @@ export const CREDENTIAL_ENV_VARS = [DEEPSEEK.envVar, "MOAT_CREDENTIAL"] as const
 export function isDeepSeekHost(baseUrl: string): boolean {
   return baseUrl.replace(/\/+$/, "") === DEEPSEEK.baseUrl
 }
+
+/**
+ * Is this a URL moat can actually use as a provider address?
+ *
+ * `new URL()` alone is a parse check, not a usability check, and that mattered:
+ * `localhost:11434/v1` — the scheme-less form of the endpoint moat's own help text
+ * suggests — parses as protocol `localhost:` with an **empty hostname**. Measured
+ * before this check existed: `moat up --base-url localhost:11434/v1` provisioned,
+ * copied in and booted a *filtered* sandbox whose allowlist contained no provider
+ * address at all (exit 0, ready in 13s), so every model call the agent made would
+ * fail, and `moat doctor` printed "the provider is reachable" for a probe it never
+ * ran. A filtered box cannot work without a provider host, so the address has to be
+ * one before anything is provisioned.
+ *
+ * Returns null when the value is usable, or the message to fail with.
+ */
+export function checkBaseUrl(flagName: string, value: string): string | null {
+  if (value.trim().length === 0) return `--${flagName} needs a URL`
+  // A value with no "://" that starts like a host is almost always a forgotten
+  // scheme; saying so is the difference between a fixable error and a puzzle. It is
+  // computed before parsing because `api.deepseek.com` does not parse at all while
+  // `localhost:11434/v1` parses as a scheme with no host — same mistake, two paths.
+  const schemeLess = !value.includes("://") && /^[a-z0-9][a-z0-9.-]*(:\d+)?(\/|$)/i.test(value)
+  const hint = schemeLess ? `\n  did you mean http://${value}?` : ""
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return `--${flagName} is not a URL: ${value}${hint}`
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return `--${flagName} must be an http:// or https:// URL: ${value}${hint}`
+  }
+  if (url.hostname.length === 0) {
+    return `--${flagName} has no host: ${value}${hint}`
+  }
+  return null
+}

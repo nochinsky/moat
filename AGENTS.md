@@ -407,6 +407,19 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   warning, and ephemeral boots warn rather than fail (`moat exec` may be the
   diagnosis). `resolveAllowlistDetailed` reports the failures; `resolveAllowlist`
   is the addresses-only wrapper.
+* A provider URL has to be **usable**, not merely parseable. `new URL()` accepts
+  `localhost:11434/v1` — the scheme-less form of the endpoint moat's own error text
+  suggests — as protocol `localhost:` with an empty hostname, and everything
+  downstream reads `.hostname`: `providerHost()` puts no provider in the filtered
+  allowlist, `providerProbe()` hands the doctor no endpoint, and
+  `reportUnresolved(…, undefined, true)` has nothing to fail on. Measured: `moat up`
+  booted filtered with no provider address (exit 0, ready in 13s) and `moat doctor`
+  printed "the provider is reachable" for a probe it never ran. `checkBaseUrl`
+  (`lib/provider.ts`) runs before provisioning for both `--base-url` and
+  `--upstream`; `filteredEgressCheck` (`sandbox/isolation.ts`) says the check is
+  one-sided rather than claiming a probe that did not happen. Extras section AC is the
+  refusal plus the control; `test/unit/base-url.test.ts` and
+  `test/unit/doctor-egress.test.ts` hold both halves.
 * A project file name that is not valid UTF-8 is refused by `assertAddressableNames`
   (lib/fs-names.ts) at the start of `copyIn` and `hashTree`, naming the bytes. Node
   decodes such a name to U+FFFD, which is not the name on disk, so the next `lstat`

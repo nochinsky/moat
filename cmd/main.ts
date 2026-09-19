@@ -20,7 +20,7 @@ import {
   ownNetns,
   type EgressMode,
 } from "../lib/pins.ts"
-import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, isDeepSeekHost } from "../lib/provider.ts"
+import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, checkBaseUrl, isDeepSeekHost } from "../lib/provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from "../sandbox/profiles.ts"
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
@@ -518,12 +518,11 @@ async function cmdUp(argv: string[]): Promise<number> {
   for (const key of ["base-url", "upstream"] as const) {
     const value = flag<string>(p, key)
     if (value === undefined) continue
-    if (value.trim().length === 0) log.fail(`--${key} needs a URL`)
-    try {
-      new URL(value)
-    } catch {
-      log.fail(`--${key} is not a URL: ${value}`)
-    }
+    // Not just "does it parse": a scheme-less `localhost:11434/v1` parses with an
+    // empty hostname, and a filtered box with no provider address boots happily and
+    // fails only when the agent calls the model (lib/provider.ts has the measurement).
+    const problem = checkBaseUrl(key, value)
+    if (problem) log.fail(problem)
   }
   // state.json is metadata; the environment is the rootfs. A missing or
   // unreadable state used to read as "no environment", and the provisioning
@@ -2517,10 +2516,13 @@ Options that apply to up/run
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project
   --tools core|extended  core = 8 coding tools (default); extended adds webfetch + subagents
-  --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek
+  --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek.
+                         Must be an http:// or https:// URL with a host: a
+                         scheme-less localhost:11434/v1 has no host to allow.
   --upstream URL         keep DeepSeek but send its traffic elsewhere (a gateway,
                          or a proxy you are inspecting). Unlike --base-url this
                          keeps the catalog: context window, price, effort levels.
+                         Same URL rule as --base-url.
   --credential-env NAME  host env var holding the key   --credential-ttl 4h
   --egress MODE          open, isolated or filtered. Default: filtered, which puts
                          the box in its own namespace behind a default-deny

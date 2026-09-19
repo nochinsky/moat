@@ -655,6 +655,41 @@ else
   echo "copy-out: FAILED — either the leak was silent, or clean content warned" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$LEAK" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "AC. a base URL the sandbox cannot use is refused before provisioning"
+# `new URL()` is a parse check, not a usability check. `localhost:11434/v1` — the
+# scheme-less form of the endpoint moat's own error text suggests — parses as protocol
+# "localhost:" with an empty hostname, so providerHost() and providerProbe() both return
+# undefined. Measured before the fix: `moat up` provisioned, copied in and booted a
+# *filtered* sandbox whose allowlist contained no provider address (exit 0), every model
+# call the agent made would fail, and `moat doctor` printed "the provider is reachable"
+# for a probe it never ran.
+NB="$WORK/nobase"
+rm -rf "$NB"; mkdir -p "$NB"
+( cd "$NB" && git init -q -b main . && printf '{"name":"nobase"}\n' > package.json \
+  && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
+( cd "$NB" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$NB" && capture base-url-schemeless $MOAT up --quiet --no-detect --model mock-model \
+  --base-url "localhost:$MOCK_PORT/v1" )
+# "image provisioned" and "copy-in via" are success lines, so --quiet cannot hide them:
+# their absence is what proves the refusal happened before any work was done.
+if grep -q "must be an http:// or https:// URL" "$EVIDENCE/base-url-schemeless.txt" \
+   && grep -q "did you mean http://localhost:$MOCK_PORT/v1" "$EVIDENCE/base-url-schemeless.txt" \
+   && grep -q "^--- exit 1$" "$EVIDENCE/base-url-schemeless.txt" \
+   && ! grep -qE "image provisioned|copy-in via" "$EVIDENCE/base-url-schemeless.txt"; then
+  echo "base-url: refused before provisioning, naming the problem and the likely fix" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "base-url: FAILED, the unusable URL was accepted or the refusal came too late" | tee -a "$EVIDENCE/extras.txt"
+fi
+# The control: the same host and port with the scheme boots, so the check above cannot
+# pass by refusing every --base-url.
+( cd "$NB" && capture base-url-schemed $MOAT up --quiet --no-detect --model mock-model \
+  --base-url "http://localhost:$MOCK_PORT/v1" )
+if grep -q "^--- exit 0$" "$EVIDENCE/base-url-schemed.txt" && grep -q "sandbox up" "$EVIDENCE/base-url-schemed.txt"; then
+  echo "the control: the same endpoint with a scheme boots" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "the control FAILED: a usable URL was refused" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$NB" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

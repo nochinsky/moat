@@ -266,6 +266,36 @@ function decode(value: string | undefined): string {
   return Buffer.from(value, "base64").toString("utf8")
 }
 
+/**
+ * The two-sided filtered-egress check, as a pure function so its claim is testable.
+ *
+ * The allowlist is the point of this mode, so the check is two-sided *when a probe
+ * was supplied*: an arbitrary destination must be refused AND the allowlisted one
+ * reachable. The earlier version said "and the provider is reachable" whenever the
+ * probe was absent — `allowedOk` was `!allowedProbe || …` — which is a claim about a
+ * measurement that never happened. That is the case an environment recorded before
+ * base URLs were validated produces, and the doctor must not cover for it: with no
+ * probe the detail says the check is one-sided, and the ok value is the half that
+ * *was* measured.
+ */
+export function filteredEgressCheck(opts: {
+  egressOpen: boolean
+  allowedProbe?: { host: string; port: number }
+  allowedReachable: boolean
+}): { ok: boolean; detail: string } {
+  const refused = "an address outside the allowlist (1.1.1.1:443) is refused"
+  if (opts.egressOpen) {
+    return { ok: false, detail: "the sandbox reached 1.1.1.1:443, which the allowlist does not contain" }
+  }
+  if (!opts.allowedProbe) {
+    return { ok: true, detail: `${refused}; no allowlisted endpoint was probed, so this check is one-sided` }
+  }
+  const label = `${opts.allowedProbe.host}:${opts.allowedProbe.port}`
+  return opts.allowedReachable
+    ? { ok: true, detail: `${refused}, and ${label} is reachable` }
+    : { ok: false, detail: `the allowlisted endpoint ${label} was not reachable` }
+}
+
 export async function runIsolationChecks(
   p: EnvPaths,
   opts: {
@@ -471,19 +501,14 @@ export async function runIsolationChecks(
   })
   const egressOpen = parsed.MOAT_EGRESS_OPEN === "yes"
   if (opts.egress === "filtered") {
-    // The allowlist is the point of this mode, so the check is two-sided: an
-    // arbitrary destination must be refused AND the allowlisted one reachable.
-    const allowedOk = !opts.allowedProbe || parsed.MOAT_ALLOWED_REACHABLE === "yes"
-    const probeLabel = opts.allowedProbe ? `${opts.allowedProbe.host}:${opts.allowedProbe.port}` : "the provider"
     checks.push({
       kind: "check",
       name: "egress filtered",
-      ok: !egressOpen && allowedOk,
-      detail: egressOpen
-        ? "the sandbox reached 1.1.1.1:443, which the allowlist does not contain"
-        : allowedOk
-          ? `an address outside the allowlist (1.1.1.1:443) is refused, and ${probeLabel} is reachable`
-          : `the allowlisted endpoint ${probeLabel} was not reachable`,
+      ...filteredEgressCheck({
+        egressOpen,
+        allowedProbe: opts.allowedProbe,
+        allowedReachable: parsed.MOAT_ALLOWED_REACHABLE === "yes",
+      }),
     })
   } else {
     checks.push({

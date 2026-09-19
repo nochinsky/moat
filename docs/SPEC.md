@@ -1022,6 +1022,16 @@ as the way out; any other unresolved host is a warning. Ephemeral boots warn rat
 than fail, because moat exec may be exactly how the box is being diagnosed, and
 moat doctor's two-sided check reports the result.
 
+An address that cannot become a host is refused **before provisioning**, because it
+is the same failure with nothing left to see: `new URL()` accepts
+`localhost:11434/v1` as protocol `localhost:` with an empty hostname, so
+`--base-url` and `--upstream` must be an `http://` or `https://` URL with a
+host. Measured before that rule: the box provisioned, copied in and booted filtered
+with no provider in its allowlist, exit 0. `moat doctor`'s filtered check is
+two-sided only when it had an endpoint to probe; when it had none — an environment
+whose recorded address predates the rule — it says the check is one-sided instead of
+reporting the provider reachable.
+
 **The filter is a rule the agent can change.** The sandbox owns its network
 namespace, so uid 0 inside holds `CAP_NET_ADMIN` there. Measured: `nft flush
 ruleset` inside a filtered box exits 0, and the same `curl https://1.1.1.1/` that

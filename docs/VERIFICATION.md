@@ -2253,6 +2253,56 @@ SPEC §4 and the closing table: a key rotated since the boot (the sandbox holds 
 fingerprint), a secret the agent found elsewhere, commits older than the most recent 50, and
 files over the apply scan's size limit — each bound is named when it is reached.
 
+### AA. A base URL the sandbox cannot use is refused, and the doctor does not claim a probe it did not run
+
+`--base-url` and `--upstream` were checked with `new URL()` — a parse check, not a
+usability check. `localhost:11434/v1`, the scheme-less form of the endpoint moat's own
+error text suggests, parses as protocol `localhost:` with an **empty hostname**.
+Measured before the fix, on a real boot:
+
+```
+$ moat up --no-detect --model mock-model --base-url localhost:11434/v1
+✓ image provisioned in 1.02s (extract cached image 858ms)
+✓ copy-in via git: 1 files, 0.0 KiB, digest 01d119f0b157f0c2
+! injecting moat credential sha256:34c4e933b47c1fb3 … its egress is restricted to an allowlist …
+✓ sandbox up, cold start 13.32s (image built)
+--- exit 0 ---
+
+$ moat doctor
+isolation (17 checks)
+  pass  egress filtered                an address outside the allowlist (1.1.1.1:443) is refused, and the provider is reachable
+```
+
+Exit 0, a *filtered* box whose allowlist contains no provider address — both
+`providerHost()` and `providerProbe()` read `.hostname` — so every model call the agent
+made would fail. The doctor then covered for it with a claim about a probe it never ran,
+because `allowedOk` was `!allowedProbe || …`.
+
+After the fix the same command is refused before anything is provisioned, and the
+doctor's check says which half it measured:
+
+```
+$ moat up --quiet --no-detect --model mock-model --base-url localhost:5599/v1
+✗ --base-url must be an http:// or https:// URL: localhost:5599/v1
+  did you mean http://localhost:5599/v1?
+--- exit 1
+```
+
+Extras section AC is that refusal plus the control that the same endpoint *with* the
+scheme boots (`✓ sandbox up, cold start 9.05s`, `--- exit 0`), so it cannot pass by
+refusing every URL. The capture contains no `image provisioned` or `copy-in via` line,
+which is what makes "before provisioning" checkable rather than asserted — and those are
+success lines, so `--quiet` cannot hide them. `test/unit/base-url.test.ts` pins the rule
+in both directions (`file://`, a bare host, an empty value, and four usable URLs), and
+`test/unit/doctor-egress.test.ts` pins the doctor's three cases: probed and reachable,
+probed and unreachable, not probed — the last now reports the check as one-sided. All
+three tests were watched failing with the shape checks disabled and the vacuous detail
+restored.
+
+An environment whose `state.json` recorded a hostless address *before* this fix keeps
+booting — the address is metadata, and the sandbox may hold work — but its doctor reports
+the filtered check as one-sided, and `moat up --fresh` is the way to replace it.
+
 ---
 
 ## Requirement-by-requirement

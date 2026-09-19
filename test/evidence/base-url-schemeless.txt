@@ -1,0 +1,6 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --model mock-model --base-url localhost:5599/v1
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ --base-url must be an http:// or https:// URL: localhost:5599/v1
+  did you mean http://localhost:5599/v1?
