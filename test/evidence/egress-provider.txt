@@ -1,0 +1,5 @@
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c curl -sS -o /dev/null -w "%{http_code}" --max-time 20 https://api.deepseek.com/models
+--- exit 0
+--- stdout ---
+401--- stderr ---

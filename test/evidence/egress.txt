@@ -1,0 +1,172 @@
+==============================================================
+== egress policy: an isolated network namespace
+==============================================================
+the sandbox gets its own netns and the pinned slirp4netns datapath; the host
+reaches opencode through an explicit port forward, and the host's loopback is
+closed on both routes (127.0.0.1 inside the namespace and slirp's 10.0.2.2).
+
+--- boot isolated ---
+
+--- $ node /home/user/Projects/moat/cmd/main.ts up --egress isolated
+--- exit 0
+--- stdout ---
+--- stderr ---
+no project manifest found; booting with the base image only (see `moat profiles`)
+→ provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
+→ provisioning from the cached image alpine-3.21.4-c1ed4315e817.tar.gz
+✓ image provisioned in 869ms (extract cached image 868ms)
+→ copy-in: git clone --no-hardlinks
+✓ copy-in via git: 1 files, 0.0 KiB, digest a6e0969b405179d9
+model: deepseek/deepseek-flash (context 1M, out 384k)
+! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-19-14-07
+→ sandbox booted (pid 29562, port 39533); waiting for opencode serve
+✓ sandbox up, cold start 12.95s (image built)
+
+  project    /home/user/moat-demo/egress-project
+  env        /home/user/.moat/envs/16a525996d67
+  opencode   http://127.0.0.1:39533  (basic auth user "opencode")
+  password   vcdez4h2JNUOREoaiqdsGR0TOMzBKlYI
+  workspace  /work (inside the sandbox)
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T18:07:18.875Z
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)
+  pass  the box booted with isolated egress
+
+--- $ node /home/user/Projects/moat/cmd/main.ts status
+--- exit 0
+--- stdout ---
+--- stderr ---
+project      /home/user/moat-demo/egress-project
+env          /home/user/.moat/envs/16a525996d67
+status       running
+endpoint     http://127.0.0.1:39533
+pid          29562
+opencode     1.18.31 / alpine 3.21.4
+model        deepseek/deepseek-flash (deepseek)
+branch       moat-session-2026-09-19-14-07
+egress       isolated (own network namespace)
+rootfs       377.1 MiB
+credential   deepseek sha256:34c4e933b47c1fb3 expires in 14388s
+snapshots    baseline
+branches     main, moat-session-2026-09-19-14-07*
+  pass  status reports running
+  pass  status reports isolated egress
+
+--- the host reaches the sandbox server only through slirp's forward ---
+
+--- $ node /home/user/Projects/moat/cmd/main.ts env --json
+--- exit 0
+--- stdout ---
+{
+  "url": "http://127.0.0.1:39533",
+  "username": "opencode",
+  "password": "vcdez4h2JNUOREoaiqdsGR0TOMzBKlYI",
+  "directory": "/work",
+  "authorization": "Basic b3BlbmNvZGU6dmNkZXo0aDJKTlVPUkVvYWlxZHNHUjBUT016QktsWUk=",
+  "pid": 29562,
+  "envDir": "/home/user/.moat/envs/16a525996d67",
+  "opencode": "1.18.31"
+}
+--- stderr ---
+  GET http://127.0.0.1:39533/config with basic auth -> HTTP 200
+  pass  the port forward works
+
+--- outbound still works, the host's loopback does not ---
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c curl -sS -o /dev/null -w "%{http_code}" --max-time 20 https://api.deepseek.com/models
+--- exit 0
+--- stdout ---
+401--- stderr ---
+  pass  the provider answers through slirp (401 without a key)
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c curl -sS --max-time 6 -o /dev/null http://10.0.2.2:47311; echo gateway-exit=$?
+--- exit 0
+--- stdout ---
+curl: (7) Failed to connect to 10.0.2.2 port 47311 after 0 ms: Could not connect to server
+gateway-exit=7
+--- stderr ---
+  pass  slirp's 10.0.2.2 gateway cannot reach the host's loopback
+
+--- $ node /home/user/Projects/moat/cmd/main.ts doctor
+--- exit 0
+--- stdout ---
+--- stderr ---
+host
+  platform   linux x64 wsl2 userns=yes kvm=no
+  unshare    /usr/bin/unshare
+  chroot     /usr/bin/chroot
+  user ns    available
+  pid ns     available
+  /dev/kvm   absent (v1 microVM path unavailable here)
+  note       no usable /dev/kvm (present but not accessible to uid 1000 (mode 660, gid 991)): v1 microVM unavailable here; the v0 container path is the supported mode
+  note       mknod denied in userns (kernel policy): /dev nodes are bind-mounted from the host's device nodes (rw: a device is an interface, not a file). No host *data* is mounted.
+
+credential
+  DEEPSEEK_API_KEY  not set  run `moat` at a terminal and it will ask for one
+→ running in-sandbox isolation checks
+
+isolation (16 checks)
+  pass  host project not reachable     /home/user/moat-demo/egress-project is absent inside the sandbox
+  pass  host home not reachable        /home/user is absent inside the sandbox
+  pass  host canary unreadable         /home/user/.moat/canary (mode 600, exists only on the host) is unreadable
+  pass  no host ssh directory          host /home/user/.ssh absent; sandbox /root/.ssh absent
+  pass  no host env forwarded          no variable from the host environment reached the sandbox; present: DEEPSEEK_API_KEY, HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own DEEPSEEK_API_KEY, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)
+  pass  no host data mounts            13 mounts; none reference a host filesystem path
+  pass  sandbox pid 1                  pid 1 is "sh", 4 visible processes
+  pass  own mount namespace            sandbox mnt:[4026532444] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532447] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532443] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532445] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532446] vs host ipc:[4026532208]
+  pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
+  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 41905)
+  pass  network namespace isolated     sandbox net:net:[4026532448] differs from host net:net:[4026531833]; slirp4netns carries its traffic
+  pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
+
+exposures, measured, and NOT fixed in v0. Read these before trusting the box.
+  expose  credential visible to the agent
+          MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, DEEPSEEK_API_KEY, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. The bundle blanks secret-looking names for shell commands, but the values remain in the opencode process environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token.
+  expose  egress unrestricted
+          the sandbox reached 1.1.1.1:443 through slirp. It has its own network namespace, but its egress is not filtered yet: an allowlist applied inside the namespace is the next step.
+  expose  shell env redaction (bundle)
+          the bundle blanks DEEPSEEK_API_KEY, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, OPENCODE_SERVER_PASSWORD for shell commands the agent writes. Speed bump only: the values are still in the opencode process environment and reachable via /proc/<pid>/environ. This record comes from the plugin running inside the box.
+
+mount table inside the sandbox
+  /dev/full||/full||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/null||/null||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/pts||/||rw,relatime||devpts devpts rw,mode=620,ptmxmode=666
+  /dev/random||/random||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/shm||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,uid=1000,gid=1000
+  /dev/tty||/tty||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/urandom||/urandom||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/zero||/zero||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev||/||rw,nosuid,relatime||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
+  /proc||/||rw,relatime||proc proc rw
+  /run||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
+  /tmp||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,uid=1000,gid=1000
+  /||/home/user/.moat/envs/16a525996d67/rootfs||rw,relatime||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered
+  pass  doctor reports the isolated namespace
+  pass  doctor reports loopback unreachable
+  pass  doctor no longer says the namespace is shared
+
+--- teardown ---
+
+--- $ node /home/user/Projects/moat/cmd/main.ts down
+--- exit 0
+--- stdout ---
+--- stderr ---
+✓ sandbox stopped (pid 29562); the environment and its snapshots are kept
+  resume with: moat up
+  remove with: moat destroy
+  pass  slirp stopped with the box
+
+--- $ node /home/user/Projects/moat/cmd/main.ts destroy --yes
+--- exit 0
+--- stdout ---
+--- stderr ---
+✓ destroyed /home/user/.moat/envs/16a525996d67
+
+egress checks passed

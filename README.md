@@ -171,7 +171,9 @@ the result before showing it to you. No model is involved in that verdict.
 ## Limitations
 
 - The credential is readable by the agent, and egress is open.
-- The network is not fenced. Restricting it rootlessly is hard, which is why v1 is
+- Egress is not fenced. `moat up --egress isolated` gives the sandbox its own
+  network namespace and closes the host's loopback (both routes, measured), but
+  anything it can reach is still reachable until the allowlist lands; v1 is
   planned as a microVM.
 - The tool list cannot be pruned exactly in opencode 1.18.31. The bundle refuses
   to execute anything outside the curated set instead, and `moat tools` prints the

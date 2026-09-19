@@ -44,9 +44,11 @@ Measured, not assumed (`moat doctor` prints all three on every run):
   in-sandbox mitigation is a speed bump.
 * **The project's confidentiality.** The agent can read every byte of the copy,
   and egress is open, so it can send them anywhere.
-* **Your host's loopback.** The sandbox shares the host's network namespace in
-  v0, so every service you are running locally, databases, dev servers,
-  notebooks, the model endpoint, is reachable from inside.
+* **Your host's loopback.** In the default `open` egress mode the sandbox
+  shares the host's network namespace, so every service you are running locally,
+  databases, dev servers, notebooks, the model endpoint, is reachable from
+  inside. `moat up --egress isolated` removes that: the sandbox gets its own
+  namespace and the host's loopback is closed on both routes (§7.3).
 
 ### 1.3 Why autonomy is still the right default
 
@@ -872,25 +874,39 @@ cannot hide behind the device name the way it did when the check read only the
 source field. `docs/VERIFICATION.md` quotes the mount table so the claim can be
 checked line by line.
 
-### 7.3 Network: the significant v0 limitation
+### 7.3 Network: two modes
 
-**The sandbox shares the host's network namespace.** This is measured and
-printed by `moat doctor`, not glossed over. Consequences:
+The network policy is chosen per environment, persisted in `state.json`, and
+measured by `moat doctor` in whichever mode is in force.
 
-* The agent has the host's network position and unrestricted egress. Network
-  egress policy is v2 work.
-* The agent can reach services listening on the host's loopback, including the
-  sandbox's own `opencode serve` (protected by a per-boot random password) and
-  anything else the user happens to be running locally.
+**`open`** (the default until the filtered policy has evidence): the sandbox
+shares the host's network namespace. The agent has the host's network position:
+every service on the host's loopback is reachable, and egress is unrestricted.
 
-Why it is not fixed in v0: giving the sandbox its own network namespace leaves it
-with only loopback, which would cut off the provider. That is moat's whole purpose. A
-veth pair plus NAT requires `CAP_NET_ADMIN` in the host namespace; `slirp4netns`
-or `passt` would work but neither is installed, and `newuidmap`/`newgidmap` are
-absent so `/etc/subuid` cannot even be used. This host has no `podman`/`docker`
-and no `sudo`. Within those constraints, "sandbox the filesystem and credentials,
-share the network" is the best available; the fix is v1's microVM, where the
-network boundary comes for free.
+**`isolated`**: `moat up --egress isolated` puts the sandbox in its own network
+namespace (`unshare --net`) and runs a pinned, digest-verified static
+`slirp4netns` as the datapath. The consequences are measured, not asserted:
+
+* the sandbox keeps outbound access through slirp's userspace NAT: the provider
+  answers (an unauthenticated request returns 401) and packages install;
+* the host reaches `opencode serve` only through an explicit forward that moat
+  adds over slirp's API socket (`add_hostfwd`, bound to the host's loopback).
+  The server therefore binds `0.0.0.0` inside the namespace, because a
+  namespace-local loopback cannot be forwarded to;
+* the host's loopback is closed on both routes. The namespace's own
+  `127.0.0.1` is not the host's, and slirp is started with
+  `--disable-host-loopback`, which closes slirp's `10.0.2.2` gateway. Measured:
+  without that flag the gateway answers HTTP 200 for a service on the host's
+  loopback; with it, the connection is refused. `moat doctor` probes both
+  addresses and fails the run if either answers.
+
+What isolated mode does **not** do yet: it does not restrict *where* the sandbox
+can go. Egress through slirp is still open, so exfiltration is still possible.
+The next step is an nftables default-deny allowlist applied inside the namespace
+(which the sandbox owns, so it holds `CAP_NET_ADMIN` there), generated from
+hostnames resolved at boot. Until that exists and has evidence, `open` stays the
+default and `moat doctor` reports unrestricted egress as an exposure in both
+modes. `bash test/e2e-egress.sh` proves the isolation half without a key.
 
 ### 7.4 Exposures, as `moat doctor` reports them
 

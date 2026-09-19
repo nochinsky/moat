@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { envPaths, envsDir, type EnvPaths } from "../lib/paths.ts"
+import type { EgressMode } from "../lib/pins.ts"
 import { DEEPSEEK } from "../lib/provider.ts"
 
 export type EnvStatus = "provisioning" | "stopped" | "running"
@@ -59,6 +60,11 @@ export type EnvState = {
    * process group. Kept next to the pid it identifies.
    */
   pidStart: string | null
+  /** How much network the environment gets: the host's namespace, or its own. */
+  egress: EgressMode
+  /** slirp4netns pid for an isolated environment, and its identity. */
+  slirpPid: number | null
+  slirpStart: string | null
   /** Tree digest of the host project as of the last copy-in. */
   baselineDigest: string | null
   /** Fingerprint of the host project at copy-in time, to detect that it moved on. */
@@ -92,6 +98,9 @@ export function initialState(p: EnvPaths, versions: { opencode: string; alpine: 
     profiles: [],
     pid: null,
     pidStart: null,
+    egress: "open",
+    slirpPid: null,
+    slirpStart: null,
     baselineDigest: null,
     baselineHostState: null,
     baselineCommit: null,
@@ -112,6 +121,9 @@ export function readState(p: EnvPaths): EnvState | null {
     if (raw.effort === undefined) raw.effort = DEEPSEEK.defaultEffort
     if (raw.agent === undefined) raw.agent = null
     if (raw.pidStart === undefined) raw.pidStart = null
+    if (raw.egress === undefined) raw.egress = "open"
+    if (raw.slirpPid === undefined) raw.slirpPid = null
+    if (raw.slirpStart === undefined) raw.slirpStart = null
     return raw
   } catch {
     return null

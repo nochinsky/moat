@@ -65,6 +65,19 @@ export const SLIRP4NETNS_VERSION = "1.3.5"
 export const SLIRP4NETNS_URL =
   `https://github.com/rootless-containers/slirp4netns/releases/download/v${SLIRP4NETNS_VERSION}/slirp4netns-x86_64`
 export const SLIRP4NETNS_SHA256 = "8e54132bc80fc60d53af4b544dae63a81151774b56f129e572f7f1a2e89a57cf"
+
+/**
+ * How much network the sandbox gets.
+ *
+ * `open` shares the host's network namespace (the v0 behaviour, and the default
+ * until the filtered policy has e2e evidence). `isolated` gives the sandbox its
+ * own namespace with slirp4netns as the datapath: it keeps outbound access but
+ * loses the host's network position, including the host's loopback.
+ */
+export type EgressMode = "open" | "isolated"
+
+/** slirp4netns answers DNS here inside an isolated namespace. */
+export const SLIRP_DNS = "10.0.2.3"
 export const OPENCODE_TARBALL_INTEGRITY =
   "sha512-TxKfcJII53MZ17NSrJ0p51wx0dJtZrX8By60N5O5/M+eP0oO4jCXKIkdBpP/Bku44gm8QZkTNLBWpPc2OTJweg=="
 

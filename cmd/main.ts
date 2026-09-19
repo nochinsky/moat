@@ -9,12 +9,21 @@ import * as log from "../lib/log.ts"
 import { hashTree } from "../lib/hash.ts"
 import { probeHost, assertHostUsable, describeHost } from "../lib/host.ts"
 import { ensureMoatHome, envPaths, type EnvPaths } from "../lib/paths.ts"
-import { ALPINE_VERSION, CURATED_TOOLS, EXCLUDED_TOOLS, OPENCODE_VERSION, SANDBOX_WORKDIR, UNADVERTISED_GAPS } from "../lib/pins.ts"
+import {
+  ALPINE_VERSION,
+  CURATED_TOOLS,
+  EXCLUDED_TOOLS,
+  OPENCODE_VERSION,
+  SANDBOX_WORKDIR,
+  UNADVERTISED_GAPS,
+  type EgressMode,
+} from "../lib/pins.ts"
 import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, isDeepSeekHost } from "../lib/provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from "../sandbox/profiles.ts"
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
 import { runChecks, summarise } from "../sandbox/checks.ts"
+import { ensureSlirp4netns, runtimeForEgress } from "../sandbox/egress.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import {
@@ -41,6 +50,7 @@ import {
 import {
   extraSandboxEnv,
   runInSandbox,
+  runInteractive,
   sandboxEnv,
   sandboxPidStatus,
   startSandbox,
@@ -142,6 +152,7 @@ const SPEC: Spec = {
   "credential-ttl": "string",
   "no-credential": "boolean",
   port: "number",
+  egress: "string",
   fresh: "boolean",
   sync: "boolean",
   "log-level": "string",
@@ -195,6 +206,17 @@ function requireState(p: EnvPaths): EnvState {
  */
 function sandboxAlive(state: EnvState, paths: EnvPaths): boolean {
   return sandboxPidStatus(state.pid, { startTime: state.pidStart, envId: paths.id }) === "ours"
+}
+
+/**
+ * The datapath an environment's fresh boots need.
+ *
+ * An isolated environment resolves the pinned slirp4netns binary here, once, so
+ * every ephemeral boot (doctor, exec, checks) runs in the same kind of network
+ * as the long-running box rather than quietly measuring a different one.
+ */
+async function egressRuntime(state: EnvState): Promise<{ egress: EgressMode; slirpBinary?: string }> {
+  return await runtimeForEgress(state.egress)
 }
 
 function requireRunning(p: EnvPaths): { state: EnvState; password: string } {
@@ -404,6 +426,16 @@ async function cmdUp(argv: string[]): Promise<number> {
   const sync = flag<boolean>(p, "sync") ?? false
   const needsProvision = fresh || !envExists(paths) || !state
 
+  // Network policy is part of the environment's identity: it is persisted, and a
+  // change means the box has to be booted again in different namespaces.
+  const egressCandidate = flag<string>(p, "egress") ?? state?.egress ?? "open"
+  if (egressCandidate !== "open" && egressCandidate !== "isolated") {
+    log.fail(
+      `unknown --egress "${egressCandidate}". Use "open" (the host's network namespace) or "isolated" (its own, through slirp4netns).`,
+    )
+  }
+  const egress: EgressMode = egressCandidate
+
   // `moat` on its own is typed anywhere, so the obvious wrong directories are
   // caught before a byte is copied. This runs before provisioning, because
   // discovering the mistake after unpacking a rootfs is a waste of a minute.
@@ -488,8 +520,27 @@ async function cmdUp(argv: string[]): Promise<number> {
   // and fall through to a fresh boot, which mints a new credential.
   if (state!.pid && sandboxAlive(state!, paths) && credentialExpired(state!)) {
     log.warn("the injected credential for this sandbox has expired; restarting it to mint a fresh one")
-    await stopSandbox(state!.pid!, { startTime: state!.pidStart, envId: paths.id })
-    state = { ...state!, status: "stopped", pid: null, pidStart: null }
+    await stopSandbox(state!.pid!, {
+      startTime: state!.pidStart,
+      envId: paths.id,
+      slirpPid: state!.slirpPid,
+      slirpStart: state!.slirpStart,
+    })
+    state = { ...state!, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null }
+    writeState(paths, state)
+  }
+
+  // Changing egress mode changes the namespaces the sandbox runs in, so the box
+  // is restarted rather than reused under a policy it was not booted with.
+  if (state!.pid && sandboxAlive(state!, paths) && state!.egress !== egress) {
+    log.warn(`egress mode changed (${state!.egress} -> ${egress}); restarting the sandbox`)
+    await stopSandbox(state!.pid!, {
+      startTime: state!.pidStart,
+      envId: paths.id,
+      slirpPid: state!.slirpPid,
+      slirpStart: state!.slirpStart,
+    })
+    state = { ...state!, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null }
     writeState(paths, state)
   }
 
@@ -522,7 +573,12 @@ async function cmdUp(argv: string[]): Promise<number> {
       return 0
     }
     log.warn("recorded sandbox pid is alive but the server is not answering; restarting it")
-    await stopSandbox(state!.pid, { startTime: state!.pidStart, envId: paths.id })
+    await stopSandbox(state!.pid, {
+      startTime: state!.pidStart,
+      envId: paths.id,
+      slirpPid: state!.slirpPid,
+      slirpStart: state!.slirpStart,
+    })
   }
 
   // Profiles are additive: adding one to an existing environment installs only
@@ -759,6 +815,9 @@ ${command}
     port,
     logLevel: flag<string>(p, "log-level") as "INFO" | undefined,
     credentialTtlSeconds: credential ? credential.ttlSeconds : null,
+    // In an isolated namespace a loopback bind is unreachable through slirp's
+    // forward, so the server has to listen on the tap address.
+    hostname: egress === "isolated" ? "0.0.0.0" : "127.0.0.1",
   })
 
   const managedEnv: Record<string, string> = {
@@ -774,13 +833,18 @@ ${command}
     ...managedEnv,
   }
 
+  report.egress = egress
+  const slirpBinary = egress === "isolated" ? await ensureSlirp4netns() : undefined
   const bootStart = Date.now()
-  const sandbox = startSandbox(paths, entry, sandboxEnvVars)
+  const sandbox = await startSandbox(paths, entry, sandboxEnvVars, { egress, port, slirpBinary })
   state = {
     ...(state as EnvState),
     status: "running",
     pid: sandbox.pid,
     pidStart: sandbox.startTime,
+    egress,
+    slirpPid: sandbox.slirp?.pid ?? null,
+    slirpStart: sandbox.slirp?.startTime ?? null,
     port,
     model: resolvedModel.model,
     providerBaseUrl: baseUrl,
@@ -805,8 +869,13 @@ ${command}
   const bootMs = Date.now() - bootStart
   if (!ready.ok) {
     const tail = sandboxLogTail(paths, 40)
-    await stopSandbox(sandbox.pid, { startTime: sandbox.startTime, envId: paths.id })
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
+    await stopSandbox(sandbox.pid, {
+      startTime: sandbox.startTime,
+      envId: paths.id,
+      slirpPid: sandbox.slirp?.pid ?? null,
+      slirpStart: sandbox.slirp?.startTime ?? null,
+    })
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
     log.fail(`opencode serve did not come up (${ready.detail}).\n--- sandbox log ---\n${tail}`)
   }
 
@@ -816,8 +885,13 @@ ${command}
   if (credential) {
     const leaks = scanRootfsForCredential(paths.rootfs, credential.value)
     if (leaks.length > 0) {
-      await stopSandbox(sandbox.pid, { startTime: sandbox.startTime, envId: paths.id })
-      writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
+      await stopSandbox(sandbox.pid, {
+        startTime: sandbox.startTime,
+        envId: paths.id,
+        slirpPid: sandbox.slirp?.pid ?? null,
+        slirpStart: sandbox.slirp?.startTime ?? null,
+      })
+      writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
       log.fail(
         `the credential was found on disk inside the sandbox:\n  ${leaks.slice(0, 5).join("\n  ")}\n` +
           "  moat refuses to continue: the value is only meant to exist in the sandbox process environment.",
@@ -1211,7 +1285,8 @@ async function cmdFetch(argv: string[]): Promise<number> {
 async function cmdVerify(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
-  requireState(paths)
+  const state = requireState(paths)
+  const runtime = await egressRuntime(state)
 
   const checks = detectChecks(paths.projectDir)
   if (checks.length === 0) {
@@ -1221,7 +1296,7 @@ async function cmdVerify(argv: string[]): Promise<number> {
   }
 
   log.step(`running ${checks.map((c) => c.command).join(", ")} inside the sandbox`)
-  const results = await runChecks(paths, checks, { onOutput: (chunk) => process.stderr.write(chunk) })
+  const results = await runChecks(paths, checks, { onOutput: (chunk) => process.stderr.write(chunk), ...runtime })
 
   if (flag<boolean>(p, "json")) {
     log.emit(results)
@@ -1248,7 +1323,8 @@ async function cmdVerify(argv: string[]): Promise<number> {
 async function cmdTake(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
-  requireState(paths)
+  const state = requireState(paths)
+  const runtime = await egressRuntime(state)
   if (!(await isGitRepo(paths.projectDir))) log.fail(`${paths.projectDir} is not a git repository; nothing to take into`)
 
   const branches = await listSandboxBranches(paths)
@@ -1282,7 +1358,7 @@ async function cmdTake(argv: string[]): Promise<number> {
     const checks = detectChecks(paths.projectDir)
     if (checks.length > 0) {
       log.step(`verifying: ${checks.map((c) => c.command).join(", ")}`)
-      const results = await runChecks(paths, checks)
+      const results = await runChecks(paths, checks, runtime)
       verified = { ok: results.every((r) => r.ok), summary: summarise(results) }
       log.info("")
       for (const check of results) {
@@ -1425,20 +1501,27 @@ async function cmdDown(argv: string[]): Promise<number> {
   const state = requireState(paths)
   const status = sandboxPidStatus(state.pid, { startTime: state.pidStart, envId: paths.id })
   if (status === "gone") {
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
     log.info("sandbox is not running")
     return 0
   }
   if (status === "stale") {
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
     log.warn(
       `the recorded sandbox is gone: pid ${state.pid} now belongs to another process, so moat did not signal it.`,
     )
     log.info("  the environment and its snapshots are kept")
     return 0
   }
-  if (await stopSandbox(state.pid!, { startTime: state.pidStart, envId: paths.id })) {
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
+  if (
+    await stopSandbox(state.pid!, {
+      startTime: state.pidStart,
+      envId: paths.id,
+      slirpPid: state.slirpPid,
+      slirpStart: state.slirpStart,
+    })
+  ) {
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
     log.success(`sandbox stopped (pid ${state.pid}); the environment and its snapshots are kept`)
     log.info(`  resume with: moat up`)
     log.info(`  remove with: moat destroy`)
@@ -1466,7 +1549,12 @@ async function cmdDestroy(argv: string[]): Promise<number> {
       const envState = readState(env)
       const size = await rootfsSizeBytes(env)
       if (envState?.pid) {
-        await stopSandbox(envState.pid, { startTime: envState.pidStart, envId: envState.id })
+        await stopSandbox(envState.pid, {
+          startTime: envState.pidStart,
+          envId: envState.id,
+          slirpPid: envState.slirpPid,
+          slirpStart: envState.slirpStart,
+        })
       }
       if (destroyEnv(env.projectDir)) {
         freed += size
@@ -1482,7 +1570,12 @@ async function cmdDestroy(argv: string[]): Promise<number> {
     if (!flag<boolean>(p, "yes")) {
       log.fail("sandbox is running. Stop it first, or pass --yes to destroy it while running.")
     }
-    await stopSandbox(state.pid!, { startTime: state.pidStart, envId: paths.id })
+    await stopSandbox(state.pid!, {
+      startTime: state.pidStart,
+      envId: paths.id,
+      slirpPid: state.slirpPid,
+      slirpStart: state.slirpStart,
+    })
   }
   const removed = destroyEnv(paths.projectDir)
   if (removed) log.success(`destroyed ${paths.dir}`)
@@ -1558,6 +1651,9 @@ async function cmdStatus(argv: string[]): Promise<number> {
     log.info(`opencode     ${state!.opencodeVersion} / alpine ${state!.alpineVersion}`)
     if (state!.model) log.info(`model        ${state!.model}${state!.provider ? ` (${state!.provider})` : ""}`)
     if (state!.branch) log.info(`branch       ${state!.branch}`)
+    log.info(
+      `egress       ${state!.egress === "isolated" ? "isolated (own network namespace)" : "open (host network namespace)"}`,
+    )
     if (state!.profiles && state!.profiles.length > 0) log.info(`profiles     ${state!.profiles.join(", ")}`)
     log.info(`rootfs       ${human(payload.rootfsBytes)}`)
     if (state!.credential) {
@@ -1609,11 +1705,16 @@ async function cmdRestore(argv: string[]): Promise<number> {
           `deleted image. Stop it first (\`moat down\`) or pass --yes to stop it as part of the restore.`,
       )
     }
-    await stopSandbox(state.pid, { startTime: state.pidStart, envId: paths.id })
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
+    await stopSandbox(state.pid, {
+      startTime: state.pidStart,
+      envId: paths.id,
+      slirpPid: state.slirpPid,
+      slirpStart: state.slirpStart,
+    })
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
     log.info(`stopped sandbox pid ${state.pid} before restoring`)
   } else if (state.pid) {
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null })
+    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
   }
   await restoreEnv(paths, name!)
   log.success(`restored rootfs snapshot ${name} (the project copy in /work was preserved)`)
@@ -1704,12 +1805,16 @@ async function cmdDoctor(argv: string[]): Promise<number> {
   let isolation: IsolationReport | null = null
   if (envExists(paths)) {
     log.step("running in-sandbox isolation checks")
+    // The probe boot runs in the same kind of network as the real box, so
+    // "host loopback reachable" measures the policy the agent actually gets.
+    const runtime = await egressRuntime(state)
     isolation = await runIsolationChecks(paths, {
       hostHome: process.env.HOME ?? "",
       // The provider variable is injected under its real name in a live boot, so
       // the probe injects it too; otherwise the check tests an environment the
       // agent never sees.
       injectedVarNames: [...INJECTED_ENV_NAMES, "OPENCODE_SERVER_PASSWORD", DEEPSEEK.envVar],
+      ...runtime,
     })
     out.isolation = isolation
     if (!flag<boolean>(p, "json")) printIsolation(isolation)
@@ -1765,7 +1870,8 @@ function printIsolation(report: IsolationReport): void {
 async function cmdExec(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
-  requireState(paths)
+  const state = requireState(paths)
+  const runtime = await egressRuntime(state)
   const command = p._
   if (command.length === 0) log.fail("usage: moat exec -- <command> [args...]")
   const body = `#!/bin/sh
@@ -1774,14 +1880,15 @@ export HOME=/root
 cd ${SANDBOX_WORKDIR}
 exec ${command.map((arg) => shellQuote(arg)).join(" ")}
 `
-  const result = await runInSandbox(paths, body, { onOutput: (chunk) => process.stdout.write(chunk) })
+  const result = await runInSandbox(paths, body, { onOutput: (chunk) => process.stdout.write(chunk), ...runtime })
   return result.code
 }
 
 async function cmdShell(argv: string[]): Promise<number> {
   parse(argv, SPEC) // validates flags; `shell` takes no options of its own
   const paths = resolveEnv()
-  requireState(paths)
+  const state = requireState(paths)
+  const runtime = await egressRuntime(state)
   const body = `#!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/root
@@ -1789,13 +1896,7 @@ cd ${SANDBOX_WORKDIR}
 echo "[moat] sandbox shell, this is inside the box, not your host"
 exec /bin/bash -l
 `
-  const inner = writeInnerScript(paths, body)
-  const boot = writeOuterScript(paths, { innerScript: inner })
-  return await new Promise<number>((resolve, reject) => {
-    const proc = spawn("unshare", unshareArgs(boot), { stdio: "inherit", env: sandboxEnv() })
-    proc.on("error", reject)
-    proc.on("close", (code) => resolve(code ?? 0))
-  })
+  return await runInteractive(paths, body, runtime)
 }
 
 async function cmdEnv(argv: string[]): Promise<number> {

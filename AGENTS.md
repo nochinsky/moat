@@ -75,6 +75,7 @@ is wired with `npm link` and runs the source directly.
 npm run test:unit         # pure unit tests, no sandbox, so CI runs them
 bash test/e2e.sh          # acceptance criteria, ~4 min, no API key
 bash test/e2e-extras.sh   # snapshots, apply, credential expiry, the pty suites
+bash test/e2e-egress.sh   # isolated netns, slirp datapath, host loopback closed (no key)
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
 ```
 
@@ -161,6 +162,27 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 * The provisioned image cache carries a `.sha256` sidecar written when it was
   built; a mismatch rebuilds the image instead of unpacking it.
 
+**Egress and the datapath**
+
+* slirp4netns has no command-line port forwarding. Host-to-sandbox ports go
+  through its API socket (`-a/--api-socket`): connect and send
+  `{"execute":"add_hostfwd",...}`. Its replies are one JSON object with **no**
+  trailing newline, and the socket appears asynchronously after spawn, so the
+  RPC client waits for the path and parses the accumulated buffer instead of
+  reading lines. Getting any of that wrong looks like a hang or an ENOENT.
+* Always pass `--disable-host-loopback`. Without it slirp's 10.0.2.2 gateway
+  forwards straight to the host's loopback: measured HTTP 200 for a host service
+  from inside the "isolated" namespace. `moat doctor` probes **both**
+  `127.0.0.1` and `10.0.2.2`, because testing only the namespace's own loopback
+  is vacuous and passes while the hole is open.
+* In isolated mode `opencode serve` binds `0.0.0.0`; a loopback bind inside the
+  namespace cannot be reached through the forward.
+* The long-running box records its slirp pid in `state.json` and `moat down`
+  stops it after the box (its start time is checked, like the sandbox pid).
+  Ephemeral boots (doctor, exec, checks, shell) start their own slirp with a
+  unique API socket, so they run in the same kind of network as the box rather
+  than quietly measuring a different one.
+
 **opencode 1.18.31**
 
 * The model-facing argument for file tools is `filePath`, not `path`. opencode's
@@ -235,7 +257,11 @@ Two rules the suite follows, worth preserving:
 
 Not built, in rough order of how much they matter:
 
-* **Egress policy.** The network is currently open. This is the largest remaining
+* **Egress policy, second half.** `moat up --egress isolated` gives the sandbox
+  its own network namespace with a pinned slirp4netns datapath and closes the
+  host's loopback on both routes; what it does not do yet is filter *where* the
+  sandbox can go. The nftables default-deny allowlist is the remaining half, and
+  `open` stays the default until it has evidence. This is the largest remaining
   exposure and the reason the docs say the key must be disposable.
 * **Provider-side credential scoping** — short-lived, spend-capped tokens minted
   per boot, instead of borrowing a long-lived key.
