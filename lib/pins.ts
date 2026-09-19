@@ -51,6 +51,20 @@ export const NPM_REGISTRY = "https://registry.npmjs.org"
  * A download that does not match is rejected rather than unpacked.
  */
 export const ALPINE_ROOTFS_SHA256 = "e5f52d56d807a069ae0acf9015a85c43e057acab1197518171017b68b19bf445"
+
+/**
+ * The userspace network datapath for a sandbox with its own network namespace.
+ *
+ * slirp4netns attaches a tap to the sandbox's namespace and carries packets
+ * through a userspace TCP/IP stack, so the box keeps an outbound network while
+ * losing the host's network position. It must be static (it runs as the
+ * unprivileged user) and pinned (it carries the sandbox's packets), so it is
+ * fetched from the release page and checked against the release's SHA256SUMS.
+ */
+export const SLIRP4NETNS_VERSION = "1.3.5"
+export const SLIRP4NETNS_URL =
+  `https://github.com/rootless-containers/slirp4netns/releases/download/v${SLIRP4NETNS_VERSION}/slirp4netns-x86_64`
+export const SLIRP4NETNS_SHA256 = "8e54132bc80fc60d53af4b544dae63a81151774b56f129e572f7f1a2e89a57cf"
 export const OPENCODE_TARBALL_INTEGRITY =
   "sha512-TxKfcJII53MZ17NSrJ0p51wx0dJtZrX8By60N5O5/M+eP0oO4jCXKIkdBpP/Bku44gm8QZkTNLBWpPc2OTJweg=="
 
