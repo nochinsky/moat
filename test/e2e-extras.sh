@@ -339,6 +339,19 @@ else
   echo "--base-url with an empty value: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
 fi
 
+section "S. the live view of a turn ends honestly when the event stream does"
+# The REPL learns everything -- streamed text, tool rows, the question prompt and
+# the session.idle that ends a turn -- from one long-lived response. Stop the box
+# mid-turn and that response ends. The loop that read it used to catch the failure
+# and say nothing: the spinner kept turning and every later line was answered with
+# "queued" for a turn that was already over. This stops a real box underneath a
+# real pty mid-turn, which is the reproduction, not a simulation of one.
+echo "a pty session, a real box, a turn in flight, and then moat down underneath it." | tee -a "$EVIDENCE/extras.txt"
+python3 "$REPO/test/repl-stream-loss.py" 2>&1 | scrub > "$EVIDENCE/repl-stream-loss.txt"
+STREAM_RC=$?
+tail -10 "$EVIDENCE/repl-stream-loss.txt" | tee -a "$EVIDENCE/extras.txt"
+echo "stream loss exit: $STREAM_RC" | tee -a "$EVIDENCE/extras.txt"
+
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

@@ -313,6 +313,24 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   checking the wrong spelling matches nothing and confines nothing, silently.
 * Streamed text arrives as `message.part.delta`, **not** as a `delta` field on
   `message.part.updated`. Reading the wrong one renders tool calls and no answers.
+* The SDK's event stream **reconnects forever and never ends**.
+  `event.subscribe` goes through the generated SSE client
+  (`@opencode-ai/sdk/dist/gen/core/serverSentEvents.gen.js`), whose loop is
+  `while (true)`: a failed connection calls `onSseError`, sleeps with backoff (up
+  to 30s) and tries again, indefinitely. It neither throws nor ends the
+  generator, so a box stopped mid-turn looks exactly like a quiet one. Measured
+  in a pty: `moat attach`, a turn in flight, `moat down` — and the REPL sat there
+  with its spinner up, answering every later line with "queued — the agent will
+  pick this up when the current step finishes" for a turn that was already over.
+  Both subscribe sites pass `sseMaxRetryAttempts: 1` (one attempt, no reconnect)
+  and an `onSseError` handler, which turns the failure into an *end* the consumer
+  can see: the REPL reports that the live view is gone and refuses to send, and
+  `moat run` records "the event stream ended mid-turn" instead of returning the
+  partial transcript as a finished turn. Do not remove those options: without
+  them a consumer waits for a `session.idle` that can never arrive. Not covered:
+  a stream that stays open and simply goes quiet — no FIN, no error — which
+  nothing observed produces (a box that dies closes its sockets), and for which
+  there is no silence watchdog.
 * An unknown reasoning variant is *ignored*, not rejected. Never hardcode the
   levels: read them from `GET /config/providers` per model.
 * `GET /config/providers` returns a `default` field that is opencode's own notion

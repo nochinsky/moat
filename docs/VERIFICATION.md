@@ -1770,6 +1770,60 @@ readiness wait read it as **milliseconds**, so `moat up --timeout 600` failed wi
 ten-minute budget turned into an instant failure. One flag, one unit: seconds
 everywhere, documented in `moat --help`.
 
+### P. A live view that can no longer be live says so
+
+The REPL learns everything — streamed text, tool rows, the question prompt and
+the `session.idle` that ends a turn — from one long-lived response (`GET /event`),
+and it subscribes once. The SDK's SSE client never ends that response on its
+own: its loop is `while (true)`, and a failed connection goes to `onSseError`,
+sleeps with backoff (up to 30s) and reconnects, forever, without throwing and
+without ending the generator. A box stopped mid-turn therefore does not look like
+a failure. It looks like a quiet one.
+
+Measured through a pty, against the stub: a turn in flight, `moat down` underneath
+it, and — before this — no line about the stream at all. The spinner kept
+turning and the next message got the sentence reserved for a busy agent:
+
+```
+queued — the agent will pick this up when the current step finishes
+› could not send: fetch failed
+```
+
+The turn was already over and the answer could never arrive. Both subscribe sites
+now pass `sseMaxRetryAttempts: 1` (one attempt, no reconnect) and an `onSseError`
+handler, which turns that failure into an end the consumer can see. The same pty
+scenario now prints, within a second of the box dying:
+
+```
+› lost the event stream from the sandbox: terminated
+›   every event of a turn arrives on that one stream, so this view cannot
+›   continue. The turn may still be running inside the box: moat up restarts
+›   it, and a new moat attach opens this session where it left off.
+› › are you still there
+  not sent: the event stream is gone, so the answer could not be shown.
+›   leave with /quit, then moat up and moat attach to carry on in this session.
+```
+
+`test/repl-stream-loss.py` is the whole reproduction — a real pty, a real box, a
+real turn in flight, a real `moat down` — and all six of its checks pass; the suite
+runs it as section S. The pre-fix run of the same script failed three of the six,
+and the paragraph above is the transcript it printed instead.
+
+The one-shot path has the same seam with a different symptom: `driveStreaming`
+waits for `session.idle`, so with the SDK's default it would reconnect forever
+while the turn's events were gone, printing "no output for 30s" until the
+45-minute budget expired. With the retry off the generator *completes* instead of
+throwing, which used to leave the loop with `idle === false` and no error at all:
+`moat run` returned the partial transcript as a success.
+`test/unit/session-stream.test.ts` covers both halves — it asserts the subscribe
+options at the seam, and that a clean end before `session.idle` is reported as
+`the event stream ended mid-turn`. Both assertions were watched failing with those
+two changes reverted (2 of its 4 tests fail).
+
+What this does not cover: a stream that stays open and simply goes quiet, with no
+FIN and no error. The box dying closes its sockets, which is what was measured;
+a silence watchdog on the server's 10s heartbeat does not exist.
+
 ---
 
 ## Requirement-by-requirement
@@ -1844,3 +1898,4 @@ Listed so that absence is not mistaken for success.
 | Exfiltration through an allowed channel | §L verifies that the allowlist admits the provider and refuses an arbitrary address, and that the host's loopback is unreachable on both routes. It does not attempt to push data out *through* an allowlisted address or over DNS, both of which remain possible by construction. |
 | Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), but a reboot mid-session was not staged. |
 | Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all — a refusal, not support, and not a silent drop. |
+| A live event stream that stays open and goes quiet | the *end* of the stream is detected and reported (secondary claim P), and the box dying closes its sockets, which is the case measured. A connection that stays open while delivering nothing — no FIN, no error — is not detected: there is no watchdog on the server's 10s heartbeat. Nothing observed produced one. |
