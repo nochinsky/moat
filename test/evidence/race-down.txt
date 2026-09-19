@@ -2,8 +2,8 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ moat up is already booting this environment (pid 391730, 0s in); waiting for it before stopping the sandbox
+→ moat up is already booting this environment (pid 423735, 0s in); waiting for it before stopping the sandbox
 the boot finished
-✓ sandbox stopped (pid 391803); the environment and its snapshots are kept
+✓ sandbox stopped (pid 423807); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy

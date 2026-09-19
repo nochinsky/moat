@@ -290,6 +290,25 @@ export function sandboxProviderEnv(input: { baseUrl: string; model: string; mode
 }
 
 /**
+ * The environment names a doctor probe has to inject to model a real box.
+ *
+ * The probe is an ephemeral boot, and it has to look like the box the agent actually gets
+ * or the environment check measures a cleaner box than reality. Two corrections over one
+ * shared list: the credential names only when the environment records a credential — a
+ * `--no-credential` box has none, and injecting them made the doctor report a credential
+ * exposure for a box that deliberately had nothing stealable in it — and the provider's
+ * own variable name only for the native provider, because a custom endpoint receives the
+ * value under moat's name and never as `DEEPSEEK_API_KEY`.
+ */
+export function doctorInjectedVarNames(opts: { credential: boolean; native: boolean }): string[] {
+  const names = ["MOAT_PROVIDER_BASE_URL", "MOAT_MODEL_ID", "MOAT_MODEL", "OPENCODE_SERVER_PASSWORD"]
+  if (!opts.credential) return names
+  names.push(...INJECTED_ENV_NAMES)
+  if (opts.native) names.push(DEEPSEEK.envVar)
+  return [...new Set(names)]
+}
+
+/**
  * The environment the sandbox process receives.
  *
  * The credential is placed under BOTH moat's own name and the provider's expected

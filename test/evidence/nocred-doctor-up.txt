@@ -1,0 +1,19 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --no-credential --egress isolated --model deepseek-flash
+--- exit 0
+--- stdout ---
+--- stderr ---
+✓ image provisioned in 1.02s (extract cached image 865ms)
+✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
+model: deepseek/deepseek-flash (context 1M, out 384k)
+agent branch: moat-session-2026-09-19-23-50
+✓ sandbox up, cold start 9.84s (image built)
+
+  project    /home/user/moat-demo/nocred-doctor
+  env        /home/user/.moat/envs/bc47e2d49e4f
+  opencode   http://127.0.0.1:44459  (basic auth user "opencode")
+  password   eKSXtOLpaXv4HFYSMmFeHwVin0cmDqam
+  workspace  /work (inside the sandbox)
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)

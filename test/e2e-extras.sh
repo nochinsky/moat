@@ -897,6 +897,50 @@ fi
 # here; its datapath is already gone.
 kill -9 -- "-$LIVE_BOX" 2>/dev/null
 ( cd "$KD" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "AH. the doctor reports the credential state the box actually has"
+# The probe injects the credential *names* so the environment check models the real box, but
+# it injected all of them unconditionally: a box booted with --no-credential — the "nothing
+# stealable in the box" mode — was told "credential visible to the agent" and shown
+# DEEPSEEK_API_KEY and MOAT_INJECTED_CREDENTIAL that existed only inside the probe, and a
+# custom endpoint was told it had DEEPSEEK_API_KEY, which it never has. The list now comes
+# from the environment's own state.
+NL="$WORK/nocred-doctor"
+rm -rf "$NL"; mkdir -p "$NL"
+( cd "$NL" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
+  && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
+( cd "$NL" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$NL" && capture nocred-doctor-up $MOAT up --quiet --no-detect --no-credential --egress isolated --model deepseek-flash )
+( cd "$NL" && capture nocred-doctor $MOAT doctor )
+if grep -q "no variable from the host environment reached the sandbox" "$EVIDENCE/nocred-doctor.txt" \
+   && ! grep -E "reached the sandbox.*DEEPSEEK_API_KEY" "$EVIDENCE/nocred-doctor.txt" \
+   && ! grep -q "which is the credential" "$EVIDENCE/nocred-doctor.txt" \
+   && grep -q "None of them is a provider credential" "$EVIDENCE/nocred-doctor.txt" \
+   && ! grep -q "spend-capped" "$EVIDENCE/nocred-doctor.txt"; then
+  echo "no-credential box: the doctor reports no key in the box, and does not invent one" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "no-credential box: FAILED — the doctor's report does not match the box" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$NL" && $MOAT destroy --yes >/dev/null 2>&1 )
+# The control: a box that does have a credential keeps the exposure, names which variable is
+# the credential, and does not claim the native provider's variable for a custom endpoint.
+CL="$WORK/cred-doctor"
+rm -rf "$CL"; mkdir -p "$CL"
+( cd "$CL" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
+  && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
+( cd "$CL" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$CL" && capture cred-doctor-up $MOAT up --quiet --no-detect --egress isolated --model mock-model \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+( cd "$CL" && capture cred-doctor $MOAT doctor )
+grep "are in the environment tool execution inherits" "$EVIDENCE/cred-doctor.txt" > "$WORK/cred-doctor-detail.txt" || true
+if grep -qE "of which .*MOAT_INJECTED_CREDENTIAL.*is the credential" "$EVIDENCE/cred-doctor.txt" \
+   && grep -q "spend-capped token" "$WORK/cred-doctor-detail.txt" \
+   && ! grep -E "reached the sandbox.*DEEPSEEK_API_KEY" "$EVIDENCE/cred-doctor.txt" \
+   && ! grep -q "DEEPSEEK_API_KEY" "$WORK/cred-doctor-detail.txt"; then
+  echo "the control: a box with a credential still reports it, and names which variable it is" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "the control FAILED: a credentialed box's exposure was lost or misnamed" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$CL" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

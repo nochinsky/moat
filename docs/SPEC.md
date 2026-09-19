@@ -1127,6 +1127,16 @@ is worse than the weakness itself. The
 three fixed exposures are listed in §1.2, and the live output is transcribed in
 `docs/VERIFICATION.md`.
 
+The probe is part of the measurement, so it has to model the box rather than a fuller one:
+it injects the variable names the environment actually has. A box booted with
+`--no-credential` (§1.3) is probed without any credential variable, and its exposure line
+says which of the remaining secret-looking names is *not* a provider credential; the native
+provider's variable is only expected for the native provider, because a `--base-url`
+endpoint receives the value under moat's name. Measured before that: the doctor reported
+"credential visible to the agent" with `DEEPSEEK_API_KEY` and `MOAT_INJECTED_CREDENTIAL`
+for a box that deliberately had neither, and reported `DEEPSEEK_API_KEY` for a custom
+endpoint that never has it.
+
 ### 7.5 Why not a container runtime
 
 `podman` and `docker` are not installed and cannot be installed (no `sudo`, no

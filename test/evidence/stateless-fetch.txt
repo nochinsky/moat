@@ -3,14 +3,19 @@
 --- stdout ---
 --- stderr ---
 → copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/main:refs/moat/main
-→ copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/moat-session-2026-09-19-23-12:refs/moat/moat-session-2026-09-19-23-12
-✓ fetched main -> refs/moat/main (1452c4019a26)
-  1 commit(s) reachable, HEAD 1452c4019a26 -> 1452c4019a26
-    1452c4019a26  init
-✓ fetched moat-session-2026-09-19-23-12 -> refs/moat/moat-session-2026-09-19-23-12 (a44a13f2a1e0)
-  2 commit(s) reachable, HEAD 1452c4019a26 -> 1452c4019a26
-    a44a13f2a1e0  agent: work the host has never seen
-    1452c4019a26  init
+→ copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/moat-session-2026-09-19-23-45:refs/moat/moat-session-2026-09-19-23-45
+→ copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/moat-session-2026-09-19-23-46:refs/moat/moat-session-2026-09-19-23-46
+✓ fetched main -> refs/moat/main (a175fa140380)
+  1 commit(s) reachable, HEAD a175fa140380 -> a175fa140380
+    a175fa140380  init
+✓ fetched moat-session-2026-09-19-23-45 -> refs/moat/moat-session-2026-09-19-23-45 (fde38100f718)
+  2 commit(s) reachable, HEAD a175fa140380 -> a175fa140380
+    fde38100f718  agent: work the host has never seen
+    a175fa140380  init
+✓ fetched moat-session-2026-09-19-23-46 -> refs/moat/moat-session-2026-09-19-23-46 (fde38100f718)
+  2 commit(s) reachable, HEAD a175fa140380 -> a175fa140380
+    fde38100f718  agent: work the host has never seen
+    a175fa140380  init
 
   the host working tree was recomputed and is byte-identical
   inspect with:  git log refs/moat/main

@@ -2503,6 +2503,63 @@ stale identity: the datapath of a box that is not ours is reaped, and named
 whose start time does not match is never signalled, one that matches is, and no record at
 all is a no-op. The mismatch case was watched failing with the start-time comparison removed.
 
+### AF. The doctor reports the credential state the box has, not the one its probe invented
+
+The environment check runs in an ephemeral boot whose environment is built to match the real
+box, so it injects the names the box has — but every credential name was injected
+unconditionally. On a box booted with `--no-credential` (SPEC §1.3's "nothing stealable in
+the box" mode) the probe put `DEEPSEEK_API_KEY`, `MOAT_INJECTED_CREDENTIAL` and the
+`MOAT_CREDENTIAL_*` records into a box that had none, and the report read:
+
+```
+  pass  no host env forwarded   … present: DEEPSEEK_API_KEY, HOME, …, MOAT_INJECTED_CREDENTIAL, … (plus moat's own
+                                       DEEPSEEK_API_KEY, MOAT_CREDENTIAL_EXPIRES_AT, …, MOAT_INJECTED_CREDENTIAL, …,
+                                       which is the credential, disclosed below)
+  expose  credential visible to the agent
+          MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, DEEPSEEK_API_KEY, OPENCODE_SERVER_PASSWORD,
+          MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. …
+          Use a provider-scoped, spend-capped token.
+```
+
+Every one of those credential names existed only inside the probe, and the advice to rotate a
+provider token was for a key the user had deliberately kept out of the box. A custom endpoint
+was reported the same way, including `DEEPSEEK_API_KEY`, which it never has — it receives the
+value under moat's own name.
+
+The probe list now comes from the environment's own state —
+`doctorInjectedVarNames({ credential: Boolean(state.credential), native })` — and the wording
+only calls the names that carry a credential "the credential". The same keyless box:
+
+```
+  pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME,
+                                       LANG, LC_ALL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX,
+                                       OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_MODEL,
+                                       MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD)
+  expose  credential visible to the agent
+          secret-looking names in the environment tool execution inherits: OPENCODE_SERVER_PASSWORD. None of them is
+          a provider credential — this box was booted with no key, so there is nothing here to leak. The server
+          password only opens this sandbox's own server.
+```
+
+and a box that does have a credential, pointed at a custom endpoint, keeps the exposure with
+the variable named correctly:
+
+```
+  pass  no host env forwarded   … (plus moat's own …, of which MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT,
+                                       MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL is the credential,
+                                       disclosed below)
+  expose  credential visible to the agent
+          MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT,
+          MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. … Use a provider-scoped,
+          spend-capped token.
+```
+
+Extras section AH is both boxes end to end (the keyless one, plus that credentialed control).
+`test/unit/doctor-claims.test.ts` holds the parts without a sandbox: which names the probe
+injects for each combination of credential and provider, that only credential-bearing names
+are called the credential, and that a keyless box is not offered key rotation. All three were
+watched failing with the old list and the old wording restored.
+
 ---
 
 ## Requirement-by-requirement

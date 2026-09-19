@@ -79,8 +79,8 @@ import { runIsolationChecks, type IsolationReport } from "../sandbox/isolation.t
 import { onboard } from "../secrets/onboard.ts"
 import {
   DEFAULT_TTL_SECONDS,
-  INJECTED_ENV_NAMES,
   credentialRiskNotice,
+  doctorInjectedVarNames,
   mint,
   sandboxProviderEnv,
   scanRootfsForCredential,
@@ -2159,10 +2159,15 @@ async function cmdDoctor(argv: string[]): Promise<number> {
     const runtime = await egressRuntime(state, paths)
     isolation = await runIsolationChecks(paths, {
       hostHome: process.env.HOME ?? "",
-      // The provider variable is injected under its real name in a live boot, so
-      // the probe injects it too; otherwise the check tests an environment the
-      // agent never sees.
-      injectedVarNames: [...INJECTED_ENV_NAMES, "OPENCODE_SERVER_PASSWORD", DEEPSEEK.envVar],
+      // The probe has to look like the box the agent gets, and the box's own state says
+      // what that is: the credential names only when one was injected (a --no-credential
+      // box has none, and injecting them made the doctor report a credential exposure for
+      // it), and the provider's variable only for the native provider (a custom endpoint
+      // gets the value under moat's name, never as DEEPSEEK_API_KEY).
+      injectedVarNames: doctorInjectedVarNames({
+        credential: Boolean(state.credential),
+        native: state.provider === undefined || state.provider === DEEPSEEK.opencodeID,
+      }),
       // In filtered mode the doctor proves both sides: an arbitrary address is
       // refused and the provider the environment actually uses is reachable.
       allowedProbe: providerProbe(state.providerBaseUrl ?? DEEPSEEK.baseUrl),

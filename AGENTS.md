@@ -258,6 +258,17 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   `db` is never auto-detected, and detection never adds it. Adding a claim to the brief
   means rendering it from an input and writing both branches;
   `test/unit/instructions.test.ts` fails if either paragraph goes unconditional again.
+* The doctor's probe is part of the measurement, so it must model the box the agent gets
+  and not a fuller one. `injectedVarNames` injected every credential name unconditionally,
+  so a box booted with `--no-credential` (the "nothing stealable in the box" mode, SPEC §1.3)
+  was reported as `credential visible to the agent` with `DEEPSEEK_API_KEY` and
+  `MOAT_INJECTED_CREDENTIAL` — names that existed only inside the probe — and a custom
+  endpoint was reported as having `DEEPSEEK_API_KEY`, which it never has. The list now comes
+  from `doctorInjectedVarNames({ credential: Boolean(state.credential), native })`
+  (`secrets/broker.ts`), and the wording helpers (`ownEnvNote`, `credentialExposureDetail` in
+  `sandbox/isolation.ts`) only call the names that carry a credential "the credential".
+  `test/unit/doctor-claims.test.ts` holds all three; extras section AH is the two-box
+  end-to-end (keyless, plus a credentialed control).
 * Copy-out scans for the credential it carries, and the value can only come from the
   host: the sandbox stores a fingerprint, never the key. `sync/leak-scan.ts` compares
   against `DEEPSEEK_API_KEY`/`MOAT_CREDENTIAL`/the credential store at fetch/apply time,

@@ -1,7 +1,7 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --port 37587 --timeout 5 --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --port 40261 --timeout 5 --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 1
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✗ --port 37587 is already in use on this host (nothing can bind 127.0.0.1:37587).
+✗ --port 40261 is already in use on this host (nothing can bind 127.0.0.1:40261).
   pick another port, or drop --port and moat will choose a free one.

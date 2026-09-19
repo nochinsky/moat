@@ -210,6 +210,45 @@ echo "MOAT_MOUNTS_B64=$(awk -F' - ' '${MOUNT_FIELDS_AWK}' /proc/self/mountinfo |
 `
 }
 
+/**
+ * What the environment check says about moat's own variables.
+ *
+ * Only the names that carry the credential are called the credential. The earlier wording
+ * called the whole injected list "the credential", which is wrong twice over:
+ * MOAT_MODEL and MOAT_PROVIDER_BASE_URL are not secrets, and on a box booted with
+ * --no-credential none of the injected names is a credential at all.
+ */
+export function ownEnvNote(injectedNames: string[]): string {
+  if (injectedNames.length === 0) return ""
+  const credential = injectedNames.filter((name) => /CREDENTIAL|API_KEY/.test(name))
+  return credential.length > 0
+    ? ` (plus moat's own ${injectedNames.join(", ")}, of which ${credential.join(", ")} is the credential, disclosed below)`
+    : ` (plus moat's own ${injectedNames.join(", ")})`
+}
+
+/**
+ * What the credential exposure says.
+ *
+ * When the box was booted with no provider credential, the only secret-looking variable
+ * is the sandbox's own server password. The exposure has to say that, instead of asking
+ * the user to rotate a key that does not exist.
+ */
+export function credentialExposureDetail(secretNames: string[], credentialInjected: boolean): string {
+  if (secretNames.length === 0) return "no secret-looking variable reaches tool execution"
+  if (!credentialInjected) {
+    return (
+      `secret-looking names in the environment tool execution inherits: ${secretNames.join(", ")}. ` +
+      "None of them is a provider credential — this box was booted with no key, so there is nothing " +
+      "here to leak. The server password only opens this sandbox's own server."
+    )
+  }
+  return (
+    `${secretNames.join(", ")} are in the environment tool execution inherits. The bundle blanks ` +
+    `secret-looking names for shell commands, but the values remain in the opencode process ` +
+    `environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token.`
+  )
+}
+
 type Parsed = Record<string, string>
 
 /** A host env name we did not expect means real leakage; everything else is accounted for. */
@@ -416,7 +455,7 @@ export async function runIsolationChecks(
       detail:
         leaked.length === 0 && forbiddenPresent.length === 0
           ? `no variable from the host environment reached the sandbox; present: ${envNames.join(", ")}` +
-            (injectedNames.length > 0 ? ` (plus moat's own ${injectedNames.join(", ")}, which is the credential, disclosed below)` : "")
+            ownEnvNote(injectedNames)
           : `unexpected: ${[...leaked, ...forbiddenPresent].join(", ")}`,
     },
     {
@@ -465,16 +504,15 @@ export async function runIsolationChecks(
   // implies safety it does not provide is worse than the weakness itself.
   // ---------------------------------------------------------------------------
   const secretNames = (parsed.MOAT_SECRET_ENV_NAMES ?? "").split(",").filter((name) => name.length > 0)
+  // Whether the box this report describes actually has a provider credential, judged by the
+  // names the probe was told to inject: a --no-credential box has none, and the exposure
+  // must not read as if it did.
+  const injectedCredential = injectedNames.some((name) => /CREDENTIAL|API_KEY/.test(name))
   checks.push({
     kind: "exposure",
     name: "credential visible to the agent",
     ok: true,
-    detail:
-      secretNames.length === 0
-        ? "no secret-looking variable reaches tool execution"
-        : `${secretNames.join(", ")} are in the environment tool execution inherits. The bundle blanks ` +
-          `secret-looking names for shell commands, but the values remain in the opencode process ` +
-          `environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token.`,
+    detail: credentialExposureDetail(secretNames, injectedCredential),
   })
   // With an isolated namespace this stops being a documented exposure and
   // becomes a property that must hold: the host's loopback must be unreachable.
