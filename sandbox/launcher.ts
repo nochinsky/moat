@@ -246,6 +246,39 @@ export function sandboxEnv(extra: SandboxEnv = {}): NodeJS.ProcessEnv {
   } as NodeJS.ProcessEnv
 }
 
+/**
+ * Escape hatch for experiments: extra KEY=VALUE pairs for the sandbox
+ * environment, from MOAT_SANDBOX_ENV.
+ *
+ * Names are restricted to the OPENCODE_/MOAT_ prefixes so this cannot become a
+ * channel that forwards host environment into the box, and names moat manages
+ * itself are refused. The reserved list matters: this map used to be spread
+ * *after* the credential and the server password, so an ambient MOAT_ variable
+ * could silently replace either inside the box.
+ */
+export function extraSandboxEnv(
+  source: string | undefined = process.env.MOAT_SANDBOX_ENV,
+  reserved: string[] = [],
+): Record<string, string> {
+  if (!source) return {}
+  const result: Record<string, string> = {}
+  for (const pair of source.split(/[,\n]/).map((s) => s.trim()).filter(Boolean)) {
+    const index = pair.indexOf("=")
+    if (index === -1) continue
+    const key = pair.slice(0, index)
+    if (!/^(OPENCODE_|MOAT_)/.test(key)) {
+      log.warn(`ignoring MOAT_SANDBOX_ENV entry ${key}: only OPENCODE_/MOAT_ prefixed names may enter the sandbox`)
+      continue
+    }
+    if (reserved.includes(key)) {
+      log.warn(`ignoring MOAT_SANDBOX_ENV entry ${key}: moat manages that variable`)
+      continue
+    }
+    result[key] = pair.slice(index + 1)
+  }
+  return result
+}
+
 export function unshareArgs(inner: string): string[] {
   return [
     "--user",
@@ -261,12 +294,21 @@ export function unshareArgs(inner: string): string[] {
   ]
 }
 
+export type RunInSandboxResult = { code: number; output: string; timedOut: boolean }
+
+// Captured output is bounded: a project's test suite can print gigabytes, and
+// the host process must not grow with it. The head is kept because the doctor's
+// markers are printed first, the tail because test verdicts are printed last.
+const MAX_CAPTURED_OUTPUT = 4 * 1024 * 1024
+const OUTPUT_HEAD = 256 * 1024
+const OUTPUT_TAIL = 512 * 1024
+
 /** Run a script inside a *fresh, ephemeral* boot of the sandbox and wait for it. */
 export async function runInSandbox(
   p: EnvPaths,
   innerBody: string,
-  opts: { env?: SandboxEnv; onOutput?: (chunk: string) => void } = {},
-): Promise<{ code: number; output: string }> {
+  opts: { env?: SandboxEnv; onOutput?: (chunk: string) => void; timeoutMs?: number } = {},
+): Promise<RunInSandboxResult> {
   const inner = writeInnerScript(p, innerBody)
   const boot = writeOuterScript(p, { innerScript: inner })
   return await new Promise((resolve, reject) => {
@@ -275,8 +317,15 @@ export async function runInSandbox(
       stdio: ["ignore", "pipe", "pipe"],
     })
     let output = ""
+    let timedOut = false
     const sink = (chunk: string) => {
       output += chunk
+      if (output.length > MAX_CAPTURED_OUTPUT + 64 * 1024) {
+        output =
+          output.slice(0, OUTPUT_HEAD) +
+          "\n[moat] output truncated by the host\n" +
+          output.slice(-OUTPUT_TAIL)
+      }
       opts.onOutput?.(chunk)
     }
     child.stdout.setEncoding("utf8")
@@ -284,7 +333,17 @@ export async function runInSandbox(
     child.stdout.on("data", sink)
     child.stderr.on("data", sink)
     child.on("error", reject)
-    child.on("close", (code) => resolve({ code: code ?? -1, output }))
+    const timer = opts.timeoutMs
+      ? setTimeout(() => {
+          timedOut = true
+          // unshare --kill-child takes the namespace down with it.
+          child.kill("SIGKILL")
+        }, opts.timeoutMs)
+      : null
+    child.on("close", (code) => {
+      if (timer) clearTimeout(timer)
+      resolve({ code: code ?? -1, output, timedOut })
+    })
   })
 }
 

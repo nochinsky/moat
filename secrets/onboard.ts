@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { credentialsFile } from "../lib/paths.ts"
+import { credentialsFile, ensureMoatHome } from "../lib/paths.ts"
 import { DEEPSEEK, CREDENTIAL_ENV_VARS } from "../lib/provider.ts"
 import * as log from "./../lib/log.ts"
 
@@ -92,7 +92,7 @@ export async function verifyKey(key: string): Promise<VerifyResult> {
 /** Save the key where the broker looks, mode 0600, without disturbing anything else. */
 export function saveCredential(key: string, provider = DEEPSEEK.opencodeID): string {
   const file = credentialsFile()
-  fs.mkdirSync(path.dirname(file), { recursive: true })
+  ensureMoatHome()
   let store: Record<string, { value: string; baseUrl?: string; model?: string }> = {}
   if (fs.existsSync(file)) {
     try {
@@ -102,8 +102,12 @@ export function saveCredential(key: string, provider = DEEPSEEK.opencodeID): str
     }
   }
   store[provider] = { ...(store[provider] ?? {}), value: key }
-  fs.writeFileSync(file, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 })
-  fs.chmodSync(file, 0o600)
+  // Write beside the target and rename: a reader never sees a half-written
+  // store, and the mode is set before the file has its final name.
+  const tmp = `${file}.tmp-${process.pid}`
+  fs.writeFileSync(tmp, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 })
+  fs.chmodSync(tmp, 0o600)
+  fs.renameSync(tmp, file)
   return file
 }
 

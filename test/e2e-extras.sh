@@ -95,6 +95,11 @@ capture apply-branch $MOAT apply main --name e2e-checkout
 {
   echo "\$ git -C $PROJECT branch --list 'e2e-checkout'"
   git -C "$PROJECT" branch --list 'e2e-checkout'
+  if git -C "$PROJECT" branch --list 'e2e-checkout' | grep -q 'e2e-checkout'; then
+    echo "  pass  the local branch was created from the fetched ref"
+  else
+    echo "  FAIL  the local branch was not created"
+  fi
   echo "\$ git -C $PROJECT rev-parse HEAD   # unchanged: apply did not check anything out"
   git -C "$PROJECT" rev-parse HEAD
   echo "\$ git -C $PROJECT status --porcelain   # only the user's own pre-existing dirt"

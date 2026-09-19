@@ -183,10 +183,14 @@ export function renderBundle(input: RenderInput): RenderedBundle {
  */
 export function assertInvariants(rendered: RenderedBundle): void {
   const parsed = JSON.parse(rendered.config) as { permission?: Record<string, string>; tools?: Record<string, boolean> }
-  if (parsed.permission?.["*"] !== "allow") throw new Error("bundle invariant: permission['*'] must be 'allow'")
-  const denies = Object.entries(parsed.permission ?? {}).filter(([key, value]) => key !== "*" && value === "deny")
-  if (denies.length > 0) {
-    throw new Error(`bundle invariant: the only permission rule may be '*', found ${JSON.stringify(denies)}`)
+  // Invariant 3 is "`{"*": "allow"}` and nothing else". Checking only that no
+  // rule was a *deny* let `{"*":"allow","bash":"ask"}` through, which is not
+  // that rule set. The object must have exactly one key, and it must allow.
+  const permission = parsed.permission ?? {}
+  if (Object.keys(permission).length !== 1 || permission["*"] !== "allow") {
+    throw new Error(
+      `bundle invariant: permission must be exactly {"*":"allow"}, found ${JSON.stringify(permission)}`,
+    )
   }
   for (const name of rendered.excluded) {
     if (parsed.tools?.[name] !== false) throw new Error(`bundle invariant: ${name} must be omitted`)

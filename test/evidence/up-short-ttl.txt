@@ -4,21 +4,19 @@
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
 profiles: everything requested is already installed
-! the host project has changed since it was copied in, and the sandbox holds nothing that is not already on the host. Re-copying it now.
-→ copy-in: git clone --no-hardlinks
-✓ copy-in via git: 4 files, 0.2 KiB, digest 053dcb43c6f87e3f (dirty tree: 1 modified, 2 untracked)
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 6s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-00-13
-→ sandbox booted (pid 167998, port 35759); waiting for opencode serve
+agent branch: moat-session-2026-09-19-00-37
+→ sandbox booted (pid 183437, port 36441); waiting for opencode serve
 ✓ sandbox up, warm start 4.21s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:35759  (basic auth user "opencode")
-  password   em8WVLgktuvQ5mC9HE8PwDMcRq8V0vom
+  opencode   http://127.0.0.1:36441  (basic auth user "opencode")
+  password   08epiH4QEuKM8qczoZs-M12-oJBzQtY3
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-19T00:13:09.407Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-19T00:37:43.891Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
