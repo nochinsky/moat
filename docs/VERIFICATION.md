@@ -503,6 +503,14 @@ against the criterion:
   a view of the host's `/`. Confirmed by the next check: neither `/home/user` nor
   the project path exists inside it.
 
+The check count is the **mode's**, not a constant: this capture is `open` and printed
+14 checks (plus 4 exposures and 1 note). `isolated` prints 16
+(`test/evidence/doctor.txt`) and `filtered` 17 (`test/evidence/doctor-filtered.txt`);
+the extra checks are the network namespace, the host loopback as a check rather than a
+documented exposure, and the two-sided egress check. `docs/SPEC.md` §2.4 deliberately
+carries no number — it said "15 isolation assertions" for a while and nothing kept it
+honest — and `test/unit/docs-claims.test.ts` fails if a count comes back.
+
 ### 4c. The sandbox is not just chrooted — every namespace differs from the host
 
 ```

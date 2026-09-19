@@ -239,7 +239,7 @@ filesystem, no socket, no subprocess.
 | `moat snapshot [name]` / `moat restore <name>` | rootfs snapshots |
 | `moat exec -- <cmd>` | run one command in a fresh boot of the environment's sandbox |
 | `moat shell` | interactive shell inside the sandbox |
-| `moat doctor` | host probe plus 15 isolation assertions executed *inside* the box |
+| `moat doctor` | host probe plus the in-box isolation checks for the egress mode in force — `open`, `isolated` and `filtered` each run a different set, and the command prints the count it ran |
 | `moat tools` | the declared bundle, the registry, and the measured gap between them |
 | `moat models` | DeepSeek models and their context windows, from the catalog |
 | `moat profiles` | toolchain profiles, and the base packages every image has |

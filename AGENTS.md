@@ -513,6 +513,12 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 
 **This codebase**
 
+* SPEC is the contract, so it must not carry a count the tool prints. The
+  `moat doctor` row promised "15 isolation assertions" while the three egress modes
+  print 14 (`open`), 16 (`isolated`) and 17 (`filtered`) — and the command prints the
+  count itself. Nothing kept the number honest. Counts belong in the capture
+  (`docs/VERIFICATION.md` §4b) and in the tool's own output, not in a hand-maintained
+  table; `test/unit/docs-claims.test.ts` fails if that row states a count again.
 * Node's type stripping cannot desugar TypeScript parameter properties
   (`constructor(private readonly x: T)`). Use plain fields. `tsconfig` sets
   `erasableSyntaxOnly`, so this fails at typecheck.
