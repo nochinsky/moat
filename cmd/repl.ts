@@ -104,6 +104,13 @@ export async function runRepl(options: ReplOptions): Promise<number> {
 
   let sessionID = options.sessionID ?? (await newestSession(client))
   let busy = false
+  /**
+   * The event stream is how a turn is watched: streamed text, tool rows,
+   * questions and the `session.idle` that ends a turn all arrive there, and it
+   * is subscribed once. Once it is gone no later turn can be shown either, so
+   * this latches and the session says so instead of looking busy forever.
+   */
+  let streamLost = false
   let typing = false // an assistant text block is open on the current line
   let exitCode = 0
   let closed = false
@@ -400,7 +407,22 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   // live view
   // ---------------------------------------------------------------------------
   const controller = new AbortController()
-  const subscription = await client.event.subscribe({ signal: controller.signal })
+  // The SDK subscribes to /event through a generated SSE client whose retry
+  // loop is `while (true)` (dist/gen/core/serverSentEvents.gen.js): a failed
+  // connection goes to onSseError, sleeps with backoff, and tries again,
+  // forever. It never ends the stream and never throws, so a box that is
+  // stopped looks exactly like a quiet turn, and the loop below would wait
+  // for a `session.idle` that can no longer arrive. One attempt, no reconnect:
+  // this stream is a live view, not a queue, so a break in it is reported
+  // rather than papered over. onSseError carries the reason into that report.
+  let streamError: string | null = null
+  const subscription = await client.event.subscribe({
+    signal: controller.signal,
+    sseMaxRetryAttempts: 1,
+    onSseError: (error: unknown) => {
+      streamError = error instanceof Error ? error.message : String(error)
+    },
+  })
 
   const toolStatus = new Map<string, string>()
   /** When each call started, for the elapsed time shown when it finishes. */
@@ -460,6 +482,37 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   // `message.updated` always arrives before that message's first delta.
   const partKind = new Map<string, string>()
   const assistantMessages = new Set<string>()
+  /**
+   * Say that the live view is over, rather than going quiet.
+   *
+   * When the stream ends -- the box stopped, the server died, the forward
+   * dropped -- nothing will ever arrive again, and this used to be swallowed
+   * by an empty catch: `busy` stayed true, so the spinner turned forever and
+   * every later line was answered with "queued ... when the current step
+   * finishes" for a turn that was already over. The only clue was the answer
+   * that never came.
+   */
+  const loseStream = (reason: string): void => {
+    if (closed || controller.signal.aborted) return
+    stopSpinner()
+    endBlocks()
+    // Commit a row that never got its finish, like `session.idle` would.
+    if (activeTool) {
+      commitLive(toolLine({ ...activeTool, status: "completed" }, theme, terminalWidth()))
+      activeTool = null
+    }
+    // A question that can no longer be delivered is not pending any more.
+    pending = null
+    busy = false
+    streamLost = true
+    say("")
+    say(`${RED}lost the event stream from the sandbox:${RESET} ${reason}`)
+    say(`  ${DIM}every event of a turn arrives on that one stream, so this view cannot`)
+    say(`  continue. The turn may still be running inside the box:${RESET} ${BOLD}moat up${RESET} ${DIM}restarts`)
+    say(`  it, and a new${RESET} ${BOLD}moat attach${RESET} ${DIM}opens this session where it left off.${RESET}`)
+    prompt()
+  }
+
   const startView = (async () => {
     try {
       for await (const event of subscription.stream) {
@@ -598,7 +651,10 @@ export async function runRepl(options: ReplOptions): Promise<number> {
           busy = false
         }
       }
+      // The body ended: with no reconnect, that is the end of the live view.
+      loseStream(streamError || "the connection closed")
     } catch (error) {
+      loseStream(streamError || (error as Error).message || "the connection closed")
     }
   })()
 
@@ -606,6 +662,14 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   // sending
   // ---------------------------------------------------------------------------
   const send = async (text: string): Promise<void> => {
+    if (streamLost) {
+      // Without the stream the answer cannot be rendered, so sending now would
+      // spend tokens on something the user cannot see. Refusing is honest; a
+      // silent turn that never appears is not.
+      say(`  ${YELLOW}not sent:${RESET} the event stream is gone, so the answer could not be shown.`)
+      say(`  ${DIM}leave with /quit, then ${RESET}${BOLD}moat up${RESET}${DIM} and ${RESET}${BOLD}moat attach${RESET}${DIM} to carry on in this session.${RESET}`)
+      return prompt()
+    }
     if (!sessionID) sessionID = await createSession(client)
     const { providerID, modelID } = splitModel(modelRef)
     // A turn's numbers are per-turn, so everything that accumulates is reset

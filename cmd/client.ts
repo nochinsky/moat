@@ -113,14 +113,7 @@ export async function driveSession(
   },
 ): Promise<SessionResult> {
   const sessionID = input.sessionID ?? (await createSession(client))
-  try {
-    return await driveStreaming(client, sessionID, input)
-  } catch (error) {
-    // Streaming is the pleasant path, not the only path. If the event stream is
-    // unavailable for any reason, fall back to the blocking call and say so.
-    input.onEvent?.(`[stream] unavailable (${(error as Error).message}); falling back to waiting for the whole turn`)
-    return await driveBlocking(client, sessionID, input)
-  }
+  return await driveStreaming(client, sessionID, input)
 }
 
 async function createSession(client: Client): Promise<string> {
@@ -204,7 +197,32 @@ async function driveStreaming(
 ): Promise<SessionResult> {
   const deadline = Date.now() + (input.timeoutMs ?? 45 * 60 * 1000)
   const controller = new AbortController()
-  const subscription = await client.event.subscribe({ signal: controller.signal })
+  // The blocking call is a fallback only *before* the prompt is sent. Subscribing
+  // first and falling back here means one turn is requested either way; falling
+  // back after a mid-turn stream failure would request it twice.
+  //
+  // `sseMaxRetryAttempts: 1` is what makes a mid-turn failure visible at all.
+  // The SDK's SSE client retries forever by default (see the REPL's subscribe
+  // for the mechanism), so without this the stream would never end: the turn
+  // would keep printing "no output for 30s" until the budget ran out, long
+  // after the connection it was watching was gone.
+  let streamError: string | null = null
+  const subscription = await client.event
+    .subscribe({
+      signal: controller.signal,
+      sseMaxRetryAttempts: 1,
+      onSseError: (error: unknown) => {
+        streamError = error instanceof Error ? error.message : String(error)
+      },
+    })
+    .catch((error: Error) => {
+      input.onEvent?.(`[stream] unavailable (${error.message}); falling back to waiting for the whole turn`)
+      return null
+    })
+  if (!subscription) {
+    controller.abort()
+    return await driveBlocking(client, sessionID, input)
+  }
 
   let text = ""
   let midText = false
@@ -258,7 +276,15 @@ async function driveStreaming(
       }
 
       const { value, done } = outcome.value
-      if (done) break
+      if (done) {
+        // With no reconnect, an end here means the connection is gone and
+        // `session.idle` will never arrive. The transcript below is all there
+        // will ever be, and reporting a partial turn as a finished one is a
+        // lie, so it is recorded as an error. (The timeout path above leaves
+        // the loop without passing through here.)
+        if (!idle) errors.push(`the event stream ended mid-turn${streamError ? `: ${streamError}` : ""}`)
+        break
+      }
       pending = iterator.next()
       lastEvent = Date.now()
 
@@ -334,6 +360,10 @@ async function driveStreaming(
         idle = true
       }
     }
+  } catch (error) {
+    // The prompt is already in flight: re-sending it would run the turn twice, and
+    // a settled turn can even restart. Report the failure and read the transcript.
+    errors.push(`the event stream failed mid-turn: ${streamError ?? (error as Error).message}`)
   } finally {
     controller.abort()
     endText()

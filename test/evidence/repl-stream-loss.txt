@@ -1,0 +1,58 @@
+--- moat down said ---
+✓ sandbox stopped (pid 165004); the environment and its snapshots are kept
+  resume with: moat up
+  remove with: moat destroy
+
+--- after the box stopped ---
+
+› moat · moat/mock-model · /home/user/moat-demo/streamloss
+› type a task and press enter. /help for commands, ctrl-c to interrupt.
+› 
+› › write a file called hello.txt with the word hi in it
+
+  ⠋ thinking 1s  ⠙ thinking 1s  ⠹ thinking 1s  ⠸ thinking 1s  ⠼ thinking 1s  ⠴ thinking 2s  ⠦ thinking 2s  ⠧ thinking 2s  ⠇ thinking 2s  ⠏ thinking 2s  ⠋ thinking 2s  ⠙ thinking 2s  ⠹ thinking 2s  ⠸ thinking 2s  ⠼ thinking 2s  ⠴ thinking 3s  ⠦ thinking 3s  ⠧ thinking 3s  ⠇ thinking 3s  ⠏ thinking 3s  ⠋ thinking 3s  ⠙ thinking 3s
+› lost the event stream from the sandbox: terminated
+›   every event of a turn arrives on that one stream, so this view cannot
+›   continue. The turn may still be running inside the box: moat up restarts
+›   it, and a new moat attach opens this session where it left off.
+› › are you still there
+  not sent: the event stream is gone, so the answer could not be shown.
+›   leave with /quit, then moat up and moat attach to carry on in this session.
+› › /help
+
+›   type anything to send it to the agent. It queues if the agent is mid-turn.
+› 
+›   /help      this list
+›   /stop      abort the turn the agent is running
+›   /diff      everything the agent has changed since it started
+›   /take      bring the agent's branch onto the host and show it
+›   /status    model, effort, branch, session and credential time left
+›   /model     show or change the model: /model [name]
+›   /think     reasoning effort: /think [level]
+›   /thinking  show or hide the model's reasoning as it streams
+›   /agent     show or change the agent: /agent [name]
+›   /compact   summarise the session so far, to free up context
+›   /undo      roll the conversation back to before your last message
+›   /redo      put back a turn removed with /undo
+›   /verbose   show or hide tool output
+›   /sessions  list past sessions in this environment
+›   /use       switch to another session: /use <id>
+›   /new       start a fresh session
+›   /shell     open a shell inside the sandbox (ctrl-d to come back)
+›   /apply     merge the agent's work into your directory (asks first)
+›   /verify    run the project's own tests against the agent's work
+›   /quit      leave (the sandbox keeps running)
+›   /exit      leave (the sandbox keeps running)
+› 
+› › /quit
+
+
+--- checks ---
+  pass  the session started and the turn began
+  pass  the REPL said the event stream was gone
+  pass  it still answers commands, so it is not wedged
+  pass  the next message was refused, not queued
+  pass  nothing was queued for a turn that was already gone
+  pass  the REPL was still alive to take the command
+
+6/6 checks passed
