@@ -137,11 +137,13 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   processes can boot one environment at once (`moat doctor` while `moat up`, or
   `moat exec` during a restart). `boot.sh` and `entry.sh` are audit copies of
   the most recent boot, not the files that run.
-* The long-running box redirects its output to `<rootfs>/var/log/moat/boot.log`,
-  inside its own rootfs. It must not hold an append fd on a host file outside the
-  box, which is what the old `stdio: [fd, fd]` gave it. `moat logs sandbox` and
-  the boot-failure tail read the rootfs file; `logs/sandbox.log` only holds the
-  lines before the redirect.
+* The long-running box writes its output to `<rootfs>/var/log/moat/boot.log`,
+  inside its own rootfs, through a descriptor the host opened and verified (see
+  the rootfs traps below). It must not hold an append fd on a host file *outside*
+  the box, which is what the old `stdio: [fd, fd]` gave it. `moat logs sandbox`
+  and the boot-failure tail read the rootfs file through the guard, capped at
+  512 KiB so a log the agent grew cannot exhaust host memory; `logs/sandbox.log`
+  only holds the lines before the dup.
 * `moat up --fresh` deletes `/work`. It refuses while a sandbox is live and
   refuses without `--yes` when the box holds unfetched commits or uncommitted
   files.
@@ -168,14 +170,14 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   symlinked `boot.log` or `tools.jsonl` would otherwise print a host file to your
   terminal. Writes *outside* the rootfs (`runtime/boot-*.sh`, `logs/`) are not
   reachable by the agent and stay on plain `writeAtomic`.
-* Known residual, not yet fixed: the boot script's `exec >> <rootfs>/var/log/moat/
-  boot.log` is a shell redirect, so it follows a symlink swapped in after the
-  host's checks. Winning that race writes (or appends) a file named `boot.log` in
-  a directory the agent picked, with host privileges — a confused deputy, but a
-  narrow one: the content is the box's own log. The fix is to open the log on the
-  host through `lib/rootfs-fs.ts` and pass the descriptor to the child instead of
-  redirecting in the script; it changes how the pre-redirect lines in
-  `logs/sandbox.log` work, so it was not rushed in with this tranche.
+* The boot log is opened **on the host** through the same guard and passed to
+  the boot script as descriptor 3; the script dups it (`exec 1>&3 2>&3`) instead
+  of redirecting to a path. A path resolve in the boot shell would follow a
+  symlink planted in the agent-writable rootfs and point the host's write at a
+  host directory. `test/unit/rootfs-write.test.ts` asserts the script contains
+  the dup and never the path. The lines before the dup still go to
+  `logs/sandbox.log` outside the box, which is the fallback when a boot dies
+  before it gets that far.
 * Snapshot extraction needs no guard of its own, and that was measured rather than
   assumed: GNU tar refuses to write through a symlink its own archive created
   (`Cannot open: Not a directory`, target untouched), and `restoreEnv` treats a
@@ -222,6 +224,15 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   the namespace's user namespace and an unprivileged user has none in the host's).
   `bootIsolation()` now refuses to boot a ruleset outside the sandbox's own
   namespace, and `test/unit/egress.test.ts` fails if either predicate regresses.
+* slirp's API socket has a **one-connection accept queue**. The readiness probe
+  opens a connection and destroys it, and the forward's own connect can then fail
+  with `EAGAIN` while the probe is still queued (measured on a real boot: "connect
+  EAGAIN" on a boot that succeeded on the next attempt). `addHostForward` retries
+  a connect that never reached slirp, and treats a *reply* that refuses the forward
+  as final. `pruneDeadSockets` is conservative for the same reason: only ENOENT or
+  ECONNREFUSED unlinks a socket file, because EAGAIN is what a live socket looks
+  like from here, and unlinking a live one makes it unreachable by path for the
+  rest of its life.
 * The API socket is **not** a fixed path. Every boot names its own
   (`slirp-<pid>-<rand>.sock`) and readiness is a **connection**, not a `stat()`:
   a socket file outlives the slirp that made it, so a restart that only checked
@@ -267,6 +278,15 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   against `packages/plugin/src/index.ts`, not from memory.
 * The bundle is reinstalled on **every** boot. A cached image serving a stale
   plugin is a bug that already happened once.
+* opencode compiles `tools: {name: false}` into `permission: {name: "deny"}`
+  *before* the plugin's `config` hook runs (`config/config.ts`, "if
+  (result.tools)"), and a hook that throws is logged and **ignored** — the boot
+  carries on. So a throwing hook is a silent loss: the in-box invariant check
+  rejected every boot for several commits and the only symptom was an ERROR line
+  in a boot log nobody read, while its audit `config` record never appeared.
+  Write checks in that hook against the merged config, and treat "the hook threw"
+  as something the evidence has to show (`test/unit/plugin-guard.test.ts` asserts
+  the record is written when the check passes).
 * Requirement 4 — advertising exactly the curated tool set — is **not achievable**
   in 1.18.31. The bundle refuses to *execute* anything outside the curated set
   instead. `moat tools` prints the gap. Do not "fix" this by hiding the gap.

@@ -34,7 +34,7 @@ import {
 } from "../sandbox/egress.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
-import { readRootfsFile } from "../lib/rootfs-fs.ts"
+import { readRootfsFile, readRootfsFileTail } from "../lib/rootfs-fs.ts"
 import {
   credentialExpired,
   envExists,
@@ -1853,14 +1853,23 @@ function tailFile(file: string, lines: number): string {
   return tailText(fs.readFileSync(file, "utf8"), lines)
 }
 
+/** Read at most this much of an agent-controlled log: it decides the file's size. */
+const LOG_TAIL_BYTES = 512 * 1024
+
 /**
  * The boot log lives inside the rootfs, which the agent can write to: a symlink
- * there would make this read a host file and print it. `readRootfsFile` refuses
- * to follow one, so a redirected path reads as "(no log)".
+ * there would make this read a host file and print it, and a log the agent grew to
+ * gigabytes would be pulled into memory. `readRootfsFileTail` refuses the symlink
+ * and reads only the tail, so a redirected path reads as "(no log)" and a huge
+ * one is simply truncated.
  */
 function rootfsLogTail(paths: EnvPaths, target: string, lines: number): string {
-  const text = readRootfsFile(paths.rootfs, target)
-  return text === null ? "(no log)" : tailText(text, lines)
+  const text = readRootfsFileTail(paths.rootfs, target, LOG_TAIL_BYTES)
+  // An empty boot log means the boot died before the dup, so the lines that did
+  // make it are in logs/sandbox.log outside the box. Report "(no log)" and let the
+  // caller fall back to it, as it did when the file was not created at all.
+  if (text === null || text.trim().length === 0) return "(no log)"
+  return tailText(text, lines)
 }
 
 /**
@@ -2212,7 +2221,7 @@ function readBundleReport(paths: EnvPaths): {
   source?: string
 } | null {
   const pluginReport = path.join(paths.auditDir, "bundle.json")
-  const installed = readRootfsFile(paths.rootfs, "/usr/local/share/moat/opencode.json")
+  const installed = readRootfsFile(paths.rootfs, "/usr/local/share/moat/opencode.json", { maxBytes: 1024 * 1024 })
   if (installed === null) return null
   let declared: Record<string, boolean> = {}
   try {

@@ -12,16 +12,16 @@ moat needs a DeepSeek API key.
   DEEPSEEK_API_KEY: ***********************************
   checking...                    ✓ key accepted (deepseek-flash, deepseek-v4-pro), saved to /home/user/.moat/credentials.json
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-15-42
-→ sandbox booted (pid 84622, port 34571); waiting for opencode serve
-✓ sandbox up, warm start 14.73s (image reused)
+agent branch: moat-session-2026-09-19-16-26
+→ sandbox booted (pid 110356, port 45965); waiting for opencode serve
+✓ sandbox up, warm start 14.29s (image reused)
 
   project    /home/user/moat-demo/onboard-demo
   env        /home/user/.moat/envs/a5b7670da9ae
-  opencode   http://127.0.0.1:34571  (basic auth user "opencode")
-  password   XiYv3w-Hh0x50vi2kTsvlycnxAvEV0tZ
+  opencode   http://127.0.0.1:45965  (basic auth user "opencode")
+  password   Z3rn1k0fbmwZJ-9gmNqd0vylB8JbV1Gn
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T19:42:30.421Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T20:26:07.581Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

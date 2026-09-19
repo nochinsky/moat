@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { ENV_ID, envPathsForId, envsDir, type EnvPaths } from "../lib/paths.ts"
+import { ENV_ID, envPathsForId, envsDir, partPath, type EnvPaths } from "../lib/paths.ts"
 import type { EgressMode } from "../lib/pins.ts"
 import { DEEPSEEK } from "../lib/provider.ts"
 
@@ -138,7 +138,10 @@ export function readState(p: EnvPaths): EnvState | null {
 
 export function writeState(p: EnvPaths, state: EnvState): void {
   fs.mkdirSync(path.dirname(p.state), { recursive: true })
-  const tmp = `${p.state}.tmp`
+  // Unique per call: a fixed `state.json.tmp` collided when two host processes
+  // wrote one environment's state (an `up` racing `exec`/doctor), and the loser
+  // died with ENOENT on the rename above.
+  const tmp = partPath(p.state)
   fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 })
   fs.renameSync(tmp, p.state)
 }

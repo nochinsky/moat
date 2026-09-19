@@ -101,6 +101,30 @@ export function writeRootfsFile(rootfs: string, target: string, content: string 
   }
 }
 
+/**
+ * Open a file inside the rootfs for appending, without following a symlink.
+ *
+ * The returned descriptor is handed to a child process, so the child never
+ * resolves an agent-writable path: it dups the descriptor (`exec 1>&3`), and a
+ * symlink swapped in after this call cannot move the write.
+ */
+export function openRootfsFileForAppend(rootfs: string, target: string, mode = 0o600): number {
+  const full = walk(rootfs, target, { create: true, last: "skip" })
+  const fd = fs.openSync(
+    full,
+    fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_APPEND | fs.constants.O_NOFOLLOW,
+    mode,
+  )
+  try {
+    const opened = fs.readlinkSync(`/proc/self/fd/${fd}`)
+    if (opened !== full) throw new Error(`refusing to open outside the sandbox rootfs: ${opened}`)
+    return fd
+  } catch (error) {
+    fs.closeSync(fd)
+    throw error
+  }
+}
+
 /** Create a directory inside the rootfs, refusing symlinked components. */
 export function ensureRootfsDir(rootfs: string, target: string, mode = 0o755): string {
   const full = walk(rootfs, target, { create: true, last: "directory" })
@@ -113,8 +137,44 @@ export function chmodRootfsDir(rootfs: string, target: string, mode: number): vo
   fs.chmodSync(walk(rootfs, target, { create: false, last: "directory" }), mode)
 }
 
-/** Read a file inside the rootfs. A symlinked or missing path reads as null. */
-export function readRootfsFile(rootfs: string, target: string): string | null {
+/**
+ * Read a file inside the rootfs. A symlinked or missing path reads as null.
+ *
+ * `maxBytes` protects the caller from a file the agent grew: an oversized file
+ * reads as null rather than being pulled into memory. Pass a cap for anything
+ * that is later parsed (a 10 GB JSON config is a denial of service, not a config).
+ */
+export function readRootfsFile(rootfs: string, target: string, opts: { maxBytes?: number } = {}): string | null {
+  return read(rootfs, target, (size, fd) => {
+    if (opts.maxBytes !== undefined && size > opts.maxBytes) return null
+    return fs.readFileSync(fd, "utf8")
+  })
+}
+
+/**
+ * The last `maxBytes` of a file inside the rootfs.
+ *
+ * Used for logs: the whole point of a log is that something else decides how big
+ * it gets, and inside the box that something is the agent. A cut can split a
+ * multi-byte character at the start; the caller shows the last lines anyway.
+ */
+export function readRootfsFileTail(rootfs: string, target: string, maxBytes: number): string | null {
+  return read(rootfs, target, (size, fd) => {
+    const start = Math.max(0, size - maxBytes)
+    const length = size - start
+    const buffer = Buffer.allocUnsafe(length)
+    let position = 0
+    while (position < length) {
+      const chunk = fs.readSync(fd, buffer, position, length - position, start + position)
+      if (chunk <= 0) break
+      position += chunk
+    }
+    return buffer.subarray(0, position).toString("utf8")
+  })
+}
+
+/** The shared open-verify-read dance behind both readers. */
+function read(rootfs: string, target: string, consume: (size: number, fd: number) => string | null): string | null {
   let full: string
   try {
     full = walk(rootfs, target, { create: false, last: "file" })
@@ -124,7 +184,7 @@ export function readRootfsFile(rootfs: string, target: string): string | null {
   let fd: number | null = null
   try {
     fd = fs.openSync(full, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
-    return fs.readFileSync(fd, "utf8")
+    return consume(fs.fstatSync(fd).size, fd)
   } catch {
     return null
   } finally {

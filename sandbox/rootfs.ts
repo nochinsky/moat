@@ -16,7 +16,7 @@ import {
   SANDBOX_TRIPLE,
   SANDBOX_WORKDIR,
 } from "../lib/pins.ts"
-import { cacheDir, opencodeCachePath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
+import { cacheDir, opencodeCachePath, partPath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
 import { chmodRootfsDir, ensureRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { out, run } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
@@ -27,18 +27,6 @@ function tailOf(text: string, lines: number): string {
 }
 
 export type DownloadDigest = { sha256?: string; integrity?: string }
-
-/**
- * A temp path unique per process *and* per call.
- *
- * The pid alone was not enough: two concurrent downloads inside one process
- * (which is exactly what a parallel caller does) shared the same ".part" name,
- * and the loser's rename failed. The random suffix removes the collision while
- * keeping the atomic write-then-rename shape.
- */
-function partPath(dest: string): string {
-  return `${dest}.part-${process.pid}-${crypto.randomBytes(4).toString("hex")}`
-}
 
 async function hashFile(file: string, algorithm: "sha256" | "sha512", encoding: "hex" | "base64"): Promise<string> {
   const hash = crypto.createHash(algorithm)
@@ -504,8 +492,10 @@ export async function snapshotEnv(p: EnvPaths, name: string): Promise<{ file: st
   fs.mkdirSync(p.snapshots, { recursive: true })
   const file = path.join(p.snapshots, `${valid}.tar.gz`)
   // Write beside the target and rename, so a failed or interrupted tar never
-  // leaves a half-written snapshot that looks usable.
-  const tmp = `${file}.part`
+  // leaves a half-written snapshot that looks usable. The temp name is unique per
+  // call: two snapshots of the same name used to share `.part`, and the loser's
+  // rename threw ENOENT after its tar had already succeeded.
+  const tmp = partPath(file)
   const args = ["-czf", tmp, "-C", p.rootfs]
   for (const exclude of SNAPSHOT_EXCLUDES) args.push(`--exclude=${exclude}`)
   args.push(".")

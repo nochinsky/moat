@@ -5,7 +5,7 @@ import path from "node:path"
 
 import type { EnvPaths } from "../lib/paths.ts"
 import { SLIRP_DNS, ownNetns, type EgressMode } from "../lib/pins.ts"
-import { ensureRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
+import { ensureRootfsDir, openRootfsFileForAppend, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { shellQuote } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
 
@@ -123,11 +123,16 @@ export type OuterScriptOptions = {
   /** Absolute path of the entry script this boot should exec (defaults to entry.sh). */
   innerScript?: string
   /**
-   * When set, the boot moves its stdout/stderr to this path inside the rootfs.
-   * The box then holds no file descriptor on a host path outside itself; the
-   * host log only ever sees the handful of lines before the redirect.
+   * When set, the boot moves its stdout/stderr to descriptor 3 after the mounts.
+   *
+   * The descriptor is opened and verified on the host (see
+   * `openRootfsFileForAppend`) and inherited by the boot script. The script must
+   * never resolve the log's path itself: the log lives in the agent-writable
+   * rootfs, and a symlink planted there would make the *host* process write
+   * wherever it points. The handful of lines before the dup go to
+   * `logs/sandbox.log` outside the box.
    */
-  bootLog?: string
+  bootLog?: boolean
   /**
    * Wait for slirp4netns to attach tap0 and resolve through it. Set when the
    * sandbox has its own network namespace: the tap appears asynchronously from
@@ -160,8 +165,9 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
   lines.push(`mkdir -p "$N"`)
   lines.push(`mount --bind "$R" "$N"`)
   if (opts.bootLog) {
-    lines.push(`mkdir -p ${shellQuote(path.dirname(opts.bootLog))} 2>/dev/null || true`)
-    lines.push(`exec >> ${shellQuote(opts.bootLog)} 2>&1`)
+    // Dup, do not redirect by path: fd 3 is the file the host opened and
+    // verified, so nothing here can be pointed at a host directory.
+    lines.push("exec 1>&3 2>&3")
   }
   lines.push(`mount -t proc proc "$N/proc"`)
   lines.push(`mount -t tmpfs -o mode=755,nosuid tmpfs "$N/dev"`)
@@ -552,19 +558,26 @@ export async function startSandbox(
   const isolated = bootIsolation(opts)
   const inner = writeInnerScript(p, innerBody)
   // The boot log lives inside the rootfs, so the long-running box does not hold
-  // an append fd on a host file outside itself.
-  const bootLog = path.join(p.rootfs, "var", "log", "moat", "boot.log")
-  const boot = writeOuterScript(p, { innerScript: inner, bootLog, waitForTap: isolated, egressRules: opts.egressRules })
+  // an append fd on a host file outside itself. It is opened here, through the
+  // guard, and passed as fd 3: the script dups it rather than resolving the path.
+  const bootFd = openRootfsFileForAppend(p.rootfs, "/var/log/moat/boot.log", 0o600)
+  const boot = writeOuterScript(p, {
+    innerScript: inner,
+    bootLog: true,
+    waitForTap: isolated,
+    egressRules: opts.egressRules,
+  })
   fs.mkdirSync(p.logs, { recursive: true })
   const logFile = path.join(p.logs, "sandbox.log")
   const fd = fs.openSync(logFile, "a", 0o600)
   const child = spawn("unshare", unshareArgs(boot, { net: isolated }), {
     env: sandboxEnv(env),
-    stdio: ["ignore", fd, fd],
+    stdio: ["ignore", fd, fd, bootFd],
     detached: true,
   })
   child.unref()
   fs.closeSync(fd)
+  fs.closeSync(bootFd)
   if (!child.pid) throw new Error("failed to spawn sandbox: no pid")
 
   let slirp: SandboxProcess["slirp"] = null

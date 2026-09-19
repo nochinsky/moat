@@ -209,12 +209,31 @@ export const MoatBundle = async ({ worktree, directory, serverUrl }) => {
       // process, so a config that somehow reached the box without passing
       // render.ts's assertion still cannot start the session with an approval
       // rule in it.
+      //
+      // The check has to account for what opencode does to the config before this
+      // hook sees it: `tools: {name: false}` is compiled into
+      // `permission: {name: "deny"}` (packages/opencode/src/config/config.ts,
+      // "if (result.tools)"). Requiring exactly `{"*":"allow"}` therefore rejected
+      // every real boot — the ERROR was logged and ignored by opencode, so the
+      // in-box check and the config audit record silently never happened. What
+      // matters is that nothing can raise an approval prompt and no tool is denied
+      // that moat did not curate out.
       const permission = config.permission ?? {}
-      const permissionKeys = Object.keys(permission)
-      if (permissionKeys.length !== 1 || permission["*"] !== "allow") {
+      const disabled = new Set()
+      for (const [tool, enabled] of Object.entries(config.tools ?? {})) {
+        if (enabled !== false) continue
+        disabled.add(tool)
+        // Upstream collapses these three names into one `edit` rule.
+        if (tool === "write" || tool === "edit" || tool === "patch") disabled.add("edit")
+      }
+      const illegal = Object.entries(permission).filter(([tool, action]) =>
+        tool === "*" ? action !== "allow" : !(action === "deny" && disabled.has(tool)),
+      )
+      if (permission["*"] !== "allow" || illegal.length > 0) {
         throw new Error(
           `moat: refusing to run with permission ${JSON.stringify(permission)}; ` +
-            'the bundle requires exactly {"*":"allow"} and nothing else',
+            'the bundle requires {"*":"allow"} and denies only for the tools it curates out ' +
+            `(disabled: ${[...disabled].sort().join(", ") || "none"})`,
         )
       }
 
