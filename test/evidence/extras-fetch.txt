@@ -2,12 +2,18 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-17-06:refs/moat/moat-session-2026-09-19-17-06
-✓ fetched moat-session-2026-09-19-17-06 -> refs/moat/moat-session-2026-09-19-17-06 (ac0d341ca2ad)
-  2 commit(s) reachable, HEAD 447447994683 -> 447447994683
-    ac0d341ca2ad  agent: add agent-output.txt from inside the sandbox
-    447447994683  initial demo project
+! the sandbox has 2 uncommitted change(s); `git fetch` reads a branch ref and cannot see them.
+    M README.md
+    ?? notes.txt
+
+  to collect them:  moat fetch --commit-worktree   (commits them in the sandbox, then fetches)
+  or ask the agent to commit inside the box
+
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-19-17-26:refs/moat/moat-session-2026-09-19-17-26
+✓ fetched moat-session-2026-09-19-17-26 -> refs/moat/moat-session-2026-09-19-17-26 (889a539f87d1)
+  1 commit(s) reachable, HEAD 889a539f87d1 -> 889a539f87d1
+    889a539f87d1  initial demo project
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-19-17-06
-  apply with:    moat apply moat-session-2026-09-19-17-06  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-19-17-26
+  apply with:    moat apply moat-session-2026-09-19-17-26  (or --checkout)

@@ -1741,6 +1741,10 @@ log name: refused instead of reading a host file
 models <provider>: refused instead of silently listing DeepSeek
 --port: refused before provisioning, not ninety seconds into a boot
 --timeout: seconds, not milliseconds, for the boot readiness wait
+--tools: refused before provisioning
+--log-level: refused instead of silently becoming INFO
+--model with an empty value: refused
+--base-url with an empty value: refused
 ```
 
 What they replace, measured: `moat logs ../../../../../tmp/moat-traversal` printed
@@ -1749,6 +1753,15 @@ argv into the environment's log directory); `--tail abc` parsed to NaN and silen
 meant "the whole file"; `moat models bogus` ignored its argument and listed DeepSeek
 with exit 0; and a typo in `--port` survived provisioning, booted a server that could
 not bind, and surfaced ninety seconds later as "opencode serve did not come up".
+
+Four flags were validated at their use site, which is after provisioning, or not at
+all: `--tools bogus` survived the copy-in before the provider section rejected it;
+`--log-level chatty` fell through the uppercase set in `serveEntryScript` and
+silently became INFO (measured: `--log-level debug` produced DEBUG lines after the
+fix and INFO lines before it); `--model ""` booted a config whose model id was
+empty; and `--base-url ""` booted an empty base URL. All four are refused before
+provisioning now, and the extras checks assert the *absence* of a provisioning line
+in those captures, so a regression to late validation fails the suite.
 
 `--timeout` is the same kind of mistake with a worse symptom: the agent loop and
 the checks runner take it as **seconds** (the turn default is 2700), and the boot

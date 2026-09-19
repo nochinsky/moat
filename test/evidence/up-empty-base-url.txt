@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --base-url 
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ --base-url needs a URL

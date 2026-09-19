@@ -311,6 +311,34 @@ else
 fi
 capture down-timeout $MOAT down
 
+capture up-bad-tools $MOAT up --tools bogus
+if grep -q "unknown --tools" "$EVIDENCE/up-bad-tools.txt" && ! grep -q "provisioning" "$EVIDENCE/up-bad-tools.txt"; then
+  echo "--tools: refused before provisioning" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--tools: FAILED, the refusal came too late (or not at all)" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+capture up-bad-log-level $MOAT up --log-level chatty
+if grep -q "unknown --log-level" "$EVIDENCE/up-bad-log-level.txt" && ! grep -q "provisioning" "$EVIDENCE/up-bad-log-level.txt"; then
+  echo "--log-level: refused instead of silently becoming INFO" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--log-level: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+capture up-empty-model $MOAT up --model ""
+if grep -q "needs a model id" "$EVIDENCE/up-empty-model.txt" && ! grep -q "provisioning" "$EVIDENCE/up-empty-model.txt"; then
+  echo "--model with an empty value: refused" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--model with an empty value: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
+fi
+
+capture up-empty-base-url $MOAT up --base-url ""
+if grep -q "needs a URL" "$EVIDENCE/up-empty-base-url.txt" && ! grep -q "provisioning" "$EVIDENCE/up-empty-base-url.txt"; then
+  echo "--base-url with an empty value: refused" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--base-url with an empty value: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
+fi
+
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

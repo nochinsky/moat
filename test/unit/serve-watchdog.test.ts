@@ -21,6 +21,15 @@ test("the credential deadline comes from the credential, not from the boot", () 
   assert.match(script, /else sleep 60; fi/)
 })
 
+test("the log level is normalised, not silently dropped to INFO", () => {
+  // "--log-level debug" used to fall through the uppercase set in
+  // serveEntryScript and silently become INFO.
+  const script = serveEntryScript({ port: 4096, credentialTtlSeconds: null, logLevel: "debug" as never })
+  assert.match(script, /--log-level DEBUG/)
+  const bogus = serveEntryScript({ port: 4096, credentialTtlSeconds: null, logLevel: "chatty" as never })
+  assert.match(bogus, /--log-level INFO/)
+})
+
 test("no credential means no watchdog", () => {
   const script = serveEntryScript({ port: 4096, credentialTtlSeconds: null })
   assert.doesNotMatch(script, /REMAIN=/)

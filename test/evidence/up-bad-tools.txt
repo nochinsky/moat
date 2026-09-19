@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --tools bogus
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ unknown --tools "bogus". Use one of: core, extended

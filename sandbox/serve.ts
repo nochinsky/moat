@@ -43,7 +43,10 @@ export type ServeOptions = {
 const ALLOWED_LOG_LEVELS = new Set(["DEBUG", "INFO", "WARN", "ERROR"])
 
 export function serveEntryScript(opts: ServeOptions): string {
-  const level = opts.logLevel && ALLOWED_LOG_LEVELS.has(opts.logLevel) ? opts.logLevel : "INFO"
+  // Case-insensitive: the CLI accepts "--log-level debug" and hands over the upper
+  // case, and a caller that does not must not silently get INFO.
+  const requested = (opts.logLevel ?? "").toUpperCase()
+  const level = ALLOWED_LOG_LEVELS.has(requested) ? requested : "INFO"
   const ttl = opts.credentialTtlSeconds && opts.credentialTtlSeconds > 0 ? Math.floor(opts.credentialTtlSeconds) : 0
   const hostname = opts.hostname === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1"
   const agent = opts.execOverride ?? `opencode serve --port ${opts.port} --hostname ${hostname} --print-logs --log-level ${level}`

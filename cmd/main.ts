@@ -551,6 +551,25 @@ async function cmdUp(argv: string[]): Promise<number> {
   // --timeout is seconds everywhere. Validating it here means a typo fails before
   // provisioning rather than after the boot.
   optionalPositiveIntFlag(p, "timeout")
+  // Flags whose bad value used to survive provisioning and surface as a boot
+  // failure, or never surface at all: a bad --log-level silently became INFO.
+  resolveToolPreset(p)
+  const logLevelFlag = flag<string>(p, "log-level")
+  if (logLevelFlag !== undefined && !LOG_LEVELS.includes(logLevelFlag.toUpperCase())) {
+    log.fail(`unknown --log-level "${logLevelFlag}". Use one of: ${LOG_LEVELS.join(", ")}`)
+  }
+  const modelFlag = flag<string>(p, "model")
+  if (modelFlag !== undefined && modelFlag.trim().length === 0) log.fail("--model needs a model id")
+  for (const key of ["base-url", "upstream"] as const) {
+    const value = flag<string>(p, key)
+    if (value === undefined) continue
+    if (value.trim().length === 0) log.fail(`--${key} needs a URL`)
+    try {
+      new URL(value)
+    } catch {
+      log.fail(`--${key} is not a URL: ${value}`)
+    }
+  }
   const needsProvision = fresh || !envExists(paths) || !state
 
   // Where the provider lives decides the default network policy, so resolve it
@@ -976,7 +995,9 @@ ${command}
 
   const entry = serveEntryScript({
     port,
-    logLevel: flag<string>(p, "log-level") as "INFO" | undefined,
+    // Normalised here and again in serveEntryScript: "--log-level debug" used to
+    // fall through the uppercase set and silently become INFO.
+    logLevel: logLevelFlag?.toUpperCase() as "INFO" | undefined,
     credentialTtlSeconds: credential ? credential.ttlSeconds : null,
     // In the sandbox's own namespace a loopback bind is unreachable through
     // slirp's forward, so the server has to listen on the tap address. That
@@ -2357,6 +2378,8 @@ function readBundleReport(paths: EnvPaths): {
 // ---------------------------------------------------------------------------
 // dispatch
 // ---------------------------------------------------------------------------
+
+const LOG_LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"]
 
 const HELP = `moat — run an AI coding agent in a disposable sandbox. Your machine is never touched.
 
