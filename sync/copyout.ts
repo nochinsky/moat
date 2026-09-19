@@ -162,7 +162,10 @@ export async function fetchBranch(
   const hostRef = `${refPrefix}/${branch}`
 
   if (!(await isGitRepo(p.projectDir))) {
-    throw new Error(`${p.projectDir} is not a git repository, so there is nowhere to fetch into`)
+    throw new Error(
+      `${p.projectDir} is not a git repository, so there is no ref to fetch into.\n` +
+        "  moat apply still works here: it merges the sandbox's tree into this directory with a three-way merge.",
+    )
   }
   if (!(await sandboxRepoExists(p))) {
     throw new Error(`no repository in the sandbox at ${p.work}. Run \`moat up\` first.`)

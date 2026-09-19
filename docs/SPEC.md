@@ -126,8 +126,16 @@ the next `moat up` is a warm boot that preserves everything the agent installed.
    namespaces are unavailable, moat **refuses to run**. There is no host
    fallback, by design: requirement 2 says sandbox is the only mode.
 2. **Provision** (first time, or `--fresh`), `sandbox/rootfs.ts`:
+   * the Alpine minirootfs and the pinned opencode tarball are checked against
+     the digests published for those exact versions (`lib/pins.ts`: the release
+     directory's SHA-256 and npm's `dist.integrity`). A mismatch, including one
+     in an already-cached file, is re-downloaded rather than unpacked. Cache
+     writes go to a per-call temp file and are renamed into place, so two moat
+     processes cannot interleave into one `.part`;
    * if a cached image for this `(alpine version, opencode version, package set)`
-     exists on the host, extract it and skip the network entirely;
+     exists on the host, extract it and skip the network entirely (the image cache
+     carries a `.sha256` sidecar written when it was built, and a mismatch
+     rebuilds it);
    * otherwise download and extract the Alpine minirootfs on the host (no
      privileges),
    * boot a throwaway sandbox and run `apk add` **inside it** for
@@ -236,6 +244,13 @@ are *not* copied. This is deliberate, the box has its own package manager and
 its own network, and the point of the product is a fresh environment. It is
 recorded in `test/evidence/up.txt` as the `dirty`/`untracked` counts.
 
+Git cannot carry two more things: an untracked **empty directory** and an
+untracked **special file** (FIFO, socket, device). They used to be dropped in
+silence, so the sandbox differed from the host with nothing saying so. They are
+now named on every copy-in and in `moat up --json` as `skippedFromCopy`;
+ignored paths are not listed, because not copying those is the contract above.
+`rsync` (the non-git fallback) copies both.
+
 **Non-git directories** fall back to `rsync -a --delete --exclude .git/` (as the
 brief specifies), and are then given a fresh repository inside the sandbox
 (`sync/copyin.ts:ensureSandboxRepo`) so that the copy-out contract in §4 holds
@@ -266,6 +281,9 @@ This makes copy-out work for **any** directory, which the git-only version could
 not: a plain directory has no repository for `git fetch` to write into. The
 baseline commit is what supplies the missing third input, and it is recorded with
 a temporary index so neither the working tree nor the index is disturbed.
+`moat fetch` still needs a git repository *on the host*, because it writes a ref
+there; in a non-git directory it says so and points at `moat apply`, which merges
+the sandbox's tree without one.
 
 Uncommitted work in the sandbox is in no ref, so no fetch can reach it. `moat
 fetch` reports it and names the files; `moat fetch --commit-worktree` commits it
@@ -914,9 +932,16 @@ project.**
 * `moat snapshot [name]` writes `snapshots/<name>.tar.gz`, a tar of the rootfs
   with `./work`, `./proc`, `./sys`, `./dev`, `./tmp`, `./run` and `./.moat`
   excluded. **The project is in none of them**; the exclusion list is explicit in
-  `sandbox/rootfs.ts:SNAPSHOT_EXCLUDES`.
-* `moat restore <name>` replaces the rootfs but stashes and restores `/work`, so
-  restoring an old image never destroys the agent's work.
+  `sandbox/rootfs.ts:SNAPSHOT_EXCLUDES`. The name is validated (1–64 characters
+  of letters, digits, dot, dash, underscore) before it is joined into a path, and
+  the archive is written through a temp file. A snapshot of a *running* box can
+  capture a torn state, so `moat snapshot` refuses while a sandbox is live unless
+  `--yes` is passed.
+* `moat restore <name>` extracts the snapshot beside the live rootfs, carries
+  `/work` across with a rename, and swaps the two with renames. If the
+  extraction or the swap fails, the previous rootfs and the project are put
+  back: the old version deleted the live rootfs first, so one bad snapshot
+  destroyed the environment.
 * `baseline` always exists right after provisioning. When the environment came
   from the cached image, `baseline.tar.gz` is a **symlink** to that image rather
   than a second 107 MiB compression, the cache file *is* the baseline.

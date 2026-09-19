@@ -53,6 +53,12 @@ export type CopyInResult = {
   /** Files that look like they hold credentials. Copied anyway, but named loudly. */
   suspectSecrets: string[]
   /**
+   * Host paths the copy could not carry. Git cannot represent empty
+   * directories or special files, so they are named rather than dropped
+   * silently: the sandbox otherwise differs from the host with nothing saying so.
+   */
+  skippedFromCopy: string[]
+  /**
    * Fingerprint of the HOST project at the moment it was copied.
    *
    * Stored so a later `moat up` can tell that the host has moved on. Without it,
@@ -143,17 +149,92 @@ export async function copyIn(p: EnvPaths): Promise<CopyInResult> {
   fs.mkdirSync(path.dirname(p.work), { recursive: true })
   if (fs.existsSync(p.work)) fs.rmSync(p.work, { recursive: true, force: true })
 
+  let result: CopyInResult
   if (await isGitRepo(p.projectDir)) {
-    await cloneGit(p)
-    return await finalize(p, "git")
+    const skipped = await cloneGit(p)
+    result = await finalize(p, "git", skipped)
+  } else {
+    log.warn(`${p.projectDir} is not a git repository; falling back to rsync + a fresh in-sandbox repo`)
+    await rsyncCopy(p)
+    result = await finalize(p, "rsync", [])
   }
 
-  log.warn(`${p.projectDir} is not a git repository; falling back to rsync + a fresh in-sandbox repo`)
-  await rsyncCopy(p)
-  return await finalize(p, "rsync")
+  if (result.skippedFromCopy.length > 0) {
+    log.warn(
+      `${result.skippedFromCopy.length} path(s) cannot be represented in the sandbox: ` +
+        `${result.skippedFromCopy.slice(0, 5).join(", ")}${result.skippedFromCopy.length > 5 ? ", …" : ""}\n` +
+        "  git does not track empty directories or special files; add a .gitkeep, or run moat in a non-git directory (rsync copies them).",
+    )
+  }
+  return result
 }
 
-async function cloneGit(p: EnvPaths): Promise<void> {
+/** A short word for a filesystem entry, for the skip report. */
+function kindOf(stat: fs.Stats): string {
+  if (stat.isFIFO()) return "fifo"
+  if (stat.isSocket()) return "socket"
+  if (stat.isBlockDevice() || stat.isCharacterDevice()) return "device"
+  if (stat.isDirectory()) return "directory"
+  return "special file"
+}
+
+/**
+ * Host paths a git project cannot carry across, that a walk can see: empty
+ * directories (git does not track directories) and special files (FIFOs,
+ * sockets, devices). Ignored paths are excluded, because not copying those is
+ * the documented contract rather than a surprise.
+ */
+async function findUncopiedPaths(projectDir: string): Promise<string[]> {
+  const emptyDirs: string[] = []
+  const specials: string[] = []
+  const seen = { count: 0 }
+  const walk = (dir: string, rel: string): void => {
+    if (seen.count > 5000 || emptyDirs.length + specials.length >= 25) return
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    if (entries.length === 0) {
+      if (rel) emptyDirs.push(rel)
+      return
+    }
+    for (const entry of entries) {
+      seen.count += 1
+      if (seen.count > 5000) return
+      if (entry.name === ".git") continue
+      const entryRel = rel ? `${rel}/${entry.name}` : entry.name
+      const abs = path.join(dir, entry.name)
+      let stat: fs.Stats
+      try {
+        stat = fs.lstatSync(abs)
+      } catch {
+        continue
+      }
+      if (stat.isDirectory()) walk(abs, entryRel)
+      else if (!stat.isFile() && !stat.isSymbolicLink()) specials.push(entryRel)
+    }
+  }
+  walk(projectDir, "")
+  if (emptyDirs.length === 0 && specials.length === 0) return []
+  const ignored = await ignoredPaths(projectDir, [...emptyDirs, ...specials])
+  return [...emptyDirs, ...specials]
+    .filter((name) => !ignored.has(name))
+    .map((name) => `${name} (${specials.includes(name) ? "special file" : "empty directory"})`)
+}
+
+/** Which of these paths does git ignore? (Those are deliberately not copied.) */
+async function ignoredPaths(projectDir: string, paths: string[]): Promise<Set<string>> {
+  const result = await run("git", ["-C", projectDir, "check-ignore", "-z", "--stdin"], {
+    env: SANITIZED_GIT_ENV,
+    allowFailure: true,
+    input: `${paths.join("\0")}\0`,
+  })
+  return new Set(result.stdout.split("\0").filter((name) => name.length > 0))
+}
+
+async function cloneGit(p: EnvPaths): Promise<string[]> {
   log.step("copy-in: git clone --no-hardlinks")
   await run("git", ["clone", "--no-hardlinks", "--quiet", p.projectDir, p.work], { env: SANITIZED_GIT_ENV })
 
@@ -180,6 +261,7 @@ async function cloneGit(p: EnvPaths): Promise<void> {
     { env: SANITIZED_GIT_ENV },
   )
   const names = untracked.stdout.split("\0").filter((name) => name.length > 0)
+  const skipped = new Set<string>()
   for (const name of names) {
     const from = path.join(p.projectDir, name)
     const to = path.join(p.work, name)
@@ -191,9 +273,13 @@ async function cloneGit(p: EnvPaths): Promise<void> {
     } else if (stat.isFile()) {
       fs.copyFileSync(from, to)
       fs.chmodSync(to, stat.mode & 0o777)
+    } else {
+      skipped.add(`${name} (${kindOf(stat)})`)
     }
   }
   if (names.length > 0) log.debug(`copied ${names.length} untracked file(s)`)
+  for (const item of await findUncopiedPaths(p.projectDir)) skipped.add(item)
+  return [...skipped].sort()
 }
 
 async function rsyncCopy(p: EnvPaths): Promise<void> {
@@ -206,7 +292,7 @@ async function rsyncCopy(p: EnvPaths): Promise<void> {
   if (result.code !== 0) throw new Error(`rsync copy-in failed: ${result.stderr.trim()}`)
 }
 
-async function finalize(p: EnvPaths, transport: "git" | "rsync"): Promise<CopyInResult> {
+async function finalize(p: EnvPaths, transport: "git" | "rsync", skippedFromCopy: string[]): Promise<CopyInResult> {
   const tree = hashTree(p.work)
 
   let head: string | null = null
@@ -236,6 +322,7 @@ async function finalize(p: EnvPaths, transport: "git" | "rsync"): Promise<CopyIn
     files: tree.files,
     bytes: tree.bytes,
     suspectSecrets: scanForSecrets(p.work),
+    skippedFromCopy,
     hostState: await hostState(p.projectDir),
   }
 }

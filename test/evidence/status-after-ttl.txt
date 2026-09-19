@@ -7,8 +7,8 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 opencode     1.18.31 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-19-00-44
-rootfs       381.0 MiB
-credential   moat sha256:7726b438889c7f57 expires in -8s (EXPIRED, the sandbox watchdog stops the agent)
+branch       moat-session-2026-09-19-00-55
+rootfs       380.9 MiB
+credential   moat sha256:7726b438889c7f57 expires in -10s (EXPIRED, the sandbox watchdog stops the agent)
 snapshots    before-extras, baseline
-branches     main, moat-session-2026-09-19-00-35, moat-session-2026-09-19-00-37, moat-session-2026-09-19-00-44*
+branches     main, moat-session-2026-09-19-00-53, moat-session-2026-09-19-00-55*

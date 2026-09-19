@@ -142,6 +142,24 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 * `moat up --fresh` deletes `/work`. It refuses while a sandbox is live and
   refuses without `--yes` when the box holds unfetched commits or uncommitted
   files.
+* `moat restore` stages beside the rootfs and swaps with renames, so a bad
+  snapshot cannot destroy the environment. Do not go back to deleting the live
+  rootfs first: that is how an afternoon of installed packages and an agent's
+  work disappears together.
+* Snapshot names meet `path.join` only after `validateSnapshotName`. A raw argv
+  join is how `../evil` writes outside `envs/<id>/snapshots`.
+
+**Downloads and caches**
+
+* Every network artefact is checked against a digest pinned in `lib/pins.ts`
+  (Alpine's release SHA-256, the opencode npm tarball's `dist.integrity`) through
+  `verifyFile` before anything unpacks it, and an already-cached file is
+  re-checked. Do not add a download path that skips this.
+* Temp files are named with `partPath()`: pid **and** a random suffix. A pid
+  alone collided for two concurrent downloads in one process, and the loser's
+  rename failed; write-then-rename is what makes the cache safe to share.
+* The provisioned image cache carries a `.sha256` sidecar written when it was
+  built; a mismatch rebuilds the image instead of unpacking it.
 
 **opencode 1.18.31**
 
