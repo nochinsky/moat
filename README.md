@@ -156,7 +156,7 @@ unshare --user --map-root-user --mount --pid --fork --uts --ipc --kill-child
   └─ mount --make-rprivate /          # nothing propagates back to the host
      mount --bind <rootfs> <mnt>      # the sandbox root is a mount we own
      mount -t proc / tmpfs /dev / devpts / /dev/shm / /tmp / /run
-     bind read-only device nodes      # the only host-originated mounts
+     bind device nodes (read-write)   # interfaces, not host data
      chroot <mnt> && exec /.moat/entry.sh
         └─ opencode serve --port N --hostname 127.0.0.1
 ```

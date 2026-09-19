@@ -4,7 +4,7 @@ import path from "node:path"
 
 import type { EnvPaths } from "../lib/paths.ts"
 import { run } from "../lib/shell.ts"
-import { SANITIZED_GIT_ENV } from "./copyin.ts"
+import { SANITIZED_GIT_ENV, sandboxGit, sandboxGitRaw } from "../lib/git.ts"
 
 /**
  * Bring the agent's work into the user's directory.
@@ -27,9 +27,18 @@ import { SANITIZED_GIT_ENV } from "./copyin.ts"
  * Nothing is written until the whole plan is computed, and a conflict never
  * results in a written file. "I could not merge this one" is always better than
  * a silent overwrite.
+ *
+ * Three rules that are easy to get wrong, and that this file tests for:
+ *
+ *  - If the user deleted a file the agent changed, that is a conflict, not an
+ *    'add'. Resurrecting a file someone deliberately removed is data loss too.
+ *  - A path is not a name. Git output is parsed NUL-separated, because splitting
+ *    on whitespace collapses 'a  b' into 'a b' and writes to the wrong file.
+ *  - Every change is re-checked against the state it was planned from, so an
+ *    edit made while the user was reading the plan is never overwritten.
  */
 
-export type ChangeKind = "add" | "modify" | "delete" | "merge"
+export type ChangeKind = "add" | "modify" | "delete" | "merge" | "mode" | "link"
 
 export type PlannedChange = {
   path: string
@@ -37,6 +46,14 @@ export type PlannedChange = {
   /** True when moat will not touch this file. */
   conflict: boolean
   note?: string
+  /** State of the host path when the plan was made; re-checked before writing. */
+  expectedHost: string
+  /** kind === 'merge': the host-side file holding the merged bytes. */
+  mergedFile?: string
+  /** kind === 'link': the symlink target to create. */
+  linkTarget?: string
+  /** File mode to set after writing (kind === 'mode' sets it on its own). */
+  mode?: number
 }
 
 export type ApplyPlan = {
@@ -46,168 +63,432 @@ export type ApplyPlan = {
   added: number
   /** True when there is nothing to do at all. */
   empty: boolean
+  /** Set when the baseline cannot be read: applying is impossible, not empty. */
+  baselineProblem: string | null
+  /** Commit refs/moat/baseline pointed at when the plan was made. */
+  baselineCommit: string | null
 }
 
-function hashFile(file: string): string | null {
+type Entry =
+  | { kind: "missing" }
+  | { kind: "file"; hash: string; mode: number }
+  | { kind: "link"; hash: string }
+  | { kind: "dir" }
+  | { kind: "other" }
+
+function sha(value: crypto.BinaryLike): string {
+  return crypto.createHash("sha256").update(value).digest("hex")
+}
+
+function digestFile(file: string): string {
+  return sha(fs.readFileSync(file))
+}
+
+/** Content identity of one path, without following symlinks. */
+function entryState(abs: string): Entry {
+  let stat: fs.Stats
   try {
-    return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")
+    stat = fs.lstatSync(abs)
   } catch {
-    return null
+    return { kind: "missing" }
+  }
+  if (stat.isSymbolicLink()) {
+    let target = ""
+    try {
+      target = fs.readlinkSync(abs)
+    } catch {
+      /* unreadable link: treat as an empty target */
+    }
+    return { kind: "link", hash: sha(target) }
+  }
+  if (stat.isDirectory()) return { kind: "dir" }
+  if (!stat.isFile()) return { kind: "other" }
+  return { kind: "file", hash: digestFile(abs), mode: stat.mode & 0o777 }
+}
+
+/** A stable string for 'what this path was', used to detect changes after planning. */
+function entryKey(entry: Entry): string {
+  if (entry.kind === "file") return "file:" + entry.hash + ":" + entry.mode
+  if (entry.kind === "link") return "link:" + entry.hash
+  return entry.kind
+}
+
+function sameContent(a: Entry, b: Entry): boolean {
+  if (a.kind === "missing" || b.kind === "missing") return a.kind === b.kind
+  if (a.kind === "dir" || b.kind === "dir") return a.kind === b.kind
+  if (a.kind === "other" || b.kind === "other") return a.kind === b.kind
+  return a.hash === b.hash
+}
+
+function cleanupMergeTemps(p: EnvPaths): void {
+  const dir = path.join(p.dir, "runtime")
+  let names: string[] = []
+  try {
+    names = fs.readdirSync(dir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (name.startsWith("moat-merge-") || name.startsWith("moat-theirs-") || name === "merged.tmp") {
+      fs.rmSync(path.join(dir, name), { force: true })
+    }
   }
 }
 
-/** Materialise the baseline tree so the host can be compared against it. */
-async function materialiseBaseline(p: EnvPaths): Promise<string | null> {
-  const baseline = await run("git", ["-C", p.work, "rev-parse", "--verify", "--quiet", "refs/moat/baseline"], {
-    env: SANITIZED_GIT_ENV,
-    allowFailure: true,
-  })
-  if (baseline.code !== 0) return null
+/**
+ * Materialise the baseline tree so the host can be compared against it.
+ *
+ * The archive goes through a *file*, never through this process: a tar archive
+ * is binary, and the string-capturing runner is lossy for binary data. The
+ * resolved commit is returned as well, so callers can notice that the ref moved
+ * or disappeared underneath them.
+ */
+async function materialiseBaseline(p: EnvPaths): Promise<{ dir: string | null; commit: string | null; problem: string | null }> {
+  const rev = await sandboxGit(p.work, ["rev-parse", "--verify", "--quiet", "refs/moat/baseline"], { allowFailure: true })
+  const commit = rev.code === 0 ? rev.stdout.trim() : ""
+  if (!commit) {
+    return {
+      dir: null,
+      commit: null,
+      problem:
+        "the sandbox no longer has refs/moat/baseline, the commit that records what moat copied in. " +
+        "Without it there is no third input to merge against, and applying could overwrite your work. " +
+        "Run 'moat up --sync' to re-copy the project, or fetch the branch and merge it by hand.",
+    }
+  }
 
   const dir = path.join(p.dir, "baseline")
   fs.rmSync(dir, { recursive: true, force: true })
   fs.mkdirSync(dir, { recursive: true })
-
-  // The archive goes through a *file*, never through this process.
-  //
-  // A tar archive is binary, and `run()` captures a child's stdout as a UTF-8
-  // string. Decoding a tar that way is lossy: any byte that is not valid UTF-8
-  // becomes U+FFFD, which re-encodes to *three* bytes, so the stream grows and
-  // every subsequent header is read from the wrong offset. tar then aborts
-  // partway through, leaving a baseline that is silently incomplete — and
-  // because the caller only checks the exit code, moat reported "nothing to
-  // apply" over the top of a tree it had failed to read. With a large enough
-  // archive the same corruption crashed the CLI outright, because writing the
-  // rest to a tar that had already exited raises EPIPE on its stdin.
   const archive = path.join(p.dir, "baseline.tar")
   try {
-    const tarred = await run(
-      "git",
-      ["-C", p.work, "archive", "--format=tar", `--output=${archive}`, "refs/moat/baseline"],
-      { env: SANITIZED_GIT_ENV, allowFailure: true },
-    )
-    if (tarred.code !== 0) return null
-    const extract = await run("tar", ["-xf", archive, "-C", dir], { allowFailure: true })
-    return extract.code === 0 ? dir : null
+    const tarred = await sandboxGit(p.work, ["archive", "--format=tar", "--output=" + archive, commit], {
+      allowFailure: true,
+    })
+    if (tarred.code !== 0) {
+      return { dir: null, commit, problem: "could not archive " + commit.slice(0, 12) + " from the sandbox repository" }
+    }
+    const extract = await run("tar", ["-xf", archive, "-C", dir], { env: SANITIZED_GIT_ENV, allowFailure: true })
+    if (extract.code !== 0) return { dir: null, commit, problem: "could not unpack the recorded baseline" }
+    return { dir, commit, problem: null }
   } finally {
     fs.rmSync(archive, { force: true })
   }
 }
 
-/** Every path the agent has touched, relative to the baseline. */
-async function agentChanges(p: EnvPaths): Promise<{ path: string; status: string }[]> {
-  const diff = await run(
-    "git",
-    ["-C", p.work, "diff", "--name-status", "--no-renames", "refs/moat/baseline"],
-    { env: SANITIZED_GIT_ENV, allowFailure: true },
-  )
-  const tracked = diff.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [status = "", ...rest] = line.split(/\s+/)
-      return { status: status.charAt(0), path: rest.join(" ") }
-    })
+type AgentChange = { path: string; status: string }
 
-  const untracked = await run("git", ["-C", p.work, "ls-files", "-o", "--exclude-standard"], {
-    env: SANITIZED_GIT_ENV,
-    allowFailure: true,
-  })
-  const added = untracked.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((file) => ({ status: "A", path: file }))
+/**
+ * Every path the agent has touched, relative to the baseline.
+ *
+ * The -z flag is load-bearing. Without it git separates fields with a tab and
+ * escapes unusual bytes, and splitting the result on whitespace turns 'a  b'
+ * into 'a b' - a name that then refers to a different file on the host.
+ */
+async function agentChanges(p: EnvPaths): Promise<{ changes: AgentChange[]; unrepresentable: string[] }> {
+  const diff = await sandboxGitRaw(
+    p.work,
+    ["diff", "--name-status", "-z", "--no-renames", "--no-ext-diff", "refs/moat/baseline"],
+    { allowFailure: true },
+  )
+  const parts = splitNul(diff.stdout)
+  const changes: AgentChange[] = []
+  const unrepresentable: string[] = []
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const status = parts[i]!.toString("utf8")
+    const name = decodePath(parts[i + 1]!)
+    if (name === null) unrepresentable.push(parts[i + 1]!.toString("utf8"))
+    else changes.push({ status, path: name })
+  }
+
+  const untracked = await sandboxGitRaw(p.work, ["ls-files", "-o", "--exclude-standard", "-z"], { allowFailure: true })
+  for (const raw of splitNul(untracked.stdout)) {
+    if (raw.length === 0) continue
+    const name = decodePath(raw)
+    if (name === null) unrepresentable.push(raw.toString("utf8"))
+    else changes.push({ status: "A", path: name })
+  }
 
   // A file can appear in both lists if it was committed and then touched again.
   const merged = new Map<string, string>()
-  for (const entry of [...tracked, ...added]) merged.set(entry.path, entry.status)
-  return [...merged].map(([file, status]) => ({ path: file, status }))
+  for (const entry of changes) merged.set(entry.path, entry.status)
+  return { changes: [...merged].map(([file, status]) => ({ path: file, status })), unrepresentable }
+}
+
+/** Split a NUL-separated git stream into its records. */
+function splitNul(buffer: Buffer): Buffer[] {
+  const out: Buffer[] = []
+  let start = 0
+  for (let i = 0; i < buffer.length; i += 1) {
+    if (buffer[i] === 0) {
+      out.push(buffer.subarray(start, i))
+      start = i + 1
+    }
+  }
+  if (start < buffer.length) out.push(buffer.subarray(start))
+  return out
+}
+
+/**
+ * A path git reported, or null when its bytes are not valid UTF-8.
+ *
+ * The host cannot honestly name such a file (Node paths are strings), so moat
+ * refuses to act on it instead of guessing and touching the wrong path.
+ */
+function decodePath(raw: Buffer): string | null {
+  const text = raw.toString("utf8")
+  return Buffer.from(text, "utf8").equals(raw) ? text : null
+}
+
+/** Try a real three-way merge, byte for byte, into a per-path temp file. */
+async function attemptMerge(
+  p: EnvPaths,
+  changePath: string,
+  hostFile: string,
+  baseFile: string,
+  sandboxFile: string,
+  mode: number,
+): Promise<PlannedChange> {
+  const dir = path.join(p.dir, "runtime")
+  fs.mkdirSync(dir, { recursive: true })
+  const key = sha(changePath).slice(0, 16)
+  const mine = path.join(dir, "moat-merge-" + key + ".tmp")
+  const theirs = path.join(dir, "moat-theirs-" + key + ".tmp")
+  fs.copyFileSync(hostFile, mine)
+  fs.copyFileSync(sandboxFile, theirs)
+  const merged = await run("git", ["merge-file", mine, baseFile, theirs], {
+    env: SANITIZED_GIT_ENV,
+    cwd: p.dir,
+    allowFailure: true,
+  })
+  fs.rmSync(theirs, { force: true })
+  if (merged.code === 0) {
+    return {
+      path: changePath,
+      kind: "merge",
+      conflict: false,
+      note: "both changed it; merged",
+      expectedHost: entryKey(entryState(hostFile)),
+      mergedFile: mine,
+      mode,
+    }
+  }
+  fs.rmSync(mine, { force: true })
+  return {
+    path: changePath,
+    kind: "merge",
+    conflict: true,
+    note: "you and the agent both changed it, and the changes overlap",
+    expectedHost: entryKey(entryState(hostFile)),
+  }
+}
+
+function plannedFor(
+  sand: Entry,
+  hostKey: string,
+  changePath: string,
+  sandboxFile: string,
+  kind: "add" | "modify",
+): PlannedChange {
+  if (sand.kind === "link") {
+    return { path: changePath, kind: "link", conflict: false, expectedHost: hostKey, linkTarget: readLink(sandboxFile) }
+  }
+  if (sand.kind === "file") {
+    return { path: changePath, kind, conflict: false, expectedHost: hostKey, mode: sand.mode }
+  }
+  return { path: changePath, kind, conflict: false, expectedHost: hostKey }
 }
 
 /**
  * Work out what applying would do, without doing any of it.
  *
- * Written so the caller can show the user first. `moat apply` prints this, and
+ * Written so the caller can show the user first. 'moat apply' prints this, and
  * the interactive session shows it before asking.
  */
 export async function planApply(p: EnvPaths): Promise<ApplyPlan> {
-  const baselineDir = await materialiseBaseline(p)
+  cleanupMergeTemps(p)
+  const baseline = await materialiseBaseline(p)
   const changes: PlannedChange[] = []
+  const empty: ApplyPlan = {
+    changes,
+    conflicts: [],
+    added: 0,
+    empty: true,
+    baselineProblem: baseline.problem,
+    baselineCommit: baseline.commit,
+  }
+  if (baseline.problem) return empty
 
-  if (baselineDir) {
-    for (const entry of await agentChanges(p)) {
-      const sandboxFile = path.join(p.work, entry.path)
-      const hostFile = path.join(p.projectDir, entry.path)
-      const baseFile = path.join(baselineDir, entry.path)
-
-      const baseHash = hashFile(baseFile)
-      const hostHash = hashFile(hostFile)
-      const sandboxExists = fs.existsSync(sandboxFile) && fs.statSync(sandboxFile).isFile()
-
-      if (entry.status === "D" || !sandboxExists) {
-        // The agent removed it. Only safe to remove if the user did not touch it.
-        if (hostHash === null) continue
-        if (hostHash === baseHash) changes.push({ path: entry.path, kind: "delete", conflict: false })
-        else changes.push({ path: entry.path, kind: "delete", conflict: true, note: "you changed this file" })
-        continue
-      }
-
-      if (hostHash === null) {
-        changes.push({ path: entry.path, kind: "add", conflict: false })
-        continue
-      }
-
-      const sandboxHash = hashFile(sandboxFile)
-      if (hostHash === sandboxHash) continue // already identical
-      if (baseHash === null) {
-        // The file did not exist when moat copied, and it exists on the host now
-        // with different content: the user created it too. Overwriting that is
-        // exactly the mistake this whole file exists to avoid.
-        changes.push({
-          path: entry.path,
-          kind: "add",
-          conflict: true,
-          note: "you created a file with this name while the agent was working",
-        })
-        continue
-      }
-      if (hostHash === baseHash) {
-        changes.push({ path: entry.path, kind: "modify", conflict: false })
-        continue
-      }
-
-      // Both sides changed it. Try a real merge before giving up.
-      const mine = path.join(p.dir, "runtime", "mine.tmp")
-      const theirs = path.join(p.dir, "runtime", "theirs.tmp")
-      fs.mkdirSync(path.dirname(mine), { recursive: true })
-      fs.copyFileSync(hostFile, mine)
-      fs.copyFileSync(sandboxFile, theirs)
-      const merged = await run("git", ["merge-file", "-p", mine, baseFile, theirs], { allowFailure: true })
-      fs.rmSync(mine, { force: true })
-      fs.rmSync(theirs, { force: true })
-      if (merged.code === 0) {
-        fs.writeFileSync(path.join(p.dir, "runtime", "merged.tmp"), merged.stdout)
-        changes.push({ path: entry.path, kind: "merge", conflict: false, note: "both changed it; merged" })
-      } else {
-        changes.push({
-          path: entry.path,
-          kind: "merge",
-          conflict: true,
-          note: "you and the agent both changed it, and the changes overlap",
-        })
-      }
-    }
+  const baselineDir = baseline.dir!
+  const { changes: agent, unrepresentable } = await agentChanges(p)
+  for (const name of unrepresentable) {
+    changes.push({
+      path: name,
+      kind: "modify",
+      conflict: true,
+      note: "the filename is not valid UTF-8, so moat cannot name it on the host",
+      expectedHost: "missing",
+    })
   }
 
-  const conflicts = changes.filter((c) => c.conflict)
+  for (const entry of agent) {
+    const sandboxFile = path.join(p.work, entry.path)
+    const hostFile = path.join(p.projectDir, entry.path)
+    const baseFile = path.join(baselineDir, entry.path)
+
+    const base = entryState(baseFile)
+    const host = entryState(hostFile)
+    const sand = entryState(sandboxFile)
+    const hostKey = entryKey(host)
+
+    if (entry.status === "D" || sand.kind === "missing") {
+      // The agent removed it. Only safe to remove if the user did not touch it.
+      if (host.kind === "missing") continue
+      if (sameContent(host, base) && entryKey(host) === entryKey(base)) {
+        changes.push({ path: entry.path, kind: "delete", conflict: false, expectedHost: hostKey })
+      } else {
+        changes.push({ path: entry.path, kind: "delete", conflict: true, note: "you changed this file", expectedHost: hostKey })
+      }
+      continue
+    }
+
+    if (host.kind === "missing") {
+      if (base.kind !== "missing") {
+        // The user deleted it on purpose and the agent changed it. Resurrecting
+        // it silently is data loss in the same way overwriting it would be.
+        changes.push({
+          path: entry.path,
+          kind: sand.kind === "link" ? "link" : "add",
+          conflict: true,
+          note: "you deleted this file and the agent changed it",
+          expectedHost: hostKey,
+          linkTarget: sand.kind === "link" ? readLink(sandboxFile) : undefined,
+        })
+        continue
+      }
+      changes.push(plannedFor(sand, hostKey, entry.path, sandboxFile, "add"))
+      continue
+    }
+
+    if (sameContent(host, sand)) {
+      if (host.kind === "file" && sand.kind === "file" && host.mode !== sand.mode) {
+        changes.push({ path: entry.path, kind: "mode", conflict: false, expectedHost: hostKey, mode: sand.mode, note: "permissions changed" })
+      }
+      continue
+    }
+
+    if (host.kind !== sand.kind) {
+      changes.push({
+        path: entry.path,
+        kind: sand.kind === "link" ? "link" : "modify",
+        conflict: true,
+        note: "type changed (" + host.kind + " on the host, " + sand.kind + " in the sandbox)",
+        expectedHost: hostKey,
+      })
+      continue
+    }
+
+    if (base.kind === "missing") {
+      changes.push({
+        path: entry.path,
+        kind: sand.kind === "link" ? "link" : "add",
+        conflict: true,
+        note: "you created a file with this name while the agent was working",
+        expectedHost: hostKey,
+      })
+      continue
+    }
+
+    if (sameContent(host, base) && entryKey(host) === entryKey(base)) {
+      changes.push(plannedFor(sand, hostKey, entry.path, sandboxFile, "modify"))
+      continue
+    }
+
+    if (sand.kind === "file" && host.kind === "file" && base.kind === "file") {
+      changes.push(await attemptMerge(p, entry.path, hostFile, baseFile, sandboxFile, sand.mode))
+      continue
+    }
+
+    changes.push({
+      path: entry.path,
+      kind: sand.kind === "link" ? "link" : "modify",
+      conflict: true,
+      note: "you and the agent both changed it",
+      expectedHost: hostKey,
+    })
+  }
+
+  const conflicts = changes.filter((change) => change.conflict)
   return {
     changes,
     conflicts,
-    added: changes.filter((c) => c.kind === "add").length,
+    added: changes.filter((change) => change.kind === "add" && !change.conflict).length,
     empty: changes.length === 0,
+    baselineProblem: null,
+    baselineCommit: baseline.commit,
   }
+}
+
+function readLink(file: string): string {
+  try {
+    return fs.readlinkSync(file)
+  } catch {
+    return ""
+  }
+}
+
+/**
+ * The destination must stay inside the project, even when the project contains
+ * symlinks: writing through a symlink that points at, say, ~/.ssh would put
+ * agent-chosen bytes outside the tree the user agreed to.
+ */
+export function safeDestination(root: string, rel: string): string | null {
+  let realRoot: string
+  try {
+    realRoot = fs.realpathSync(root)
+  } catch {
+    return null
+  }
+  const abs = path.resolve(realRoot, rel)
+  const relative = path.relative(realRoot, abs)
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null
+
+  const segments = relative.split(path.sep)
+  let current = realRoot
+  for (const segment of segments) {
+    current = path.join(current, segment)
+    let stat: fs.Stats
+    try {
+      stat = fs.lstatSync(current)
+    } catch {
+      break
+    }
+    if (stat.isSymbolicLink()) {
+      let target: string
+      try {
+        target = fs.realpathSync(current)
+      } catch {
+        return null
+      }
+      if (target !== realRoot && !target.startsWith(realRoot + path.sep)) return null
+      current = target
+    }
+  }
+  return abs
+}
+
+function copyAtomic(source: string, dest: string, mode?: number): void {
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  try {
+    if (fs.lstatSync(dest).isSymbolicLink()) fs.rmSync(dest, { force: true })
+  } catch {
+    /* nothing there */
+  }
+  const temp = path.join(path.dirname(dest), "." + path.basename(dest) + ".moat-" + process.pid)
+  const bytes = fs.readFileSync(source)
+  fs.writeFileSync(temp, bytes, mode !== undefined ? { mode } : undefined)
+  if (mode !== undefined) fs.chmodSync(temp, mode)
+  fs.renameSync(temp, dest)
 }
 
 /**
@@ -215,41 +496,74 @@ export async function planApply(p: EnvPaths): Promise<ApplyPlan> {
  *
  * Conflicts are skipped, never written, and returned so the caller can say what
  * happened. Files the agent deleted are removed only when the user had not
- * touched them.
+ * touched them. Every change is re-checked against the state it was planned
+ * from, so an edit made while the user was reading the plan is never lost.
  */
 export async function applyPlan(p: EnvPaths, plan: ApplyPlan): Promise<{ applied: number; skipped: string[] }> {
+  if (plan.baselineProblem) throw new Error(plan.baselineProblem)
+
   let applied = 0
   const skipped: string[] = []
+  try {
+    for (const change of plan.changes) {
+      const dest = safeDestination(p.projectDir, change.path)
+      if (change.conflict || dest === null) {
+        skipped.push(change.path)
+        continue
+      }
 
-  for (const change of plan.changes) {
-    const hostFile = path.join(p.projectDir, change.path)
-    if (change.conflict) {
-      skipped.push(change.path)
-      continue
-    }
-    if (change.kind === "delete") {
-      fs.rmSync(hostFile, { force: true })
+      const now = entryKey(entryState(dest))
+      if (change.expectedHost !== now) {
+        skipped.push(change.path)
+        continue
+      }
+
+      if (change.kind === "mode") {
+        fs.chmodSync(dest, change.mode ?? 0o644)
+        applied += 1
+        continue
+      }
+      if (change.kind === "delete") {
+        fs.rmSync(dest, { recursive: true, force: true })
+        applied += 1
+        continue
+      }
+      if (change.kind === "link") {
+        fs.rmSync(dest, { force: true })
+        fs.mkdirSync(path.dirname(dest), { recursive: true })
+        fs.symlinkSync(change.linkTarget ?? "", dest)
+        applied += 1
+        continue
+      }
+
+      const source = change.kind === "merge" ? change.mergedFile : path.join(p.work, change.path)
+      if (!source || !fs.existsSync(source)) {
+        skipped.push(change.path)
+        continue
+      }
+      copyAtomic(source, dest, change.mode)
       applied += 1
-      continue
     }
-    const source =
-      change.kind === "merge" ? path.join(p.dir, "runtime", "merged.tmp") : path.join(p.work, change.path)
-    fs.mkdirSync(path.dirname(hostFile), { recursive: true })
-    fs.copyFileSync(source, hostFile)
-    const mode = fs.statSync(path.join(p.work, change.path)).mode & 0o777
-    fs.chmodSync(hostFile, mode)
-    applied += 1
+  } finally {
+    for (const change of plan.changes) if (change.mergedFile) fs.rmSync(change.mergedFile, { force: true })
   }
 
-  fs.rmSync(path.join(p.dir, "runtime", "merged.tmp"), { force: true })
   return { applied, skipped }
 }
 
 export function describePlan(plan: ApplyPlan): string[] {
+  const verbs: Record<ChangeKind, string> = {
+    add: "add",
+    modify: "update",
+    delete: "remove",
+    merge: "merge",
+    mode: "chmod",
+    link: "link",
+  }
   return plan.changes
     .filter((change) => !change.conflict)
     .map((change) => {
-      const verb = change.kind === "add" ? "add" : change.kind === "delete" ? "remove" : change.kind === "merge" ? "merge" : "update"
-      return `${verb.padEnd(7)} ${change.path}${change.note ? `  (${change.note})` : ""}`
+      const note = change.note ? "  (" + change.note + ")" : ""
+      return verbs[change.kind].padEnd(7) + " " + change.path + note
     })
 }

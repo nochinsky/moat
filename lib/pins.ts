@@ -50,8 +50,17 @@ export const BUNDLE_PLUGIN = `${BUNDLE_DIR}/plugin/moat-bundle.mjs`
 export const SANDBOX_WORKDIR = "/work"
 export const AUDIT_LOG = "/var/log/moat/tools.jsonl"
 
-/** The curated tool set. This is the complete list the model is ever shown. */
-export const CURATED_TOOLS = [
+/**
+ * The curated tool sets. This is the single source of truth: the renderer builds
+ * the config from these, the plugin enforces them, and `moat tools` reports them.
+ *
+ * `question` is in the core set. opencode gates it on OPENCODE_CLIENT, and moat
+ * sets that to `moat`, so the bundle turns it back on with
+ * OPENCODE_ENABLE_QUESTION_TOOL=1 and curates it for real. An earlier revision
+ * kept it in EXCLUDED_TOOLS while the renderer curated it, which made `moat
+ * tools` print a list that contradicted the evidence beside it.
+ */
+export const CORE_TOOLS = [
   "read",
   "write",
   "edit",
@@ -60,7 +69,31 @@ export const CURATED_TOOLS = [
   "grep",
   "bash",
   "todowrite",
+  "question",
 ] as const
+
+/** Everything in core, plus the two tools the opt-in `--tools extended` adds. */
+export const EXTENDED_TOOLS = [...CORE_TOOLS, "webfetch", "task"] as const
+
+/** Every built-in opencode 1.18.31 ships (packages/core/src/tool/builtins.ts). */
+export const ALL_BUILTINS = [
+  "apply_patch",
+  "bash",
+  "edit",
+  "glob",
+  "grep",
+  "question",
+  "read",
+  "skill",
+  "todowrite",
+  "webfetch",
+  "websearch",
+  "write",
+  "task",
+] as const
+
+/** The default preset. Kept as a name because almost all of the code means this one. */
+export const CURATED_TOOLS = CORE_TOOLS
 
 /**
  * Built-ins that ship with opencode but are deliberately NOT in the bundle.
@@ -74,19 +107,16 @@ export const CURATED_TOOLS = [
  * (packages/opencode/src/session/tools.ts:92). Only MCP tools are filtered, via
  * Permission.visibleTools at registry.ts:286.
  *
- * Two of these are nevertheless absent from the advertised list because
- * opencode itself gates them:
- *   - `websearch` is gated on the provider (webSearchEnabled, providerID must be
- *     opencode/opencode-go or exa/parallel enabled)
- *   - `question` is gated on the client (RuntimeFlags.client must be
- *     app/cli/desktop); moat sets OPENCODE_CLIENT=moat, which removes it
+ * One of these is nevertheless absent from the advertised list because opencode
+ * itself gates it: `websearch` is gated on the provider (webSearchEnabled,
+ * providerID must be opencode/opencode-go or exa/parallel enabled).
  * The other three (`webfetch`, `skill`, `task`) remain advertised. moat
  * therefore enforces the curated set at the tool boundary instead: the bundle
  * plugin refuses any tool id outside CURATED_TOOLS, and records the attempt.
  * See docs/UPSTREAM-CANDIDATES.md for the upstream change that would make this
  * exact.
  */
-export const EXCLUDED_TOOLS = ["webfetch", "websearch", "question", "skill", "task"] as const
+export const EXCLUDED_TOOLS: string[] = ALL_BUILTINS.filter((name) => !CURATED_TOOLS.includes(name as never))
 
 /**
  * Of the excluded built-ins above, the ones opencode simply cannot stop

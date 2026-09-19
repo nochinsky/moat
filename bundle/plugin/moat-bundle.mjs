@@ -58,8 +58,8 @@ function loadToolPolicy() {
     /* fall through to the default below */
   }
   return {
-    curated: ["read", "write", "edit", "apply_patch", "glob", "grep", "bash", "todowrite"],
-    excluded: ["webfetch", "websearch", "question", "skill", "task"],
+    curated: ["read", "write", "edit", "apply_patch", "glob", "grep", "bash", "todowrite", "question"],
+    excluded: ["webfetch", "websearch", "skill", "task"],
     preset: "core (default)",
   }
 }

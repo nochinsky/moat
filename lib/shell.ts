@@ -66,6 +66,58 @@ export function run(
   })
 }
 
+/**
+ * Run a command and capture stdout/stderr as **bytes**.
+ *
+ * `run()` decodes both streams as UTF-8, which is right for text and silently
+ * lossy for anything else: an invalid byte becomes U+FFFD, which re-encodes to
+ * three bytes. Anything whose bytes matter (NUL-separated git output, binary
+ * archives) must go through this or through a file.
+ */
+export type RawRunResult = {
+  code: number
+  stdout: Buffer
+  stderr: Buffer
+  cmd: string
+}
+
+export function runRaw(
+  cmd: string,
+  args: string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv; allowFailure?: boolean } = {},
+): Promise<RawRunResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      cwd: opts.cwd,
+      env: opts.env ?? process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk))
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk))
+    child.on("error", reject)
+    child.on("close", (code) => {
+      const result: RawRunResult = {
+        code: code ?? -1,
+        stdout: Buffer.concat(stdout),
+        stderr: Buffer.concat(stderr),
+        cmd: [cmd, ...args].map(shellQuote).join(" "),
+      }
+      if (result.code !== 0 && !opts.allowFailure) {
+        reject(
+          new CommandError({
+            code: result.code,
+            stdout: result.stdout.toString("utf8"),
+            stderr: result.stderr.toString("utf8"),
+            cmd: result.cmd,
+          }),
+        )
+      } else resolve(result)
+    })
+  })
+}
+
 /** Run a command and return trimmed stdout, throwing on failure. */
 export async function out(cmd: string, args: string[], opts?: Parameters<typeof run>[2]): Promise<string> {
   const result = await run(cmd, args, opts)

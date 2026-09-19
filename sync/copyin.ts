@@ -1,11 +1,16 @@
 import crypto from "node:crypto"
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 
 import { hashTree } from "../lib/hash.ts"
 import type { EnvPaths } from "../lib/paths.ts"
-import { ok, run } from "../lib/shell.ts"
+import { ok, run, runRaw } from "../lib/shell.ts"
+import { SANITIZED_GIT_ENV, resolveGitDir, sandboxGit } from "../lib/git.ts"
 import * as log from "../lib/log.ts"
+
+// Re-exported so the rest of the codebase keeps importing it from here.
+export { SANITIZED_GIT_ENV }
 
 /**
  * Copy-in.
@@ -34,17 +39,6 @@ import * as log from "../lib/log.ts"
  * package manager and its own network, and the whole point is a fresh
  * environment.
  */
-
-/** Deterministic git: ignore the user's global/system config for clone + fetch. */
-export const SANITIZED_GIT_ENV: NodeJS.ProcessEnv = {
-  PATH: process.env.PATH,
-  HOME: process.env.HOME,
-  GIT_CONFIG_GLOBAL: "/dev/null",
-  GIT_CONFIG_SYSTEM: "/dev/null",
-  GIT_TERMINAL_PROMPT: "0",
-  GIT_LFS_SKIP_SMUDGE: "1",
-  LC_ALL: "C",
-}
 
 export type CopyInResult = {
   transport: "git" | "rsync"
@@ -84,13 +78,28 @@ export async function hostState(projectDir: string): Promise<string> {
     await run("git", ["-C", projectDir, "rev-parse", "HEAD"], { env: SANITIZED_GIT_ENV, allowFailure: true })
   ).stdout.trim()
   const status = (
-    await run("git", ["-C", projectDir, "status", "--porcelain"], { env: SANITIZED_GIT_ENV, allowFailure: true })
+    await runRaw("git", ["-C", projectDir, "status", "--porcelain", "-z"], { env: SANITIZED_GIT_ENV, allowFailure: true })
   ).stdout
-  const diff = (
-    await run("git", ["-C", projectDir, "diff", "--binary", "HEAD"], { env: SANITIZED_GIT_ENV, allowFailure: true })
-  ).stdout
-  const digest = crypto.createHash("sha256").update(`${status}\0${diff}`).digest("hex").slice(0, 16)
-  return `git:${head}:${digest}`
+
+  // The patch goes through a file, never through string capture: a diff of a
+  // non-UTF-8 text file is not valid UTF-8, and decoding it to a string and
+  // re-encoding corrupts it. Hashing the bytes also keeps the fingerprint
+  // independent of git's text escaping. (Binary *files* are base85 in the diff;
+  // latin-1 *text* is not.)
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "moat-hoststate-"))
+  const patch = path.join(scratch, "worktree.patch")
+  try {
+    await run(
+      "git",
+      ["-C", projectDir, "diff", "--binary", "--no-ext-diff", `--output=${patch}`, "HEAD"],
+      { env: SANITIZED_GIT_ENV, allowFailure: true },
+    )
+    const bytes = fs.existsSync(patch) ? fs.readFileSync(patch) : Buffer.alloc(0)
+    const digest = crypto.createHash("sha256").update(status).update("\0").update(bytes).digest("hex").slice(0, 16)
+    return `git:${head}:${digest}`
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true })
+  }
 }
 
 /**
@@ -148,21 +157,22 @@ async function cloneGit(p: EnvPaths): Promise<void> {
   log.step("copy-in: git clone --no-hardlinks")
   await run("git", ["clone", "--no-hardlinks", "--quiet", p.projectDir, p.work], { env: SANITIZED_GIT_ENV })
 
-  // Reproduce the uncommitted working tree exactly.
-  const diff = await run("git", ["-C", p.projectDir, "diff", "--binary", "HEAD"], { env: SANITIZED_GIT_ENV })
-  if (diff.stdout.trim().length > 0) {
-    const patch = path.join(p.dir, "runtime", "worktree.patch")
-    fs.mkdirSync(path.dirname(patch), { recursive: true })
-    fs.writeFileSync(patch, diff.stdout)
-    const applied = await run("git", ["-C", p.work, "apply", "--whitespace=nowarn", patch], {
-      env: SANITIZED_GIT_ENV,
-      allowFailure: true,
-    })
+  // Reproduce the uncommitted working tree exactly. The patch goes through a
+  // file for the same reason the baseline archive does: string capture is lossy
+  // for bytes that are not valid UTF-8.
+  const patch = path.join(p.dir, "runtime", "worktree.patch")
+  fs.mkdirSync(path.dirname(patch), { recursive: true })
+  await run("git", ["-C", p.projectDir, "diff", "--binary", "--no-ext-diff", `--output=${patch}`, "HEAD"], {
+    env: SANITIZED_GIT_ENV,
+    allowFailure: true,
+  })
+  if (fs.existsSync(patch) && fs.statSync(patch).size > 0) {
+    const applied = await sandboxGit(p.work, ["apply", "--whitespace=nowarn", patch], { allowFailure: true })
     if (applied.code !== 0) {
       log.warn(`could not replay uncommitted tracked changes: ${applied.stderr.trim()}`)
     }
-    fs.rmSync(patch, { force: true })
   }
+  fs.rmSync(patch, { force: true })
 
   const untracked = await run(
     "git",
@@ -206,13 +216,13 @@ async function finalize(p: EnvPaths, transport: "git" | "rsync"): Promise<CopyIn
   let untrackedFiles = 0
 
   if (transport === "git") {
-    head = (await run("git", ["-C", p.work, "rev-parse", "HEAD"], { env: SANITIZED_GIT_ENV, allowFailure: true })).stdout.trim() || null
-    branch = (await run("git", ["-C", p.work, "rev-parse", "--abbrev-ref", "HEAD"], { env: SANITIZED_GIT_ENV, allowFailure: true })).stdout.trim() || null
-    const status = await run("git", ["-C", p.work, "status", "--porcelain"], { env: SANITIZED_GIT_ENV, allowFailure: true })
-    const lines = status.stdout.split("\n").filter((line) => line.trim().length > 0)
-    dirty = lines.length > 0
-    trackedChanges = lines.filter((line) => !line.startsWith("??")).length
-    untrackedFiles = lines.filter((line) => line.startsWith("??")).length
+    head = (await sandboxGit(p.work, ["rev-parse", "HEAD"], { allowFailure: true })).stdout.trim() || null
+    branch = (await sandboxGit(p.work, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFailure: true })).stdout.trim() || null
+    const status = await sandboxGit(p.work, ["status", "--porcelain", "-z"], { allowFailure: true })
+    const entries = status.stdout.split("\0").filter((line) => line.length > 0)
+    dirty = entries.length > 0
+    trackedChanges = entries.filter((line) => !line.startsWith("??")).length
+    untrackedFiles = entries.filter((line) => line.startsWith("??")).length
   }
 
   return {
@@ -243,7 +253,9 @@ async function finalize(p: EnvPaths, transport: "git" | "rsync"): Promise<CopyIn
  * the agent will see.
  */
 export async function recordBaseline(p: EnvPaths): Promise<string | null> {
-  if (!(await isGitRepo(p.work))) return null
+  // A pure filesystem check, not a git invocation: if .git is a file or a
+  // symlink the hardened runner will refuse, and there is nothing to record.
+  if (!resolveGitDir(p.work)) return null
   const indexPath = path.join(p.dir, "runtime", "baseline.index")
   fs.mkdirSync(path.dirname(indexPath), { recursive: true })
   fs.rmSync(indexPath, { force: true })
@@ -256,19 +268,18 @@ export async function recordBaseline(p: EnvPaths): Promise<string | null> {
     GIT_COMMITTER_NAME: "moat",
     GIT_COMMITTER_EMAIL: "moat@localhost",
   }
-  await run("git", ["-C", p.work, "read-tree", "HEAD"], { env, allowFailure: true })
-  await run("git", ["-C", p.work, "add", "-A"], { env })
-  const tree = await run("git", ["-C", p.work, "write-tree"], { env, allowFailure: true })
+  await sandboxGit(p.work, ["read-tree", "HEAD"], { env, allowFailure: true })
+  await sandboxGit(p.work, ["add", "-A"], { env })
+  const tree = await sandboxGit(p.work, ["write-tree"], { env, allowFailure: true })
   if (tree.code !== 0) return null
-  const commit = await run(
-    "git",
-    ["-C", p.work, "commit-tree", tree.stdout.trim(), "-m", "moat: state copied from the host"],
-    { env, allowFailure: true },
-  )
+  const commit = await sandboxGit(p.work, ["commit-tree", tree.stdout.trim(), "-m", "moat: state copied from the host"], {
+    env,
+    allowFailure: true,
+  })
   fs.rmSync(indexPath, { force: true })
   if (commit.code !== 0) return null
   const sha = commit.stdout.trim()
-  await run("git", ["-C", p.work, "update-ref", "refs/moat/baseline", sha], { env: SANITIZED_GIT_ENV })
+  await sandboxGit(p.work, ["update-ref", "refs/moat/baseline", sha], { allowFailure: true })
   return sha
 }
 
@@ -278,12 +289,22 @@ export async function recordBaseline(p: EnvPaths): Promise<string | null> {
  * privileges.
  */
 export async function ensureSandboxRepo(p: EnvPaths): Promise<void> {
-  if (await isGitRepo(p.work)) return
+  if (resolveGitDir(p.work)) return
   log.step("copy-in: initialising a repository inside the sandbox (non-git project)")
+  // A .git *file* or symlink here is not a repository; remove it before init so
+  // git cannot be pointed at a path outside the workspace.
+  const dotGit = path.join(p.work, ".git")
+  try {
+    if (!fs.lstatSync(dotGit).isDirectory()) fs.rmSync(dotGit, { force: true, recursive: true })
+  } catch {
+    /* nothing there */
+  }
   const env = { ...SANITIZED_GIT_ENV, GIT_AUTHOR_NAME: "moat", GIT_AUTHOR_EMAIL: "moat@localhost", GIT_COMMITTER_NAME: "moat", GIT_COMMITTER_EMAIL: "moat@localhost" }
+  // init must run before .git exists, so it cannot go through the hardened
+  // runner (which refuses anything that is not already a plain .git directory).
   await run("git", ["-C", p.work, "init", "--quiet", "-b", "main"], { env })
-  await run("git", ["-C", p.work, "add", "-A"], { env })
+  await sandboxGit(p.work, ["add", "-A"], { env })
   // --allow-empty matters: typing `moat` in an empty directory is a use case, and
   // an empty tree cannot be committed without it.
-  await run("git", ["-C", p.work, "commit", "--quiet", "--allow-empty", "-m", "moat: initial copy-in"], { env })
+  await sandboxGit(p.work, ["commit", "--quiet", "--allow-empty", "-m", "moat: initial copy-in"], { env })
 }

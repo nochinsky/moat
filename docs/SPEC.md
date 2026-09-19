@@ -93,7 +93,9 @@ holds everything:
     rootfs/.moat/entry.sh   # the inner boot script (generated, contains no secret)
     mnt/                # scratch mount point the rootfs is bound onto
     runtime/boot.sh     # the outer boot script, kept for audit
-    logs/sandbox.log    # everything the sandbox prints
+    logs/sandbox.log    # the host side of the boot, before the box takes over
+    rootfs/var/log/moat/boot.log  # everything the sandbox prints; inside its own rootfs,
+                                  # so the running box holds no fd on a host file
     snapshots/*.tar.gz  # rootfs snapshots (never the project)
     server-password     # mode 0600, per-boot random, outside the rootfs
 ```
@@ -159,7 +161,7 @@ mount --make-rprivate /
 mount --bind  <rootfs> <mnt>              # the root becomes a mount point
 mount -t proc proc <mnt>/proc
 mount -t tmpfs -o mode=755,nosuid tmpfs <mnt>/dev
-mount --bind  /dev/{null,zero,full,random,urandom,tty} <mnt>/dev/*   # read-only device nodes
+mount --bind  /dev/{null,zero,full,random,urandom,tty} <mnt>/dev/*   # device nodes (rw)
 mount -t devpts -o newinstance,ptmxmode=0666,mode=620 devpts <mnt>/dev/pts
 mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs <mnt>/dev/shm
 mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs <mnt>/tmp
@@ -409,8 +411,10 @@ already happened once. It declares:
 
 * `permission: {"*": "allow"}`, the only rule, and it allows. No approval prompt
   can fire and no denial can be tripped.
-* `tools: {webfetch: false, websearch: false, question: false, skill: false,
-  task: false}`, the excluded set.
+* `tools: {webfetch: false, websearch: false, skill: false, task: false}`,
+  the excluded set. (`question` is curated, not excluded: opencode gates it on
+  `OPENCODE_CLIENT`, the bundle turns it back on, and §6b.7 explains why it is
+  always advertised rather than hidden.)
 * a single OpenAI-compatible provider (`moat`) whose `apiKey` is
   `{env:MOAT_INJECTED_CREDENTIAL}`, see §5.2.
 * `share: "disabled"`, `autoupdate: false`.
@@ -418,10 +422,15 @@ already happened once. It declares:
   `OPENCODE_DISABLE_PROJECT_CONFIG=1`, `OPENCODE_CLIENT=moat`.
 
 **Curated set (what the bundle grants):**
-`read`, `write`, `edit`, `apply_patch`, `glob`, `grep`, `bash`, `todowrite`.
+`read`, `write`, `edit`, `apply_patch`, `glob`, `grep`, `bash`,
+`todowrite`, `question`.
 
 **Excluded (opencode built-ins that are not in the bundle):**
-`webfetch`, `websearch`, `question`, `skill`, `task`.
+`webfetch`, `websearch`, `skill`, `task`.
+
+The list lives in one place, `lib/pins.ts`; the renderer, the plugin and
+`moat tools` all read it from there. `moat tools` prints the bundle the running
+box actually loaded, not a second copy of the constants.
 
 Profiles are detected from the project when `--profile` is not given:
 `package.json` means node, `pyproject.toml`/`requirements.txt` python, `go.mod` go,
@@ -828,17 +837,22 @@ unprivileged user namespace, verified EPERM), which is why §7.2 exists.
 ### 7.2 The one host mount, stated plainly
 
 `/dev` is a fresh tmpfs. Six **device nodes** (`null`, `zero`, `full`, `random`,
-`urandom`, `tty`) are bind-mounted into it read-only from the host, because
-`mknod` cannot create them from nothing in a user namespace and a userspace
-process needs `/dev/null` to exist. This is what every rootless container runtime
-does. They carry no host data.
+`urandom`, `tty`) are bind-mounted into it from the host, because `mknod` cannot
+create them from nothing in a user namespace and a userspace process needs
+`/dev/null` to exist. This is what every rootless container runtime does. They
+carry no host data. They are bound **read-write**: a device node is an interface
+rather than a file, and remounting the bind `ro` makes `> /dev/null` fail with
+EACCES, which was measured before the docs were changed to match.
 
 An acceptance criterion was that `mount` should show *no* host bind-mounts.
 Taken literally that is impossible on this host. The nearest true statement,
-which `moat doctor` prints in full, is: **the mount table contains no host
-filesystem path; the only host-originated mounts are six read-only device
-nodes.** `docs/VERIFICATION.md` quotes the complete 13-line mount table so the
-claim can be checked line by line.
+which `moat doctor` prints in full, is: **the only host-originated mounts are
+six device nodes; every other path in the mount table's root field is moat's own
+state directory or the root of a fresh filesystem.** The doctor renders the root
+field rather than only the mount point, so a bind of a host directory `/work`
+cannot hide behind the device name the way it did when the check read only the
+source field. `docs/VERIFICATION.md` quotes the mount table so the claim can be
+checked line by line.
 
 ### 7.3 Network: the significant v0 limitation
 
@@ -914,6 +928,13 @@ project.**
 working tree; it warns with the count of commits that exist only inside the
 sandbox before doing so.
 
+`moat up --fresh` replaces the rootfs, which deletes `/work` with it. It
+refuses while a sandbox is live (the rootfs it is using would be pulled out from
+under it) and refuses to delete `/work` that holds unfetched commits or
+uncommitted files unless `--yes` is passed, naming the counts first. The pid
+recorded for a sandbox is reconciled by process start time, not by number
+alone, so a reused pid is never signalled.
+
 ---
 
 ## 9. Failure modes
@@ -924,7 +945,9 @@ sandbox before doing so.
 | bundle config cannot be parsed | opencode fails at load; the sandbox log is printed |
 | the plugin's curation assertion fails | the plugin throws at config load, surfacing at boot |
 | `opencode serve` does not become ready | `moat up` prints the last 40 lines of the sandbox log and kills the sandbox |
-| the recorded PID is stale | `moat up`/`status` reconcile against the live process table |
+| the recorded PID is stale | reconciled against `/proc/<pid>/stat` start time; a reused pid is reported and never signalled |
+| `--fresh` is asked for while a sandbox is live | refuses; `moat down` first |
+| `--fresh` would delete unfetched or uncommitted sandbox work | refuses, naming the counts; `moat fetch` or `--yes` |
 | credential TTL elapses | the in-sandbox watchdog stops the agent; the box stays up |
 | Alpine CDN returns a transient index error | provisioning rotates four mirrors and retries; success is decided by `apk info -e`, not by apk's exit code |
 

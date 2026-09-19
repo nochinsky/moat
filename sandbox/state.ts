@@ -51,6 +51,14 @@ export type EnvState = {
   profiles: string[]
   /** PID of the namespace supervisor process group leader on the host. */
   pid: number | null
+  /**
+   * /proc/<pid>/stat starttime recorded when the sandbox was spawned.
+   *
+   * A pid alone is not an identity: after a reboot, or after the process died
+   * and the number was reused, `moat down` would otherwise signal a bystander's
+   * process group. Kept next to the pid it identifies.
+   */
+  pidStart: string | null
   /** Tree digest of the host project as of the last copy-in. */
   baselineDigest: string | null
   /** Fingerprint of the host project at copy-in time, to detect that it moved on. */
@@ -83,6 +91,7 @@ export function initialState(p: EnvPaths, versions: { opencode: string; alpine: 
     baseBranch: null,
     profiles: [],
     pid: null,
+    pidStart: null,
     baselineDigest: null,
     baselineHostState: null,
     baselineCommit: null,
@@ -102,6 +111,7 @@ export function readState(p: EnvPaths): EnvState | null {
     // so it behaves the same as one created today.
     if (raw.effort === undefined) raw.effort = DEEPSEEK.defaultEffort
     if (raw.agent === undefined) raw.agent = null
+    if (raw.pidStart === undefined) raw.pidStart = null
     return raw
   } catch {
     return null

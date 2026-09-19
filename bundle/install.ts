@@ -74,13 +74,30 @@ export function installBundle(rootfs: string, options: InstallOptions): Installe
     2,
   )}\n`
 
-  // Fail loudly if someone tries to bake a literal secret into the bundle.
+  // Fail loudly if someone tries to bake a literal secret into the bundle. Every
+  // artifact written below is checked, not three of the five, and the patterns
+  // cover the common key shapes rather than only DeepSeek's: the old
+  // /sk-[A-Za-z0-9]{16,}/ did not match sk-proj-... or sk-ant-api03-... at all,
+  // because the hyphen ended the run.
+  const LITERAL_KEY = new RegExp(
+    [
+      "sk-[A-Za-z0-9_-]{16,}", // OpenAI, Anthropic, DeepSeek
+      "AIza[0-9A-Za-z_-]{20,}", // Google
+      "AKIA[0-9A-Z]{16}", // AWS access key id
+      "gh[pousr]_[A-Za-z0-9]{20,}", // GitHub
+      "hf_[A-Za-z0-9]{20,}", // Hugging Face
+      "xox[baprs]-[A-Za-z0-9-]{10,}", // Slack
+      "-----BEGIN [A-Z ]*PRIVATE KEY-----",
+    ].join("|"),
+  )
   for (const [name, text] of [
     ["opencode.json", rendered.config],
+    ["tools.json", rendered.tools],
+    ["environment.json", environment],
     ["AGENTS.md", brief],
     ["moat-bundle.mjs", plugin],
   ] as const) {
-    if (/sk-[A-Za-z0-9]{16,}/.test(text) || /AIza[A-Za-z0-9_-]{20,}/.test(text)) {
+    if (LITERAL_KEY.test(text)) {
       throw new Error(`refusing to install bundle: ${name} appears to contain a literal API key`)
     }
   }

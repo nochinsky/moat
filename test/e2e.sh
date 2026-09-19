@@ -248,14 +248,19 @@ capture fetch $MOAT fetch
 capture fetch-json $MOAT fetch --json
 
 echo "" | tee -a "$EVIDENCE/summary.txt"
-echo "--- git log on the host, for the fetched ref only ---" | tee -a "$EVIDENCE/summary.txt"
-git log --oneline --decorate refs/moat/main | tee -a "$EVIDENCE/summary.txt"
+# The ref name is the branch the sandbox was on (moat-session-<stamp>), not
+# "main": moat fetch with no argument fetches the current session branch. The
+# old hardcoded refs/moat/main made git print a fatal error on every run and the
+# evidence showed no log at all.
+FETCHED_REF=$(git for-each-ref --format='%(refname:short)' 'refs/moat/*' | head -1)
+echo "--- git log on the host, for the fetched ref only: $FETCHED_REF ---" | tee -a "$EVIDENCE/summary.txt"
+git log --oneline --decorate "$FETCHED_REF" | tee -a "$EVIDENCE/summary.txt"
 echo "" | tee -a "$EVIDENCE/summary.txt"
 echo "--- host working tree after fetch (must be unchanged) ---" | tee -a "$EVIDENCE/summary.txt"
 git status --porcelain | tee -a "$EVIDENCE/summary.txt"
 echo "host HEAD after fetch: $(git rev-parse HEAD)" | tee -a "$EVIDENCE/summary.txt"
 echo "files the agent produced now visible on the host (via the fetched ref):" | tee -a "$EVIDENCE/summary.txt"
-git show --stat --oneline refs/moat/main | tee -a "$EVIDENCE/summary.txt"
+git show --stat --oneline "$FETCHED_REF" | tee -a "$EVIDENCE/summary.txt"
 
 # ---------------------------------------------------------------------------
 section "8. the host project tree is byte-identical before vs after"

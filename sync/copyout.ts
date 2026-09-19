@@ -3,7 +3,7 @@ import fs from "node:fs"
 import type { EnvPaths } from "../lib/paths.ts"
 import { run } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
-import { SANITIZED_GIT_ENV } from "./copyin.ts"
+import { SANITIZED_GIT_ENV, resolveGitDir, sandboxGit, withSanitizedSandboxRepo } from "../lib/git.ts"
 
 /**
  * Copy-out.
@@ -42,19 +42,16 @@ export type FetchResult = {
 }
 
 export async function sandboxRepoExists(p: EnvPaths): Promise<boolean> {
-  return fs.existsSync(`${p.work}/.git`)
+  // A .git file or symlink is not a repository the host may run git in; the
+  // hardened runner refuses it, so report it as absent here instead of failing
+  // later with a confusing message.
+  return resolveGitDir(p.work) !== null
 }
 
 export async function listSandboxBranches(p: EnvPaths): Promise<SandboxBranch[]> {
   const format = "%(refname:short)%00%(objectname)%00%(subject)%00%(committerdate:iso-strict)"
-  const result = await run(
-    "git",
-    ["-C", p.work, "for-each-ref", `--format=${format}`, "refs/heads"],
-    { env: SANITIZED_GIT_ENV, allowFailure: true },
-  )
-  const current = (
-    await run("git", ["-C", p.work, "rev-parse", "--abbrev-ref", "HEAD"], { env: SANITIZED_GIT_ENV, allowFailure: true })
-  ).stdout.trim()
+  const result = await sandboxGit(p.work, ["for-each-ref", `--format=${format}`, "refs/heads"], { allowFailure: true })
+  const current = (await sandboxGit(p.work, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFailure: true })).stdout.trim()
   return result.stdout
     .split("\n")
     .filter((line) => line.trim().length > 0)
@@ -73,12 +70,9 @@ export async function listSandboxBranches(p: EnvPaths): Promise<SandboxBranch[]>
  */
 export async function sandboxWorktreeChanges(p: EnvPaths): Promise<string[]> {
   if (!(await sandboxRepoExists(p))) return []
-  const result = await run("git", ["-C", p.work, "status", "--porcelain"], {
-    env: SANITIZED_GIT_ENV,
-    allowFailure: true,
-  })
+  const result = await sandboxGit(p.work, ["status", "--porcelain", "-z"], { allowFailure: true })
   return result.stdout
-    .split("\n")
+    .split("\0")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
 }
@@ -104,8 +98,10 @@ export async function commitSandboxWorktree(
   const changes = await sandboxWorktreeChanges(p)
   if (changes.length === 0) return { sha: null, files: 0 }
 
-  await run("git", ["-C", p.work, "add", "-A"], { env })
-  const commit = await run("git", ["-C", p.work, "commit", "--quiet", "-m", message], { env, allowFailure: true })
+  // The hardened runner disables hooks for the duration: a commit triggered by
+  // the host must never execute a pre-commit hook the agent wrote.
+  await sandboxGit(p.work, ["add", "-A"], { env })
+  const commit = await sandboxGit(p.work, ["commit", "--quiet", "-m", message], { env, allowFailure: true })
   if (commit.code !== 0) {
     throw new Error(`could not commit the sandbox working tree: ${commit.stderr.trim() || commit.stdout.trim()}`)
   }
@@ -113,7 +109,7 @@ export async function commitSandboxWorktree(
 }
 
 export async function sandboxHead(p: EnvPaths): Promise<string | null> {
-  const result = await run("git", ["-C", p.work, "rev-parse", "HEAD"], { env: SANITIZED_GIT_ENV, allowFailure: true })
+  const result = await sandboxGit(p.work, ["rev-parse", "HEAD"], { allowFailure: true })
   return result.code === 0 ? result.stdout.trim() : null
 }
 
@@ -160,10 +156,14 @@ export async function fetchBranch(
   // the agent's tag namespace out of the user's repository.
   const refspec = `+refs/heads/${branch}:${hostRef}`
   log.step(`copy-out: git fetch ${remote} ${refspec}`)
-  const result = await run(
-    "git",
-    ["-C", p.projectDir, "fetch", "--no-tags", remote, refspec],
-    { env: SANITIZED_GIT_ENV, allowFailure: true },
+  // Fetch runs in the *host* repository but the remote side is the sandbox's, so
+  // upload-pack reads the agent-controlled config unless it is neutralized for
+  // the duration of the fetch.
+  const result = await withSanitizedSandboxRepo(p.work, () =>
+    run("git", ["-C", p.projectDir, "fetch", "--no-tags", remote, refspec], {
+      env: SANITIZED_GIT_ENV,
+      allowFailure: true,
+    }),
   )
   if (result.code !== 0) throw new Error(`git fetch from the sandbox failed: ${result.stderr.trim()}`)
 
@@ -198,11 +198,9 @@ export async function fetchBranch(
 }
 
 export async function countCommitsAhead(p: EnvPaths, branch: string): Promise<number> {
-  const result = await run(
-    "git",
-    ["-C", p.work, "rev-list", "--count", `refs/heads/${branch}`, "--not", "--all"],
-    { env: SANITIZED_GIT_ENV, allowFailure: true },
-  )
+  const result = await sandboxGit(p.work, ["rev-list", "--count", `refs/heads/${branch}`, "--not", "--all"], {
+    allowFailure: true,
+  })
   return Number.parseInt(result.stdout.trim(), 10) || 0
 }
 

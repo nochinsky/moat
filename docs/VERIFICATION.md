@@ -25,8 +25,8 @@ host
   /dev/kvm   absent (v1 microVM path unavailable here)
   note       no usable /dev/kvm (present but not accessible to uid 1000 (mode 660, gid 991)):
              v1 microVM unavailable here; the v0 container path is the supported mode
-  note       mknod denied in userns (kernel policy): /dev nodes are bind-mounted read-only
-             from the host's device nodes. No host *data* is mounted.
+  note       mknod denied in userns (kernel policy): /dev nodes are bind-mounted from
+             the host's device nodes (rw: a device is an interface, not a file). No host *data* is mounted.
 ```
 
 `kvm=no` means `v1` is untestable on this machine, which is why it is out of
@@ -395,39 +395,46 @@ The agent wrote `agent-output.txt`, edited it, committed it, and read the projec
 ```
 $ moat doctor     (the in-sandbox section, executed inside a real boot)
 
-isolation (15 checks)
-  pass  host project not reachable   /home/user/moat-demo/project is absent inside the sandbox
-  pass  host home not reachable      /home/user is absent inside the sandbox
-  pass  host canary unreadable       /home/user/.moat/canary (mode 600, exists only on the host) is unreadable
-  pass  no host ssh directory        host /home/user/.ssh absent; sandbox /root/.ssh absent
-  pass  no host env forwarded        8 variables present, all expected (HOME, LANG, LC_ALL, MOAT_SANDBOX, PATH, PWD, SHLVL, TERM)
-  pass  no host data mounts          13 mounts; none reference a host filesystem path
-  pass  sandbox pid 1                pid 1 is "sh", 4 visible processes
-  pass  own mount namespace          sandbox mnt:[4026532235] vs host mnt:[4026532219]
-  pass  own pid namespace            sandbox pid:[4026532238] vs host pid:[4026532221]
-  pass  own user namespace           sandbox user:[4026532234] vs host user:[4026531837]
-  pass  own uts namespace            sandbox uts:[4026532236] vs host uts:[4026532220]
-  pass  own ipc namespace            sandbox ipc:[4026532237] vs host ipc:[4026532208]
-  pass  uid mapping                  uid_map "0 1000 1", uid 0 inside is the calling user outside
-  note  network namespace shared     sandbox and host share net:[4026531833]. The agent has the host's
-                                     network position. Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md).
-  pass  device nodes are the only host mounts 6 read-only device node bind(s): /dev/full, /dev/null,
-                                     /dev/random, /dev/tty, /dev/urandom, /dev/zero
+isolation (14 checks)
+  pass  host project not reachable     /home/user/moat-demo/project is absent inside the sandbox
+  pass  host home not reachable        /home/user is absent inside the sandbox
+  pass  host canary unreadable         /home/user/.moat/canary (mode 600, exists only on the host) is unreadable
+  pass  no host ssh directory          host /home/user/.ssh absent; sandbox /root/.ssh absent
+  pass  no host env forwarded          no variable from the host environment reached the sandbox; present: DEEPSEEK_API_KEY, HOME,
+                                       LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS,
+                                       MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX,
+                                       OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own DEEPSEEK_API_KEY,
+                                       MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS,
+                                       MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL,
+                                       OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)
+  pass  no host data mounts            13 mounts; none reference a host filesystem path
+  pass  sandbox pid 1                  pid 1 is "sh", 4 visible processes
+  pass  own mount namespace            sandbox mnt:[4026532312] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532315] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532311] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532313] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532314] vs host ipc:[4026532208]
+  pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
+  pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null,
+                                       /dev/random, /dev/tty, /dev/urandom, /dev/zero
+
+  note  network namespace shared       sandbox and host share net:[4026531833]. The agent has the host's network position.
+                                       Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md).
 
 mount table inside the sandbox
-  /dev/full||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/null||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/pts||devpts devpts rw,mode=620,ptmxmode=666
-  /dev/random||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/shm||tmpfs tmpfs rw,uid=1000,gid=1000
-  /dev/tty||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/urandom||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/zero||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
-  /proc||proc proc rw
-  /run||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
-  /tmp||tmpfs tmpfs rw,uid=1000,gid=1000
-  /||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered
+  /dev/full||/full||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/null||/null||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/pts||/||rw,relatime||devpts devpts rw,mode=620,ptmxmode=666
+  /dev/random||/random||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/shm||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,uid=1000,gid=1000
+  /dev/tty||/tty||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/urandom||/urandom||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev/zero||/zero||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
+  /dev||/||rw,nosuid,relatime||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
+  /proc||/||rw,relatime||proc proc rw
+  /run||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
+  /tmp||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,uid=1000,gid=1000
+  /||/home/user/.moat/envs/18620c2c4f34/rootfs||rw,relatime||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered
 ```
 
 That is the complete table — all 13 entries, not a filtered view. Reading it
@@ -435,11 +442,13 @@ against the criterion:
 
 * **no host bind-mount of host data.** No entry references `/home`, `/mnt`,
   `/media`, `/usr/lib/wsl` or `/init`. The project is not mounted; it was copied.
-* **the only host-originated mounts are six read-only device nodes** (`/dev/null`
-  and friends). This is the one place the criterion cannot be met literally:
-  `mknod` is refused inside an unprivileged user namespace (`EPERM`, verified by
-  `moat doctor`), so these cannot be created from nothing. They carry no host
-  data. `docs/SPEC.md` §7.2 states this in full.
+* **the only host-originated mounts are six device nodes** (`/dev/null` and
+  friends), bound read-write. This is the one place the criterion cannot be met
+  literally: `mknod` is refused inside an unprivileged user namespace (`EPERM`,
+  verified by `moat doctor`), so these cannot be created from nothing. They carry
+  no host data, and remounting them read-only makes `> /dev/null` fail, which is
+  why the mount flags in the table above say `rw`. `docs/SPEC.md` §7.2 states
+  this in full.
 * **`/` is `ext4 /dev/sdd`** — the sandbox root is a directory on the host disk,
   which is how it persists between sessions. It is the sandbox's own rootfs, not
   a view of the host's `/`. Confirmed by the next check: neither `/home/user` nor
@@ -733,7 +742,7 @@ $ sleep 12 && moat status
 status       stopped
 credential   moat sha256:7726b438889c7f57 expires in -10s (EXPIRED, the sandbox watchdog stops the agent)
 
-$ grep -iE 'expired|agent exited' ~/.moat/envs/*/logs/sandbox.log
+$ grep -iE 'expired|agent exited' ~/.moat/envs/*/rootfs/var/log/moat/boot.log
 [moat] injected credential expired (ttl=6s); stopping agent
 [moat] agent exited with status 143
 ```
@@ -1336,6 +1345,67 @@ tests then covered:
 
 ---
 
+### K. The host-side git and apply regressions, as tests that run in CI
+
+Two classes of defect found in review had no guard: the host executing
+agent-controlled git config, and `moat apply` writing the wrong bytes. Both are
+now covered by `test/unit/`, which needs no sandbox and therefore runs in the
+workflow that cannot create user namespaces.
+
+```
+$ npm run test:unit
+✔ two files merged cleanly each keep their own merge
+✔ a filename with two spaces is not misattributed to another file
+✔ a file the user deleted and the agent changed is a conflict
+✔ a mode-only change is planned and applied
+✔ a missing baseline is reported, never rendered as 'nothing to apply'
+✔ an edit made after the plan is shown is not overwritten
+✔ a destination outside the project is refused, including through a symlink
+✔ a new file the agent created is applied
+✔ a new symlink the agent created is applied as a symlink
+✔ copy-in reproduces a modified non-UTF-8 text file byte for byte
+✔ drift detection is sensitive to a byte-only change
+✔ the mount check renders the root field, without which a host bind is invisible
+✔ a host bind is flagged, moat's own rootfs and the six devices are not
+✔ a repo-configured fsmonitor does not run on the host
+✔ a pre-commit hook written in the sandbox does not run on the host
+✔ a clean filter configured in the repo does not run on the host
+✔ sandboxGit refuses a .git file that points outside the workspace
+✔ the sanitized config keeps only the repository-format keys
+✔ a literal key in any written artifact is refused
+✔ a pid is only 'ours' when the recorded start time matches
+✔ two reads of the same process agree on its start time
+✔ the curated tool list has one source of truth
+ℹ tests 22
+ℹ pass 22
+ℹ fail 0
+```
+
+Each guard was checked against the old behaviour before it was trusted. The
+multi-merge, two-space-name and missing-baseline scenarios fail when run against
+the pre-fix module (`git show HEAD:sync/apply.ts`); the git-hardening tests
+assert in their first line that plain git *does* execute the planted
+`core.fsmonitor`, and that the pre-commit hook *does* run, before asserting that
+`sandboxGit` does neither. The copy-in test replays the old pipeline inside the
+test and asserts it cannot reproduce the host bytes. The mount test asserts the
+rendering includes mountinfo's root field, without which a bind of a host
+directory is indistinguishable from a device.
+
+One correction to the review that prompted this work: the old drift fingerprint
+was said to be blind to a byte change because both values decode to U+FFFD. It
+was not — the hashed diff string includes git's `index <old>..<new>` line, whose
+blob hash is computed over raw bytes. Hashing the patch bytes is still the better
+fingerprint (it does not depend on git's text escaping), but the drift test above
+is a guard, not an old-behaviour regression, and it says so.
+
+The `--fresh` and stale-pid rules are behavioural and were exercised against a
+real sandbox instead: `--fresh` while running refuses; `--fresh` with an
+uncommitted file and no `--yes` refuses and names the count; `--fresh --yes`
+reboots over the re-copied project; and `moat down` with `state.json` pointed
+at an unrelated live process warns and leaves that process running.
+
+---
+
 ## Requirement-by-requirement
 
 | # | requirement | status |
@@ -1357,12 +1427,13 @@ them (verified above), so the *behaviour* is exact; the *advertisement* is not.
 
 ```
 bundle (from the plugin's config-time record)
-  curated    read, write, edit, apply_patch, glob, grep, bash, todowrite
-  excluded   webfetch, websearch, question, skill, task
-  omissions confirmed by opencode: webfetch, websearch, question, skill, task
+  curated    read, write, edit, apply_patch, glob, grep, bash, todowrite, question
+  excluded   skill, webfetch, websearch, task
+  omissions confirmed by opencode: skill, webfetch, websearch, task
 
 registry (everything opencode knows about, NOT what the model sees)
-  + apply_patch   + bash   + edit   + glob   + grep   + read   + todowrite   + write
+  + apply_patch   + bash   + edit   + glob   + grep   + question   + read
+  + todowrite   + write
   - invalid   - skill   - task   - webfetch   - websearch
 
 ! opencode 1.18.31 cannot stop advertising: webfetch, skill, task.

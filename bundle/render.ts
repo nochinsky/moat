@@ -1,4 +1,4 @@
-import { BUNDLE_CONFIG, BUNDLE_DIR, BUNDLE_PLUGIN, SANDBOX_WORKDIR } from "../lib/pins.ts"
+import { ALL_BUILTINS, BUNDLE_CONFIG, BUNDLE_DIR, BUNDLE_PLUGIN, CORE_TOOLS, EXTENDED_TOOLS, SANDBOX_WORKDIR } from "../lib/pins.ts"
 import { DEEPSEEK } from "../lib/provider.ts"
 
 /**
@@ -17,46 +17,21 @@ import { DEEPSEEK } from "../lib/provider.ts"
 
 export type ToolPreset = "core" | "extended"
 
+/**
+ * The presets are views over lib/pins.ts, which is the single source of truth.
+ * Duplicating the list here is how the renderer and `moat tools` drifted apart.
+ */
 export const TOOL_PRESETS: Record<ToolPreset, string[]> = {
   /** Everything a coding agent needs and nothing else. This is the default. */
-  core: ["read", "write", "edit", "apply_patch", "glob", "grep", "bash", "todowrite", "question"],
+  core: [...CORE_TOOLS],
   /**
    * Adds `webfetch` (opencode's own HTML-to-text fetcher) and `task` (spawns
    * sub-agents). Neither changes the security posture, `bash` + `curl` already
    * reaches the network, but both widen what the model can reach for, so they
    * are opt-in.
    */
-  extended: [
-    "read",
-    "write",
-    "edit",
-    "apply_patch",
-    "glob",
-    "grep",
-    "bash",
-    "todowrite",
-    "question",
-    "webfetch",
-    "task",
-  ],
+  extended: [...EXTENDED_TOOLS],
 }
-
-/** Every built-in opencode ships (packages/core/src/tool/builtins.ts) minus the ones we keep. */
-export const ALL_BUILTINS = [
-  "apply_patch",
-  "bash",
-  "edit",
-  "glob",
-  "grep",
-  "question",
-  "read",
-  "skill",
-  "todowrite",
-  "webfetch",
-  "websearch",
-  "write",
-  "task",
-]
 
 export function excludedFor(preset: ToolPreset): string[] {
   const curated = TOOL_PRESETS[preset]
@@ -222,4 +197,4 @@ export function assertInvariants(rendered: RenderedBundle): void {
   if (rendered.curated.length === 0) throw new Error("bundle invariant: no curated tools")
 }
 
-export { BUNDLE_CONFIG, BUNDLE_DIR }
+export { ALL_BUILTINS, BUNDLE_CONFIG, BUNDLE_DIR }

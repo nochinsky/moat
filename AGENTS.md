@@ -28,7 +28,9 @@ Breaking any of these breaks the product, not a feature.
 
 1. **The host filesystem is never mounted into the sandbox.** The project is
    copied (`git clone --no-hardlinks`), never bind-mounted. The only host
-   mounts are six read-only device nodes. `moat doctor` prints the mount table.
+   mounts are six device nodes, bound read-write because a read-only bind makes
+   `> /dev/null` fail; they are interfaces, not host data. `moat doctor` prints
+   the mount table, root field included.
 2. **No credential ever reaches the image.** It is passed as an environment
    variable to the sandbox process, and `bundle/install.ts` refuses to install a
    bundle containing something that looks like a literal key.
@@ -70,6 +72,7 @@ docs/            SPEC (the contract), VERIFICATION (the evidence),
 is wired with `npm link` and runs the source directly.
 
 ```bash
+npm run test:unit         # pure unit tests, no sandbox, so CI runs them
 bash test/e2e.sh          # acceptance criteria, ~4 min, no API key
 bash test/e2e-extras.sh   # snapshots, apply, credential expiry, the pty suites
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
@@ -90,13 +93,55 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 
 **Namespaces**
 
-* `mknod` is denied inside a user namespace. Device nodes are bind-mounted
-  read-only from the host instead — those six binds are the only host mounts.
+* `mknod` is denied inside a user namespace. Device nodes are bind-mounted from
+  the host instead — those six binds are the only host mounts. They stay
+  read-write: remounting them `ro` makes `> /dev/null` fail with EACCES.
 * `devpts` fails with `EINVAL` if you pass `gid=5`, because that gid is not mapped
   in a single-id userns.
 * `/proc/self/ns/mount` does not exist. The symlink is `mnt`.
 * PID 1 ignores default signal dispositions, so a watchdog cannot `kill -TERM 1`.
   The agent runs as a child and the watchdog signals that pid.
+
+**Host-side git**
+
+* The sandbox's repository is agent-controlled, and git executes programs named
+  by repository-local config. `core.fsmonitor`, `core.hooksPath`, `filter.*`,
+  `diff.external` and aliases all run on the host the moment moat shells out to
+  git in `envs/<id>/rootfs/work`. This was verified: `core.fsmonitor = ./x.sh`
+  made `moat fetch` run `x.sh` as the user. Every host-side call against that
+  repository goes through `lib/git.ts` (`sandboxGit`), which swaps in a minimal
+  host-owned config, forces the execution keys off, parks
+  `objects/info/alternates`, and restores the agent's config afterwards. Do not
+  add a raw `run("git", ["-C", paths.work, ...])` call; it will typecheck and
+  quietly reintroduce the bug. `test/unit/git-hardening.test.ts` guards it.
+* The sanitized config drops `user.*` like everything else. Any host-side commit
+  must pass `GIT_AUTHOR_*`/`GIT_COMMITTER_*` explicitly, as the three commit
+  paths in `sync/` already do.
+* `moat apply` parses git output with `-z` and merges into one temp file per
+  path. Without `-z`, `a  b` parses as `a b` and moat touches the wrong file;
+  with one shared temp file, every merge after the first gets the last file's
+  content. Both are covered by `test/unit/apply.test.ts`.
+
+**Processes, scripts and logs**
+
+* A pid is not an identity. `state.json` records `pidStart` from
+  `/proc/<pid>/stat` when the box is spawned, and `sandboxPidStatus` is the only
+  thing that decides whether a recorded pid is safe to signal. Do not call
+  `isRunning` on a stored pid; a reused pid would send SIGTERM and SIGKILL to a
+  bystander's process group.
+* Boot scripts are unique per invocation (`boot-<pid>-<rand>.sh`,
+  `entry-<pid>-<rand>.sh`) and written with write-then-rename, because two host
+  processes can boot one environment at once (`moat doctor` while `moat up`, or
+  `moat exec` during a restart). `boot.sh` and `entry.sh` are audit copies of
+  the most recent boot, not the files that run.
+* The long-running box redirects its output to `<rootfs>/var/log/moat/boot.log`,
+  inside its own rootfs. It must not hold an append fd on a host file outside the
+  box, which is what the old `stdio: [fd, fd]` gave it. `moat logs sandbox` and
+  the boot-failure tail read the rootfs file; `logs/sandbox.log` only holds the
+  lines before the redirect.
+* `moat up --fresh` deletes `/work`. It refuses while a sandbox is live and
+  refuses without `--yes` when the box holds unfetched commits or uncommitted
+  files.
 
 **opencode 1.18.31**
 
