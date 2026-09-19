@@ -117,10 +117,20 @@ test("the sanitized config keeps only the repository-format keys", (t) => {
   git(f.repo, "config", "core.fsmonitor", "./evil.sh")
   git(f.repo, "config", "filter.evil.clean", "./evil.sh")
   git(f.repo, "config", "alias.status", "!echo pwned")
+  // The per-worktree config file is a second place to hide the same keys, and git
+  // only reads it while `extensions.worktreeConfig` is set. Dropping that extension
+  // is what keeps `.git/config.worktree` inert; preserving it "to be faithful to the
+  // repository" would quietly reopen the gpg vector below. Measured: with the
+  // extension dropped, a `config.worktree` holding log.showSignature + gpg.program
+  // does not run the program through sandboxGit.
+  git(f.repo, "config", "extensions.worktreeConfig", "true")
+  git(f.repo, "config", "--worktree", "log.showSignature", "true")
+  git(f.repo, "config", "--worktree", "gpg.program", "./evil.sh")
   const safe = safeConfigFor(path.join(f.repo, ".git"))
   assert.equal(safe.includes("fsmonitor"), false)
   assert.equal(safe.includes("filter"), false)
   assert.equal(safe.includes("alias"), false)
+  assert.equal(safe.includes("worktreeconfig"), false, "the worktree config extension must be dropped")
   assert.match(safe, /repositoryformatversion = 0/)
 })
 /** A commit carrying a bogus signature header, so git tries to verify it. */
@@ -139,13 +149,12 @@ function signedCommit(repo: string): string {
   }).trim()
 }
 
-test("a signed commit plus log.showSignature does not run the agent's gpg on the host", (t) => {
-  // The bug, measured: `/diff` in the REPL called `run("git", ["-C", work, "log", ...])`
-  // directly. The global config was nulled, but the *repository* config belongs to the
-  // agent, and git obeys `log.showSignature` from it: on a commit with any `gpgsig`
-  // header, git runs `gpg.program` — which the agent can point at a script it wrote
-  // into /work, whose host path it reads out of /proc/self/mountinfo — as the host user.
-  // `/diff` was the one host-side git call left outside `sandboxGit`.
+/**
+ * A repository the agent could leave behind: a script it wrote, a commit carrying a
+ * bogus signature header, and (added by each caller) the config keys that make git run
+ * that script from a plain `git log`.
+ */
+function hostileRepo(t: { after: (fn: () => void) => void }): { repo: string; marker: string; base: string; gpg: string } {
   const f = makeRepo()
   t.after(() => fs.rmSync(f.root, { recursive: true, force: true }))
   const base = git(f.repo, "rev-parse", "--abbrev-ref", "HEAD").trim()
@@ -154,29 +163,69 @@ test("a signed commit plus log.showSignature does not run the agent's gpg on the
   git(f.repo, "add", "-A")
   git(f.repo, "commit", "-qm", "agent change")
   git(f.repo, "update-ref", "refs/heads/agent", signedCommit(f.repo))
-  plantScript(path.join(f.repo, "gpg.sh"), f.marker)
-  git(f.repo, "config", "log.showSignature", "true")
-  git(f.repo, "config", "gpg.program", path.join(f.repo, "gpg.sh"))
+  const gpg = path.join(f.repo, "gpg.sh")
+  plantScript(gpg, f.marker)
+  return { repo: f.repo, marker: f.marker, base, gpg }
+}
+
+test("a signed commit plus log.showSignature does not run the agent's gpg on the host", (t) => {
+  // The bug, measured: `/diff` in the REPL called `run("git", ["-C", work, "log", ...])`
+  // directly. The global config was nulled, but the *repository* config belongs to the
+  // agent, and git obeys `log.showSignature` from it: on a commit with any `gpgsig`
+  // header, git runs `gpg.program` — which the agent can point at a script it wrote
+  // into /work, whose host path it reads out of /proc/self/mountinfo — as the host user.
+  // `/diff` was the one host-side git call left outside `sandboxGit`.
+  const { repo, marker, base, gpg } = hostileRepo(t)
+  git(repo, "config", "log.showSignature", "true")
+  git(repo, "config", "gpg.program", gpg)
 
   return (async () => {
     // Control: the shape `/diff` used. It runs the agent's program, so this test is
     // capable of failing.
-    const raw = await run("git", ["-C", f.repo, "log", "--oneline", `${base}..agent`], {
+    const raw = await run("git", ["-C", repo, "log", "--oneline", `${base}..agent`], {
       env: SANITIZED_GIT_ENV,
       allowFailure: true,
     })
     assert.equal(raw.code, 0)
-    assert.ok(fs.existsSync(f.marker), "control: the raw call runs the agent's gpg")
-    fs.rmSync(f.marker, { force: true })
+    assert.ok(fs.existsSync(marker), "control: the raw call runs the agent's gpg")
+    fs.rmSync(marker, { force: true })
 
-    const hardened = await sandboxGit(f.repo, ["log", "--oneline", `${base}..agent`], { allowFailure: true })
+    const hardened = await sandboxGit(repo, ["log", "--oneline", `${base}..agent`], { allowFailure: true })
     assert.equal(hardened.code, 0)
     assert.match(hardened.stdout, /agent change/, "the log still renders")
-    assert.equal(fs.existsSync(f.marker), false, "hardened git must not run the agent's gpg")
+    assert.equal(fs.existsSync(marker), false, "hardened git must not run the agent's gpg")
     // ...and the agent's own config is put back afterwards, so its repository is
     // untouched by moat looking at it.
-    assert.equal(git(f.repo, "config", "log.showSignature").trim(), "true")
-    assert.equal(git(f.repo, "config", "gpg.program").trim(), path.join(f.repo, "gpg.sh"))
+    assert.equal(git(repo, "config", "log.showSignature").trim(), "true")
+    assert.equal(git(repo, "config", "gpg.program").trim(), gpg)
+  })()
+})
+
+test("a per-worktree config file cannot re-enable the execution keys", (t) => {
+  // git reads .git/config.worktree only while `extensions.worktreeConfig` is set, so the
+  // config swap dropping that extension is what makes the per-worktree file inert.
+  // Preserving the extension "to be faithful to the repository" would put
+  // log.showSignature + gpg.program back in play for every hardened call, and nothing
+  // else in the runner would notice.
+  const { repo, marker, base, gpg } = hostileRepo(t)
+  git(repo, "config", "extensions.worktreeConfig", "true")
+  git(repo, "config", "--worktree", "log.showSignature", "true")
+  git(repo, "config", "--worktree", "gpg.program", gpg)
+
+  return (async () => {
+    // Control: the same repository, with the extension live, does run the program when
+    // the config is not swapped — so this is not a test that cannot fail.
+    const raw = await run("git", ["-C", repo, "log", "--oneline", `${base}..agent`], {
+      env: SANITIZED_GIT_ENV,
+      allowFailure: true,
+    })
+    assert.equal(raw.code, 0)
+    assert.ok(fs.existsSync(marker), "control: the per-worktree config is live without the swap")
+    fs.rmSync(marker, { force: true })
+
+    const hardened = await sandboxGit(repo, ["log", "--oneline", `${base}..agent`], { allowFailure: true })
+    assert.equal(hardened.code, 0)
+    assert.equal(fs.existsSync(marker), false, "the per-worktree config must not be read")
   })()
 })
 
