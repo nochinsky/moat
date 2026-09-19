@@ -109,6 +109,7 @@ import {
 } from "./client.ts"
 import { runRepl } from "./repl.ts"
 import { COMMAND_FLAGS, SPEC, flag, parse, type Parsed } from "../lib/flags.ts"
+import { freePort, hostPortFree } from "../lib/port.ts"
 
 // ---------------------------------------------------------------------------
 // argument parsing
@@ -313,17 +314,7 @@ function requireRunning(p: EnvPaths): { state: EnvState; password: string } {
   return { state, password }
 }
 
-async function freePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = net.createServer()
-    server.on("error", reject)
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address()
-      const port = typeof address === "object" && address ? address.port : 0
-      server.close(() => resolve(port))
-    })
-  })
-}
+
 
 function randomPassword(): string {
   return crypto.randomBytes(24).toString("base64url")
@@ -606,6 +597,23 @@ async function cmdUp(argv: string[]): Promise<number> {
     )
   }
 
+  // `--port` is validated for range above; this is the other half, and for the same
+  // reason. A port another process already holds used to cost the whole readiness
+  // budget (90 seconds by default) and fail with "opencode serve did not come up
+  // (GET /config -> TimeoutError)", naming neither the port nor the reason — after
+  // provisioning and a copy-in had already run. A box of ours already listening on it
+  // is not "in use" for this purpose: that is the reuse path below.
+  const ours = state !== null && sandboxAlive(state, paths) && state.port === portFlag
+  if (portFlag !== undefined && !ours) {
+    const address = ownNetns(egress) ? "0.0.0.0" : "127.0.0.1"
+    if (!(await hostPortFree(portFlag, address))) {
+      log.fail(
+        `--port ${portFlag} is already in use on this host (nothing can bind ${address}:${portFlag}).\n` +
+          "  pick another port, or drop --port and moat will choose a free one.",
+      )
+    }
+  }
+
   // `moat` on its own is typed anywhere, so the obvious wrong directories are
   // caught before a byte is copied. This runs before provisioning, because
   // discovering the mistake after unpacking a rootfs is a waste of a minute.
@@ -728,6 +736,11 @@ async function cmdUp(argv: string[]): Promise<number> {
   // A stopped sandbox may still be draining; make sure the recorded pid is gone.
   if (state!.pid && sandboxAlive(state!, paths)) {
     log.info(`sandbox already running (pid ${state!.pid}) on port ${state!.port}`)
+    if (portFlag !== undefined && portFlag !== state!.port) {
+      // Saying nothing here is how a flag becomes a rumour: the box is already up, so
+      // the port it is on wins, and the one that was asked for is not used at all.
+      log.warn(`--port ${portFlag} was not applied: this sandbox is already listening on ${state!.port}`)
+    }
     const password = readPassword(paths)!
     const ready = await waitForServer(state!, password, { timeoutMs: 15000 })
     if (ready.ok) {

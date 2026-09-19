@@ -1,5 +1,5 @@
 no project manifest found; booting with the base image only (see `moat profiles`)
-✓ image provisioned in 1.03s (extract cached image 870ms)
+✓ image provisioned in 1.03s (extract cached image 872ms)
 ! /home/user/moat-demo/onboard-demo is not a git repository; falling back to rsync + a fresh in-sandbox repo
 ✓ copy-in via rsync: 0 files, 0.0 KiB, digest e3b0c44298fc1c14
 model: deepseek/deepseek-flash (context 1M, out 384k)
@@ -13,15 +13,15 @@ moat needs a DeepSeek API key.
   DEEPSEEK_API_KEY: ***********************************
   checking...                    ✓ key accepted (deepseek-flash, deepseek-v4-pro), saved to /home/user/.moat/credentials.json
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-20-18
-✓ sandbox up, cold start 20.93s (image built)
+agent branch: moat-session-2026-09-19-20-37
+✓ sandbox up, cold start 21.92s (image built)
 
   project    /home/user/moat-demo/onboard-demo
   env        /home/user/.moat/envs/a5b7670da9ae
-  opencode   http://127.0.0.1:38135  (basic auth user "opencode")
+  opencode   http://127.0.0.1:39277  (basic auth user "opencode")
   password   <redacted-in-history>
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T00:18:03.852Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T00:37:40.795Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

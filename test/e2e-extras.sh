@@ -562,6 +562,44 @@ if grep -q "Usage: moat <command>" "$EVIDENCE/help-flag.txt" && ! grep -q "Node.
 else
   echo "--help: FAILED, the command ran instead of printing help" | tee -a "$EVIDENCE/extras.txt"
 fi
+section "AA. a port that is already taken is refused before provisioning"
+# `--port` was checked for range but not for availability, so a port another process
+# held cost the whole readiness budget (90 seconds by default) and failed with
+# "opencode serve did not come up (GET /config -> TimeoutError)" — after provisioning
+# and a copy-in had already run, and without naming the port. It is validated before
+# provisioning now, like every other flag. The second half is the control: once the
+# holder is gone the same port must work, so the check cannot pass by refusing all
+# ports.
+PORTBUSY="$WORK/portbusy"
+rm -rf "$PORTBUSY"; mkdir -p "$PORTBUSY"
+( cd "$PORTBUSY" && git init -q -b main . && printf '{"name":"portbusy"}\n' > package.json \
+  && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
+( cd "$PORTBUSY" && $MOAT destroy --yes >/dev/null 2>&1 )
+HELD_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()")
+echo "holding port $HELD_PORT while moat is asked to use it" | tee -a "$EVIDENCE/extras.txt"
+python3 -c "import socket,time; s=socket.socket(); s.bind(('127.0.0.1',$HELD_PORT)); s.listen(1); time.sleep(120)" &
+PORT_HOLDER=$!
+sleep 1
+( cd "$PORTBUSY" && capture port-busy $MOAT up --quiet --no-detect --port "$HELD_PORT" --timeout 5 \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+kill "$PORT_HOLDER" 2>/dev/null
+wait "$PORT_HOLDER" 2>/dev/null
+if grep -q "already in use" "$EVIDENCE/port-busy.txt" \
+   && grep -q "$HELD_PORT" "$EVIDENCE/port-busy.txt" \
+   && grep -q "^--- exit 1$" "$EVIDENCE/port-busy.txt" \
+   && ! grep -q "provisioning" "$EVIDENCE/port-busy.txt"; then
+  echo "--port: a taken port is refused up front, naming the port and the address" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "--port: FAILED, the boot ran and failed later instead of refusing" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$PORTBUSY" && capture port-released $MOAT up --quiet --no-detect --port "$HELD_PORT" --timeout 30 \
+  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+if grep -q "^--- exit 0$" "$EVIDENCE/port-released.txt" && ! grep -q "already in use" "$EVIDENCE/port-released.txt"; then
+  echo "the control: the same port boots once nothing holds it" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "the control FAILED: a free port was refused, so the check above proves nothing" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$PORTBUSY" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

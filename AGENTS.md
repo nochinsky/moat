@@ -216,6 +216,17 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   (handled in `main`/the logger) and need no entry. `test/unit/flags.test.ts` fails if
   the table names a flag that does not exist or drops one the suites pass; extras
   section Z covers the refusal, `--quiet` and `--help` end to end.
+* A port the host cannot bind is a boot that cannot start, and `--port` was checked for
+  *range* but not for availability: an occupied port cost the whole readiness budget
+  (90 seconds by default), after provisioning and a copy-in, and failed with
+  "opencode serve did not come up (GET /config -> TimeoutError)" — naming neither the
+  port nor the reason (the boot log has a bare `ServeError`). `hostPortFree`
+  (`lib/port.ts`) is asked up front, against the address the box will actually bind:
+  `0.0.0.0` when it has its own network namespace, `127.0.0.1` when it shares the
+  host's. `moat up` also says so when `--port` is ignored because the sandbox is
+  already running on another one — that used to be silence. Extras section AA is the
+  refusal plus the control that the same port boots once it is free;
+  `test/unit/port.test.ts` covers the address handling.
 * `moat up --fresh` deletes `/work`. It refuses while a sandbox is live and
   refuses without `--yes` when the box holds unfetched commits or uncommitted
   files.

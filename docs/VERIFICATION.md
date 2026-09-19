@@ -2141,6 +2141,41 @@ every flag named in the command table exists in `SPEC`. A second test pins the f
 suites pass to `moat up`, so a missing entry fails there rather than as a wall of boot
 output.
 
+### X. A port that is already taken is refused before provisioning
+
+`--port` was validated for range and then taken at its word. A port another process
+held cost the whole readiness budget (ninety seconds by default), after provisioning
+and a copy-in had already run, and the failure named neither the port nor the reason:
+the box's own log had a bare `ServeError`, and moat said only that `opencode serve`
+did not come up. Measured with a listener holding the port and `--timeout 5` to keep
+the run short: provisioning, copy-in, then `✗ opencode serve did not come up
+(GET /config -> TimeoutError after 5000ms)`.
+
+`hostPortFree` (`lib/port.ts`) is asked before provisioning, against the address the
+box will actually bind — `0.0.0.0` when it has its own network namespace, `127.0.0.1`
+when it shares the host's:
+
+```
+$ moat up --port 34943 …          # while another process holds 34943
+✗ --port 34943 is already in use on this host (nothing can bind 127.0.0.1:34943).
+  pick another port, or drop --port and moat will choose a free one.
+--- exit 1
+```
+
+Extras section AA is that refusal plus the control that matters: once the holder is
+gone the same port boots (`--- exit 0`), so the check cannot pass by refusing every
+port. Both were watched with the pre-flight disabled — the first fails with the old
+symptom in the capture (`opencode serve did not come up … TimeoutError`), the control
+still passing. `test/unit/port.test.ts` covers the address handling without a sandbox:
+a held port is not free and is again once released, `freePort` returns something
+bindable, and a loopback bind blocks a `0.0.0.0` bind (the mode the box uses with its
+own namespace).
+
+The residual race is real but small: `freePort` picks a port and closes the socket, and
+another process can take it before the box binds, a few seconds later through slirp.
+That path still costs the readiness budget and the message still does not name the
+port; what is fixed is the case the user can control.
+
 ---
 
 ## Requirement-by-requirement

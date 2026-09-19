@@ -24,14 +24,14 @@ effort is now max (applies to the next message)
 › › /status
 
 ›   project     /home/user/moat-demo/effort
-›   endpoint    http://127.0.0.1:35223
+›   endpoint    http://127.0.0.1:36807
 ›   model       deepseek/deepseek-v4-pro  (effort max)
 ›   agent       default
 ›   thinking    hidden
-›   branch      moat-session-2026-09-19-20-19
+›   branch      moat-session-2026-09-19-20-39
 ›   session     none yet
 ›   profiles    base only
-›   credential  14376s left
+›   credential  14375s left
 › 
 › › /think not-a-level
 "not-a-level" is not one of off, high, max for deepseek/deepseek-v4-pro
@@ -39,22 +39,22 @@ effort is now max (applies to the next message)
 showing reasoning (/thinking to hide)
 › › How many times does the letter r appear in strawberry? Answer with just the number.
 
-  ⠋ thinking 1s  ⠙ thinking 1s  ⠹ thinking 1s  ⠸ thinking 1s  ⠼ thinking 1s  ⠴ thinking 2s  ⠦ thinking 2s  ⠧ thinking 2s  ⠇ thinking 2s  ⠏ thinking 2s  ⠋ thinking 2s  ⠙ thinking 2s  ⠹ thinking 2s  ⠸ thinking 2s  ⠼ thinking 2s  ⠴ thinking 3s  ⠦ thinking 3s  ⠧ thinking 3s│   3
-│ thinking   The word "strawberry" - s-t-r-a-w-b-e-r-r-y. Count the r's: positions 3 (r), 8 (r), 9 (r). That's 3 r's.
+  ⠋ thinking 1s  ⠙ thinking 1s  ⠹ thinking 1s  ⠸ thinking 1s  ⠼ thinking 1s  ⠴ thinking 2s  ⠦ thinking 2s  ⠧ thinking 2s  ⠇ thinking 2s  ⠏ thinking 2s  ⠋ thinking 2s  ⠙ thinking 2s│   3
+│ thinking   The word "strawberry" - let me count the letter r: s-t-r-a-w-b-e-r-r-y. That's r at position 3, and r-r at positions 8 and 9. So 3 times.
 
-  ─ 8.9k in · 2.3k cached · 2 out · 47 reasoning · 0 tools · 2.8s  <1% of context  $0.0045 off-peak
+  ─ 8.9k in · 2.3k cached · 2 out · 50 reasoning · 0 tools · 2.1s  <1% of context  $0.0045 off-peak
 › › /think off
 effort is now off (applies to the next message)
 › › How many times does the letter r appear in strawberry? Answer with just the number.
 
-  ⠧ thinking 1s  ⠇ thinking 1s  ⠏ thinking 1s  ⠋ thinking 1s  ⠙ thinking 1s  ⠹ thinking 2s  ⠸ thinking 2s│   3
+  ⠙ thinking 1s  ⠹ thinking 1s  ⠸ thinking 1s  ⠼ thinking 1s  ⠴ thinking 1s│   3
 
-  ─ 8.8k in · 2.3k cached · 1 out · 0 tools · 1.7s  <1% of context  $0.0043 off-peak
+  ─ 8.8k in · 2.3k cached · 1 out · 0 tools · 1.5s  <1% of context  $0.0043 off-peak
 › › /quit
 
 
 server recorded variant for the turn: 'max'
-reasoning characters: with thinking 104, with thinking off 0
+reasoning characters: with thinking 137, with thinking off 0
 
 --- checks ---
   pass  /model listed the DeepSeek models
