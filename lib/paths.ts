@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { OPENCODE_VERSION } from "./pins.ts"
+import { OPENCODE_VERSION, SLIRP4NETNS_VERSION } from "./pins.ts"
 
 /** Root of all moat state. Overridable for tests so they never touch the real store. */
 export function moatHome(): string {
@@ -84,6 +84,11 @@ export function envPaths(projectDir: string): EnvPaths {
 
 export function rootfsCachePath(): string {
   return path.join(cacheDir(), "rootfs")
+}
+
+/** Host-side cache of the static slirp4netns used for an isolated sandbox netns. */
+export function slirpCachePath(): string {
+  return path.join(cacheDir(), "net", `slirp4netns-${SLIRP4NETNS_VERSION}`)
 }
 
 /** Host-side cache of an opencode binary, keyed by version + triple. */
