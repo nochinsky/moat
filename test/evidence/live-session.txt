@@ -9,11 +9,11 @@ before: ℹ pass 1 ℹ fail 5
 
 == 2. boot with the real provider
 
---- $ node /home/ektor/Projects/moat/cmd/main.ts destroy --yes
-✓ destroyed /home/ektor/.moat/envs/1ade356a6e72
+--- $ node /home/user/Projects/moat/cmd/main.ts destroy --yes
+✓ destroyed /home/user/.moat/envs/1ade356a6e72
 --- exit 0
 
---- $ node /home/ektor/Projects/moat/cmd/main.ts up --model deepseek-flash --profile node --credential-env DEEPSEEK_API_KEY
+--- $ node /home/user/Projects/moat/cmd/main.ts up --model deepseek-flash --profile node --credential-env DEEPSEEK_API_KEY
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31 + node)
 → provisioning from the cached image alpine-3.21.4-085c49949f85.tar.gz
 ✓ image provisioned in 1.60s (extract cached image 1.34s)
@@ -26,8 +26,8 @@ checks: npm run test
 → sandbox booted (pid 67008, port 46705); waiting for opencode serve
 ✓ sandbox up, cold start 17.98s (image built)
 
-  project    /home/ektor/moat-demo/live-project
-  env        /home/ektor/.moat/envs/1ade356a6e72
+  project    /home/user/moat-demo/live-project
+  env        /home/user/.moat/envs/1ade356a6e72
   opencode   http://127.0.0.1:46705  (basic auth user "opencode")
   password   o1lh7aJa3alg_2izXSqkYxh6QPXWi4EX
   workspace  /work (inside the sandbox)
@@ -41,7 +41,7 @@ checks: npm run test
 == 3. the agent does the work
 note: no output appears until the turn completes; watch the sandbox log for progress
 
---- $ timeout 1800 node /home/ektor/Projects/moat/cmd/main.ts attach --show-output --prompt npm test is failing. Run it, find the bug in src/slugify.js, and fix it so the whole suite passes. Then run npm install and verify the CLI works end to end. Commit everything to the branch you are on, and report the final test output.
+--- $ timeout 1800 node /home/user/Projects/moat/cmd/main.ts attach --show-output --prompt npm test is failing. Run it, find the bug in src/slugify.js, and fix it so the whole suite passes. Then run npm install and verify the CLI works end to end. Commit everything to the branch you are on, and report the final test output.
 [tool] bash (running) 
 [tool] read (running) 
 [tool] bash (completed) cat package.json; echo "---"; ls -la; echo "---"; git status; git log --oneline -5
@@ -360,8 +360,8 @@ curl-exit=28
 
 == 6. copy the work back, without touching the working tree
 
---- $ node /home/ektor/Projects/moat/cmd/main.ts fetch
-→ copy-out: git fetch /home/ektor/.moat/envs/1ade356a6e72/rootfs/work +refs/heads/moat-session-2026-09-19-15-15:refs/moat/moat-session-2026-09-19-15-15
+--- $ node /home/user/Projects/moat/cmd/main.ts fetch
+→ copy-out: git fetch /home/user/.moat/envs/1ade356a6e72/rootfs/work +refs/heads/moat-session-2026-09-19-15-15:refs/moat/moat-session-2026-09-19-15-15
 ✓ fetched moat-session-2026-09-19-15-15 -> refs/moat/moat-session-2026-09-19-15-15 (ccd43b35aee2)
   3 commit(s) reachable, HEAD 08678029e6e6 -> 08678029e6e6
     ccd43b35aee2  chore: ignore node_modules
@@ -388,11 +388,11 @@ ccd43b3 chore: ignore node_modules
 
 == 7. teardown
 
---- $ node /home/ektor/Projects/moat/cmd/main.ts down
+--- $ node /home/user/Projects/moat/cmd/main.ts down
 ✓ sandbox stopped (pid 67008); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- exit 0
 
-evidence: /home/ektor/Projects/moat/test/evidence/live-session.txt
+evidence: /home/user/Projects/moat/test/evidence/live-session.txt
 REMINDER: revoke the DEEPSEEK_API_KEY you used for this run.

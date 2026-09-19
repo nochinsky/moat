@@ -1504,6 +1504,9 @@ $ bash test/e2e-egress.sh
   pass  the allowlisted provider is still reachable (401 without a key)
   pass  the blocked probe ran inside the box
   pass  an address outside the allowlist is refused
+  pass  nft was reinstalled before the filtered boot
+  pass  the reinstalled box ran the probe
+  pass  and it is still filtered
   pass  egress filtered                an address outside the allowlist (1.1.1.1:443) is refused, and
                                        api.deepseek.com:443 is reachable
   pass  doctor reports filtered egress
@@ -1568,6 +1571,40 @@ failing with the bug reintroduced (`test/unit/egress.test.ts`):
   (`slirp-<pid>-<rand>.sock`) and readiness is a connection; `pruneDeadSockets`
   reaps the dead ones and never touches a live one.
 
+#### The filter is a rule the agent can change
+
+The ruleset lives in the sandbox's own network namespace, and uid 0 inside that
+namespace holds `CAP_NET_ADMIN` over it. Measured, in the same box:
+
+```
+$ moat exec -- /bin/sh -c 'nft list chain inet moat_egress output >/dev/null 2>&1; echo "filter-present-exit=$?"; \
+      nft flush ruleset; echo "flush-exit=$?"; sleep 0.3; \
+      curl -sS --max-time 6 -o /dev/null -w "http %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"'
+filter-present-exit=0
+flush-exit=0
+http 301
+curl-exit=0
+```
+
+Every boot re-applies the ruleset and `moat doctor` re-measures the policy, so a
+flushed filter is detected on the next run, not prevented. What the policy buys is
+a bound on where the box sends data during normal work — a runaway install, a
+prompt-injected `curl`, an accidental upload — not containment of an agent that is
+trying to leave. Containing that one means the agent losing root, which is
+incompatible with handing it a package manager, or the v1 microVM. SPEC §7.3 says
+this in the contract, not only here.
+
+#### The reinstall check, and what it found
+
+`apk` trusts its database over the filesystem. Deleting `/usr/sbin/nft` without
+touching apk's records left `apk add nftables` with nothing to do, and every
+filtered boot then failed with `[moat] filtered egress needs nft inside the box,
+and this image has none`. The suite's check deletes the binary and asserts the
+next ephemeral boot reinstalls it and is still filtered; `ensureFilterTool` now
+clears the stale package entry (`resetFirst`) and installs again when the binary is
+still missing, and every path that boots a filtered box calls it, not just
+`moat up`. The check is what found the bug, and it was red before the repair.
+
 What remains open is the shape of the allowlist, not its existence: it is an IP
 snapshot resolved on the host when the box boots, so a host that rotates to an
 address outside it is unreachable until the next `moat up`; it cannot express
@@ -1575,6 +1612,81 @@ per-host ports; and DNS to slirp's resolver (`10.0.2.3:53`) is itself an outboun
 channel. The policy also does not change the credential exposure (§1.2 of the
 SPEC): the agent still reads the key, and an allowlisted address or DNS can still
 carry it out.
+
+---
+
+### M. Host-side writes into an agent-controlled rootfs cannot be redirected
+
+The rootfs is persistent and the agent is root inside it, so it can replace one of
+its own directories with a symlink whose target string names a host path. The
+kernel resolves that string for the **host** process on the next boot. Measured
+with the old write path, calling the bundle installer directly with
+`/root/.config/opencode` symlinked to a directory outside the rootfs:
+
+```
+installBundle completed without complaint
+  host-side AGENTS.md WAS CREATED (3834 bytes)
+target dir contents: [ 'AGENTS.md' ]
+```
+
+`installBundle` runs on **every** boot, so that was a file written into a
+directory outside the sandbox on every `moat up`, `moat exec` and `moat doctor`.
+
+Every host-side write into the rootfs now goes through `lib/rootfs-fs.ts`: each
+path component is `lstat`ed and a symlink or non-directory is refused, missing
+parents are created, the content is written to a temp file opened
+`O_EXCL|O_NOFOLLOW`, the file that was actually opened is verified through
+`/proc/self/fd`, and it is renamed into place — rename replaces a symlink at the
+target instead of writing through it. `chmodRootfsDir` and the reads of
+agent-controlled files (`moat logs sandbox`, `moat logs audit`, the
+installed-bundle report) use the same guard.
+
+`test/unit/rootfs-write.test.ts` covers it: a symlinked parent is refused with the
+host directory left empty, a symlink at the file itself is replaced rather than
+followed, `..` is refused, chmod does not reach through a symlink, and a symlinked
+boot log reads as nothing instead of printing a host file. The escape test was
+watched failing with the old write path restored.
+
+Snapshot extraction needs no guard of its own, and that was measured rather than
+assumed: GNU tar refuses to write through a symlink its own archive created
+(`Cannot open: Not a directory`, host target untouched), and `restoreEnv` treats a
+non-zero tar exit as a failed restore and rolls back.
+
+### N. The environment inventory survives a deleted project directory
+
+An environment whose project directory no longer exists is exactly the one that
+leaks disk, and it used to be invisible: `listEnvs()` rebuilt its paths from the
+recorded `projectDir` through `envPaths()`, whose `realpath()` throws for a
+missing directory, and the `catch` dropped the environment. Two environments
+holding 800 MiB were invisible that way on this machine — `moat status --all` did
+not list them and `moat destroy --all` did not reclaim them.
+
+The directory name is the id now, a directory whose state cannot be read is still
+listed, and `moat destroy` takes paths rather than a project directory. The extras
+suite proves it with a throwaway `MOAT_HOME` (so `destroy --all` never touches the
+real store): one environment with a project directory that is gone and one with
+unreadable state.
+
+```
+== N. an environment whose project directory is gone stays visible and reclaimable
+$ MOAT_HOME=<temporary> moat status --all
+orphaned   0.0 KiB  <the project directory this environment recorded is gone>
+orphaned   0.0 KiB  /gone/forever
+           0.0 KiB  total, across 2 environment(s)
+  orphaned: the project directory is gone; moat destroy --all reclaims them
+  reclaim it with: moat destroy --all
+$ MOAT_HOME=<temporary> moat destroy --all
+  removed cafebabe5678  0.0 KiB  <the project directory this environment recorded is gone>
+  removed deadbeef1234  0.0 KiB  /gone/forever
+✓ destroyed 2 environment(s), about 0.0 KiB
+orphan inventory: both were listed as orphaned and both were reclaimed
+```
+
+`test/unit/env-inventory.test.ts` covers the same ground without a sandbox: the
+gone-project case, the unreadable-state case, a half-created directory, junk
+directories in `envs/` that must be ignored, and that `envPathsForId` touches no
+filesystem. The suite's three failing assertions were watched failing with the old
+`listEnvs` restored.
 
 ---
 

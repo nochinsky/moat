@@ -3,6 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { BUNDLE_CONFIG, BUNDLE_DIR, BUNDLE_PLUGIN, SANDBOX_WORKDIR } from "../lib/pins.ts"
+import { chmodRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { assertInvariants, renderBundle, type RenderInput, type ToolPreset, TOOL_PRESETS } from "./render.ts"
 import { renderInstructions, type InstructionsInput } from "./instructions.ts"
 
@@ -107,7 +108,7 @@ export function installBundle(rootfs: string, options: InstallOptions): Installe
   write(rootfs, ENVIRONMENT_PATH, environment, 0o644)
   write(rootfs, BUNDLE_PLUGIN, plugin, 0o644)
   write(rootfs, BRIEF_PATH, brief, 0o644)
-  fs.chmodSync(path.join(rootfs, BUNDLE_DIR), 0o755)
+  chmodRootfsDir(rootfs, BUNDLE_DIR, 0o755)
 
   return {
     config: BUNDLE_CONFIG,
@@ -123,10 +124,14 @@ export function installBundle(rootfs: string, options: InstallOptions): Installe
   }
 }
 
+/**
+ * Write into the rootfs through `lib/rootfs-fs.ts`, never through a symlink the
+ * agent may have planted: this runs on EVERY boot, so a redirected path here
+ * would overwrite a host file on every boot. Measured before the guard: an
+ * AGENTS.md of 3834 bytes landed outside the rootfs.
+ */
 function write(rootfs: string, target: string, content: string, mode: number): void {
-  const full = path.join(rootfs, target)
-  fs.mkdirSync(path.dirname(full), { recursive: true })
-  fs.writeFileSync(full, content, { mode })
+  writeRootfsFile(rootfs, target, content, mode)
 }
 
 export { TOOL_PRESETS }

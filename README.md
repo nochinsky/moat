@@ -179,7 +179,9 @@ the result before showing it to you. No model is involved in that verdict.
 ## Limitations
 
 - The credential is readable by the agent. Egress is fenced by default, but not
-  sealed: an allowlisted address, or DNS, can still carry data out.
+  sealed: an allowlisted address, or DNS, can still carry data out, and the agent
+  is root in the box, so it can flush the ruleset it runs under (measured). The
+  fence bounds where the box sends data during normal work, not a hostile agent.
 - The allowlist is an IP snapshot resolved when the box boots, so a host that
   rotates to an address outside it is unreachable until the next `moat up`, and
   it cannot express per-host ports. `moat up --egress isolated` drops the

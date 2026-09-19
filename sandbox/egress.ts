@@ -16,6 +16,7 @@ import {
 import { download } from "./rootfs.ts"
 
 import type { EgressMode } from "../lib/pins.ts"
+import { ensureRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
 export type { EgressMode }
 export { SLIRP_DNS }
 
@@ -71,7 +72,27 @@ export type SlirpHandle = {
 /** Split `--egress-allow` into hostnames or IPv4 literals, without duplicates. */
 export function parseAllowlist(value: string | undefined): string[] {
   if (!value) return []
-  return [...new Set(value.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean))]
+  return [...new Set(value.split(/[,\s]+/).map((item) => item.trim().toLowerCase()).filter(Boolean))]
+}
+
+/**
+ * Why this allowlist entry cannot work, or null when it is usable.
+ *
+ * The resolver drops anything that is not a name or an address, which is the
+ * worst possible outcome for a security flag: `--egress-allow
+ * https://internal.example` looked accepted, the boot succeeded, and the box then
+ * could not reach what the user believed they had allowed. Say why instead.
+ */
+export function allowHostProblem(host: string): string | null {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(host)) return "that is a URL; give the hostname only"
+  if (host.includes("/")) return "CIDR ranges and paths are not supported; name each host"
+  if (host.includes("*")) return "wildcards cannot be resolved; name each host"
+  if (host.startsWith("[")) return host.endsWith("]") ? null : "that bracket is unbalanced"
+  const colons = host.split(":").length - 1
+  if (colons === 1) return "only ports 80 and 443 are allowed, and ports cannot be scoped per host"
+  if (colons >= 2) return null // a bare IPv6 literal
+  if (!/^[a-z0-9._-]+$/.test(host)) return "that is not a hostname or an IP address"
+  return null
 }
 
 /** The default allowlist: the package sources every profile may need, plus the provider. */
@@ -152,10 +173,9 @@ export function renderNftRules(ips: string[], dnsIp: string = SLIRP_DNS): string
  * up addresses that have rotated since the environment was created.
  */
 export async function ensureEgressPolicy(rootfs: string, hostnames: string[]): Promise<string> {
-  const dir = path.join(rootfs, ".moat")
-  fs.mkdirSync(dir, { recursive: true })
   const ips = await resolveAllowlist(hostnames)
-  fs.writeFileSync(path.join(dir, "egress.nft"), renderNftRules(ips), { mode: 0o644 })
+  ensureRootfsDir(rootfs, "/.moat")
+  writeRootfsFile(rootfs, "/.moat/egress.nft", renderNftRules(ips), 0o644)
   return "/.moat/egress.nft"
 }
 

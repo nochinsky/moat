@@ -34,6 +34,12 @@ Verified in `docs/VERIFICATION.md` §4:
 That is a large improvement over running an agent, and its `npm install`
 postinstall scripts, directly on your machine.
 
+The host never writes outside the box on the agent's behalf either. The rootfs is
+persistent and the agent is root inside it, so it can replace one of its own
+directories with a symlink to a host path; moat's host-side writes resolve through
+`lib/rootfs-fs.ts`, which refuses to follow one (measured in
+`docs/VERIFICATION.md` §M).
+
 ### 1.2 What the sandbox does NOT protect
 
 Measured, not assumed (`moat doctor` prints all three on every run):
@@ -905,7 +911,21 @@ sandbox owns that namespace, so it holds `CAP_NET_ADMIN` there. What survives:
 * everything else is dropped, including the host's loopback on both routes.
 
 A ruleset that fails to load fails the boot. A box that claims to be filtered and
-is not would be worse than a box that does not start.
+is not would be worse than a box that does not start. The image carries `nft`; an
+environment whose rootfs lacks it — restored from a snapshot taken before that,
+or one whose agent removed it — has it installed again on the host before the
+next boot, from every command, not just `moat up`.
+
+**The filter is a rule the agent can change.** The sandbox owns its network
+namespace, so uid 0 inside holds `CAP_NET_ADMIN` there. Measured: `nft flush
+ruleset` inside a filtered box exits 0, and the same `curl https://1.1.1.1/` that
+timed out then answers HTTP 301. Every boot re-applies the ruleset and `moat
+doctor` re-measures the policy, so a flushed filter is *detected* on the next run
+rather than prevented. What the policy buys is a bound on where the box can send
+data during normal work — a runaway install, a prompt-injected `curl`, an
+accidental upload — not containment of an agent that is actively trying to leave.
+That would need the agent to lose root, which is incompatible with handing it a
+package manager, or the v1 microVM.
 
 The allowlist is a snapshot of DNS as it resolved when the box booted. A host
 that rotates to an address outside it is unreachable until the next `moat up`.

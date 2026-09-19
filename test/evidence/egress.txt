@@ -13,21 +13,22 @@ closed on both routes (127.0.0.1 inside the namespace and slirp's 10.0.2.2).
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
-✓ image provisioned in 21.15s (download rootfs 12ms, extract rootfs 48ms, apk packages 13.67s, install opencode 184ms, cache image 7.24s)
+→ provisioning from the cached image alpine-3.21.4-50303c72c8d1.tar.gz
+✓ image provisioned in 1.06s (extract cached image 888ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest a6e0969b405179d9
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and send it anywhere: its namespace is isolated from yours, its egress is not filtered. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-15-04
-→ sandbox booted (pid 60073, port 45293); waiting for opencode serve
-✓ sandbox up, cold start 38.04s (image built)
+agent branch: moat-session-2026-09-19-15-38
+→ sandbox booted (pid 81437, port 45365); waiting for opencode serve
+✓ sandbox up, cold start 13.65s (image built)
 
   project    /home/user/moat-demo/egress-project
   env        /home/user/.moat/envs/16a525996d67
-  opencode   http://127.0.0.1:45293  (basic auth user "opencode")
-  password   YkT0POZCKL9QVP0ayNbGcSWuhd5d-0pj
+  opencode   http://127.0.0.1:45365  (basic auth user "opencode")
+  password   N48x2pkwY_t9L3uPR5lz_64b3lngJmsu
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T19:04:18.999Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T19:38:24.879Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -41,16 +42,16 @@ agent branch: moat-session-2026-09-19-15-04
 project      /home/user/moat-demo/egress-project
 env          /home/user/.moat/envs/16a525996d67
 status       running
-endpoint     http://127.0.0.1:45293
-pid          60073
+endpoint     http://127.0.0.1:45365
+pid          81437
 opencode     1.18.31 / alpine 3.21.4
 model        deepseek/deepseek-flash (deepseek)
-branch       moat-session-2026-09-19-15-04
+branch       moat-session-2026-09-19-15-38
 egress       isolated (own network namespace)
 rootfs       378.5 MiB
-credential   deepseek sha256:34c4e933b47c1fb3 expires in 14390s
+credential   deepseek sha256:34c4e933b47c1fb3 expires in 14387s
 snapshots    baseline
-branches     main, moat-session-2026-09-19-15-04*
+branches     main, moat-session-2026-09-19-15-38*
   pass  status reports running
   pass  status reports isolated egress
 
@@ -60,17 +61,17 @@ branches     main, moat-session-2026-09-19-15-04*
 --- exit 0
 --- stdout ---
 {
-  "url": "http://127.0.0.1:45293",
+  "url": "http://127.0.0.1:45365",
   "username": "opencode",
-  "password": "YkT0POZCKL9QVP0ayNbGcSWuhd5d-0pj",
+  "password": "N48x2pkwY_t9L3uPR5lz_64b3lngJmsu",
   "directory": "/work",
-  "authorization": "Basic b3BlbmNvZGU6WWtUMFBPWkNLTDlRVlAwYXlOYkdjU1d1aGQ1ZC0wcGo=",
-  "pid": 60073,
+  "authorization": "Basic b3BlbmNvZGU6TjQ4eDJwa3dZX3Q5TDN1UFI1bHpfNjRiM2xuZ0ptc3U=",
+  "pid": 81437,
   "envDir": "/home/user/.moat/envs/16a525996d67",
   "opencode": "1.18.31"
 }
 --- stderr ---
-  GET http://127.0.0.1:45293/config with basic auth -> HTTP 200
+  GET http://127.0.0.1:45365/config with basic auth -> HTTP 200
   pass  the port forward works
 
 --- outbound still works, the host's loopback does not ---
@@ -115,14 +116,14 @@ isolation (16 checks)
   pass  no host env forwarded          no variable from the host environment reached the sandbox; present: DEEPSEEK_API_KEY, HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own DEEPSEEK_API_KEY, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)
   pass  no host data mounts            13 mounts; none reference a host filesystem path
   pass  sandbox pid 1                  pid 1 is "sh", 4 visible processes
-  pass  own mount namespace            sandbox mnt:[4026532581] vs host mnt:[4026532219]
-  pass  own pid namespace              sandbox pid:[4026532584] vs host pid:[4026532221]
-  pass  own user namespace             sandbox user:[4026532580] vs host user:[4026531837]
-  pass  own uts namespace              sandbox uts:[4026532582] vs host uts:[4026532220]
-  pass  own ipc namespace              sandbox ipc:[4026532583] vs host ipc:[4026532208]
+  pass  own mount namespace            sandbox mnt:[4026532453] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532456] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532452] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532454] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532455] vs host ipc:[4026532208]
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
-  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 35205)
-  pass  network namespace isolated     sandbox net:net:[4026532585] differs from host net:net:[4026531833]; slirp4netns carries its traffic
+  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 33643)
+  pass  network namespace isolated     sandbox net:net:[4026532457] differs from host net:net:[4026531833]; slirp4netns carries its traffic
   pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
 
 exposures, measured, and NOT fixed in v0. Read these before trusting the box.
@@ -160,57 +161,57 @@ mount table inside the sandbox
   "version": 1,
   "id": "16a525996d67",
   "projectDir": "/home/user/moat-demo/egress-project",
-  "createdAt": "2026-09-19T15:04:18.885Z",
-  "lastUpAt": "2026-09-19T15:04:19.066Z",
+  "createdAt": "2026-09-19T15:38:24.756Z",
+  "lastUpAt": "2026-09-19T15:38:24.960Z",
   "status": "running",
   "opencodeVersion": "1.18.31",
   "alpineVersion": "3.21.4",
-  "port": 45293,
+  "port": 45365,
   "model": "deepseek/deepseek-flash",
   "effort": "high",
   "agent": null,
   "provider": "deepseek",
   "providerBaseUrl": "https://api.deepseek.com",
-  "branch": "moat-session-2026-09-19-15-04",
+  "branch": "moat-session-2026-09-19-15-38",
   "baseBranch": "main",
   "profiles": [],
-  "pid": 60073,
-  "pidStart": "593878",
+  "pid": 81437,
+  "pidStart": "798468",
   "egress": "isolated",
   "egressAllow": [],
-  "slirpPid": 60096,
-  "slirpStart": "593881",
+  "slirpPid": 81457,
+  "slirpStart": "798470",
   "baselineDigest": "a6e0969b405179d93138af8bad320ad97cd990c49c894ad9af73f8b724d391b8",
-  "baselineHostState": "git:033f392bcc765ee72b54b215cc3d3dd7fbd7b977:6e340b9cffb37a98",
-  "baselineCommit": "9851622d6f52459d3343036be67a51ceb1b2fbf5",
+  "baselineHostState": "git:d317dc96abb3403c08884e92b494dc3d47ce9522:6e340b9cffb37a98",
+  "baselineCommit": "ce0259ae5e75c26c0923910d44b175bfa49db6b9",
   "credential": {
     "provider": "deepseek",
     "fingerprint": "sha256:34c4e933b47c1fb3",
-    "mintedAt": "2026-09-19T15:04:18.999Z",
-    "expiresAt": "2026-09-19T19:04:18.999Z"
+    "mintedAt": "2026-09-19T15:38:24.879Z",
+    "expiresAt": "2026-09-19T19:38:24.879Z"
   },
   "snapshots": [
     "baseline"
   ],
-  "lastBootMs": 9595,
+  "lastBootMs": 12367,
   "envDir": "/home/user/.moat/envs/16a525996d67",
   "rootfsDir": "/home/user/.moat/envs/16a525996d67/rootfs",
   "running": true,
-  "url": "http://127.0.0.1:45293",
-  "rootfsBytes": 396896515,
+  "url": "http://127.0.0.1:45365",
+  "rootfsBytes": 396894408,
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "033f392bcc765ee72b54b215cc3d3dd7fbd7b977",
+      "sha": "d317dc96abb3403c08884e92b494dc3d47ce9522",
       "subject": "egress fixture",
-      "committedAt": "2026-09-19T17:03:50+02:00",
+      "committedAt": "2026-09-19T17:38:23+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-19-15-04",
-      "sha": "033f392bcc765ee72b54b215cc3d3dd7fbd7b977",
+      "name": "moat-session-2026-09-19-15-38",
+      "sha": "d317dc96abb3403c08884e92b494dc3d47ce9522",
       "subject": "egress fixture",
-      "committedAt": "2026-09-19T17:03:50+02:00",
+      "committedAt": "2026-09-19T17:38:23+02:00",
       "current": true
     }
   ]
@@ -221,10 +222,10 @@ mount table inside the sandbox
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 60073); the environment and its snapshots are kept
+✓ sandbox stopped (pid 81437); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
-  pass  the isolated box's slirp (pid 60096) stopped with it
+  pass  the isolated box's slirp (pid 81457) stopped with it
 
 --- $ node /home/user/Projects/moat/cmd/main.ts up --egress filtered
 --- exit 0
@@ -235,16 +236,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-15-04
-→ sandbox booted (pid 60606, port 44263); waiting for opencode serve
-✓ sandbox up, warm start 2.21s (image reused)
+agent branch: moat-session-2026-09-19-15-38
+→ sandbox booted (pid 81916, port 35315); waiting for opencode serve
+✓ sandbox up, warm start 2.40s (image reused)
 
   project    /home/user/moat-demo/egress-project
   env        /home/user/.moat/envs/16a525996d67
-  opencode   http://127.0.0.1:44263  (basic auth user "opencode")
-  password   9_Bc72YHHQdgb1yTiUHB87wY0W94fC7I
+  opencode   http://127.0.0.1:35315  (basic auth user "opencode")
+  password   qLmMHqVT_5slbeeMQaKNBt-LTY_hRa5I
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T19:04:32.112Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T19:38:40.714Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -258,16 +259,16 @@ agent branch: moat-session-2026-09-19-15-04
 project      /home/user/moat-demo/egress-project
 env          /home/user/.moat/envs/16a525996d67
 status       running
-endpoint     http://127.0.0.1:44263
-pid          60606
+endpoint     http://127.0.0.1:35315
+pid          81916
 opencode     1.18.31 / alpine 3.21.4
 model        deepseek/deepseek-flash (deepseek)
-branch       moat-session-2026-09-19-15-04
+branch       moat-session-2026-09-19-15-38
 egress       filtered (own network namespace, default-deny allowlist)
 rootfs       378.5 MiB
 credential   deepseek sha256:34c4e933b47c1fb3 expires in 14398s
 snapshots    baseline
-branches     main, moat-session-2026-09-19-15-04*
+branches     main, moat-session-2026-09-19-15-38*
   pass  status reports filtered egress
 
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c curl -sS -o /dev/null -w "%{http_code}" --max-time 25 https://api.deepseek.com/models
@@ -279,7 +280,7 @@ branches     main, moat-session-2026-09-19-15-04*
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c curl -sS --max-time 6 -o /dev/null -w "code %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"
 --- exit 0
 --- stdout ---
-curl: (28) Connection timed out after 6001 milliseconds
+curl: (28) Connection timed out after 6002 milliseconds
 code 000
 curl-exit=28
 --- stderr ---
@@ -312,15 +313,15 @@ isolation (17 checks)
   pass  no host env forwarded          no variable from the host environment reached the sandbox; present: DEEPSEEK_API_KEY, HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own DEEPSEEK_API_KEY, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)
   pass  no host data mounts            13 mounts; none reference a host filesystem path
   pass  sandbox pid 1                  pid 1 is "sh", 4 visible processes
-  pass  own mount namespace            sandbox mnt:[4026532578] vs host mnt:[4026532219]
-  pass  own pid namespace              sandbox pid:[4026532581] vs host pid:[4026532221]
-  pass  own user namespace             sandbox user:[4026532510] vs host user:[4026531837]
-  pass  own uts namespace              sandbox uts:[4026532579] vs host uts:[4026532220]
-  pass  own ipc namespace              sandbox ipc:[4026532580] vs host ipc:[4026532208]
+  pass  own mount namespace            sandbox mnt:[4026532450] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532453] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532321] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532451] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532452] vs host ipc:[4026532208]
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
-  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 43757)
+  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 37019)
   pass  egress filtered                an address outside the allowlist (1.1.1.1:443) is refused, and api.deepseek.com:443 is reachable
-  pass  network namespace isolated     sandbox net:net:[4026532582] differs from host net:net:[4026531833]; slirp4netns carries its traffic
+  pass  network namespace isolated     sandbox net:net:[4026532454] differs from host net:net:[4026531833]; slirp4netns carries its traffic
   pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
 
 exposures, measured, and NOT fixed in v0. Read these before trusting the box.
@@ -346,6 +347,106 @@ mount table inside the sandbox
   pass  doctor reports filtered egress
   pass  doctor no longer calls egress unrestricted
 
+--- a filtered environment whose nft binary is gone reinstalls it before booting ---
+the image carries nft, but a rootfs restored from a snapshot taken before it did,
+or one whose agent removed it, would otherwise fail every boot with a message
+that reads like a moat bug.
+
+--- $ node /home/user/Projects/moat/cmd/main.ts status --json
+--- exit 0
+--- stdout ---
+{
+  "version": 1,
+  "id": "16a525996d67",
+  "projectDir": "/home/user/moat-demo/egress-project",
+  "createdAt": "2026-09-19T15:38:24.756Z",
+  "lastUpAt": "2026-09-19T15:38:41.416Z",
+  "status": "running",
+  "opencodeVersion": "1.18.31",
+  "alpineVersion": "3.21.4",
+  "port": 35315,
+  "model": "deepseek/deepseek-flash",
+  "effort": "high",
+  "agent": null,
+  "provider": "deepseek",
+  "providerBaseUrl": "https://api.deepseek.com",
+  "branch": "moat-session-2026-09-19-15-38",
+  "baseBranch": "moat-session-2026-09-19-15-38",
+  "profiles": [],
+  "pid": 81916,
+  "pidStart": "800113",
+  "egress": "filtered",
+  "egressAllow": [],
+  "slirpPid": 81939,
+  "slirpStart": "800116",
+  "baselineDigest": "a6e0969b405179d93138af8bad320ad97cd990c49c894ad9af73f8b724d391b8",
+  "baselineHostState": "git:d317dc96abb3403c08884e92b494dc3d47ce9522:6e340b9cffb37a98",
+  "baselineCommit": "ce0259ae5e75c26c0923910d44b175bfa49db6b9",
+  "credential": {
+    "provider": "deepseek",
+    "fingerprint": "sha256:34c4e933b47c1fb3",
+    "mintedAt": "2026-09-19T15:38:40.714Z",
+    "expiresAt": "2026-09-19T19:38:40.714Z"
+  },
+  "snapshots": [
+    "baseline"
+  ],
+  "lastBootMs": 1520,
+  "envDir": "/home/user/.moat/envs/16a525996d67",
+  "rootfsDir": "/home/user/.moat/envs/16a525996d67/rootfs",
+  "running": true,
+  "url": "http://127.0.0.1:35315",
+  "rootfsBytes": 396905198,
+  "sandboxBranches": [
+    {
+      "name": "main",
+      "sha": "d317dc96abb3403c08884e92b494dc3d47ce9522",
+      "subject": "egress fixture",
+      "committedAt": "2026-09-19T17:38:23+02:00",
+      "current": false
+    },
+    {
+      "name": "moat-session-2026-09-19-15-38",
+      "sha": "d317dc96abb3403c08884e92b494dc3d47ce9522",
+      "subject": "egress fixture",
+      "committedAt": "2026-09-19T17:38:23+02:00",
+      "current": true
+    }
+  ]
+}
+--- stderr ---
+  (removed the binary from /home/user/.moat/envs/16a525996d67/rootfs/usr/sbin/nft)
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c command -v nft; curl -sS --max-time 6 -o /dev/null -w "code %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"
+--- exit 0
+--- stdout ---
+/usr/sbin/nft
+curl: (28) Connection timed out after 6002 milliseconds
+code 000
+curl-exit=28
+--- stderr ---
+→ installing nftables for filtered egress
+→ repairing the nftables install (its files were removed, its package entry was not)
+  pass  nft was reinstalled before the filtered boot
+  pass  the reinstalled box ran the probe
+  pass  and it is still filtered
+
+--- a measured limit, recorded rather than asserted: root in the box can drop its own filter ---
+the ruleset lives in the sandbox's own network namespace and the agent is root
+there, so it holds CAP_NET_ADMIN and can flush it. That is inherent to running
+the filter where the agent works; the policy bounds where the box talks during
+normal work, it is not a jail for a hostile agent. moat doctor re-measures the
+filter on every run.
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c nft list chain inet moat_egress output >/dev/null 2>&1; echo "filter-present-exit=$?"; nft flush ruleset; echo "flush-exit=$?"; sleep 0.3; curl -sS --max-time 6 -o /dev/null -w "http %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"
+--- exit 0
+--- stdout ---
+filter-present-exit=0
+flush-exit=0
+http 301
+curl-exit=0
+--- stderr ---
+
 --- teardown: the filtered box ---
 
 --- $ node /home/user/Projects/moat/cmd/main.ts status --json
@@ -355,57 +456,57 @@ mount table inside the sandbox
   "version": 1,
   "id": "16a525996d67",
   "projectDir": "/home/user/moat-demo/egress-project",
-  "createdAt": "2026-09-19T15:04:18.885Z",
-  "lastUpAt": "2026-09-19T15:04:32.656Z",
+  "createdAt": "2026-09-19T15:38:24.756Z",
+  "lastUpAt": "2026-09-19T15:38:41.416Z",
   "status": "running",
   "opencodeVersion": "1.18.31",
   "alpineVersion": "3.21.4",
-  "port": 44263,
+  "port": 35315,
   "model": "deepseek/deepseek-flash",
   "effort": "high",
   "agent": null,
   "provider": "deepseek",
   "providerBaseUrl": "https://api.deepseek.com",
-  "branch": "moat-session-2026-09-19-15-04",
-  "baseBranch": "moat-session-2026-09-19-15-04",
+  "branch": "moat-session-2026-09-19-15-38",
+  "baseBranch": "moat-session-2026-09-19-15-38",
   "profiles": [],
-  "pid": 60606,
-  "pidStart": "595237",
+  "pid": 81916,
+  "pidStart": "800113",
   "egress": "filtered",
   "egressAllow": [],
-  "slirpPid": 60628,
-  "slirpStart": "595240",
+  "slirpPid": 81939,
+  "slirpStart": "800116",
   "baselineDigest": "a6e0969b405179d93138af8bad320ad97cd990c49c894ad9af73f8b724d391b8",
-  "baselineHostState": "git:033f392bcc765ee72b54b215cc3d3dd7fbd7b977:6e340b9cffb37a98",
-  "baselineCommit": "9851622d6f52459d3343036be67a51ceb1b2fbf5",
+  "baselineHostState": "git:d317dc96abb3403c08884e92b494dc3d47ce9522:6e340b9cffb37a98",
+  "baselineCommit": "ce0259ae5e75c26c0923910d44b175bfa49db6b9",
   "credential": {
     "provider": "deepseek",
     "fingerprint": "sha256:34c4e933b47c1fb3",
-    "mintedAt": "2026-09-19T15:04:32.112Z",
-    "expiresAt": "2026-09-19T19:04:32.112Z"
+    "mintedAt": "2026-09-19T15:38:40.714Z",
+    "expiresAt": "2026-09-19T19:38:40.714Z"
   },
   "snapshots": [
     "baseline"
   ],
-  "lastBootMs": 1488,
+  "lastBootMs": 1520,
   "envDir": "/home/user/.moat/envs/16a525996d67",
   "rootfsDir": "/home/user/.moat/envs/16a525996d67/rootfs",
   "running": true,
-  "url": "http://127.0.0.1:44263",
-  "rootfsBytes": 396905311,
+  "url": "http://127.0.0.1:35315",
+  "rootfsBytes": 396901675,
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "033f392bcc765ee72b54b215cc3d3dd7fbd7b977",
+      "sha": "d317dc96abb3403c08884e92b494dc3d47ce9522",
       "subject": "egress fixture",
-      "committedAt": "2026-09-19T17:03:50+02:00",
+      "committedAt": "2026-09-19T17:38:23+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-19-15-04",
-      "sha": "033f392bcc765ee72b54b215cc3d3dd7fbd7b977",
+      "name": "moat-session-2026-09-19-15-38",
+      "sha": "d317dc96abb3403c08884e92b494dc3d47ce9522",
       "subject": "egress fixture",
-      "committedAt": "2026-09-19T17:03:50+02:00",
+      "committedAt": "2026-09-19T17:38:23+02:00",
       "current": true
     }
   ]
@@ -416,10 +517,10 @@ mount table inside the sandbox
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 60606); the environment and its snapshots are kept
+✓ sandbox stopped (pid 81916); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
-  pass  the filtered box's slirp (pid 60628) stopped with it
+  pass  the filtered box's slirp (pid 81939) stopped with it
 
 --- $ node /home/user/Projects/moat/cmd/main.ts destroy --yes
 --- exit 0
@@ -438,21 +539,21 @@ filtered policy, and it has to be enforced, not merely reported.
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-50303c72c8d1.tar.gz
-✓ image provisioned in 1.01s (extract cached image 860ms)
+✓ image provisioned in 1.05s (extract cached image 887ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 5ea85862e8d72055
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-15-04
-→ sandbox booted (pid 61068, port 38793); waiting for opencode serve
-✓ sandbox up, cold start 15.69s (image built)
+agent branch: moat-session-2026-09-19-15-39
+→ sandbox booted (pid 82564, port 35147); waiting for opencode serve
+✓ sandbox up, cold start 14.52s (image built)
 
   project    /home/user/moat-demo/egress-default
   env        /home/user/.moat/envs/2a1bb9cb2696
-  opencode   http://127.0.0.1:38793  (basic auth user "opencode")
-  password   CVzMNzrIxs9Zpe46jElRku4ogVmiATYC
+  opencode   http://127.0.0.1:35147  (basic auth user "opencode")
+  password   D_ql_sYjaVvnracgPUQd8xI1uvcceoPn
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T19:04:57.706Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-19T19:39:15.813Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -466,16 +567,16 @@ agent branch: moat-session-2026-09-19-15-04
 project      /home/user/moat-demo/egress-default
 env          /home/user/.moat/envs/2a1bb9cb2696
 status       running
-endpoint     http://127.0.0.1:38793
-pid          61068
+endpoint     http://127.0.0.1:35147
+pid          82564
 opencode     1.18.31 / alpine 3.21.4
 model        deepseek/deepseek-flash (deepseek)
-branch       moat-session-2026-09-19-15-04
+branch       moat-session-2026-09-19-15-39
 egress       filtered (own network namespace, default-deny allowlist)
 rootfs       374.0 MiB
-credential   deepseek sha256:34c4e933b47c1fb3 expires in 14385s
+credential   deepseek sha256:34c4e933b47c1fb3 expires in 14387s
 snapshots    baseline
-branches     main, moat-session-2026-09-19-15-04*
+branches     main, moat-session-2026-09-19-15-39*
   pass  the default policy is reported as filtered
 
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c curl -sS -o /dev/null -w "%{http_code}" --max-time 25 https://api.deepseek.com/models
@@ -498,7 +599,7 @@ curl-exit=28
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 61068); the environment and its snapshots are kept
+✓ sandbox stopped (pid 82564); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 

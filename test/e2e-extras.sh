@@ -200,7 +200,38 @@ else
   echo "skipped: needs DEEPSEEK_API_KEY (it spends two short turns)" | tee -a "$EVIDENCE/extras.txt"
 fi
 
-section "N. every claim about process state is reconciled against the live process table"
+section "N. an environment whose project directory is gone stays visible and reclaimable"
+
+# The bug this guards: the inventory rebuilt an environment's paths from the
+# project directory recorded in its state, through a realpath() that throws when
+# that directory is gone. The environment was then dropped silently: `status
+# --all` could not report it and `destroy --all` could not reclaim it. Two
+# environments holding 800 MiB leaked that way. A throwaway MOAT_HOME keeps the
+# real store out of a check that runs `destroy --all`.
+ORPHAN_HOME=$(mktemp -d)
+mkdir -p "$ORPHAN_HOME/envs/deadbeef1234/rootfs/usr" "$ORPHAN_HOME/envs/cafebabe5678"
+printf 'x' > "$ORPHAN_HOME/envs/deadbeef1234/rootfs/usr/blob"
+printf '{ "version": 1, "id": "deadbeef1234", "projectDir": "/gone/forever", "status": "stopped" }' > "$ORPHAN_HOME/envs/deadbeef1234/state.json"
+printf 'not json at all' > "$ORPHAN_HOME/envs/cafebabe5678/state.json"
+MOAT_HOME="$ORPHAN_HOME" $MOAT status --all > "$EVIDENCE/orphan-status.out" 2>&1
+MOAT_HOME="$ORPHAN_HOME" $MOAT destroy --all > "$EVIDENCE/orphan-destroy.out" 2>&1
+{
+  echo "--- an environment whose project directory is gone, and one whose state is unreadable"
+  echo "$ MOAT_HOME=<temporary> moat status --all"
+  cat "$EVIDENCE/orphan-status.out"
+  echo "$ MOAT_HOME=<temporary> moat destroy --all"
+  cat "$EVIDENCE/orphan-destroy.out"
+} | scrub > "$EVIDENCE/orphan-inventory.txt"
+cat "$EVIDENCE/orphan-inventory.txt" | tee -a "$EVIDENCE/extras.txt"
+ORPHANS_LEFT=$(ls "$ORPHAN_HOME/envs" | wc -l)
+if grep -q "orphaned" "$EVIDENCE/orphan-status.out" && [ "$ORPHANS_LEFT" = "0" ]; then
+  echo "orphan inventory: both were listed as orphaned and both were reclaimed" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "orphan inventory: FAILED, leftover directories: $ORPHANS_LEFT" | tee -a "$EVIDENCE/extras.txt"
+fi
+rm -rf "$ORPHAN_HOME"
+
+section "O. every claim about process state is reconciled against the live process table"
 capture status-final $MOAT status
 capture down-final $MOAT down
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; fi

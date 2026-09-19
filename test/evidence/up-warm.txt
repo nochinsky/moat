@@ -6,7 +6,7 @@
   "envId": "18620c2c4f34",
   "profileInstall": {
     "installed": [],
-    "ms": 107
+    "ms": 114
   },
   "copyInMs": 9,
   "provider": {
@@ -39,15 +39,15 @@
   },
   "egress": "open",
   "status": "running",
-  "port": 39403,
-  "pid": 63024,
-  "bootMs": 3912,
-  "totalMs": 4153,
+  "port": 43869,
+  "pid": 87548,
+  "bootMs": 1440,
+  "totalMs": 1695,
   "readyCheck": "GET /config -> 200",
   "credential": {
     "provider": "moat",
     "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-19T19:07:12.972Z",
+    "expiresAt": "2026-09-19T19:48:58.080Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -69,5 +69,5 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-15-07
-→ sandbox booted (pid 63024, port 39403); waiting for opencode serve
+agent branch: moat-session-2026-09-19-15-48
+→ sandbox booted (pid 87548, port 43869); waiting for opencode serve

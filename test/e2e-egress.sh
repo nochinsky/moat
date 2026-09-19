@@ -140,6 +140,34 @@ check "doctor reports filtered egress"              "pass  egress filtered" "$EV
 check_absent "doctor no longer calls egress unrestricted" "egress unrestricted" "$EVIDENCE/doctor-filtered.txt"
 
 say ""
+say "--- a filtered environment whose nft binary is gone reinstalls it before booting ---"
+say "the image carries nft, but a rootfs restored from a snapshot taken before it did,"
+say "or one whose agent removed it, would otherwise fail every boot with a message"
+say "that reads like a moat bug."
+capture status-json-filtered $M status --json
+ENVDIR_F=$(python3 -c "import json;print(json.load(open('$EVIDENCE/status-json-filtered.out'))['envDir'])" 2>/dev/null)
+if [ -n "$ENVDIR_F" ] && [ -f "$ENVDIR_F/rootfs/usr/sbin/nft" ]; then
+  rm -f "$ENVDIR_F/rootfs/usr/sbin/nft"
+  say "  (removed the binary from $ENVDIR_F/rootfs/usr/sbin/nft)"
+  capture nft-reinstall $M exec -- /bin/sh -c 'command -v nft; curl -sS --max-time 6 -o /dev/null -w "code %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"'
+  check "nft was reinstalled before the filtered boot" "/usr/sbin/nft" "$EVIDENCE/nft-reinstall.txt"
+  check "the reinstalled box ran the probe" "curl-exit=" "$EVIDENCE/nft-reinstall.txt"
+  check_absent "and it is still filtered" "curl-exit=0" "$EVIDENCE/nft-reinstall.txt"
+else
+  say "  FAIL  no nft binary to remove at $ENVDIR_F/rootfs/usr/sbin/nft"
+  FAIL=1
+fi
+
+say ""
+say "--- a measured limit, recorded rather than asserted: root in the box can drop its own filter ---"
+say "the ruleset lives in the sandbox's own network namespace and the agent is root"
+say "there, so it holds CAP_NET_ADMIN and can flush it. That is inherent to running"
+say "the filter where the agent works; the policy bounds where the box talks during"
+say "normal work, it is not a jail for a hostile agent. moat doctor re-measures the"
+say "filter on every run."
+capture flush-limit $M exec -- /bin/sh -c 'nft list chain inet moat_egress output >/dev/null 2>&1; echo "filter-present-exit=$?"; nft flush ruleset; echo "flush-exit=$?"; sleep 0.3; curl -sS --max-time 6 -o /dev/null -w "http %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"'
+
+say ""
 say "--- teardown: the filtered box ---"
 capture status-before-down-filtered $M status --json
 FILTERED_SLIRP=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('slirpPid') or '')" \

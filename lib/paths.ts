@@ -63,13 +63,23 @@ export type EnvPaths = {
   auditDir: string
 }
 
-export function envPaths(projectDir: string): EnvPaths {
-  const id = projectId(projectDir)
+/** What an environment directory is named: the first 12 hex of the project hash. */
+export const ENV_ID = /^[0-9a-f]{12}$/
+
+/**
+ * Environment paths from an id and the project directory that was recorded.
+ *
+ * This is the filesystem-free half of `envPaths`, and inventory code has to use
+ * it: `envPaths` resolves the real path of the project directory, which *throws*
+ * when that directory no longer exists — and an environment whose project is gone
+ * is exactly the one that has to stay visible and deletable.
+ */
+export function envPathsForId(id: string, projectDir: string): EnvPaths {
   const dir = path.join(envsDir(), id)
   const rootfs = path.join(dir, "rootfs")
   return {
     id,
-    projectDir: fs.realpathSync(path.resolve(projectDir)),
+    projectDir,
     dir,
     rootfs,
     work: path.join(rootfs, "work"),
@@ -80,6 +90,11 @@ export function envPaths(projectDir: string): EnvPaths {
     entryScript: path.join(rootfs, ".moat", "entry.sh"),
     auditDir: path.join(rootfs, "var", "log", "moat"),
   }
+}
+
+export function envPaths(projectDir: string): EnvPaths {
+  const real = fs.realpathSync(path.resolve(projectDir))
+  return envPathsForId(projectId(real), real)
 }
 
 export function rootfsCachePath(): string {

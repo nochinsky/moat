@@ -152,6 +152,41 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 * Snapshot names meet `path.join` only after `validateSnapshotName`. A raw argv
   join is how `../evil` writes outside `envs/<id>/snapshots`.
 
+**The agent-controlled rootfs**
+
+* The rootfs is persistent and the agent is root inside it, so **it can replace any
+  of its directories with a symlink to a host path**. The host process resolves
+  that path on the next boot: measured, with the old code, `installBundle` wrote an
+  `AGENTS.md` of 3834 bytes into a directory outside the rootfs — on *every* boot.
+  Every host-side write into the rootfs goes through `lib/rootfs-fs.ts`
+  (`writeRootfsFile`, `ensureRootfsDir`, `chmodRootfsDir`), which refuses symlinked
+  or non-directory components, opens the temp file with `O_EXCL|O_NOFOLLOW`,
+  verifies the file it actually opened via `/proc/self/fd`, and renames it into
+  place. Do not `fs.writeFileSync(path.join(rootfs, …))` directly; add a helper
+  call instead. `test/unit/rootfs-write.test.ts` guards it.
+* Reads of agent-controlled files go through `readRootfsFile`, same reason: a
+  symlinked `boot.log` or `tools.jsonl` would otherwise print a host file to your
+  terminal. Writes *outside* the rootfs (`runtime/boot-*.sh`, `logs/`) are not
+  reachable by the agent and stay on plain `writeAtomic`.
+* Known residual, not yet fixed: the boot script's `exec >> <rootfs>/var/log/moat/
+  boot.log` is a shell redirect, so it follows a symlink swapped in after the
+  host's checks. Winning that race writes (or appends) a file named `boot.log` in
+  a directory the agent picked, with host privileges — a confused deputy, but a
+  narrow one: the content is the box's own log. The fix is to open the log on the
+  host through `lib/rootfs-fs.ts` and pass the descriptor to the child instead of
+  redirecting in the script; it changes how the pre-redirect lines in
+  `logs/sandbox.log` work, so it was not rushed in with this tranche.
+* Snapshot extraction needs no guard of its own, and that was measured rather than
+  assumed: GNU tar refuses to write through a symlink its own archive created
+  (`Cannot open: Not a directory`, target untouched), and `restoreEnv` treats a
+  non-zero tar exit as a failed restore and rolls back.
+* `apk` trusts its database over the filesystem. Deleting `/usr/sbin/nft` without
+  touching apk's records leaves `apk add nftables` with nothing to do, so
+  `ensurePackages` has a `resetFirst` mode (`apk del` the entry, then install) and
+  `ensureFilterTool` uses it when the binary is still missing after a normal
+  install. That is how the bug was found: the e2e check deletes the binary and the
+  boot then failed with "this image has none".
+
 **Downloads and caches**
 
 * Every network artefact is checked against a digest pinned in `lib/pins.ts`
@@ -197,6 +232,17 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   **drops** packets, and an unbounded `/dev/tcp` connect sits in the kernel's SYN
   retries for about two minutes before reporting the failure it already knows
   about. `moat doctor` in filtered mode is the case that hits it.
+* **The filter is not a jail.** The sandbox owns its netns, so uid 0 inside holds
+  `CAP_NET_ADMIN` there. Measured: `nft flush ruleset` inside a filtered box exits
+  0 and `curl https://1.1.1.1/` then answers 301, where it had timed out before.
+  Every boot re-applies the ruleset and `moat doctor` re-measures it, so this is
+  detected on the next run, never prevented. Do not describe the policy as
+  containment; SPEC §7.3 says what it does buy.
+* A filtered boot needs `nft` inside the image, and *every* path that boots one
+  has to ensure it (`ensureFilterTool` in `cmd/main.ts`), not just `moat up`. An
+  environment restored from a snapshot taken before nftables was baked in used to
+  fail `doctor` and `exec` with "[moat] failed to apply the egress policy", which
+  reads like a moat bug rather than a missing package.
 * The long-running box records its slirp pid in `state.json` and `moat down`
   stops it after the box (its start time is checked, like the sandbox pid).
   Ephemeral boots (doctor, exec, checks, shell) start their own slirp with a

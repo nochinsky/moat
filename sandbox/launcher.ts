@@ -5,6 +5,7 @@ import path from "node:path"
 
 import type { EnvPaths } from "../lib/paths.ts"
 import { SLIRP_DNS, ownNetns, type EgressMode } from "../lib/pins.ts"
+import { ensureRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { shellQuote } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
 
@@ -193,6 +194,14 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
     // the environment claims to be filtered is worse than not booting at all.
     const rulesPath = opts.egressRules
     lines.push('if [ ! -f "$N' + rulesPath + '" ]; then echo "[moat] egress policy file is missing" >&2; exit 1; fi')
+    // Two failures, two messages: a missing binary is a broken image, a
+    // ruleset nft refuses is a moat bug, and the second reads as the first
+    // unless they are told apart.
+    lines.push(
+      "if ! chroot \"$N\" /bin/sh -c 'PATH=/usr/sbin:/usr/bin:/sbin:/bin; command -v nft >/dev/null'; then",
+    )
+    lines.push('  echo "[moat] filtered egress needs nft inside the box, and this image has none" >&2; exit 1')
+    lines.push("fi")
     lines.push(
       "if ! chroot \"$N\" /bin/sh -c 'PATH=/usr/sbin:/usr/bin:/sbin:/bin; nft -f " + rulesPath + "'; then",
     )
@@ -257,11 +266,13 @@ export function writeOuterScript(p: EnvPaths, opts: OuterScriptOptions = {}): st
 /** Write the script that executes *inside* the rootfs. It must never contain a secret. */
 export function writeInnerScript(p: EnvPaths, body: string): string {
   const dir = path.join(p.rootfs, ".moat")
-  fs.mkdirSync(dir, { recursive: true })
-  const file = path.join(dir, `entry-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sh`)
-  writeAtomic(file, body, 0o755)
+  // Inside the rootfs, so it goes through the guard: the agent can replace
+  // /.moat with a symlink, and a host path would then receive the entry script.
+  ensureRootfsDir(p.rootfs, "/.moat")
+  const name = `entry-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sh`
+  const file = writeRootfsFile(p.rootfs, `/.moat/${name}`, body, 0o755)
   // Audit copy: the documented path, always the most recent entry script.
-  writeAtomic(p.entryScript, body, 0o755)
+  writeRootfsFile(p.rootfs, "/.moat/entry.sh", body, 0o755)
   pruneScripts(dir, /^entry-\d+-[0-9a-f]+\.sh$/, 8)
   return file
 }
