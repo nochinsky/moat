@@ -71,7 +71,8 @@ section "boot the fixture environment"
 capture extras-up $MOAT up --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 
 section "A. snapshots capture the rootfs and never the project"
-capture snapshot-take $MOAT snapshot before-extras
+# The box is running here; --yes acknowledges that a live rootfs can be torn.
+capture snapshot-take $MOAT snapshot before-extras --yes
 capture exec-mark $MOAT exec -- /bin/sh -c "echo MARKER-ADDED-AFTER-SNAPSHOT > /opt/moat-extra; echo 'in-sandbox /opt now contains:'; ls /opt"
 echo "" | tee -a "$EVIDENCE/extras.txt"
 echo "host-side proof that /work is excluded from snapshots:" | tee -a "$EVIDENCE/extras.txt"

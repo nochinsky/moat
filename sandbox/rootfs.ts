@@ -159,7 +159,7 @@ export async function provisionEnv(
     fs.rmSync(p.rootfs, { recursive: true, force: true })
     fs.mkdirSync(p.rootfs, { recursive: true })
     extractRootfs(imageCache, p.rootfs)
-    mkdirsForRootfs(p)
+    mkdirsForRootfs(p.rootfs)
     fs.rmSync(path.join(p.rootfs, "var/log/moat"), { recursive: true, force: true })
     fs.mkdirSync(path.join(p.rootfs, "var/log/moat"), { recursive: true })
     t = mark("extract cached image", t)
@@ -174,7 +174,7 @@ export async function provisionEnv(
   extractRootfs(tarball, p.rootfs)
   t = mark("extract rootfs", t)
 
-  mkdirsForRootfs(p)
+  mkdirsForRootfs(p.rootfs)
 
   const inner = `#!/bin/sh
 set -u
@@ -269,9 +269,27 @@ rm -rf /var/cache/apk/*
  */
 const SNAPSHOT_EXCLUDES = ["./work", "./proc", "./sys", "./dev", "./tmp", "./run", "./.moat"]
 
+/**
+ * Snapshot names become filenames under envs/<id>/snapshots. A name from the
+ * command line must not be able to leave that directory, so it is validated
+ * before it is joined into a path anywhere.
+ */
+const SNAPSHOT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
+export function validateSnapshotName(name: string): string {
+  if (!SNAPSHOT_NAME.test(name)) {
+    throw new Error(
+      `invalid snapshot name "${name}": use 1-64 characters of letters, digits, dot, dash or underscore, ` +
+        "starting with a letter or digit",
+    )
+  }
+  return name
+}
+
 /** Directories and files every rootfs needs, plus moat's own sandbox git identity. */
-function mkdirsForRootfs(p: EnvPaths): void {
+function mkdirsForRootfs(rootfs: string): void {
   for (const dir of [
+    "etc",
     "proc",
     "sys",
     "dev",
@@ -283,18 +301,18 @@ function mkdirsForRootfs(p: EnvPaths): void {
     ".moat",
     "root/.config/opencode",
   ]) {
-    fs.mkdirSync(path.join(p.rootfs, dir), { recursive: true })
+    fs.mkdirSync(path.join(rootfs, dir), { recursive: true })
   }
-  fs.writeFileSync(path.join(p.rootfs, "etc/hosts"), "127.0.0.1 localhost\n::1 localhost\n")
-  fs.chmodSync(path.join(p.rootfs, "tmp"), 0o1777)
+  fs.writeFileSync(path.join(rootfs, "etc/hosts"), "127.0.0.1 localhost\n::1 localhost\n")
+  fs.chmodSync(path.join(rootfs, "tmp"), 0o1777)
 
   // A sandbox-owned git identity. Written as a file on the host, which needs no
   // privileges, and baked into the image so it survives across boots and across
   // environments. The host's ~/.gitconfig is never read or copied, that is the
   // point: the agent's commits are attributable to moat, not to the user.
-  fs.mkdirSync(path.join(p.rootfs, "root"), { recursive: true })
+  fs.mkdirSync(path.join(rootfs, "root"), { recursive: true })
   fs.writeFileSync(
-    path.join(p.rootfs, "root/.gitconfig"),
+    path.join(rootfs, "root/.gitconfig"),
     [
       "[user]",
       "\tname = moat agent",
@@ -383,32 +401,76 @@ echo "[moat] MOAT_INSTALLED:$toinstall"
 }
 
 export async function snapshotEnv(p: EnvPaths, name: string): Promise<{ file: string; bytes: number }> {
+  const valid = validateSnapshotName(name)
   fs.mkdirSync(p.snapshots, { recursive: true })
-  const file = path.join(p.snapshots, `${name}.tar.gz`)
-  const args = ["-czf", file, "-C", p.rootfs]
+  const file = path.join(p.snapshots, `${valid}.tar.gz`)
+  // Write beside the target and rename, so a failed or interrupted tar never
+  // leaves a half-written snapshot that looks usable.
+  const tmp = `${file}.part`
+  const args = ["-czf", tmp, "-C", p.rootfs]
   for (const exclude of SNAPSHOT_EXCLUDES) args.push(`--exclude=${exclude}`)
   args.push(".")
-  await run("tar", args)
+  try {
+    await run("tar", args)
+    fs.renameSync(tmp, file)
+  } catch (error) {
+    fs.rmSync(tmp, { force: true })
+    throw error
+  }
   return { file, bytes: fs.statSync(file).size }
 }
 
+/**
+ * Restore a snapshot over the rootfs, preserving the project copy.
+ *
+ * The old version deleted the live rootfs and only then unpacked the snapshot,
+ * so a failed or partial extraction destroyed the environment with nothing to
+ * roll back to. This extracts beside the rootfs first, moves /work across (both
+ * on the same filesystem, so it is a rename), and swaps with renames. If the
+ * swap fails, the previous rootfs and the project are put back.
+ */
 export async function restoreEnv(p: EnvPaths, name: string): Promise<void> {
-  const file = path.join(p.snapshots, `${name}.tar.gz`)
+  const valid = validateSnapshotName(name)
+  const file = path.join(p.snapshots, `${valid}.tar.gz`)
   if (!fs.existsSync(file)) throw new Error(`no such snapshot: ${name}`)
-  const work = p.work
-  const stash = path.join(p.dir, "work.stash")
-  // The project is not in the snapshot, so it is preserved across a restore.
-  if (fs.existsSync(work)) {
-    fs.rmSync(stash, { recursive: true, force: true })
-    fs.renameSync(work, stash)
-  }
-  fs.rmSync(p.rootfs, { recursive: true, force: true })
-  fs.mkdirSync(p.rootfs, { recursive: true })
-  await run("tar", ["-xzf", file, "-C", p.rootfs])
-  mkdirsForRootfs(p)
-  if (fs.existsSync(stash)) {
-    fs.rmSync(work, { recursive: true, force: true })
-    fs.renameSync(stash, work)
+
+  const staging = path.join(p.dir, `rootfs.restore-${process.pid}`)
+  const previous = path.join(p.dir, `rootfs.previous-${process.pid}`)
+  fs.rmSync(staging, { recursive: true, force: true })
+  fs.rmSync(previous, { recursive: true, force: true })
+  fs.mkdirSync(staging, { recursive: true })
+
+  let workMoved = false
+  try {
+    await run("tar", ["-xzf", file, "-C", staging])
+    mkdirsForRootfs(staging)
+
+    // The project is not in the snapshot; carry the live one into the new image.
+    const liveWork = path.join(p.rootfs, "work")
+    if (fs.existsSync(liveWork)) {
+      fs.rmSync(path.join(staging, "work"), { recursive: true, force: true })
+      fs.renameSync(liveWork, path.join(staging, "work"))
+      workMoved = true
+    }
+
+    fs.renameSync(p.rootfs, previous)
+    try {
+      fs.renameSync(staging, p.rootfs)
+    } catch (error) {
+      fs.renameSync(previous, p.rootfs)
+      throw error
+    }
+    fs.rmSync(previous, { recursive: true, force: true })
+  } catch (error) {
+    if (workMoved) {
+      try {
+        fs.renameSync(path.join(staging, "work"), path.join(p.rootfs, "work"))
+      } catch {
+        /* the live work is already back if the swap never started */
+      }
+    }
+    fs.rmSync(staging, { recursive: true, force: true })
+    throw error
   }
 }
 
@@ -423,7 +485,7 @@ export async function listSnapshots(p: EnvPaths): Promise<{ name: string; bytes:
   if (!fs.existsSync(p.snapshots)) return []
   return fs
     .readdirSync(p.snapshots)
-    .filter((f) => f.endsWith(".tar.gz"))
+    .filter((f) => f.endsWith(".tar.gz") && SNAPSHOT_NAME.test(f.replace(/\.tar\.gz$/, "")))
     .map((f) => {
       const stat = fs.statSync(path.join(p.snapshots, f))
       return { name: f.replace(/\.tar\.gz$/, ""), bytes: stat.size, mtime: stat.mtime.toISOString() }
