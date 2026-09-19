@@ -271,6 +271,25 @@ export function mint(opts: MintOptions): MintedCredential | null {
 }
 
 /**
+ * The provider configuration the box needs, credential or not.
+ *
+ * These three used to be set only inside toSandboxEnv(minted), so a boot with
+ * --no-credential — a documented mode — left the custom-endpoint provider block with
+ * an empty base URL. opencode then resolved {env:MOAT_PROVIDER_BASE_URL} to an empty
+ * string and every model call died *inside the box* with
+ * `TypeError [ERR_INVALID_URL]: "/chat/completions" cannot be parsed as a URL`, while
+ * the host printed nothing but "0 tool calls". A base URL and a model id are
+ * configuration, not secrets; only the credential is a secret.
+ */
+export function sandboxProviderEnv(input: { baseUrl: string; model: string; modelId: string }): Record<string, string> {
+  return {
+    MOAT_PROVIDER_BASE_URL: input.baseUrl,
+    MOAT_MODEL_ID: input.modelId,
+    MOAT_MODEL: input.model,
+  }
+}
+
+/**
  * The environment the sandbox process receives.
  *
  * The credential is placed under BOTH moat's own name and the provider's expected
@@ -279,10 +298,8 @@ export function mint(opts: MintOptions): MintedCredential | null {
  */
 export function toSandboxEnv(minted: MintedCredential): Record<string, string> {
   const env: Record<string, string> = {
+    ...sandboxProviderEnv(minted),
     MOAT_INJECTED_CREDENTIAL: minted.value,
-    MOAT_PROVIDER_BASE_URL: minted.baseUrl,
-    MOAT_MODEL_ID: minted.modelId,
-    MOAT_MODEL: minted.model,
     MOAT_CREDENTIAL_EXPIRES_AT: minted.expiresAt.toISOString(),
     // The box computes how long its credential has left from this, rather than
     // counting the TTL from its own start: a slow boot used to give the agent the

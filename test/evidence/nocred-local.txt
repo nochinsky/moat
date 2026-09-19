@@ -1,0 +1,33 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts run --no-credential --no-detect --model mock-model --base-url http://127.0.0.1:32891/v1 do the task
+--- exit 0
+--- stdout ---
+--- stderr ---
+egress: open, because the provider is on the host's loopback (http://127.0.0.1:32891/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
+→ provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
+→ provisioning from the cached image alpine-3.21.4-50303c72c8d1.tar.gz
+✓ image provisioned in 1.05s (extract cached image 886ms)
+→ copy-in: git clone --no-hardlinks
+✓ copy-in via git: 1 files, 0.0 KiB, digest 3b51b9bbd854d89f
+model: moat/mock-model
+! no credential injected, so requests to http://127.0.0.1:32891/v1 will carry no Authorization header. If that endpoint needs one, pass --credential-env NAME (or --credential VALUE).
+agent branch: moat-session-2026-09-19-22-44
+→ sandbox booted (pid 366708, port 46095); waiting for opencode serve
+[tool] bash (running) 
+[tool] bash (completed) pwd && ls -la && cat README.md
+[tool] write (running) 
+[tool] write (completed) agent-output.txt
+[tool] edit (running) 
+[tool] edit (completed) agent-output.txt
+[tool] bash (running) 
+[tool] bash (completed) printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt
+[tool] bash (running) 
+[tool] bash (completed) git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && git log --oneline -1 && git rev-parse HEAD
+Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
+
+
+session ses_f4427c4b2ffeWpxmiest7vnmnh   5 tool call(s)
+
+  moat take    review and apply what the agent did
+  moat run     give it another task, e.g. moat run "add tests"
+  moat down    stop the box; nothing is lost
+  (project /home/user/moat-demo/nocred)

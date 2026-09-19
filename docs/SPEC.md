@@ -86,7 +86,8 @@ The lever is therefore not the tool list. It is:
 confidentiality boundary for your *project* or your *credential*. The default
 egress policy narrows who the box can talk to; it does not make either secret. If
 you need that, use `moat up --no-credential` and drive the agent with something
-you do not mind losing.
+you do not mind losing — including a local OpenAI-compatible endpoint, which then receives
+no `Authorization` header from the box at all.
 
 ## 2. Lifecycle
 
@@ -430,6 +431,16 @@ a local stub. It is an escape hatch rather than a provider system: moat then has
 to describe the model's limits itself instead of reading them from the catalog.
 `--upstream` is the narrower flag — same catalog definition, different address —
 for a DeepSeek-compatible gateway or a proxy you want to watch.
+
+The **provider configuration** — the base URL and the model id — travels the same
+channel but is not part of the credential: it is set whether or not one was injected. So
+`moat up --no-credential --base-url http://localhost:11434/v1` boots a box that can call
+that endpoint with **no `Authorization` header at all**, which is the mode §1.3
+recommends for a local model: nothing stealable in the box. A request to an endpoint that
+*does* require a key fails at the endpoint (401), not at moat, and the boot says which case
+applies. Measured before this was true: the base URL and model were only ever set as part
+of the credential, so a `--no-credential` box had an empty base URL and every model call
+died inside it with `ERR_INVALID_URL`, silently.
 
 ### 5.2 How it enters
 

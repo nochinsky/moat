@@ -1,9 +1,9 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c git -C /work log --oneline --all | head -4; echo "--- detached.txt ---"; ls /work/detached.txt
 --- exit 0
 --- stdout ---
-fa7d22b work on a detached HEAD
-058e5f6 moat: state copied from the host
-54fe741 base
+6a64be3 work on a detached HEAD
+f3245ff moat: state copied from the host
+83d20b8 base
 --- detached.txt ---
 /work/detached.txt
 --- stderr ---

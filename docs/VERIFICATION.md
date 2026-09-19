@@ -2416,6 +2416,48 @@ not reported as detached. The detached-commit case was watched failing with HEAD
 from the tips again. What remains outside the count is in the closing table: a *rebased*
 sandbox branch, and commits that survive only in the reflog after a `reset --hard`.
 
+### AD. The provider configuration is not the credential, and a local endpoint needs no key
+
+`--no-credential` is a documented mode (SPEC §1.3): boot a box with nothing stealable in
+it. With `--base-url` it did not work, and it failed in the worst way — inside the box,
+silently. `MOAT_PROVIDER_BASE_URL`, `MOAT_MODEL_ID` and `MOAT_MODEL` were set only inside
+`toSandboxEnv(minted)`, so with no credential the custom-endpoint provider block had no
+base URL. Measured before the fix:
+
+```
+$ moat up --no-credential --base-url http://127.0.0.1:PORT/v1 --model mock-model
+✓ sandbox up, warm start 4.13s (image reused)
+$ moat attach --show-output --prompt "do the task"
+--- exit 1
+session ses_…   0 tool call(s)
+
+# inside the box, var/log/moat/boot.log:
+message="stream error" providerID=moat modelID=mock-model
+  error.error="TypeError [ERR_INVALID_URL]: \"/chat/completions\" cannot be parsed as a URL."
+```
+
+Zero requests reached the endpoint. With a task, the same setup was refused *before*
+booting by a guard whose message recommended `--base-url` as the remedy — the guard did not
+know that a custom endpoint may need no credential at all.
+
+After the fix the same command runs the task, and the endpoint receives no key:
+
+```
+$ moat run --no-credential --base-url http://127.0.0.1:32891/v1 --model mock-model "do the task"
+! no credential injected, so requests to http://127.0.0.1:32891/v1 will carry no Authorization header. …
+Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
+session ses_…   5 tool call(s)
+requests this run: 6
+authorization headers: null
+```
+
+Extras section AF is that run plus the control that the **native** provider still refuses a
+task with no key before booting (`no DEEPSEEK_API_KEY, so the agent has no model to call`,
+exit 1, and no `sandbox up` line in the capture). `test/unit/provider-env.test.ts` pins the
+split: `sandboxProviderEnv` carries the base URL and model, `toSandboxEnv` adds the
+credential on top, and the credential-bearing variable names are exactly the five that
+appear only with a credential.
+
 ---
 
 ## Requirement-by-requirement

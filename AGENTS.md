@@ -444,6 +444,18 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   one-sided rather than claiming a probe that did not happen. Extras section AC is the
   refusal plus the control; `test/unit/base-url.test.ts` and
   `test/unit/doctor-egress.test.ts` hold both halves.
+* The provider **configuration** and the credential are separate things, and the box needs
+  the first without the second. `MOAT_PROVIDER_BASE_URL`/`MOAT_MODEL_ID`/`MOAT_MODEL` were
+  set only inside `toSandboxEnv(minted)`, so `moat up --no-credential` (a documented mode,
+  SPEC §1.3) left the custom-endpoint provider block with an empty base URL: opencode
+  resolved `{env:MOAT_PROVIDER_BASE_URL}` to `""` and every call died *inside the box* with
+  `ERR_INVALID_URL: "/chat/completions" cannot be parsed as a URL`, while the host printed
+  nothing but "0 tool calls". `sandboxProviderEnv()` (`secrets/broker.ts`) is now injected
+  unconditionally into `managedEnv`, and the task guard refuses a task without a credential
+  only for the *native* provider, where the key is the model — a custom endpoint can run
+  with no credential at all (measured: 5 tool calls, 6 requests, `authorization: null`).
+  Extras section AF is that run plus the native control; `test/unit/provider-env.test.ts`
+  pins the split.
 * A project file name that is not valid UTF-8 is refused by `assertAddressableNames`
   (lib/fs-names.ts) at the start of `copyIn` and `hashTree`, naming the bytes. Node
   decodes such a name to U+FFFD, which is not the name on disk, so the next `lstat`

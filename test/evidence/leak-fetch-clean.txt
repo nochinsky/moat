@@ -2,12 +2,12 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/345dfb73d559/rootfs/work +refs/heads/moat-session-2026-09-19-22-20:refs/moat/moat-session-2026-09-19-22-20
-✓ fetched moat-session-2026-09-19-22-20 -> refs/moat/moat-session-2026-09-19-22-20 (a10e7e29c8c1)
-  2 commit(s) reachable, HEAD 7124f500106e -> 7124f500106e
-    a10e7e29c8c1  clean change
-    7124f500106e  init
+→ copy-out: git fetch /home/user/.moat/envs/345dfb73d559/rootfs/work +refs/heads/moat-session-2026-09-19-22-43:refs/moat/moat-session-2026-09-19-22-43
+✓ fetched moat-session-2026-09-19-22-43 -> refs/moat/moat-session-2026-09-19-22-43 (5bee4c015408)
+  2 commit(s) reachable, HEAD 385db2c322bc -> 385db2c322bc
+    5bee4c015408  clean change
+    385db2c322bc  init
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-19-22-20
-  apply with:    moat apply moat-session-2026-09-19-22-20  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-19-22-43
+  apply with:    moat apply moat-session-2026-09-19-22-43  (or --checkout)

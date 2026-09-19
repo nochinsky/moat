@@ -772,6 +772,62 @@ else
   echo "detached HEAD: FAILED — the commit was discarded, or nothing said so" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$DET" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "AF. a local endpoint runs with no credential in the box"
+# SPEC §1.3 recommends `moat up --no-credential` when you want nothing stealable in the
+# box. With --base-url that used to fail silently: the provider base URL and model were
+# injected only as part of the credential, so the box had an empty base URL and every
+# call died inside it with ERR_INVALID_URL ("/chat/completions" cannot be parsed as a
+# URL) while the host printed nothing but "0 tool calls". The task guard refused the very
+# path its own message recommended. The native provider must still refuse a task with no
+# key: there the key *is* the model.
+AF_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()")
+rm -f "$WORK/af-mock.jsonl"
+setsid node "$REPO/test/mock-model.mjs" --port "$AF_PORT" --script "$REPO/test/scripts/basic.json" \
+  --record "$WORK/af-mock.jsonl" > "$WORK/af-mock.log" 2>&1 < /dev/null &
+AF_MOCK=$!
+sleep 1.2
+NC="$WORK/nocred"
+rm -rf "$NC"; mkdir -p "$NC"
+( cd "$NC" && git init -q -b main . && printf 'readme\n' > README.md && git add -A \
+  && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
+( cd "$NC" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$NC" && capture nocred-local $MOAT run --no-credential --no-detect --model mock-model \
+  --base-url "http://127.0.0.1:$AF_PORT/v1" "do the task" )
+python3 - "$WORK/af-mock.jsonl" > "$WORK/nocred-auth.txt" <<'PYEOF'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+auth = sorted({json.dumps(row.get("authorization")) for row in rows})
+print(f"requests this run: {len(rows)}")
+print(f"authorization headers: {', '.join(auth) if auth else '(none)'}")
+PYEOF
+echo "--- what the local endpoint received ---" | tee -a "$EVIDENCE/extras.txt"
+cat "$WORK/nocred-auth.txt" | tee -a "$EVIDENCE/extras.txt"
+if grep -q "^--- exit 0$" "$EVIDENCE/nocred-local.txt" \
+   && grep -q "Task complete" "$EVIDENCE/nocred-local.txt" \
+   && grep -q "no credential injected" "$EVIDENCE/nocred-local.txt" \
+   && grep -q "requests this run: 6" "$WORK/nocred-auth.txt" \
+   && grep -q "authorization headers: null" "$WORK/nocred-auth.txt"; then
+  echo "no credential: the local endpoint runs the task, and no key is sent to it" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "no credential: FAILED — the endpoint was unreachable, or a credential went with it" | tee -a "$EVIDENCE/extras.txt"
+fi
+kill "$AF_MOCK" 2>/dev/null; wait "$AF_MOCK" 2>/dev/null
+# Control: the native provider cannot work without a key, and still says so before booting.
+NATIVE="$WORK/nocred-native"
+rm -rf "$NATIVE"; mkdir -p "$NATIVE"
+( cd "$NATIVE" && git init -q -b main . && printf 'readme\n' > README.md && git add -A \
+  && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
+( cd "$NATIVE" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$NATIVE" && capture nocred-native $MOAT run --no-credential --no-detect --model deepseek-flash "do the task" )
+if grep -q "no DEEPSEEK_API_KEY, so the agent has no model to call" "$EVIDENCE/nocred-native.txt" \
+   && grep -q "^--- exit 1$" "$EVIDENCE/nocred-native.txt" \
+   && ! grep -q "sandbox up" "$EVIDENCE/nocred-native.txt"; then
+  echo "the control: the native provider still refuses a task with no key, before booting" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "the control FAILED: a keyless native run was attempted" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$NC" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$NATIVE" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

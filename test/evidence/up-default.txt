@@ -11,16 +11,16 @@ no project manifest found; booting with the base image only (see `moat profiles`
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 5ea85862e8d72055
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-22-22
-→ sandbox booted (pid 349864, port 46865); waiting for opencode serve
-✓ sandbox up, cold start 13.36s (image built)
+agent branch: moat-session-2026-09-19-22-46
+→ sandbox booted (pid 368461, port 43975); waiting for opencode serve
+✓ sandbox up, cold start 13.10s (image built)
 
   project    /home/user/moat-demo/egress-default
   env        /home/user/.moat/envs/2a1bb9cb2696
-  opencode   http://127.0.0.1:46865  (basic auth user "opencode")
-  password   uwoZtM8A3LfVTilF8s_nBSgi5TUT6YOK
+  opencode   http://127.0.0.1:43975  (basic auth user "opencode")
+  password   qabF-zx9k7A-kvbdS-BuEpw5v1O3eH5b
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T02:22:44.190Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T02:46:16.811Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

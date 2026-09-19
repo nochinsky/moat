@@ -81,6 +81,7 @@ import {
   INJECTED_ENV_NAMES,
   credentialRiskNotice,
   mint,
+  sandboxProviderEnv,
   scanRootfsForCredential,
   ttlToSeconds,
   toSandboxEnv,
@@ -929,6 +930,16 @@ ${command}
     flag<string>(p, "credential-ttl") ?? process.env.MOAT_CREDENTIAL_TTL ?? `${DEFAULT_TTL_SECONDS}s`
   const ttlSeconds = ttlToSeconds(ttlText)
   let credential: MintedCredential | null = null
+  // A custom endpoint may need no credential at all, and the box can reach it with no
+  // Authorization header (measured: five tool calls, six requests, no auth header). The
+  // native provider cannot: without the key there is no model. Say which case this is
+  // instead of one message for both.
+  const noCredentialNotice = resolvedModel.native
+    ? `no ${DEEPSEEK.envVar}, so the agent has no model to call.\n` +
+      `  export ${DEEPSEEK.envVar}=sk-...   then run moat again\n` +
+      "  or pass --credential-env NAME if it lives under a different name"
+    : `no credential injected, so requests to ${baseUrl} will carry no Authorization header. ` +
+      "If that endpoint needs one, pass --credential-env NAME (or --credential VALUE)."
   if (!flag<boolean>(p, "no-credential")) {
     credential = mint({
       literal: flag<string>(p, "credential"),
@@ -961,14 +972,16 @@ ${command}
     }
 
     if (!credential) {
-      log.warn(
-        `no ${DEEPSEEK.envVar}, so the agent has no model to call.\n` +
-          `  export ${DEEPSEEK.envVar}=sk-...   then run moat again\n` +
-          `  or pass --credential-env NAME if it lives under a different name`,
-      )
+      log.warn(noCredentialNotice)
     } else {
       log.warn(credentialRiskNotice(credential, egress))
     }
+  } else if (!resolvedModel.native) {
+    // --no-credential is deliberate and silent for the native provider (there is no key,
+    // and the user asked for that). A custom endpoint still deserves the note, because
+    // "no Authorization header" is a property of the requests, not a missing key — and
+    // this is the mode SPEC §1.3 recommends for a box with nothing stealable in it.
+    log.warn(noCredentialNotice)
   }
 
   // --- branch, bundle -------------------------------------------------------
@@ -1021,8 +1034,11 @@ ${command}
 
   // Fail before booting, not after. Asking for a task with no model means the
   // box starts, the turn errors immediately, and the user is left reading a
-  // session id. Cheaper to say so now.
-  if (task.length > 0 && !credential) {
+  // session id. Cheaper to say so now — but only for the native provider, where the
+  // key *is* the model. A custom endpoint can work with no credential at all
+  // (measured against a local stub: five tool calls, six requests, no auth header),
+  // and this guard used to refuse the very path its own message recommended.
+  if (task.length > 0 && !credential && resolvedModel.native) {
     log.fail(
       `no ${DEEPSEEK.envVar}, so the agent has no model to call.\n` +
         `  export ${DEEPSEEK.envVar}=sk-...   then run it again\n` +
@@ -1051,6 +1067,11 @@ ${command}
   const managedEnv: Record<string, string> = {
     OPENCODE_SERVER_PASSWORD: password,
     MOAT_PORT: String(port),
+    // Configuration, not a secret: the custom-endpoint provider block needs the base
+    // URL and the model whether or not a credential was injected. They used to arrive
+    // only with the credential, so a --no-credential boot had a provider with no URL
+    // at all and every model call died inside the box with ERR_INVALID_URL, silently.
+    ...sandboxProviderEnv({ baseUrl, model: resolvedModel.model, modelId: resolvedModel.modelID }),
     ...(credential ? toSandboxEnv(credential) : {}),
   }
   // The escape hatch is spread first and the managed values last, and it may not
