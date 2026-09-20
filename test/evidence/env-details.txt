@@ -2,8 +2,8 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-url           http://127.0.0.1:33959
+url           http://127.0.0.1:35725
 username      opencode
-password      ceIu2FhWMQ8XfZx8rsp58LtEtOA6VXz-
+password      uVLmv_oNPUWNYIAxW5QJPRW4KvkkF1G5
 directory     /work
-authorization Basic b3BlbmNvZGU6Y2VJdTJGaFdNUThYZlp4OHJzcDU4THRFdE9BNlZYei0=
+authorization Basic b3BlbmNvZGU6dVZMbXZfb05QVVdOWUlBeFc1UUpQUlc0S3Zra0YxRzU=

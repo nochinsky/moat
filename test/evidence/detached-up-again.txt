@@ -9,15 +9,15 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-00-50
-✓ sandbox up, warm start 4.20s (image reused)
+agent branch: moat-session-2026-09-20-01-48
+✓ sandbox up, warm start 1.69s (image reused)
 
   project    /home/user/moat-demo/detached
   env        /home/user/.moat/envs/8651a31c28f7
-  opencode   http://127.0.0.1:32885  (basic auth user "opencode")
-  password   ipmyBAlxYX85W5KzSXuCfBmbrbBwLcZn
+  opencode   http://127.0.0.1:34189  (basic auth user "opencode")
+  password   VVbGKBxZZsrll-60RrWT802jRGlh1sd5
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-20T04:50:25.517Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-20T05:48:48.593Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

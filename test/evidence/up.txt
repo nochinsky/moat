@@ -5,22 +5,22 @@
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
-→ provisioning from the cached image alpine-3.21.4-50303c72c8d1.tar.gz
-✓ image provisioned in 1.03s (extract cached image 872ms)
+→ provisioning from the cached image alpine-3.21.4-634230caeed9.tar.gz
+✓ image provisioned in 2.27s (extract cached image 1.97s)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest a6e0969b405179d9
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and send it anywhere: its namespace is isolated from yours, its egress is not filtered. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-00-53
-→ sandbox booted (pid 487296, port 44243); waiting for opencode serve
-✓ sandbox up, cold start 12.26s (image built)
+agent branch: moat-session-2026-09-20-01-51
+→ sandbox booted (pid 508694, port 44835); waiting for opencode serve
+✓ sandbox up, cold start 13.38s (image built)
 
   project    /home/user/moat-demo/egress-project
   env        /home/user/.moat/envs/16a525996d67
-  opencode   http://127.0.0.1:44243  (basic auth user "opencode")
-  password   1BE7wWRLXsy_B8b_2TkRDP9X23zIlh9n
+  opencode   http://127.0.0.1:44835  (basic auth user "opencode")
+  password   VJ7fNAUeuZKsI7gIbd03v9cB4hqxRYMy
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T04:53:06.368Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T05:51:51.754Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
