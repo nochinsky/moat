@@ -34,7 +34,7 @@ import {
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import { recoverStateFromDisk } from "../sandbox/recover.ts"
-import { beginBoot, bootAgeSeconds, bootInFlight, endBoot, waitForBoot } from "../sandbox/boot.ts"
+import { beginBootOrWait, bootAgeSeconds, bootInFlight, endBoot, waitForBoot } from "../sandbox/boot.ts"
 import { stripAnsi } from "../lib/terminal.ts"
 import { readRootfsFile, readRootfsFileHead, readRootfsFileTail, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import {
@@ -84,6 +84,7 @@ import { computeCost, formatUSD } from "../lib/pricing.ts"
 import { runIsolationChecks, type IsolationReport } from "../sandbox/isolation.ts"
 import { onboard } from "../secrets/onboard.ts"
 import {
+  CREDENTIAL_ENV_NAMES,
   DEFAULT_TTL_SECONDS,
   credentialRiskNotice,
   doctorInjectedVarNames,
@@ -433,10 +434,21 @@ async function cmdUp(argv: string[]): Promise<number> {
   const host = await assertHostUsable()
   const paths = resolveEnv()
 
-  // Another boot of this environment may already be provisioning it. Two at
-  // once race over one rootfs, and state.json ends up describing whichever
-  // finished last, leaving the other sandbox alive and untracked.
-  await awaitBoot(paths, "booting it")
+  // Another boot of this environment may already be provisioning it. Two at once
+  // race over one rootfs, and state.json ends up describing whichever finished
+  // last, leaving the other sandbox alive and untracked. The wait and the claim
+  // are one call because doing them separately leaves a window: this used to wait
+  // here and only record its own marker after provisioning had begun, so two `up`s
+  // could both pass the check before either wrote, and both provision.
+  const bootCommand = p._.join(" ").trim().length > 0 ? "moat up (with a task)" : "moat up"
+  try {
+    await beginBootOrWait(paths, bootCommand, {
+      onWait: (record) =>
+        log.step(`waiting for ${record.command} (pid ${record.pid}, ${bootAgeSeconds(record)}s in) to finish`),
+    })
+  } catch (error) {
+    log.fail((error as Error).message)
+  }
 
   const json = flag<boolean>(p, "json") ?? false
   const report: Record<string, unknown> = { project: paths.projectDir, envId: paths.id }
@@ -615,10 +627,11 @@ async function cmdUp(argv: string[]): Promise<number> {
     log.fail(`unknown --profile: ${resolvedProfiles.unknown.join(", ")}.\n\n${describeProfiles()}`)
   }
 
-  // From here to the end of the readiness wait this environment is being rebuilt.
-  // The marker is what lets `down`, `destroy`, `restore` and a second `up` see
-  // that instead of reading state.json and concluding nothing is happening.
-  beginBoot(paths, task.length > 0 ? "moat up (with a task)" : "moat up")
+  // The boot marker was claimed at the top of this command, in the same atomic step
+  // as the wait (see `beginBootOrWait`). It stays until the readiness wait at the
+  // end of the boot, and is what lets `down`, `destroy`, `restore` and a second `up`
+  // see a boot in progress instead of reading state.json and concluding nothing is
+  // happening.
 
   if (needsProvision) {
     log.step(
@@ -1080,6 +1093,11 @@ ${command}
           fingerprint: credential.fingerprint,
           mintedAt: credential.mintedAt.toISOString(),
           expiresAt: credential.expiresAt.toISOString(),
+          // Recorded so copy-out can scan for the value even when it was passed as
+          // `--credential-env NAME` rather than under one of the names moat knows by
+          // convention. Without it the leak scan compared against nothing and said
+          // nothing, which reads exactly like "no leak found".
+          sourceEnvVars: [...credential.targetEnvVars, ...CREDENTIAL_ENV_NAMES],
         }
       : null,
   }

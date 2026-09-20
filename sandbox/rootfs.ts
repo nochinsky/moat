@@ -630,14 +630,27 @@ export function destroyEnv(p: EnvPaths): boolean {
 
 export async function listSnapshots(p: EnvPaths): Promise<{ name: string; bytes: number; mtime: string }[]> {
   if (!fs.existsSync(p.snapshots)) return []
-  return fs
+  const entries = fs
     .readdirSync(p.snapshots)
     .filter((f) => f.endsWith(".tar.gz") && SNAPSHOT_NAME.test(f.replace(/\.tar\.gz$/, "")))
-    .map((f) => {
-      const stat = fs.statSync(path.join(p.snapshots, f))
-      return { name: f.replace(/\.tar\.gz$/, ""), bytes: stat.size, mtime: stat.mtime.toISOString() }
-    })
-    .sort((a, b) => (a.mtime < b.mtime ? 1 : -1))
+  const snapshots: { name: string; bytes: number; mtime: string }[] = []
+  for (const file of entries) {
+    // `statSync` follows the link, so one dangling symlink in this directory threw
+    // ENOENT and took the whole listing with it: `moat status` and `moat snapshot`
+    // failed with a raw filesystem error because of one entry. The directory lives
+    // inside the environment, and a snapshot is a regular file moat wrote (or a
+    // restore staged), so anything else is skipped rather than guessed at — and the
+    // snapshots that really are there still list.
+    let stat: fs.Stats
+    try {
+      stat = fs.lstatSync(path.join(p.snapshots, file))
+    } catch {
+      continue
+    }
+    if (!stat.isFile()) continue
+    snapshots.push({ name: file.replace(/\.tar\.gz$/, ""), bytes: stat.size, mtime: stat.mtime.toISOString() })
+  }
+  return snapshots.sort((a, b) => (a.mtime < b.mtime ? 1 : -1))
 }
 
 export async function rootfsSizeBytes(p: EnvPaths): Promise<number> {

@@ -155,3 +155,34 @@ test("a token count that is not a positive integer never reaches the TOML bare",
   assert.match(good, /^model_context_window = 131072$/m)
   assert.match(good, /^model_max_output_tokens = 32768$/m)
 })
+
+test("two items with no id are two rows, not one", () => {
+  // The synthetic id was `item-<turn.tools.length>`, and the length does not change
+  // between the two events of the pair, so a second id-less item merged into the
+  // first row: one tool reported where the stream described two, with the first
+  // command's detail and the second one's exit code, and the footer's count wrong.
+  const stream = [
+    '{"type":"item.started","item":{"type":"command_execution","command":"first"}}',
+    '{"type":"item.completed","item":{"type":"command_execution","command":"first","exit_code":0}}',
+    '{"type":"item.completed","item":{"type":"command_execution","command":"second","exit_code":7}}',
+  ].join("\n")
+  const turn = parseCodexEvents(stream)
+  assert.equal(turn.tools.length, 2, "one row per item, not one row for both")
+  assert.deepEqual(
+    turn.tools.map((tool) => tool.detail),
+    ["first", "second"],
+  )
+  assert.equal(turn.tools[0]!.exitCode, 0)
+  assert.equal(turn.tools[1]!.exitCode, 7, "the second item's exit code belongs to the second row")
+  assert.match(describeCodexTurn(turn), /2 tools/)
+  // A synthetic id must not be able to collide with a real one: a row the parser
+  // invented and a row Codex named are two rows, whichever order they arrive in.
+  const mixed = [
+    '{"type":"item.started","item":{"type":"command_execution","command":"no id here"}}',
+    '{"type":"item.completed","item":{"id":"item-synthetic-0","type":"command_execution","command":"real id","exit_code":3}}',
+  ].join("\n")
+  const mixedTurn = parseCodexEvents(mixed)
+  assert.equal(mixedTurn.tools.length, 2, "an invented id must not swallow a real one")
+  assert.equal(mixedTurn.tools[1]!.detail, "real id")
+  assert.equal(mixedTurn.tools[1]!.exitCode, 3)
+})

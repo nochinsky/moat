@@ -8,6 +8,7 @@ import { run } from "../lib/shell.ts"
 import { SANITIZED_GIT_ENV } from "../lib/git.ts"
 import { stripAnsi } from "../lib/terminal.ts"
 import { CREDENTIAL_ENV_NAMES, readStore, type Store } from "../secrets/broker.ts"
+import { readState } from "../sandbox/state.ts"
 
 /**
  * Copy-out credential scan.
@@ -34,10 +35,18 @@ import { CREDENTIAL_ENV_NAMES, readStore, type Store } from "../secrets/broker.t
  * warning into noise nobody reads. The store read is tolerant on purpose — a
  * world-readable credentials file is the boot path's error to report, and fetching
  * must not fail because of it.
+ *
+ * `opts.alsoNames` are the variable names the environment's credential was actually
+ * injected under, read from state.json (`CredentialRecord.sourceEnvVars`). They exist
+ * because `--credential-env TEAM_KEY` is a supported way to pass a key, and the scan
+ * used to look only at the two names moat knows by convention: a key passed that way
+ * was invisible, so a key committed into the project came back with no warning — the
+ * one outcome this scan exists to prevent.
  */
 export function knownCredentialValues(
   env: NodeJS.ProcessEnv = process.env,
   read: () => Store = () => readStore(),
+  opts: { alsoNames?: readonly string[] } = {},
 ): string[] {
   const values = new Set<string>()
   const add = (raw: string | undefined): void => {
@@ -47,7 +56,7 @@ export function knownCredentialValues(
     if (value.includes("\n") || value.includes("\0")) return
     values.add(value)
   }
-  for (const name of CREDENTIAL_ENV_NAMES) add(env[name])
+  for (const name of [...CREDENTIAL_ENV_NAMES, ...(opts.alsoNames ?? [])]) add(env[name])
   try {
     for (const stored of Object.values(read())) add(stored?.value)
   } catch {
@@ -185,7 +194,35 @@ export function noteFilesTooLargeToScan(skipped: string[], where: string): void 
   )
 }
 
-/** Say it once when there is nothing to compare against, so silence is not read as approval. */
+/**
+ * Say it once when there is nothing to compare against, so silence is not read as
+ * approval.
+ *
+ * A warning, not `log.debug`. It was written as a debug line on the reasoning that it
+ * is "just" a note, and debug output was unreachable anyway (`--verbose` was a no-op
+ * until Phase 0): the one message that says the leak scan did not run was hidden
+ * behind a flag that did nothing. Silence from a scan that never ran is
+ * indistinguishable from silence from a scan that found nothing, and only one of
+ * those is good news.
+ */
 export function noteScanSkipped(where: string): void {
-  log.debug(`copy-out: ${where}: no credential value on this host to compare against; the leak scan did not run`)
+  log.warn(
+    `copy-out: ${where}: no credential value on this host to compare against, ` +
+      `so the files just copied were NOT searched for a leaked key`,
+  )
+}
+
+/**
+ * The variable names this environment's credential was injected under.
+ *
+ * Read from the environment's state.json rather than guessed from the current
+ * process: the credential that went *into the box* is the one the agent could have
+ * written into a file, and the boot that minted it may have used
+ * `--credential-env NAME`. A state.json from an older moat has no such field, in
+ * which case this is empty and the scan falls back to the conventional names.
+ */
+export function injectedCredentialVarNames(p: { state: string }): string[] {
+  const state = readState(p as never)
+  const names = state?.credential?.sourceEnvVars
+  return Array.isArray(names) ? names.filter((name) => typeof name === "string") : []
 }

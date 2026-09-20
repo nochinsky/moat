@@ -14,7 +14,8 @@
   "scripts": {
     "moat": "node cmd/main.ts",
     "build": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "coverage": "node --experimental-test-coverage --test test/unit/*.test.ts",
     "test:unit": "node --test test/unit/*.test.ts",
     "test:e2e": "bash test/e2e-codex.sh",
     "test:extras": "bash test/e2e-extras.sh"

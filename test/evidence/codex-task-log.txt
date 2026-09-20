@@ -1,5 +1,5 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c git -C /work log --oneline -1
 --- exit 0
 --- stdout ---
-67718e0 fix: sum adds
+2071e32 fix: sum adds
 --- stderr ---

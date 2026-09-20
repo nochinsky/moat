@@ -46,12 +46,13 @@ test("copy-in names the paths git cannot carry, and stays quiet about ignored on
       result.skippedFromCopy.some((item) => item.includes("empty-dir") && item.includes("empty directory")),
       JSON.stringify(result.skippedFromCopy),
     )
-    if (fifo.status === 0) {
-      assert.ok(
-        result.skippedFromCopy.some((item) => item.includes("pipe")),
-        JSON.stringify(result.skippedFromCopy),
-      )
-    }
+    // `if (mkfifo ok)` made this assertion optional, so on a host without mkfifo the
+    // test silently stopped covering FIFOs — which is the case it exists for.
+    assert.equal(fifo.status, 0, "the fixture needs mkfifo to create the FIFO: " + String(fifo.error ?? fifo.stderr))
+    assert.ok(
+      result.skippedFromCopy.some((item) => item.includes("pipe")),
+      JSON.stringify(result.skippedFromCopy),
+    )
     assert.equal(
       result.skippedFromCopy.some((item) => item.includes("ignored")),
       false,

@@ -64,6 +64,16 @@ export type SlirpHandle = {
   child: ChildProcess
   pid: number
   stop: () => void
+  /**
+   * The spawn failure, if there was one.
+   *
+   * `spawn` reports a missing or non-executable binary by leaving `pid` undefined
+   * and delivering the error on the next tick; it does not throw. The handler that
+   * ignored it had a comment saying the readiness check inside the box would report
+   * the failure — true in effect, and it cost the reason: the box said "tap0 did not
+   * appear" and nothing anywhere said "because that binary does not exist".
+   */
+  error: () => Error | null
 }
 
 /** Split `--egress-allow` into hostnames or IPv4 literals, without duplicates. */
@@ -240,14 +250,20 @@ export type StartSlirpOptions = {
  * Start slirp4netns against a live sandbox process.
  *
  * Readiness is measured *inside* the box rather than here: the boot probes the network it
- * actually got, and a datapath that never came up fails there with a reason.
+ * actually got, and a datapath that never came up fails there with a reason. The spawn's own
+ * error is kept on the handle and reported by the caller, which can tell "the binary is not
+ * there" from "the datapath started and the tap never appeared".
  */
-export async function startSlirp(binary: string, sandboxPid: number, opts: StartSlirpOptions = {}): Promise<SlirpHandle> {
+export function startSlirp(binary: string, sandboxPid: number, opts: StartSlirpOptions = {}): SlirpHandle {
   const err: "ignore" | number = opts.logFile ? fs.openSync(opts.logFile, "a") : "ignore"
   const child = spawn(binary, slirpArgs(sandboxPid), { stdio: ["ignore", "ignore", err] })
   if (typeof err === "number") fs.closeSync(err)
-  child.on("error", () => {
-    /* the readiness check inside the box reports a missing tap */
+  // Kept rather than ignored. `spawn` does not throw for a bad binary; it leaves
+  // `child.pid` undefined and emits this on the next tick, so the caller can tell
+  // "the datapath is not there" from "the datapath started and the tap never came up".
+  let spawnError: Error | null = null
+  child.on("error", (error) => {
+    spawnError = error
   })
   child.unref()
   const stop = () => {
@@ -257,7 +273,7 @@ export async function startSlirp(binary: string, sandboxPid: number, opts: Start
       /* already gone */
     }
   }
-  return { child, pid: child.pid ?? -1, stop }
+  return { child, pid: child.pid ?? -1, stop, error: () => spawnError }
 }
 
 /**

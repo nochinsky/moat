@@ -41,6 +41,16 @@ export const SANITIZED_GIT_ENV: NodeJS.ProcessEnv = {
   GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_CONFIG_SYSTEM: "/dev/null",
   GIT_CONFIG_NOSYSTEM: "1",
+  // Attribute files are the other half of the filter story, and they are read from
+  // places the config swap does not cover: `.gitattributes` in the agent's worktree,
+  // `.git/info/attributes` in the agent's git directory, and the system/global files.
+  // `core.attributesFile=/dev/null` in `hardenedGitArgs` only silences the *global*
+  // one. None of them can execute anything on its own — an attribute can only select a
+  // `filter.<driver>` command, and the swap removes every driver definition, which is
+  // measured in test/unit/git-hardening.test.ts — but a filter that is not defined
+  // cannot be selected by any attributes file, so the two halves have to hold
+  // together. These close the paths that are not covered by the config swap.
+  GIT_ATTR_NOSYSTEM: "1",
   GIT_TERMINAL_PROMPT: "0",
   GIT_LFS_SKIP_SMUDGE: "1",
   // Read commands must not rewrite the agent's index while the host looks at it.

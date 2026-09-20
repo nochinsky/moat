@@ -6,6 +6,7 @@ import * as log from "../lib/log.ts"
 import { SANITIZED_GIT_ENV, resolveGitDir, sandboxGit, withSanitizedSandboxRepo } from "../lib/git.ts"
 import {
   fetchedRevs,
+  injectedCredentialVarNames,
   knownCredentialValues,
   noteScanSkipped,
   scanCommittedForCredentials,
@@ -224,7 +225,7 @@ export async function fetchBranch(
   // committed and then deleted in a later commit is still named. It compares against
   // the credential values this host can see now — a rotated key is invisible.
   let credentialLeaks: string[] = []
-  const values = knownCredentialValues()
+  const values = knownCredentialValues(process.env, undefined, { alsoNames: injectedCredentialVarNames(p) })
   if (values.length === 0) {
     noteScanSkipped("fetch")
   } else {

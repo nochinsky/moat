@@ -38,7 +38,10 @@ test("every accepted base URL has an http(s) scheme and a host the allowlist can
   // read `.hostname`, so an accepted value with an empty host is a filtered boot
   // with no provider in its allowlist.
   for (const value of ["https://api.deepseek.com", "http://127.0.0.1:1/v1", "http://[::1]:8080/v1", "https://x.y:443"]) {
-    if (checkBaseUrl("base-url", value) !== null) continue
+    // `continue` on a rejected value made the loop self-disabling: if the check
+    // started rejecting everything, this test would pass by never asserting
+    // anything. Every value here is one the check is *supposed* to accept.
+    assert.equal(checkBaseUrl("base-url", value), null, value)
     const url = new URL(value)
     assert.ok(url.hostname.length > 0, value)
     assert.ok(url.protocol === "http:" || url.protocol === "https:", value)

@@ -233,3 +233,58 @@ test("a second plan does not invalidate the first plan's merge inputs", async (t
   assert.match(merged, /agent/)
   assert.match(merged, /user/)
 })
+
+test("apply writes the bytes that were planned, not whatever is in the sandbox now", async (t) => {
+  // `applyPlan` used to read `<sandbox>/<path>` at write time, after the plan was
+  // shown and after the credential scan had looked at the file. Two problems in one
+  // read: what was scanned and what was written could differ, and the sandbox path is
+  // agent-controlled, so a symlink swapped in between planning and applying pulled a
+  // *host* file into the project — a host file travelling out of the host, which is
+  // the one direction this tool exists to prevent.
+  const f = fixture({ "notes.txt": "base\n" })
+  cleanup(t, f)
+  const outside = path.join(f.root, "outside-secret.txt")
+  fs.writeFileSync(outside, "the host's own file\n")
+  fs.writeFileSync(path.join(f.work, "notes.txt"), "what the agent wrote\n")
+
+  const plan = await planApply(f.p)
+  const change = plan.changes.find((c) => c.path === "notes.txt")
+  assert.ok(change, "the plan must contain notes.txt")
+
+  // Between the plan and the apply: the agent replaces its file with a symlink to a
+  // host path, which is exactly what an agent that read /proc/self/mountinfo can do.
+  fs.rmSync(path.join(f.work, "notes.txt"))
+  fs.symlinkSync(outside, path.join(f.work, "notes.txt"))
+
+  const result = await applyPlan(f.p, plan)
+  assert.deepEqual(result.skipped, [])
+  assert.equal(
+    fs.readFileSync(path.join(f.host, "notes.txt"), "utf8"),
+    "what the agent wrote\n",
+    "the planned bytes land, not the symlink's target",
+  )
+  assert.equal(fs.readFileSync(outside, "utf8"), "the host's own file\n", "and the host file is untouched")
+  assert.equal(fs.lstatSync(path.join(f.host, "notes.txt")).isSymbolicLink(), false)
+})
+
+test("the frozen source is a host-side file, and a plan can be applied after another is made", async (t) => {
+  // The frozen copy has to live outside the rootfs the agent owns, and it has to
+  // survive a second plan: names are unique per call, so two plans do not take each
+  // other's inputs (the same trap the merge temps had).
+  const f = fixture({ "a.txt": "base\n" })
+  cleanup(t, f)
+  fs.writeFileSync(path.join(f.work, "a.txt"), "from the agent\n")
+  const first = await planApply(f.p)
+  const second = await planApply(f.p)
+  const firstSource = first.changes.find((c) => c.path === "a.txt")?.sourceFile
+  const secondSource = second.changes.find((c) => c.path === "a.txt")?.sourceFile
+  assert.ok(firstSource && secondSource)
+  assert.notEqual(firstSource, secondSource, "temp names are unique per call")
+  for (const source of [firstSource!, secondSource!]) {
+    assert.equal(fs.existsSync(source), true)
+    const rootfs = path.join(f.root, "env", "rootfs")
+    assert.equal(source.startsWith(rootfs), false, "the frozen bytes live outside the sandbox rootfs")
+  }
+  await applyPlan(f.p, first)
+  assert.equal(fs.readFileSync(path.join(f.host, "a.txt"), "utf8"), "from the agent\n")
+})

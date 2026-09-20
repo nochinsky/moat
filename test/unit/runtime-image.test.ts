@@ -20,6 +20,15 @@ test("the image cache key carries the binaries the image installs", () => {
 })
 
 test("the runtime binary lands under /usr/local/bin", () => {
-  assert.match(RUNTIME_BINARY, /^\/usr\/local\/bin\/[a-z]+$/)
-  assert.equal(RUNTIME_BINARY, "/usr/local/bin/codex")
+  // The second line compared the constant with a retyped copy of itself, so it could
+  // only ever fail if someone edited both. The path matters because the image cache
+  // key names it: a binary installed anywhere else would be missing from a cached
+  // image. What is worth asserting is the relationship, not the spelling.
+  assert.equal(RUNTIME_BINARY.startsWith("/usr/local/bin/"), true)
+  assert.match(RUNTIME_BINARY, /^\/usr\/local\/bin\/[a-z][a-z0-9-]*$/)
+  // The cache key names the binary and its version, so a cached image cannot
+  // silently lack one (this is the property the path is load-bearing for).
+  const key = imageCachePath(PROVISION_PACKAGES, [RUNTIME_BINARY])
+  assert.equal(key, imageCachePath(PROVISION_PACKAGES, [RUNTIME_BINARY]))
+  assert.notEqual(key, imageCachePath(PROVISION_PACKAGES, ["/usr/local/bin/other"]))
 })

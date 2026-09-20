@@ -8,6 +8,7 @@ import { test } from "node:test"
 import { envPathsForId } from "../../lib/paths.ts"
 import {
   beginBoot,
+  beginBootOrWait,
   bootAgeSeconds,
   bootInFlight,
   bootMarkerPath,
@@ -120,4 +121,68 @@ test("an age is reported for the message the other command prints", () => {
   const record: BootRecord = { pid: 1, pidStart: null, startedAt: new Date(Date.now() - 7000).toISOString(), command: "moat up" }
   assert.ok(bootAgeSeconds(record) >= 6 && bootAgeSeconds(record) <= 8)
   assert.equal(bootAgeSeconds({ ...record, startedAt: "not a date" }), 0)
+})
+
+test("the boot marker is claimed atomically, so two boots cannot both win", (t) => {
+  // The marker used to be a check-then-write: `cmdUp` waited for a boot in flight
+  // and recorded its own marker a couple of hundred lines later, after provisioning
+  // had begun. Two `moat up`s could both pass the check before either wrote, and
+  // then both provision over one rootfs — provisioning replaces it, so `/work` goes
+  // with it. `beginBootOrWait` is the wait and the claim in one atomic step, and the
+  // claim itself is O_CREAT|O_EXCL, so a lost race is a reliable signal.
+  const home = withHome(t)
+  const p = envPathsForId(ID, path.join(home, "project"))
+  return (async () => {
+    // A foreign boot holds the marker; this process must not take it.
+    const other = liveChild()
+    plant(p, other.pid, processStartTime(other.pid))
+    await assert.rejects(
+      () => beginBootOrWait(p, "moat up", { timeoutMs: 200, pollMs: 20 }),
+      /already booting this environment/,
+    )
+    const held = bootInFlight(p)
+    assert.equal(held?.pid, other.pid, "the marker still belongs to the boot that had it")
+    await other.stop()
+
+    // With the other boot gone, the claim succeeds and the marker names this process.
+    await beginBootOrWait(p, "moat up", { timeoutMs: 1000, pollMs: 20 })
+    const mine = bootInFlight(p)
+    assert.equal(mine?.pid, process.pid)
+    assert.equal(mine?.command, "moat up")
+    endBoot(p)
+  })()
+})
+
+test("a claim left behind by a dead process is reclaimed, not waited on forever", (t) => {
+  // The crash-recovery half: the marker carries a pid and its start time, so a
+  // marker whose process is gone must not block the environment. Without this the
+  // atomic claim would turn one crash into a permanently unbootable environment.
+  const home = withHome(t)
+  const p = envPathsForId(ID, path.join(home, "project"))
+  return (async () => {
+    const gone = liveChild()
+    plant(p, gone.pid, processStartTime(gone.pid))
+    await gone.stop()
+    assert.equal(bootInFlight(p), null, "a marker whose process is gone is not a boot in flight")
+    await beginBootOrWait(p, "moat up", { timeoutMs: 1000, pollMs: 20 })
+    assert.equal(bootInFlight(p)?.pid, process.pid, "and the next boot can claim it")
+    endBoot(p)
+  })()
+})
+
+test("a stale pid recycled by another process does not hold the marker", (t) => {
+  // `pidStart` is the identity, exactly as it is for the sandbox pid itself: after a
+  // reboot that pid may belong to something else entirely, and a boot must not wait
+  // forever on a bystander.
+  const home = withHome(t)
+  const p = envPathsForId(ID, path.join(home, "project"))
+  return (async () => {
+    const alive = liveChild()
+    plant(p, alive.pid, "0") // a start time that cannot match this process
+    assert.equal(bootInFlight(p), null)
+    await beginBootOrWait(p, "moat up", { timeoutMs: 1000, pollMs: 20 })
+    assert.equal(bootInFlight(p)?.pid, process.pid)
+    endBoot(p)
+    await alive.stop()
+  })()
 })

@@ -68,6 +68,24 @@ test("listSnapshots ignores a file whose name is not valid", (t) => {
   })()
 })
 
+test("one dangling symlink does not break every snapshot listing", (t) => {
+  // `statSync` follows the link, so a single dangling symlink in this directory
+  // threw ENOENT out of `listSnapshots` and took `moat status` and `moat snapshot`
+  // with it: the whole environment became unlistable because of one entry. The
+  // directory is inside the environment, so a non-regular file there is skipped
+  // rather than followed or guessed at.
+  const f = fixture(t)
+  makeSnapshot(f.snapshots, "real", "real-marker.txt")
+  fs.symlinkSync(path.join(f.snapshots, "does-not-exist.tar.gz"), path.join(f.snapshots, "dangling.tar.gz"))
+  fs.symlinkSync("/etc/hostname", path.join(f.snapshots, "outsider.tar.gz"))
+  fs.mkdirSync(path.join(f.snapshots, "a-directory.tar.gz"))
+  return (async () => {
+    const listed = await listSnapshots(f.p)
+    assert.deepEqual(listed.map((s) => s.name), ["real"], "the real snapshot still lists")
+    assert.ok(listed[0]!.bytes > 0)
+  })()
+})
+
 test("restore replaces the rootfs and preserves the project copy", (t) => {
   const f = fixture(t)
   makeSnapshot(f.snapshots, "new", "new-marker.txt")

@@ -12,6 +12,17 @@ export type CredentialRecord = {
   fingerprint: string
   mintedAt: string
   expiresAt: string
+  /**
+   * The host environment variable names this credential was injected under.
+   *
+   * `--credential-env MY_KEY` and `--credential VALUE` are both supported, and
+   * without this the copy-out leak scan compared only against the two names moat
+   * looks at by convention: a key passed as `--credential-env TEAM_KEY` was invisible
+   * to the scan, so a key committed into the project came back with no warning at
+   * all. The scan reads these names off the host at fetch/apply time and compares
+   * against them too. Optional because a state.json written by an older moat has none.
+   */
+  sourceEnvVars?: string[]
 }
 
 export type EnvState = {

@@ -656,9 +656,20 @@ export async function startSandbox(
       child.kill("SIGKILL")
       throw new Error("the sandbox did not enter its network namespace")
     }
-    const handle = await egress.startSlirp(opts.slirpBinary!, child.pid, {
+    const handle = egress.startSlirp(opts.slirpBinary!, child.pid, {
       logFile: path.join(p.logs, "slirp.log"),
     })
+    // `spawn` does not throw for a missing or non-executable file: it leaves
+    // `child.pid` undefined and delivers the error on the next tick. Measured: pid
+    // is undefined *synchronously*, so this check catches the case without waiting.
+    // Before it, a datapath that never started was recorded as pid -1 and the
+    // failure surfaced much later as "tap0 did not appear" from inside the box,
+    // with the reason nowhere.
+    if (!handle.pid || handle.pid <= 0) {
+      const reason = handle.error()?.message ?? "the process did not start"
+      child.kill("SIGKILL")
+      throw new Error(`could not start the egress datapath (${opts.slirpBinary}): ${reason}`)
+    }
     slirp = { pid: handle.pid, startTime: processStartTime(handle.pid) }
   }
 

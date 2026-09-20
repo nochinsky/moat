@@ -16,10 +16,18 @@ jobs:
         with:
           node-version: "24"
       - run: npm install --no-audit --no-fund
-      - name: typecheck
+      - name: typecheck (the source, and the tests that exercise it)
         run: npm run typecheck
       - name: unit tests (no sandbox required, so these run in CI)
         run: npm run test:unit
+      # The coverage report is published, not enforced. A threshold would be a number
+      # nobody chose carefully; what matters is that the gap is visible, and the gap is
+      # real: `sandbox/isolation.ts` is exercised by `moat doctor` and the e2e suites,
+      # and `cmd/main.ts` is the CLI, which only a booting sandbox can test. Those are
+      # measured by `bash test/e2e-*.sh` on a host that can create user namespaces,
+      # which GitHub's runners cannot (see the `sandbox` job below).
+      - name: unit test coverage (reported, not gated)
+        run: npm run coverage
       - name: build (plain JS into dist/, for consumers who want it)
         run: npm run build
       - name: CLI smoke test

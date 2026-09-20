@@ -6,7 +6,7 @@ import path from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 
-import { SANITIZED_GIT_ENV, safeConfigFor, sandboxGit } from "../../lib/git.ts"
+import { SANITIZED_GIT_ENV, hardenedGitArgs, safeConfigFor, sandboxGit } from "../../lib/git.ts"
 import { run } from "../../lib/shell.ts"
 
 function git(cwd: string, ...args: string[]): string {
@@ -306,4 +306,53 @@ test("no raw git call against the sandbox work tree outside lib/git.ts", () => {
     `these call host git against the agent-controlled repository; use sandboxGit from lib/git.ts, ` +
       `or mark a deliberate exception with raw-git-ok:\n${offenders.join("\n")}`,
   )
+})
+
+test("an in-tree .gitattributes cannot select a filter that is not there", (t) => {
+  // `-c core.attributesFile=/dev/null` silences the *global* attributes file only.
+  // `.gitattributes` in the worktree and `.git/info/attributes` in the git directory
+  // are read regardless, and both are inside the agent's reach. An attributes file
+  // cannot execute anything by itself — it selects a `filter.<driver>` command, and
+  // the driver has to be defined in config — so the guarantee is the two halves
+  // together: the swap removes every driver definition. This measures both halves,
+  // because a fix that only removed the driver would pass a check that only looked
+  // at the swap.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "moat-attrs-"))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const repo = path.join(root, "repo")
+  fs.mkdirSync(repo)
+  const runGit = (args: string[]): void => {
+    execFileSync("git", ["-C", repo, ...args], { encoding: "utf8", env: { ...process.env, ...SANITIZED_GIT_ENV } })
+  }
+  runGit(["init", "-q"])
+  runGit(["config", "user.email", "a@b"])
+  runGit(["config", "user.name", "t"])
+  const marker = path.join(root, "filter-ran")
+  const driver = path.join(repo, "driver.sh")
+  fs.writeFileSync(driver, `#!/bin/sh\necho RAN >> ${marker}\ncat\n`)
+  fs.chmodSync(driver, 0o755)
+  // The agent's two attribute files, both selecting a driver by name.
+  fs.writeFileSync(path.join(repo, ".gitattributes"), "*.txt filter=pwn\n")
+  fs.mkdirSync(path.join(repo, ".git", "info"), { recursive: true })
+  fs.writeFileSync(path.join(repo, ".git", "info", "attributes"), "*.md filter=pwn\n")
+  fs.writeFileSync(path.join(repo, "a.txt"), "hello\n")
+  fs.writeFileSync(path.join(repo, "b.md"), "hello\n")
+
+  // Control: with the driver defined, the attribute selects it and it runs on the host.
+  runGit(["config", "filter.pwn.clean", driver])
+  runGit(["config", "filter.pwn.required", "true"])
+  runGit(["add", "-A"])
+  assert.equal(fs.existsSync(marker), true, "the control must show the filter really does run")
+
+  // Now moat's shape: the driver is gone from the config (the swap), and the
+  // hardened args are in force. Nothing is left for either attribute file to select.
+  fs.rmSync(marker, { force: true })
+  fs.writeFileSync(
+    path.join(repo, ".git", "config"),
+    "# written by moat for the duration of a host-side git call\n[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n",
+  )
+  execFileSync("git", [...hardenedGitArgs(), "-C", repo, "add", "-A"], { encoding: "utf8", env: { ...SANITIZED_GIT_ENV } })
+  assert.equal(fs.existsSync(marker), false, "no driver is defined, so no attribute can run anything")
+  // And the belt: the system attributes file is out of the picture entirely.
+  assert.equal(SANITIZED_GIT_ENV.GIT_ATTR_NOSYSTEM, "1")
 })

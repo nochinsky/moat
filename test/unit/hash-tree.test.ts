@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import crypto from "node:crypto"
+import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -73,15 +74,55 @@ test("the streamed tree hash matches the whole-file hash, chunk boundaries inclu
   assert.deepEqual(hashTree(root, { skip: [] }), reference(root, []))
 })
 
-test("a file the walk cannot finish reading does not poison the count", (t) => {
-  // A concurrent writer is the realistic case in the sandbox: the header carries
-  // the size from lstat, so the digest stays well defined even if the file shrinks
-  // under the read.
+test("a well-defined digest and count, for a file being rewritten under the read", async (t) => {
+  // The old name promised a scenario the test never created: it hashed a file nobody
+  // was writing to. The real case is a concurrent writer in the sandbox, where the
+  // header carries the size from `lstat` and fewer bytes can come back than it
+  // promised.
+  //
+  // What is asserted is the shape of the answer under a live writer — one file, a real
+  // digest, a byte count equal to the size the header recorded — and not a particular
+  // interleaving. Whether any given pass catches the file mid-shrink is a race the
+  // test does not try to win: a test that fails when the machine is fast is worse than
+  // one that states its weaker guarantee, and the stronger claim (the read loop stops
+  // at EOF instead of spinning) is guarded by that loop's own `read <= 0` break.
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "moat-hash-short-"))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
-  fs.writeFileSync(path.join(root, "shrinking.bin"), Buffer.alloc(64 * 1024, 1))
-  const result = hashTree(root)
-  assert.equal(result.files, 1)
-  assert.equal(result.bytes, 64 * 1024)
-  assert.equal(result.digest.length, 64)
+  const file = path.join(root, "shrinking.bin")
+  const size = 8 * 1024 * 1024
+  fs.writeFileSync(file, Buffer.alloc(size, 1))
+  // A shell loop, so there is no argument-plumbing of its own to get wrong: the two
+  // sizes are interpolated into the script that runs.
+  const writer = spawn(
+    "sh",
+    ["-c", `end=$(( $(date +%s) + 3 )); while [ "$(date +%s)" -lt "$end" ]; do truncate -s ${size} '${file}'; truncate -s 1024 '${file}'; done`],
+    { stdio: "ignore" },
+  )
+  t.after(() => writer.kill("SIGKILL"))
+  // Wait for the writer to be demonstrably running before measuring anything: without
+  // this the test could pass vacuously if the writer never started.
+  const started = Date.now()
+  while (Date.now() - started < 3000) {
+    if (fs.statSync(file).size !== size) break
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  assert.notEqual(fs.statSync(file).size, size, "the writer must be shrinking the file before this test means anything")
+
+  // Hash repeatedly while the writer runs. Every pass must come back with a real
+  // digest: the header carries the size from lstat, and the read loop has to stop at
+  // EOF rather than throw or spin when fewer bytes come back than it promised.
+  const sizes: number[] = []
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const result = hashTree(root)
+    assert.equal(result.files, 1, "one file, however many bytes came back")
+    assert.equal(result.digest.length, 64, "the digest is always a real digest")
+    assert.ok(result.bytes > 0 && result.bytes <= size, `a reported size must be a real one: ${result.bytes}`)
+    sizes.push(result.bytes)
+  }
+  writer.kill("SIGKILL")
+  // With the writer gone, every pass reports the same size: the answer is a function
+  // of the file, not of when the read happened to run.
+  const after = hashTree(root)
+  assert.equal(after.bytes, fs.statSync(file).size)
+  assert.equal(hashTree(root).digest, after.digest, "a quiet file hashes to one digest")
 })

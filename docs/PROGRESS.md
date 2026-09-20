@@ -125,12 +125,194 @@ The same three lines appeared twice; one copy removed.
 
 ### Defects 10-21
 
-Not yet attempted. This section will carry a verdict per defect, and "did not reproduce" is
-an acceptable verdict.
+Each of these was reported by review rather than verified by hand, so each one gets an
+explicit verdict. "Did not reproduce" is a real answer and is given as one.
+
+**10. `writeRootfsFile` verifies the temp file, then renames by path. REPRODUCED, FIXED.**
+Real, and the mechanism is exactly as reported: `walk` checked every component, the temp file
+was verified through `/proc/self/fd`, and then `renameSync(tmp, full)` resolved `full` from the
+top again — so the verification proved where the *temp* went and said nothing about where the
+rename went. A directory swapped for a symlink in that window sends the file outside the
+rootfs. Measured: a concurrent swapper against the old shape leaked temp files into the target
+directory of the planted symlink.
+Fixed by holding the parent directory open (`openParentDir`, `O_DIRECTORY|O_NOFOLLOW`, verified
+through `/proc/self/fd`) and doing both the create and the rename through that descriptor. The
+temp name is also random-with-retry now instead of deterministic, so an agent cannot pre-create
+it and make `O_EXCL` fail a boot.
+Measured after the fix: 300 `writeRootfsFile` calls against a live directory swapper, zero
+escapes. The failure mode when the directory is swapped out from under the descriptor is
+ENOENT — the write does not happen at all, which is the safe direction. `test/unit/rootfs-write.test.ts`
+still passes unchanged, including the symlinked-parent refusal.
+
+**11. The egress ruleset is loaded from inside the agent-writable rootfs. REPRODUCED, FIXED.**
+`ensureEgressPolicy` wrote `/.moat/egress.nft` into the rootfs and the boot script applied that
+path. The box is root in its own rootfs, so it could rewrite the file between boots and the next
+boot would faithfully apply the policy the box had chosen — coming up "filtered" under the
+agent's own rules, with the boot log reporting success. Fixed by carrying the ruleset as text in
+the boot script (`runtime/boot-*.sh`, outside the rootfs) and feeding it to `nft -f -` on stdin
+from a quoted heredoc, so there is no path inside the rootfs left to race. The heredoc delimiter
+is a constant, so a ruleset cannot forge the end of its own body.
+Coverage: two tests in `test/unit/egress.test.ts`, checked by restoring the path-based shape and
+watching the first one fail. **Validated end to end: `bash test/e2e-egress.sh` passes with this
+change**, which is the suite that proves the allowlist holds and everything else is dropped.
+
+**12. `moat up` reports success when the box died instantly. REPRODUCED, FIXED.**
+`startSandbox` spawns `unshare` and returns; `cmdUp` recorded `status: "running"` and a pid
+immediately. The entry script's first act was to check the credential deadline, and an
+already-dead credential makes it exit in milliseconds — so a failed boot was recorded as a
+running sandbox, and the failure surfaced later at a `moat exec` that could not reach the box.
+Two changes, because either alone leaves the hole: the entry script now checks the deadline
+*before* printing its readiness line, and `cmdUp` waits for that line (`waitForSandboxReady`)
+instead of assuming the spawn was a boot. A box that dies during boot now fails `moat up` with
+the boot log's last lines.
+Coverage: `test/unit/ready-check.test.ts`, including one test that runs the real spawn path
+(`startSandbox` → `unshare` → mounts → chroot → boot log) with an entry script that exits before
+the marker; and `bash test/fail-guard.sh`'s opt-in half. Checked by making the marker
+unmatchable: the ready-path test then fails, while the dead-box test still passes, which is the
+behaviour the phase needs.
+
+**13. slirp spawn errors are swallowed. REPRODUCED, FIXED.**
+The `error` handler was empty, with a comment saying the in-box readiness check would report the
+failure. It did report *a* failure — "tap0 did not appear" — and the reason was nowhere: a
+missing or non-executable datapath binary left `pid: -1` recorded and the boot failed much later
+with an unrelated message. (`spawn` does not throw for a bad binary; it leaves `child.pid`
+undefined *synchronously* and emits the error on the next tick.) The handle now carries the
+error and `startSandbox` refuses to continue when there is no pid, naming the binary and the
+reason.
+
+**14. The boot marker is check-then-write with no lock. REPRODUCED, FIXED.**
+Real, and the window was larger than "no lock" suggests: `cmdUp` waited for a boot in flight at
+the top of the command and only recorded its own marker around two hundred lines later, after
+provisioning had begun. Two concurrent `moat up`s could both pass the check before either wrote,
+and then both provision over one rootfs — and provisioning replaces the rootfs, so `/work` goes
+with it. The wait and the claim are now one call (`beginBootOrWait`), and the claim is
+`O_CREAT|O_EXCL` (`flag: "wx"`), so a lost race is a reliable signal rather than a coincidence. A
+marker whose process is gone is still reclaimed, so a crash cannot block the environment forever.
+Coverage: three tests in `test/unit/boot-marker.test.ts` (a live foreign boot is refused, a dead
+one is reclaimed, a recycled pid is not believed).
+
+**15. A dangling baseline symlink breaks every snapshot listing. REPRODUCED, FIXED.**
+`listSnapshots` used `statSync`, which follows the link, so one dangling symlink in the snapshots
+directory threw ENOENT out of the listing and took `moat status` and `moat snapshot` with it.
+It uses `lstatSync` and skips anything that is not a regular file. Coverage: a test in
+`test/unit/snapshot-safety.test.ts` with a dangling link, a link to `/etc/hostname` and a
+directory named `*.tar.gz`; checked by restoring `statSync` and watching it fail.
+
+**16. The leak scan cannot see `--credential-env` keys, and its notice is `log.debug`.
+REPRODUCED, FIXED.**
+Both halves real. `knownCredentialValues` looked only at `DEEPSEEK_API_KEY` and
+`MOAT_CREDENTIAL`, so a key passed as `--credential-env TEAM_KEY` was invisible: commit it into
+the project and `moat fetch` brought it to the host with no warning at all, which is the one
+outcome the scan exists to prevent. The boot now records the names it injected under
+(`CredentialRecord.sourceEnvVars`, read back at fetch/apply time) and the scan compares against
+those too. The "did not run" notice was `log.debug` behind a `--verbose` that did nothing; it is
+a warning now.
+Coverage: three tests in `test/unit/leak-scan.test.ts`.
+
+**17. `applyPlan` re-reads agent-controlled bytes at write time. REPRODUCED, FIXED.**
+Real, and worse than "the scan verdict and the written bytes can differ": the sandbox path is
+agent-controlled, so a symlink swapped in between planning and applying pulls a *host* file
+into the project — a host file travelling out of the host, the one direction this tool exists to
+prevent. `planApply` now freezes each planned file's bytes into the environment's `runtime/`
+directory (outside the rootfs, unique name per call) and both the credential scan and
+`applyPlan` read that copy. Coverage: two tests in `test/unit/apply.test.ts`, the first of which
+plans, then replaces the sandbox file with a symlink to a host file, then applies; checked by
+restoring the re-read and watching it write the symlink's target.
+
+**18. In-tree `.gitattributes` can still execute `filter.<driver>.clean`. DID NOT REPRODUCE.**
+Measured, not argued. The report is right that `-c core.attributesFile=/dev/null` covers only
+the global attributes file: `.gitattributes` in the worktree and `.git/info/attributes` are read
+regardless. But an attributes file cannot execute anything by itself — it *selects* a
+`filter.<driver>` command, and the driver's command has to come from config, which the swap
+replaces with a minimal host-owned one. Measured both halves: with a driver defined in the repo
+config the filter runs under the hardened args (the control), and with the config swapped to
+moat's minimal one the same `.gitattributes` and the same `.git/info/attributes` run nothing.
+Added the setting that was genuinely missing (`GIT_ATTR_NOSYSTEM=1`, closing the system
+attributes file) and a regression test that measures both halves, so a future change that stops
+dropping `filter.*` fails a test rather than silently re-opening this.
+
+**19. `parseCodexEvents` synthetic-id fallback. REPRODUCED, FIXED.**
+Reproduced with a synthetic stream: two events with no id where the second is a completion merge
+into the first row, so two tool calls were reported as one, with the first command's detail and
+the second one's exit code. The fallback no longer invents an id at all: a completion pairs with
+the most recent *unfinished* row of the same kind, anything else starts its own row, and
+synthetic ids never enter the id map (which is how an invented row could swallow a real event
+named `item-synthetic-0`). Coverage in `test/unit/codex-runtime.test.ts`, checked by restoring
+the old fallback.
+
+**20. Coverage and `test/` typechecking. PARTIALLY FIXED; the rest is a real limit.**
+`npm run typecheck` now runs `tsc -p tsconfig.test.json` as well, and it found two genuine
+errors in the test tree immediately: a property that does not exist on a fixture type, and
+`assert.rejects(() => installRuntimeBinary(p, "codex"))` — a second argument the function does
+not take, in a file where every fixture is cast through `as never`, so nothing had ever checked
+it. (That second one is also weak test 21's matcher-less `assert.rejects`; both are fixed.)
+Coverage is reported, not gated: `npm run coverage`, run in CI. `sandbox/isolation.ts` is 35%
+because its `runIsolationChecks` body only runs inside a booted sandbox — `moat doctor` and the
+e2e suites are what exercise it, and no unit test can honestly claim that coverage on a host
+without user namespaces. `cmd/main.ts` is 0% for the same reason. **Nothing in this session
+pretends otherwise: the unit coverage number is reported, and the sandbox behaviour is evidenced
+by `test/e2e-*.sh`.**
+
+**21. Weak tests. FIXED.**
+All seven, and every one of them was worse than "weak":
+`stop-slirp.test.ts` called `stopSlirp` twice with no assertion at all (any behaviour, including
+throwing, passed); `pid-identity.test.ts` compared one call with itself (true of any function,
+including one returning a random value); `runtime-image.test.ts` compared a constant with a
+retyped copy of itself; `base-url.test.ts` had a `continue` that silently disabled the loop's
+assertions; `runtime-install.test.ts` had a matcher-less `assert.rejects` (now matched on
+`/symlink/`, and it is the test that typechecking found was passing two arguments);
+`hash-tree.test.ts`'s name promised a shrink-under-read scenario it never created;
+`copyin-reporting.test.ts`'s FIFO assertion was inside `if (mkfifo ok)`.
+Each is now either strengthened to assert the thing its name claims or rewritten to state the
+weaker guarantee it can actually hold (the hash-tree one, where winning the race is not
+something a portable test can promise).
 
 ### The gate
 
-Not yet passed. Work in progress.
+**PASSED**, with the evidence below.
+
+The gate is two claims: `test/e2e-extras.sh` exits non-zero when a check fails (proven by
+breaking a check on purpose), and `--verbose` produces output.
+
+The accumulator is `test/lib/guard.sh`, shared by `e2e-extras.sh` and `e2e-live.sh`, with its
+own proof in `test/fail-guard.sh`:
+- positive control: three passing checks exit 0;
+- negative control: one failing check among passes exits 1, and names it;
+- the old shape, for comparison: a bare `FAILED` echo still exits 0 — that is the bug;
+- pipeline control: a `pass`/`fail` called in a pipe loses its increment, which is why the call
+  sites are grepped for the shape;
+- empty control: a suite that asserts nothing exits 2, not 0;
+- wiring: the real suite calls `verdict` after `scrub_evidence`, no failure line bypasses the
+  accumulator, and no check is recorded through a pipe.
+
+**Writing that harness found a bug in the harness, which is the part worth recording.** The first
+version of the guard recorded each check as `fail "x" "y" | tee -a log` at the call site. In
+bash, a pipeline puts the function in a subshell, so `CHECKS_FAILED=$((CHECKS_FAILED + 1))`
+happened in a process that then exited: the end-to-end sabotage run produced forty `FAILED`
+lines and an exit status of 2 ("no checks ran"). The cheap half of `fail-guard.sh` had passed,
+because it called the functions without a pipe. The end-to-end half caught it. The functions now
+do their own logging, no call site pipes, and both the cheap harness and a grep guard the shape.
+
+The end-to-end half itself was also wrong once and had to be fixed: it sabotaged a *copy* of the
+suite in a temp directory, and the suite resolves its own repository root from
+`${BASH_SOURCE[0]}`, so the copy could not find `bundle/codex.ts` or `test/codex-tui.py` and
+every boot failed — dozens of unrelated checks failed with it, which proves nothing. It now
+patches the real suite in place and restores it from a trap (including on INT/TERM), stopping the
+run after the sabotaged check so the proof takes about a minute rather than a full pass.
+
+Measured results (`MOAT_FAIL_GUARD_E2E=1 bash test/fail-guard.sh`):
+- with section C's `apply --name` check broken on purpose, the suite exits **1**, and the evidence
+  records `FAILED: 1` for exactly the sabotaged check;
+- with the fix restored, `bash test/e2e-extras.sh` exits **0**.
+
+`--verbose` produces output: `lib/log.ts` now has `setVerbose()` (mirroring `setQuiet()`), which
+`main()` calls when `--verbose` is parsed, closing the module-load race that made all thirteen
+`log.debug` sites unreachable.
+
+Two things the gate does **not** cover, stated so absence is not read as success: the
+end-to-end sabotage is opt-in (`MOAT_FAIL_GUARD_E2E=1`) because it boots a real sandbox, and
+`test/e2e-live.sh` needs a real provider key — its assertions are written and its accumulator is
+the same proven code, but **it has not been executed against a live model in this session**.
 
 ---
 

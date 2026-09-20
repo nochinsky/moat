@@ -12,6 +12,7 @@ import {
   credentialLeakWarning,
   fetchedRevs,
   leakingFiles,
+  injectedCredentialVarNames,
   knownCredentialValues,
   parseGrepPaths,
 } from "../../sync/leak-scan.ts"
@@ -222,4 +223,67 @@ test("an apply whose content is clean reports nothing", (t) => {
     const plan = await planApply(f.p)
     assert.deepEqual(plan.credentialLeaks, [])
   })()
+})
+
+test("a key passed as --credential-env is still scanned for on copy-out", () => {
+  // `--credential-env TEAM_KEY` is a supported way to hand moat a key, and the scan
+  // used to look only at the two names moat knows by convention. A key passed that
+  // way was invisible: commit it into the project and `moat fetch` brought it to the
+  // host with no warning at all, which is the one outcome this scan exists to
+  // prevent. The names the boot actually injected under are recorded in state.json
+  // and read back here.
+  const env = { TEAM_KEY: "team-secret-0123456789" } as NodeJS.ProcessEnv
+  assert.deepEqual(knownCredentialValues(env, () => ({}), { alsoNames: undefined }), [], "invisible without the names")
+  assert.deepEqual(
+    knownCredentialValues(env, () => ({}), { alsoNames: ["TEAM_KEY"] }),
+    ["team-secret-0123456789"],
+    "and visible when state.json names the variable the boot used",
+  )
+  // The conventional names still work, and neither source can duplicate the other.
+  assert.deepEqual(
+    knownCredentialValues(
+      { DEEPSEEK_API_KEY: "conventional-0123456", TEAM_KEY: "team-secret-0123456789" } as NodeJS.ProcessEnv,
+      () => ({}),
+      { alsoNames: ["DEEPSEEK_API_KEY", "TEAM_KEY"] },
+    ).sort(),
+    ["conventional-0123456", "team-secret-0123456789"],
+  )
+})
+
+test("the scan says loudly when it had nothing to compare against", () => {
+  // The "did not run" notice was `log.debug`, and `--verbose` was a no-op, so the one
+  // message that says the scan never happened was unreachable. Silence from a scan
+  // that did not run and silence from a scan that found nothing look identical in a
+  // terminal, and only one of them is good news.
+  const source = fs.readFileSync(new URL("../../sync/leak-scan.ts", import.meta.url), "utf8")
+  const body = source.slice(source.indexOf("export function noteScanSkipped"))
+  assert.match(body.slice(0, 400), /log\.warn\(/, "the notice is a warning, not a debug line")
+  assert.doesNotMatch(body.slice(0, 400), /log\.debug\(/, "and not hidden behind --verbose")
+  assert.match(body.slice(0, 400), /NOT searched/)
+})
+
+test("the variable names come from the environment's own state, not from this process", () => {
+  // The end of the path above: the boot writes the names it injected under into
+  // state.json, and copy-out reads them from there. A state.json written by an older
+  // moat has no such field, and that must mean "fall back to the conventional names",
+  // not a crash.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "moat-leaknames-"))
+  try {
+    const statePath = path.join(root, "state.json")
+    const write = (credential: unknown): void =>
+      fs.writeFileSync(statePath, JSON.stringify({ version: 1, id: "x", projectDir: root, credential }))
+    write({ provider: "deepseek", fingerprint: "f", mintedAt: "", expiresAt: "", sourceEnvVars: ["TEAM_KEY", "MOAT_CREDENTIAL"] })
+    assert.deepEqual(injectedCredentialVarNames({ state: statePath }), ["TEAM_KEY", "MOAT_CREDENTIAL"])
+    // An older state has no field at all.
+    write({ provider: "deepseek", fingerprint: "f", mintedAt: "", expiresAt: "" })
+    assert.deepEqual(injectedCredentialVarNames({ state: statePath }), [])
+    // A hand-edited file with the wrong shape contributes nothing rather than throwing.
+    write({ provider: "deepseek", sourceEnvVars: ["TEAM_KEY", 7, null] })
+    assert.deepEqual(injectedCredentialVarNames({ state: statePath }), ["TEAM_KEY"])
+    // No state at all (an environment mid-destroy) is the same answer.
+    fs.rmSync(statePath)
+    assert.deepEqual(injectedCredentialVarNames({ state: statePath }), [])
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
 })

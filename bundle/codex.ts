@@ -391,23 +391,48 @@ export function parseCodexEvents(text: string): CodexTurn {
       else turn.errors.push(message)
       continue
     }
-    const id = typeof item.id === "string" ? item.id : `item-${turn.tools.length}`
+    const id = typeof item.id === "string" ? item.id : undefined
     const status = type === "item.started" ? "started" : "completed"
-    const existing = byId.get(id)
     const exitCode = typeof item.exit_code === "number" ? item.exit_code : undefined
-    if (existing) {
-      existing.status = "completed"
-      if (exitCode !== undefined) existing.exitCode = exitCode
-      continue
+    const kind = typeof item.type === "string" ? item.type : "item"
+    const detail = detailOf(item)
+    if (id !== undefined) {
+      const existing = byId.get(id)
+      if (existing) {
+        existing.status = "completed"
+        if (exitCode !== undefined) existing.exitCode = exitCode
+        continue
+      }
+    } else {
+      // An item with no id at all. Codex always sends one, so this is the parser's
+      // fallback, and the fallback used to produce two rows for one tool or one row
+      // for two: the synthetic id was `item-<turn.tools.length>`, the length does not
+      // change between the events of a pair, and a *completion* with no id therefore
+      // merged into whichever row came last — including an already-completed one, so
+      // the second of two id-less items disappeared and the first inherited its exit
+      // code. A completion pairs with the most recent *unfinished* row of the same
+      // kind; anything else starts its own row, so nothing is ever merged into a
+      // finished one.
+      const pending = [...turn.tools].reverse().find((tool) => tool.status === "started" && tool.kind === kind)
+      if (pending && status === "completed") {
+        pending.status = "completed"
+        if (exitCode !== undefined) pending.exitCode = exitCode
+        continue
+      }
     }
+    const rowID = id ?? `item-synthetic-${turn.tools.length}`
     const row: CodexToolRun = {
-      id,
-      kind: typeof item.type === "string" ? item.type : "item",
-      detail: detailOf(item),
+      id: rowID,
+      kind,
+      detail,
       status,
       ...(exitCode !== undefined ? { exitCode } : {}),
     }
-    byId.set(id, row)
+    // Only real ids go in the map. A synthetic id is a display name for a row nothing
+    // can refer back to, and putting one in the map let a *real* event that happened to
+    // carry that name merge into the invented row (measured: an id-less started event
+    // followed by an event with id `item-synthetic-0` collapsed to one row).
+    if (id !== undefined) byId.set(id, row)
     turn.tools.push(row)
   }
   return turn

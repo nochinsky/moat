@@ -6,6 +6,7 @@ import { partPath, type EnvPaths } from "../lib/paths.ts"
 import { run } from "../lib/shell.ts"
 import { SANITIZED_GIT_ENV, sandboxGit, sandboxGitRaw } from "../lib/git.ts"
 import {
+  injectedCredentialVarNames,
   knownCredentialValues,
   leakingFiles,
   noteFilesTooLargeToScan,
@@ -57,6 +58,19 @@ export type PlannedChange = {
   expectedHost: string
   /** kind === 'merge': the host-side file holding the merged bytes. */
   mergedFile?: string
+  /**
+   * kind === 'add' | 'modify': the host-side file holding the bytes to write.
+   *
+   * Frozen at plan time from the sandbox file, instead of the apply step reading
+   * `<sandbox>/<path>` again. Two things went wrong with reading it again: the file
+   * the credential scan examined and the file that got written were not necessarily
+   * the same bytes, and the sandbox path is agent-controlled, so a symlink swapped in
+   * between planning and applying pulled a *host* file into the project — the exact
+   * direction of travel this tool exists to prevent. The copy also normalises the
+   * path: the temp file lives outside the rootfs, so nothing the agent can still
+   * reach is on the write path.
+   */
+  sourceFile?: string
   /** kind === 'link': the symlink target to create. */
   linkTarget?: string
   /** File mode to set after writing (kind === 'mode' sets it on its own). */
@@ -157,7 +171,13 @@ function cleanupMergeTemps(p: EnvPaths): void {
   }
   const cutoff = Date.now() - MERGE_TEMP_TTL_MS
   for (const name of names) {
-    if (!name.startsWith("moat-merge-") && !name.startsWith("moat-theirs-") && name !== "merged.tmp") continue
+    if (
+      !name.startsWith("moat-merge-") &&
+      !name.startsWith("moat-theirs-") &&
+      !name.startsWith("moat-source-") &&
+      name !== "merged.tmp"
+    )
+      continue
     const full = path.join(dir, name)
     let mtime = 0
     try {
@@ -320,7 +340,32 @@ async function attemptMerge(
   }
 }
 
+/**
+ * Freeze a sandbox file's bytes on the host, outside the rootfs.
+ *
+ * The temp lives in the environment's `runtime/` directory, which the agent inside
+ * the box cannot reach, and its name is unique per call (`partPath`), so two plans in
+ * flight cannot take each other's inputs. The read happens once, here, so what the
+ * credential scan inspects is byte-for-byte what `applyPlan` writes.
+ */
+function freezeSource(p: EnvPaths, sandboxFile: string): string | undefined {
+  const dir = path.join(p.dir, "runtime")
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    const dest = partPath(path.join(dir, "moat-source"))
+    // A symlink or a directory in the sandbox is not content to copy: those are
+    // planned as `link` or skipped, and never reach here as a file.
+    if (!fs.lstatSync(sandboxFile).isFile()) return undefined
+    fs.copyFileSync(sandboxFile, dest)
+    fs.chmodSync(dest, 0o600)
+    return dest
+  } catch {
+    return undefined
+  }
+}
+
 function plannedFor(
+  p: EnvPaths,
   sand: Entry,
   hostKey: string,
   changePath: string,
@@ -331,7 +376,14 @@ function plannedFor(
     return { path: changePath, kind: "link", conflict: false, expectedHost: hostKey, linkTarget: readLink(sandboxFile) }
   }
   if (sand.kind === "file") {
-    return { path: changePath, kind, conflict: false, expectedHost: hostKey, mode: sand.mode }
+    return {
+      path: changePath,
+      kind,
+      conflict: false,
+      expectedHost: hostKey,
+      mode: sand.mode,
+      sourceFile: freezeSource(p, sandboxFile),
+    }
   }
   return { path: changePath, kind, conflict: false, expectedHost: hostKey }
 }
@@ -404,7 +456,7 @@ export async function planApply(p: EnvPaths): Promise<ApplyPlan> {
         })
         continue
       }
-      changes.push(plannedFor(sand, hostKey, entry.path, sandboxFile, "add"))
+      changes.push(plannedFor(p, sand, hostKey, entry.path, sandboxFile, "add"))
       continue
     }
 
@@ -438,7 +490,7 @@ export async function planApply(p: EnvPaths): Promise<ApplyPlan> {
     }
 
     if (sameContent(host, base) && entryKey(host) === entryKey(base)) {
-      changes.push(plannedFor(sand, hostKey, entry.path, sandboxFile, "modify"))
+      changes.push(plannedFor(p, sand, hostKey, entry.path, sandboxFile, "modify"))
       continue
     }
 
@@ -461,7 +513,7 @@ export async function planApply(p: EnvPaths): Promise<ApplyPlan> {
   // so a key rotated since the boot is invisible here. docs/SPEC.md §4 says so.
   // Conflicts are skipped: moat never writes them, so it must not claim they leak.
   let credentialLeaks: string[] = []
-  const values = knownCredentialValues()
+  const values = knownCredentialValues(process.env, undefined, { alsoNames: injectedCredentialVarNames(p) })
   if (values.length === 0) {
     noteScanSkipped("apply")
   } else {
@@ -469,7 +521,7 @@ export async function planApply(p: EnvPaths): Promise<ApplyPlan> {
       .filter((change) => !change.conflict && (change.kind === "add" || change.kind === "modify" || change.kind === "merge"))
       .map((change) => ({
         path: change.path,
-        file: change.kind === "merge" ? (change.mergedFile ?? "") : path.join(p.work, change.path),
+        file: change.kind === "merge" ? (change.mergedFile ?? "") : (change.sourceFile ?? ""),
       }))
       .filter((entry) => entry.file.length > 0)
     const scanned = leakingFiles(entries, values)
@@ -599,7 +651,10 @@ export async function applyPlan(p: EnvPaths, plan: ApplyPlan): Promise<{ applied
         continue
       }
 
-      const source = change.kind === "merge" ? change.mergedFile : path.join(p.work, change.path)
+      // The bytes that were scanned, frozen at plan time. Re-reading the sandbox
+      // path here is how the scan verdict and the written bytes could differ, and how
+      // a symlink swapped into the agent's tree pulled a host file into the project.
+      const source = change.kind === "merge" ? change.mergedFile : change.sourceFile
       if (!source || !fs.existsSync(source)) {
         skipped.push(change.path)
         continue

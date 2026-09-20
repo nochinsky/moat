@@ -37,6 +37,6 @@ test("a runtime install refuses a symlinked component instead of writing through
   const outside = path.join(root, "outside")
   fs.mkdirSync(outside, { recursive: true })
   fs.symlinkSync(outside, path.join(rootfs, "usr/local/bin"))
-  await assert.rejects(() => installRuntimeBinary(p, "codex"))
+  await assert.rejects(() => installRuntimeBinary(p), /symlink/)
   assert.deepEqual(fs.readdirSync(outside), [], "nothing may be written through the planted symlink")
 })
