@@ -1133,6 +1133,21 @@ else
   echo "codex: FAILED — the mocked turn did not produce the file (requests=$REQS, see $WORK/mock-responses.log)" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$CK" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "AL. the default runtime opens a live TUI"
+# The interactive surface of the codex runtime is Codex's own TUI on a pty inside the box.
+# This allocates a real pty, runs moat with no arguments, and requires that the TUI was
+# reached (not the help text), drew a screen and stayed up, and that leaving it left the
+# sandbox running. Keyless: no model call is needed to answer any of that.
+echo "the default runtime's interactive surface, driven through a real pty" | tee -a "$EVIDENCE/extras.txt"
+python3 "$REPO/test/codex-tui.py" 2>&1 | scrub > "$EVIDENCE/codex-tui.txt"
+TUI_RC=$?
+tail -6 "$EVIDENCE/codex-tui.txt" | tee -a "$EVIDENCE/extras.txt"
+if [ "$TUI_RC" = "0" ] && grep -q "codex tui: the default runtime opens a live TUI" "$EVIDENCE/codex-tui.txt"; then
+  echo "codex tui: moat reaches a live TUI, and leaving it leaves the sandbox running" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "codex tui: FAILED — moat did not reach a live TUI (exit $TUI_RC)" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$WORK/codex-tui" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

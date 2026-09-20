@@ -2663,6 +2663,19 @@ Three things are load-bearing, and each has a test:
   *includes* the cached tokens, so charging that field at the miss rate *and* the cached field
   separately over-reported a mostly-cached turn by about ten times.
 
+The interactive surface is verified rather than assumed: `test/codex-tui.py` (extras section
+AL) allocates a real pty, boots the default runtime, runs `moat` with no arguments, and
+requires that the TUI was reached (not the help text), that it drew a screen and stayed up,
+and that Ctrl-C left the sandbox running. It failed before the fix below, which is how the
+fix was found.
+
+That failure was the first thing a new user would have met: `sandboxEnv` fixes `TERM=dumb`,
+which is right for an unwatched boot and wrong for a terminal, so Codex's TUI opened with
+`WARNING: TERM is set to "dumb". Codex's interactive TUI may not work in this terminal.
+Continue anyway? [y/N]` and waited. `runInteractive` now advertises the host's terminal
+type, sanitised (`interactiveTerm`, `test/unit/interactive-term.test.ts`), and only there: a
+check, a server or a batch boot still gets `dumb`, so the environment the other suites
+measure is unchanged.
 ### AG. A project's own check output cannot drive the terminal it is printed on
 
 `moat verify` streams the check's output as it arrives, and `moat take` and the session's

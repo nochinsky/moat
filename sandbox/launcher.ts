@@ -285,6 +285,26 @@ export function writeInnerScript(p: EnvPaths, body: string): string {
 
 export type SandboxEnv = Record<string, string | undefined>
 
+/**
+ * The terminal type an *interactive* boot should advertise.
+ *
+ * `sandboxEnv` fixes `TERM=dumb`, which is right for a boot nobody is watching — a script, a
+ * check, the server — and wrong for one attached to a terminal. Measured: with the codex
+ * runtime, `moat` reached the TUI and Codex stopped at
+ * "WARNING: TERM is set to \"dumb\". Codex's interactive TUI may not work in this terminal.
+ * Continue anyway? [y/N]" — the first thing a new user would see. bash is degraded the same
+ * way (no colours, no line editing).
+ *
+ * Only the terminal *type* is forwarded, and it is sanitised: it is a capability name from
+ * the host environment, not host data, and a value with whitespace or punctuation has no
+ * business being exported into the box.
+ */
+export function interactiveTerm(host: string | undefined = process.env.TERM): string {
+  const value = (host ?? "").trim()
+  if (value.length === 0 || value === "dumb" || !/^[A-Za-z0-9._+-]+$/.test(value)) return "xterm-256color"
+  return value
+}
+
 /** The only environment variables that reach the sandbox. Nothing is forwarded implicitly. */
 export function sandboxEnv(extra: SandboxEnv = {}): NodeJS.ProcessEnv {
   return {
@@ -500,7 +520,9 @@ export async function runInteractive(
   const boot = writeOuterScript(p, { innerScript: inner, waitForTap: isolated, egressRules: opts.egressRules })
   const child = spawn("unshare", unshareArgs(boot, { net: isolated }), {
     stdio: "inherit",
-    env: sandboxEnv(opts.env),
+    // An interactive boot is the one case where the terminal type has to come from the
+    // terminal: TERM=dumb makes Codex's TUI ask "Continue anyway?" before it starts.
+    env: sandboxEnv({ TERM: interactiveTerm(), ...opts.env }),
   })
   let slirp: { stop: () => void } | null = null
   try {
