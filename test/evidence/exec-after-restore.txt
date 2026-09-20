@@ -9,5 +9,5 @@ agent-output.txt
 greet.sh
 notes.txt
 --- agent commit still present? ---
-ca1ff86 agent: add agent-output.txt from inside the sandbox
+40b8f5c agent: add agent-output.txt from inside the sandbox
 --- stderr ---

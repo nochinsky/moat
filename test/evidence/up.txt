@@ -4,23 +4,23 @@
 --- stdout ---
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
-! the recorded sandbox pid 530329 is not moat's any more; ignoring it
-profiles: everything requested is already installed
-! the host project has changed since it was copied in, and the sandbox holds nothing that is not already on the host. Re-copying it now.
+→ provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
+→ provisioning from the cached image alpine-3.21.4-db69c015961d.tar.gz
+✓ image provisioned in 1.03s (extract cached image 870ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest a6e0969b405179d9
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and send it anywhere: its namespace is isolated from yours, its egress is not filtered. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-02-17
-→ sandbox booted (pid 530561, port 45939); waiting for opencode serve
-✓ sandbox up, warm start 63.77s (image reused)
+agent branch: moat-session-2026-09-20-02-39
+→ sandbox booted (pid 554324, port 34777); waiting for opencode serve
+✓ sandbox up, cold start 12.20s (image built)
 
   project    /home/user/moat-demo/egress-project
   env        /home/user/.moat/envs/16a525996d67
-  opencode   http://127.0.0.1:45939  (basic auth user "opencode")
-  password   tR6ADocmQ6K7n0tDJvq5iFeoe4V-Wp8r
+  opencode   http://127.0.0.1:34777  (basic auth user "opencode")
+  password   qNpDecOv6c3StFCdkKS2ESyoHS4UOxTv
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T06:17:49.037Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T06:39:10.374Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

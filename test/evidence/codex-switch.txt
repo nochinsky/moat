@@ -6,13 +6,13 @@
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-20-02-15
-✓ sandbox up, warm start 17.80s (image reused)
+agent branch: moat-session-2026-09-20-02-38
+✓ sandbox up, warm start 17.60s (image reused)
 
   project    /home/user/moat-demo/codex-runtime
   env        /home/user/.moat/envs/a3e8fefc7c25
-  opencode   http://127.0.0.1:42303  (basic auth user "opencode")
-  password   2WyBU5_v7lxBGJpuY-6M3-FmLz5NsSWn
+  opencode   http://127.0.0.1:34327  (basic auth user "opencode")
+  password   JZxiDlwvSFL36XTmwW6ee4dJDS4AOCwf
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do

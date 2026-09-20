@@ -2,5 +2,5 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-! reaped the datapath of a sandbox that is no longer running (pid 526451)
+! reaped the datapath of a sandbox that is no longer running (pid 552116)
 ✓ restored rootfs snapshot reap-base (the project copy in /work was preserved)

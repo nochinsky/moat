@@ -2,16 +2,16 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.03s (extract cached image 868ms)
+✓ image provisioned in 1.03s (extract cached image 876ms)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-20-02-14
-✓ sandbox up, cold start 12.32s (image built)
+agent branch: moat-session-2026-09-20-02-37
+✓ sandbox up, cold start 12.34s (image built)
 
   project    /home/user/moat-demo/nocred-doctor
   env        /home/user/.moat/envs/bc47e2d49e4f
-  opencode   http://127.0.0.1:45277  (basic auth user "opencode")
-  password   d2z2EIG4ollqkxNc5IERq8dbfAq4zMfN
+  opencode   http://127.0.0.1:33873  (basic auth user "opencode")
+  password   S5buDYyfvQo7NmZQuNaIB-1vMZ3x_g30
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do

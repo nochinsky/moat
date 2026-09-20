@@ -2,17 +2,17 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.06s (extract cached image 901ms)
+✓ image provisioned in 1.02s (extract cached image 866ms)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-20-02-13
-✓ sandbox up, cold start 13.15s (image built)
+agent branch: moat-session-2026-09-20-02-36
+✓ sandbox up, cold start 12.08s (image built)
 
   project    /home/user/moat-demo/killed
   env        /home/user/.moat/envs/00edb0f8f18c
-  opencode   http://127.0.0.1:37509  (basic auth user "opencode")
-  password   86wA9ohrU7q050G0DTZcFrYC5eyLk5lm
+  opencode   http://127.0.0.1:34625  (basic auth user "opencode")
+  password   ahZllj025tbxiyIAIBKJ3FJwMS2msYAv
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do
