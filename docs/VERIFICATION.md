@@ -91,7 +91,7 @@ The committed capture is `test/evidence/codex-up.txt`. The fields that matter:
   (`dirty: true`, one modified tracked file and one untracked file in the fixture), and a
   digest moat recomputes on the host before and after (§4a).
 * **provider**: a custom OpenAI-compatible endpoint on the host's loopback, which is also
-  why egress chose `open` — the documented exception in §7.3 of `docs/SPEC.md`.
+  why egress chose `open`, the documented exception in §7.3 of `docs/SPEC.md`.
 * **the runtime is ready**: `readyCheck: "the codex runtime has no server to wait for"`.
   There is no port and no `url` in the output, because there is no server; the same suite's
   `codex-status.json` carries `"runtime": "codex"` and nothing to connect to.
@@ -101,7 +101,7 @@ The committed capture is `test/evidence/codex-up.txt`. The fields that matter:
 
 ---
 
-## Criterion 2 — the interactive surface is Codex's own TUI
+## Criterion 2: the interactive surface is Codex's own TUI
 
 There is no client of moat's and no protocol between moat and the agent: `moat`, at a
 terminal, hands the sandbox the terminal it inherited and execs Codex's TUI. That it is
@@ -121,7 +121,7 @@ the "Not verified" table.
 
 ---
 
-## Criterion 3 — the agent completes a task requiring shell + file edits with zero permission prompts
+## Criterion 3: the agent completes a task requiring shell + file edits with zero permission prompts
 
 ```
 $ moat run "Create and edit a note file in the project, then commit it. Report what you did."
@@ -156,7 +156,7 @@ entry the config can turn off. See §6.1 of `docs/SPEC.md`.
 
 ---
 
-## Criterion 4 — proof the host is untouched
+## Criterion 4: proof the host is untouched
 
 ### 4a. The project tree is byte-identical before and after
 
@@ -181,8 +181,8 @@ $ node lib/hash.ts compare …
 }
 ```
 
-The agent wrote `agent-output.txt`, edited it, committed it, and read the project
-— and the host's tree digest did not move.
+The agent wrote `agent-output.txt`, edited it, committed it, and read the project.
+The host's tree digest did not move.
 
 ### 4b. The mount table inside the sandbox, in full
 
@@ -205,7 +205,7 @@ The agent wrote `agent-output.txt`, edited it, committed it, and read the projec
   note  network namespace shared       sandbox and host share net:[4026531833]. The agent has the host's network position.
 ```
 
-That is the complete table — all 13 entries, not a filtered view. Reading it
+That is the complete table: all 13 entries, not a filtered view. Reading it
 against the criterion:
 
 * **no host bind-mount of host data.** No entry references `/home`, `/mnt`,
@@ -222,11 +222,11 @@ against the criterion:
   regular file at `/dev/null`, which accepts writes and reports success), and
   `moat doctor` re-measures it as the row above. The control for that row is in
   `test/e2e-codex.sh` §3: the same `-c` test, run in a live box over
-  `/dev/null` and `/etc/hosts`, reports the regular file — so the passing row is
+  `/dev/null` and `/etc/hosts`, reports the regular file, so the passing row is
   a measurement that can fail. `test/unit/rootfs-write.test.ts` holds the boot
   script's refusals and `test/unit/doctor-mounts.test.ts` holds the mount
   analysis; both were watched failing against the previous revision.
-* **`/` is `ext4 /dev/sdd`** — the sandbox root is a directory on the host disk,
+* **`/` is `ext4 /dev/sdd`**: the sandbox root is a directory on the host disk,
   which is how it persists between sessions. It is the sandbox's own rootfs, not
   a view of the host's `/`. Confirmed by the next check: neither `/home/user` nor
   the project path exists inside it.
@@ -236,10 +236,10 @@ The check count is the **mode's**, not a constant: this capture is `open` and pr
 (`test/evidence/doctor.txt`) and `filtered` 17 (`test/evidence/doctor-filtered.txt`);
 the extra checks are the network namespace, the host loopback as a check rather than a
 documented exposure, and the two-sided egress check. `docs/SPEC.md` §2.4 deliberately
-carries no number — it said "15 isolation assertions" for a while and nothing kept it
-honest — and `test/unit/docs-claims.test.ts` fails if a count comes back.
+carries no number (it said "15 isolation assertions" for a while and nothing kept it
+honest), and `test/unit/docs-claims.test.ts` fails if a count comes back.
 
-### 4c. The sandbox is not just chrooted — every namespace differs from the host
+### 4c. The sandbox is not just chrooted: every namespace differs from the host
 
 ```
   pass  own mount namespace   sandbox mnt:[4026532229]  vs host mnt:[4026532219]
@@ -251,7 +251,7 @@ honest — and `test/unit/docs-claims.test.ts` fails if a count comes back.
 
 ---
 
-## Criterion 5 — `moat fetch` delivers the agent's branch; `git log` on the host shows only what the user chose to fetch
+## Criterion 5: `moat fetch` delivers the agent's branch; `git log` on the host shows only what the user chose to fetch
 
 ```
 $ moat fetch
@@ -274,7 +274,7 @@ $ git log --oneline --decorate refs/moat/main
 0b97af8 (HEAD -> main) initial demo project
 ```
 
-The host's own state did not move — `HEAD` is the same before and after, the
+The host's own state did not move. `HEAD` is the same before and after, the
 working tree is unchanged, and only the user's pre-existing edits are present:
 
 ```
@@ -389,7 +389,7 @@ duration of the test; the acceptance suite asserts the same three paths independ
 
 ---
 
-## Criterion 8 — the credential is injected, scoped, short-lived, and never baked into the image
+## Criterion 8: the credential is injected, scoped, short-lived, and never baked into the image
 
 ### 8a. It is injected, and it reaches the provider
 
@@ -402,8 +402,8 @@ same record is where the advertised tool list comes from.
 
 Evidence: `test/evidence/codex-credential-not-in-image.txt`, `test/evidence/codex-config.txt`.
 
-The entire rootfs — hundreds of MiB, including the pinned runtime binary and the entry
-script — was searched for the literal value:
+The entire rootfs (hundreds of MiB, including the pinned runtime binary and the entry
+script) was searched for the literal value:
 
 ```
 $ grep -r --binary-files=without-match -l <credential> /home/user/.moat/envs/<id>/rootfs/ | head
@@ -446,7 +446,7 @@ work; `docs/SPEC.md` §5.3 says so.
 
 ---
 
-## Criterion 9 — environments persist per project, and snapshots capture the rootfs, not the project
+## Criterion 9: environments persist per project, and snapshots capture the rootfs, not the project
 
 ```
 $ moat exec -- /bin/sh -c "echo persisted-$(date -u +%s) > /opt/moat-marker; until apk add --no-cache jq; do …; done"
@@ -468,18 +468,18 @@ jq-1.7.1
 ```
 
 The rootfs and the project copy in `/work` survive a full stop and a boot, and a package
-the agent installed is still there afterwards. Snapshots capture the rootfs — installs,
-state — and exclude `/work`; the restore half is extras section A/B
+the agent installed is still there afterwards. Snapshots capture the rootfs (installs,
+state) and exclude `/work`; the restore half is extras section A/B
 (`test/evidence/snapshot-take.txt`, `snapshot-restore.txt`).
 
 ---
 
-## The harness — providers, profiles, and the agent brief
+## The harness: providers, profiles, and the agent brief
 
 Added after v0 passed, for production use with DeepSeek.
 These are the checks that the harness is *wired* correctly; the model quality is
 the provider's business, and no API key exists on this host, so what is verified
-here is configuration, resolution and capability — never a claim about a model.
+here is configuration, resolution and capability: never a claim about a model.
 
 ### Model and provider resolution
 
@@ -593,7 +593,7 @@ $ git -C <project> status --porcelain
 `moat apply` materialises the recorded baseline by running `git archive` and
 unpacking the result. Both halves of that went through the process: the archive
 was captured as a UTF-8 string and written back to `tar`'s stdin. A tar archive
-is binary, and the round-trip is lossy — a byte that is not valid UTF-8 decodes
+is binary, and the round-trip is lossy: a byte that is not valid UTF-8 decodes
 to U+FFFD, which re-encodes to **three** bytes, so the stream grows and every
 header after the damage is read from the wrong offset. `tar` then stops partway.
 
@@ -605,7 +605,7 @@ the stream to a `tar` that had already exited raises `EPIPE` on its stdin, and a
 `error` event with no listener is fatal in Node.
 
 Reproduced by putting a binary file in the project, named so that it sorts before
-everything else — tar has to stop early enough to lose the files after it:
+everything else: tar has to stop early enough to lose the files after it:
 
 ```
 $ node --test test/unit/apply.test.ts   # with a binary file in the fixture
@@ -730,7 +730,7 @@ curl-exit=28
 
 The blocked probe is asserted twice on purpose: that `curl-exit=` is present at
 all (the command ran, the boot did not fail before it) and that it is not 0. The
-first assertion is what keeps the second from passing vacuously — the tranche
+first assertion is what keeps the second from passing vacuously: the tranche
 before this one "passed" the blocked check while the box was not booting.
 
 The gateway check exists because the obvious probe was vacuous. Testing
@@ -746,8 +746,8 @@ default slirp:            guest -> 10.0.2.2:45681 -> HTTP 200
 
 So the launcher passes the flag, and `moat doctor` measures both addresses and
 fails a namespaced run if either answers. In `filtered` mode the in-sandbox check
-is two-sided — an address outside the allowlist (1.1.1.1:443) must be refused
-**and** the allowlisted provider must be reachable — so a ruleset that drops
+is two-sided: an address outside the allowlist (1.1.1.1:443) must be refused
+**and** the allowlisted provider must be reachable. So a ruleset that drops
 everything, including the provider, fails the run.
 
 Two defects found while building this are guarded by unit tests that were watched
@@ -785,8 +785,8 @@ curl-exit=0
 
 Every boot re-applies the ruleset and `moat doctor` re-measures the policy, so a
 flushed filter is detected on the next run, not prevented. What the policy buys is
-a bound on where the box sends data during normal work — a runaway install, a
-prompt-injected `curl`, an accidental upload — not containment of an agent that is
+a bound on where the box sends data during normal work (a runaway install, a
+prompt-injected `curl`, an accidental upload), not containment of an agent that is
 trying to leave. Containing that one means the agent losing root, which is
 incompatible with handing it a package manager, or the v1 microVM. SPEC §7.3 says
 this in the contract, not only here.
@@ -833,7 +833,7 @@ Evidence: `test/evidence/logs-traversal.txt`, `test/evidence/logs-bad-tail.txt`,
 
 Small defects of the same shape: an argv that becomes a path or a number without
 being checked, plus one flag whose unit depended on where it was read. They are
-asserted where they cost nothing — the extras suite, section R — and the pure part has
+asserted where they cost nothing (the extras suite, section R), and the pure part has
 a unit test.
 
 ```
@@ -876,7 +876,7 @@ Both of those checks were watched failing with the recovery removed (2 FAILED).
 `test/unit/env-recovery.test.ts` covers the reconstruction without a sandbox: the
 branch and the copy-in baseline read back out of the sandbox repository, the version
 read through the symlink guard, a detached head reported as no branch, and the three
-things that must not be invented — a credential, a host baseline, a runtime version.
+things that must not be invented: a credential, a host baseline, a runtime version.
 
 One deliberate limit: recovery happens on the next `moat up`. `moat fetch`, `moat take`
 and `moat verify` still require a readable state, so a lost file means one boot before
@@ -897,8 +897,8 @@ failed); and a second `moat up` booted a second box over the same rootfs, after
 which `state.json` records whichever finished last and the other sandbox is alive
 with nothing tracking it.
 
-The long-running boot now writes `runtime/boot.json` before its first slow step —
-pid and start time, the same identity rule the sandbox pid follows — and clears it
+The long-running boot now writes `runtime/boot.json` before its first slow step
+(pid and start time, the same identity rule the sandbox pid follows) and clears it
 when the boot is over:
 
 ```
@@ -941,8 +941,8 @@ unique boot scripts), and serialising them would be a worse trade.
 
 ### S. Agent text cannot drive the terminal it is printed on
 
-Everything the sandbox emits — the answer, the reasoning, commit subjects, branch
-names, change paths, session titles, the boot log — is *terminal input* as much as it is
+Everything the sandbox emits (the answer, the reasoning, commit subjects, branch
+names, change paths, session titles, the boot log) is *terminal input* as much as it is
 data, and a terminal acts on escape sequences: OSC 0 retitles the window, OSC 52
 writes the clipboard where the terminal allows it, CSI 2J clears the screen, and a
 carriage return overwrites the row. Tool output and tool titles were already
@@ -975,7 +975,7 @@ sandbox log: the agent's own escape bytes are stripped, its text is not
 Four of the seven pty checks fail with `stripAnsi` made a no-op, and the log check
 fails with the one call in `rootfsLogTail` reverted. `test/unit/terminal-text.test.ts`
 covers the helper without a terminal: every sequence a terminal would act on, and the
-stream case — a sequence split across two deltas cannot be reassembled, because
+stream case: a sequence split across two deltas cannot be reassembled, because
 `stripAnsi` removes every ESC byte either as a sequence or as a control character, so
 neither half can begin one. An `AnswerRenderer` case asserts the same at the
 renderer, with colour off, so every escape in that output would have come from the
@@ -1015,7 +1015,7 @@ manager still read from the lockfile. Four of its six fail with the filter rever
 ### V. `--timeout` shortens a check that hangs
 
 `--timeout` is seconds everywhere, and `runChecks` has taken a `timeoutSeconds`
-argument from the beginning — but no caller passed one. `moat verify --timeout 1`
+argument from the beginning, but no caller passed one. `moat verify --timeout 1`
 was accepted by the global flag table and then ignored, so a project whose test
 sleeps for three seconds ran to completion and reported pass:
 
@@ -1041,8 +1041,8 @@ $ moat verify --timeout 1
 
 Extras section Y is that pair: the same project with the default budget (pass, 3.2s)
 and with `--timeout 1` (timed out, 1.0s, exit 1). It fails with the wiring reverted.
-The runner's own mechanics — the kill, the escalation for a process that traps
-SIGTERM, and a command with quotes and substitution arriving intact — were already
+The runner's own mechanics (the kill, the escalation for a process that traps
+SIGTERM, and a command with quotes and substitution arriving intact) were already
 covered by `test/unit/checks-runner.test.ts`. The REPL's `/verify` has no flag and
 keeps the default.
 
@@ -1055,7 +1055,7 @@ below is the fix for that.
 Evidence: `test/evidence/flag-refused.txt`, `test/evidence/loud-up.txt`, `test/evidence/quiet-up.txt`, `test/evidence/help-flag.txt`.
 
 `parse` checked that a flag *existed*, not that the command *read* it, so a flag a
-command ignored was accepted and dropped. Two real bugs came out of that silence —
+command ignored was accepted and dropped. Two real bugs came out of that silence:
 `--timeout` never reached the checks runner (§V), and `--quiet`, which every harness in
 this repository passes on `moat up`, was read by nothing at all. A third was worse than
 silence: `moat up --help` booted a sandbox.
@@ -1070,8 +1070,8 @@ $ moat fetch --timeout 5
 --- exit 1
 ```
 
-`--quiet` hides the progress lines (warnings and results still print) — the point
-of the flag the suites were already passing:
+`--quiet` hides the progress lines (warnings and results still print), which is the
+point of the flag the suites were already passing:
 
 ```
 $ moat up --quiet …                       # no progress lines at all
@@ -1120,7 +1120,7 @@ the brief for a boot with no credential and no `db` profile:
 
 Both are false for that box. A boot against a local `--base-url` endpoint injects no
 credential (the stub-provider sections boot exactly that way), and `db` is never
-auto-detected — it takes an explicit `--profile db` — so the default brief told every
+auto-detected (it takes an explicit `--profile db`), so the default brief told every
 agent to guard a key it did not have and to start servers that were not installed.
 After the fix the same render says:
 
@@ -1169,20 +1169,20 @@ committed and deleted again is still named: `test/unit/leak-scan.test.ts` builds
 history (the working tree is clean at the tip and the blob is in the fetched objects) and
 fails if the scan looks at the tip alone. The control runs the same boot and the same commit
 path without the value and requires silence (`grep -c 'credential moat injected'` → `0`), so
-the check cannot pass by warning about everything. The file is still written — a warning, not
+the check cannot pass by warning about everything. The file is still written: a warning, not
 a gate, because a half-apply would be worse than a named exposure. Both positive halves were
 watched failing with the scan disabled (the two leak assertions fail; the controls pass).
 
 The paths in the warning are the agent's, so they go through `stripAnsi` like every other
-string that came out of the sandbox, and the value never reaches argv — `git grep` reads it
+string that came out of the sandbox, and the value never reaches argv: `git grep` reads it
 from a 0600 patterns file, because `ps` is world-readable. What the scan cannot see is in
 SPEC §4 and the closing table: a key rotated since the boot (the sandbox holds only a
 fingerprint), a secret the agent found elsewhere, commits older than the most recent 50, and
-files over the apply scan's size limit — each bound is named when it is reached.
+files over the apply scan's size limit, and each bound is named when it is reached.
 
 ### AA. A base URL the sandbox cannot use is refused, and the doctor does not claim a probe it did not run
 
-`--base-url` and `--upstream` were checked with `new URL()` — a parse check, not a
+`--base-url` and `--upstream` were checked with `new URL()`, a parse check, not a
 usability check. `localhost:11434/v1`, the scheme-less form of the endpoint moat's own
 error text suggests, parses as protocol `localhost:` with an **empty hostname**.
 Measured before the fix, on a real boot:
@@ -1200,8 +1200,8 @@ isolation (17 checks)
   pass  egress filtered                an address outside the allowlist (1.1.1.1:443) is refused, and the provider is reachable
 ```
 
-Exit 0, a *filtered* box whose allowlist contains no provider address — both
-`providerHost()` and `providerProbe()` read `.hostname` — so every model call the agent
+Exit 0, a *filtered* box whose allowlist contains no provider address (both
+`providerHost()` and `providerProbe()` read `.hostname`), so every model call the agent
 made would fail. The doctor then covered for it with a claim about a probe it never ran,
 because `allowedOk` was `!allowedProbe || …`.
 
@@ -1218,16 +1218,16 @@ $ moat up --quiet --no-detect --model mock-model --base-url localhost:5599/v1
 Extras section AC is that refusal plus the control that the same endpoint *with* the
 scheme boots (`✓ sandbox up, cold start 9.05s`, `--- exit 0`), so it cannot pass by
 refusing every URL. The capture contains no `image provisioned` or `copy-in via` line,
-which is what makes "before provisioning" checkable rather than asserted — and those are
+which is what makes "before provisioning" checkable rather than asserted, and those are
 success lines, so `--quiet` cannot hide them. `test/unit/base-url.test.ts` pins the rule
 in both directions (`file://`, a bare host, an empty value, and four usable URLs), and
 `test/unit/doctor-egress.test.ts` pins the doctor's three cases: probed and reachable,
-probed and unreachable, not probed — the last now reports the check as one-sided. All
+probed and unreachable, not probed; the last now reports the check as one-sided. All
 three tests were watched failing with the shape checks disabled and the vacuous detail
 restored.
 
 An environment whose `state.json` recorded a hostless address *before* this fix keeps
-booting — the address is metadata, and the sandbox may hold work — but its doctor reports
+booting (the address is metadata, and the sandbox may hold work), but its doctor reports
 the filtered check as one-sided, and `moat up --fresh` is the way to replace it.
 
 ### AB. A re-copy cannot discard work on another sandbox branch
@@ -1235,7 +1235,7 @@ the filtered check as one-sided, and `moat up --fresh` is the way to replace it.
 Evidence: `test/evidence/branchloss-up.txt`, `test/evidence/branchloss-up-again.txt`, `test/evidence/branchloss-fetched.txt`.
 
 `countUnfetched` answers "how many commits does the sandbox hold that the host cannot
-reach?" — and it used to answer for the sandbox's **HEAD only**. An agent that leaves a
+reach?", and it used to answer for the sandbox's **HEAD only**. An agent that leaves a
 commit on a branch it is not standing on therefore looked like an empty box. Measured
 before the fix, on a real boot: a commit on `experiment`, `git checkout` back to the
 session branch, the host project edited, `moat up` again:
@@ -1286,7 +1286,7 @@ Extras section AD is that pair of boots plus the control: after `moat fetch --al
 same host change re-copies automatically (`holds nothing that is not already on the
 host`, `copy-in via git`), because the work is on the host under `refs/moat/*` and the
 re-copy is lossless. `test/unit/unfetched-count.test.ts` covers the count without a
-sandbox — a commit on a side branch, two branches with one commit each, a commit kept
+sandbox: a commit on a side branch, two branches with one commit each, a commit kept
 alive only by a tag, the fetched case dropping back to zero, and a host that is not a
 repository. The side-branch, multi-branch and tag tests were watched failing with the
 HEAD-only version restored. One trap inside the fix itself, caught by the non-git test:
@@ -1297,7 +1297,7 @@ HEAD-only version restored. One trap inside the fix itself, caught by the non-gi
 Evidence: `test/evidence/detached-up.txt`, `test/evidence/detached-up-again.txt`, `test/evidence/detached-log.txt`, `test/evidence/detached-fetch.txt`.
 
 §AB made `countUnfetched` walk every branch and tag tip. HEAD itself was still missing, so
-work committed on a detached HEAD — a normal way to try something — stayed invisible to the
+work committed on a detached HEAD (a normal way to try something) stayed invisible to the
 same drift check. Measured before the fix, on a real boot: `git checkout --detach HEAD`,
 commit, leave the box, edit the host project, `moat up` again:
 
@@ -1313,7 +1313,7 @@ ls: cannot access '/work/detached.txt': No such file or directory
 ```
 
 The commit (`2b2aab9`, "work on a detached HEAD") and its file were gone. `moat fetch`
-could not have collected it either — it reads branches — so the fix has two parts: HEAD's
+could not have collected it either (it reads branches), so the fix has two parts: HEAD's
 commit is counted as a tip, and when HEAD is detached the warning names the way out instead
 of pointing at a command that cannot help. Extras section AE, after the fix:
 
@@ -1341,7 +1341,7 @@ slirp after destroy: 1               # the orphan outlived the destructive comma
 ```
 
 `moat up` now stops a recorded datapath whose box is no longer alive, before it starts
-the new box, and says so only when there was something to reap — the datapath can also
+the new box, and says so only when there was something to reap: the datapath can also
 exit on its own when the tap goes away. Extras section AG:
 
 ```
@@ -1353,8 +1353,8 @@ out-of-band kill: no orphaned datapath survives the next boot, and destroy takes
 ```
 
 Because the datapath sometimes exits by itself within a second of the kill, a second,
-deterministic half keeps the box alive and makes its *recorded identity* stale instead —
-the state a reboot with pid reuse leaves — so the datapath is certainly running when the
+deterministic half keeps the box alive and makes its *recorded identity* stale instead
+(the state a reboot with pid reuse leaves), so the datapath is certainly running when the
 next boot decides:
 
 ```
@@ -1396,7 +1396,7 @@ restore: the datapath is reaped before the record that names it is cleared
 ```
 
 What this does not stop is the box itself: its recorded identity is stale, so `moat down`,
-`restore` and `destroy` refuse to signal that pid — that is the pid-reuse guard above — and
+`restore` and `destroy` refuse to signal that pid (that is the pid-reuse guard above), and
 `destroy` removes the environment while that process keeps running. Only the datapath, which
 moat can attribute by pid and start time, is reaped.
 
@@ -1406,15 +1406,15 @@ all is a no-op. The mismatch case was watched failing with the start-time compar
 `test/unit/datapath-reap.test.ts` holds the shape: only `forgetBox` may write
 `slirpPid: null`, and it reaps before it writes (watched failing with a direct write back in
 `moat down`, naming the line), and a command that removes the environment has to call a
-reaper somewhere — a coarse rule that cannot see one branch of `destroy` losing its call
+reaper somewhere: a coarse rule that cannot see one branch of `destroy` losing its call
 while another branch keeps one, which is why the `destroy` half above is the per-branch
-proof (watched failing with that call removed: `destroy: FAILED — datapath left=1
+proof (watched failing with that call removed: `destroy: FAILED`, `datapath left=1
 envdir=gone`).
 
 ### AF. The doctor reports the credential state the box has, not the one its probe invented
 
 The environment check runs in an ephemeral boot whose environment is built to match the real
-box, so it injects the names the box has — but every credential name was injected
+box, so it injects the names the box has, but every credential name was injected
 unconditionally. On a box booted with `--no-credential` (SPEC §1.3's "nothing stealable in
 the box" mode) the probe put `DEEPSEEK_API_KEY`, `MOAT_INJECTED_CREDENTIAL` and the
 `MOAT_CREDENTIAL_*` records into a box that had none, and the report read:
@@ -1431,11 +1431,11 @@ the box" mode) the probe put `DEEPSEEK_API_KEY`, `MOAT_INJECTED_CREDENTIAL` and 
 
 Every one of those credential names existed only inside the probe, and the advice to rotate a
 provider token was for a key the user had deliberately kept out of the box. A custom endpoint
-was reported the same way, including `DEEPSEEK_API_KEY`, which it never has — it receives the
+was reported the same way, including `DEEPSEEK_API_KEY`, which it never has: it receives the
 value under moat's own name.
 
-The probe list now comes from the environment's own state —
-`doctorInjectedVarNames({ credential: Boolean(state.credential), native })` — and the wording
+The probe list now comes from the environment's own state
+(`doctorInjectedVarNames({ credential: Boolean(state.credential), native })`), and the wording
 only calls the names that carry a credential "the credential". The same keyless box:
 
 ```
