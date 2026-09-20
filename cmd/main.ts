@@ -2836,6 +2836,8 @@ async function runCodexTask(paths: EnvPaths, body: string, opts: CodexRunOptions
   }
   for (const message of turn.messages) log.info(`\n${stripAnsi(message).trimEnd()}`)
   for (const error of turn.errors) log.warn(stripAnsi(error))
+  // Advisories are shown, dimmed, and never counted as failures in the footer.
+  for (const notice of turn.notices) log.info(`  ${log.dim(stripAnsi(notice))}`)
   if (turn.usage) {
     const usage = {
       input: turn.usage.input,

@@ -26,13 +26,16 @@ test("a real codex exec stream becomes one row per tool, the answer, and usage",
   // `input_tokens` includes the cached ones: 18118 total prompt, 9088 of it cache hits, so
   // the cache-*miss* count is 9030. Charging both fields would double count the hits.
   assert.deepEqual(turn.usage, { input: 9030, cached: 9088, output: 238, reasoning: 0 })
-  assert.equal(turn.errors.length, 1, "the metadata notice is reported, not swallowed")
+  // The metadata advisory is not a failure: counting it made a good run read "1 error".
+  assert.deepEqual(turn.errors, [])
+  assert.equal(turn.notices.length, 1, "the advisory is kept, not swallowed")
 })
 
 test("events that carry no item are not invented, and junk lines are skipped", () => {
   const turn = parseCodexEvents(["{\"type\":\"turn.started\"}", "not json", "", "{\"type\":\"turn.completed\"}"].join("\n"))
   assert.deepEqual(turn.tools, [])
   assert.deepEqual(turn.errors, [])
+  assert.deepEqual(turn.notices, [])
   assert.deepEqual(turn.usage, { input: 0, cached: 0, output: 0, reasoning: 0 })
 })
 

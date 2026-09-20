@@ -4,34 +4,34 @@
 ==============================================================
 
 == 1. a fixture that genuinely fails
-fixture: 8630f30, src: cli.js slugify.js  test: slugify.test.js 
+fixture: 2f174d6, src: cli.js slugify.js  test: slugify.test.js 
 before: ℹ pass 1 ℹ fail 5 
 
 == 2. boot with the real provider
 
---- $ node /home/user/Projects/moat/cmd/main.ts destroy --yes
+--- $ node /home/ektor/Projects/moat/cmd/main.ts destroy --yes
 nothing to destroy
 --- exit 0
 
---- $ node /home/user/Projects/moat/cmd/main.ts up --model deepseek-flash --profile node --credential-env DEEPSEEK_API_KEY
+--- $ node /home/ektor/Projects/moat/cmd/main.ts up --runtime opencode --model deepseek-flash --profile node --credential-env DEEPSEEK_API_KEY
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31 + node)
-→ provisioning from the cached image alpine-3.21.4-085c49949f85.tar.gz
-✓ image provisioned in 1.53s (extract cached image 1.30s)
+→ provisioning from the cached image alpine-3.21.4-f3028d4ae3f6.tar.gz
+✓ image provisioned in 1.54s (extract cached image 1.30s)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 4 files, 1.2 KiB, digest 12dba387081516f5
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-21-38
+agent branch: moat-session-2026-09-20-02-21
 checks: npm run test
-→ sandbox booted (pid 307411, port 43937); waiting for opencode serve
-✓ sandbox up, cold start 13.89s (image built)
+→ sandbox booted (pid 534028, port 41091); waiting for opencode serve
+✓ sandbox up, cold start 13.66s (image built)
 
-  project    /home/user/moat-demo/live-project
-  env        /home/user/.moat/envs/1ade356a6e72
-  opencode   http://127.0.0.1:43937  (basic auth user "opencode")
-  password   uovLKI8mGDTz4Bmf5cfQQUe3zs5UIEl4
+  project    /home/ektor/moat-demo/live-project
+  env        /home/ektor/.moat/envs/1ade356a6e72
+  opencode   http://127.0.0.1:41091  (basic auth user "opencode")
+  password   _hHkhMf_7-2kLGp9BlAVTIjzRjFPOuFW
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T01:38:39.172Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T06:21:54.423Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -41,29 +41,35 @@ checks: npm run test
 == 3. the agent does the work
 note: no output appears until the turn completes; watch the sandbox log for progress
 
---- $ timeout 1800 node /home/user/Projects/moat/cmd/main.ts attach --show-output --prompt npm test is failing. Run it, find the bug in src/slugify.js, and fix it so the whole suite passes. Then run npm install and verify the CLI works end to end. Commit everything to the branch you are on, and report the final test output.
+--- $ timeout 1800 node /home/ektor/Projects/moat/cmd/main.ts attach --show-output --prompt npm test is failing. Run it, find the bug in src/slugify.js, and fix it so the whole suite passes. Then run npm install and verify the CLI works end to end. Commit everything to the branch you are on, and report the final test output.
 [tool] bash (running) 
 [tool] read (running) 
-[tool] bash (running) 
-[tool] bash (completed) ls -la && git status && git branch --show-current
+[tool] bash (completed) ls -la && git status && git log --oneline -5
 [tool-output] total 24
-drwxr-xr-x  5 root root 4096 Sep 19 21:38 .
-drwxr-xr-x 22 root root 4096 Sep 19 21:38 ..
-drwxr-xr-x  7 root root 4096 Sep 19 21:38 .git
--rw-r--r--  1 root root  152 Sep 19 21:38 package.json
-drwxr-xr-x  2 root root 4096 Sep 19 21:38 src
-drwxr-xr-x  2 root root 4096 Sep 19 21:38 test
-On branch moat-session-2026-09-19-21-38
+drwxr-xr-x  5 root root 4096 Sep 20 02:21 .
+drwxr-xr-x 22 root root 4096 Sep 20 02:21 ..
+drwxr-xr-x  7 root root 4096 Sep 20 02:21 .git
+-rw-r--r--  1 root root  152 Sep 20 02:21 package.json
+drwxr-xr-x  2 root root 4096 Sep 20 02:21 src
+drwxr-xr-x  2 root root 4096 Sep 20 02:21 test
+On branch moat-session-2026-09-20-02-21
 nothing to commit, working tree clean
-moat-session-2026-09-19-21-38
-[tool] bash (completed) cat package.json
-[tool-output] {
-  "name": "slugkit",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": { "test": "node --test" },
-  "dependencies": { "picocolors": "^1.1.1" }
-}
+2f174d6 slugkit: initial commit (test suite currently failing)
+[tool] read (running) 
+[tool] read (completed) package.json
+[tool-output] <path>/work/package.json</path>
+<type>file</type>
+<content>
+1: {
+2:   "name": "slugkit",
+3:   "version": "1.0.0",
+4:   "type": "module",
+5:   "scripts": { "test": "node --test" },
+6:   "dependencies": { "picocolors": "^1.1.1" }
+7: }
+
+(End of file - total 7 lines)
+</content>
 [tool] read (completed) src/slugify.js
 [tool-output] <path>/work/src/slugify.js</path>
 <type>file</type>
@@ -76,20 +82,19 @@ moat-session-2026-09-19-21-38
 (End of file - total 4 lines)
 </content>
 [tool] bash (running) 
-[tool] bash (completed) ls -la src test && for f in test/* src/*; do echo "=== $f ==="; cat "$f"; done
+[tool] bash (completed) ls -la src test && cat test/* 2>/dev/null; echo "---"; for f in src/*.js; do echo "=== $f ==="; cat "$f"; done
 [tool-output] src:
 total 16
-drwxr-xr-x 2 root root 4096 Sep 19 21:38 .
-drwxr-xr-x 5 root root 4096 Sep 19 21:38 ..
--rw-r--r-- 1 root root  322 Sep 19 21:38 cli.js
--rw-r--r-- 1 root root  162 Sep 19 21:38 slugify.js
+drwxr-xr-x 2 root root 4096 Sep 20 02:21 .
+drwxr-xr-x 5 root root 4096 Sep 20 02:21 ..
+-rw-r--r-- 1 root root  322 Sep 20 02:21 cli.js
+-rw-r--r-- 1 root root  162 Sep 20 02:21 slugify.js
 
 test:
 total 12
-drwxr-xr-x 2 root root 4096 Sep 19 21:38 .
-drwxr-xr-x 5 root root 4096 Sep 19 21:38 ..
--rw-r--r-- 1 root root  628 Sep 19 21:38 slugify.test.js
-=== test/slugify.test.js ===
+drwxr-xr-x 2 root root 4096 Sep 20 02:21 .
+drwxr-xr-x 5 root root 4096 Sep 20 02:21 ..
+-rw-r--r-- 1 root root  628 Sep 20 02:21 slugify.test.js
 import test from "node:test"
 import assert from "node:assert/strict"
 import { slugify } from "../src/slugify.js"
@@ -100,6 +105,7 @@ test("trims", () => assert.equal(slugify("  Hello World  "), "hello-world"))
 test("drops punctuation", () => assert.equal(slugify("Hello, World!"), "hello-world"))
 test("no trailing hyphen", () => assert.equal(slugify("Hello World --- "), "hello-world"))
 test("transliterates accents", () => assert.equal(slugify("Crème Brûlée"), "creme-brulee"))
+---
 === src/cli.js ===
 import pc from "picocolors"
 import { slugify } from "./slugify.js"
@@ -112,58 +118,54 @@ console.log(pc.green(slugify(input)))
 export function slugify(input) {
   return input.toLowerCase().replace(/ /g, "-")
 }
+[tool] edit (running) 
+[tool] edit (completed) src/slugify.js
+[tool-output] Edit applied successfully.
 [tool] bash (running) 
-[tool] bash (completed) npm test 2>&1 | tail -40
-[tool-output]     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+[tool] bash (completed) npm install && npm test
+[tool-output] 
+added 1 package, and audited 2 packages in 707ms
+
+found 0 vulnerabilities
+
+> slugkit@1.0.0 test
+> node --test
+
+TAP version 13
+# Subtest: lowercases
+ok 1 - lowercases
+  ---
+  duration_ms: 1.472592
+  type: 'test'
+  ...
+# Subtest: collapses runs of whitespace
+ok 2 - collapses runs of whitespace
+  ---
+  duration_ms: 0.235808
+  type: 'test'
+  ...
+# Subtest: trims
+ok 3 - trims
+  ---
+  duration_ms: 0.121449
+  type: 'test'
+  ...
+# Subtest: drops punctuation
+ok 4 - drops punctuation
+  ---
+  duration_ms: 0.134022
+  type: 'test'
+  ...
+# Subtest: no trailing hyphen
+ok 5 - no trailing hyphen
+  ---
+  duration_ms: 0.149108
+  type: 'test'
   ...
 # Subtest: transliterates accents
-not ok 6 - transliterates accents
-  ---
-  duration_ms: 0.348876
-  type: 'test'
-  location: '/work/test/slugify.test.js:10:1'
-  failureType: 'testCodeFailure'
-  error: |-
-    Expected values to be strictly equal:
-    + actual - expected
-    
-    + 'crème-brûlée'
-    - 'creme-brulee'
-         ^
-    
-  code: 'ERR_ASSERTION'
-  name: 'AssertionError'
-  expected: 'creme-brulee'
-  actual: 'crème-brûlée'
-  operator: 'strictEqual'
-  stack: |-
-    TestContext.<anonymous> (file:///work/test/slugify.test.js:10:45)
-    Test.runInAsyncScope (node:async_hooks:214:14)
-    Test.run (node:internal/test_runner/test:1047:25)
-    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
-    Test.postRun (node:internal/test_runner/test:1173:19)
-    Test.run (node:internal/test_runner/test:1101:12)
-    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
-  ...
-1..6
-# tests 6
-# suites 0
-# pass 1
-# fail 5
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 85.536388
-[tool] write (running) 
-[tool] write (completed) src/slugify.js
-[tool-output] Wrote file successfully.
-[tool] bash (running) 
-[tool] bash (running) 
-[tool] bash (completed) npm test 2>&1 | tail -15
-[tool-output] # Subtest: transliterates accents
 ok 6 - transliterates accents
   ---
-  duration_ms: 0.171359
+  duration_ms: 0.174853
   type: 'test'
   ...
 1..6
@@ -174,65 +176,52 @@ ok 6 - transliterates accents
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 82.40653
-[tool] bash (completed) npm install 2>&1 | tail -15
-[tool-output] 
-added 1 package, and audited 2 packages in 664ms
-
-found 0 vulnerabilities
+# duration_ms 93.059254
 [tool] bash (running) 
-[tool] bash (running) 
-[tool] bash (completed) git status --short
-[tool-output]  M src/slugify.js
-?? node_modules/
-?? package-lock.json
-[tool] bash (completed) node src/cli.js "Crème Brûlée --- Test" && node src/cli.js --version && node src/cli.js; echo "exit=$?"
-[tool-output] creme-brulee-test
+[tool] bash (completed) node src/cli.js "Crème Brûlée, World!" && node src/cli.js --version && node src/cli.js; echo "exit=$?"
+[tool-output] creme-brulee-world
 slugkit 1.0.0
 usage: slugkit <title>
 exit=1
+[tool] bash (running) 
+[tool] bash (completed) git status --short && ls -a | grep ignore || true
+[tool-output]  M src/slugify.js
+?? node_modules/
+?? package-lock.json
 [tool] write (running) 
 [tool] write (completed) .gitignore
 [tool-output] Wrote file successfully.
 [tool] bash (running) 
-[tool] bash (completed) git add .gitignore src/slugify.js package-lock.json && git commit -q -m "Fix slugify to handle whitespace, punctuation, and accents
+[tool] bash (completed) git add .gitignore package-lock.json src/slugify.js && git commit -m "Fix slugify to handle whitespace, punctuation, and accents
 
-Normalize Unicode, strip combining marks, collapse non-alphanumeric
-runs into single hyphens, and trim leading/trailing hyphens. Adds
-package-lock.json from npm install and ignores node_modules." && git log --oneline -3 && npm test 2>&1 | tail -9
-[tool-output] b79c2b2 Fix slugify to handle whitespace, punctuation, and accents
-8630f30 slugkit: initial commit (test suite currently failing)
-1..6
-# tests 6
-# suites 0
-# pass 6
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 82.621869
-Done. Committed as `b79c2b2`.
+Collapse whitespace runs, trim, drop non-alphanumerics, and
+transliterate accented characters via NFD normalization. Add
+.gitignore for node_modules and commit the lockfile." && git log --oneline -3
+[tool-output] [moat-session-2026-09-20-02-21 a502155] Fix slugify to handle whitespace, punctuation, and accents
+ 3 files changed, 28 insertions(+), 2 deletions(-)
+ create mode 100644 .gitignore
+ create mode 100644 package-lock.json
+a502155 Fix slugify to handle whitespace, punctuation, and accents
+2f174d6 slugkit: initial commit (test suite currently failing)
+Fixed `src/slugify.js:1` — it now normalizes/transliterates accents, lowercases, collapses all non-alphanumerics into single hyphens, and strips leading/trailing hyphens.
 
-Bug: `src/slugify.js` only lowercased and replaced single spaces, so runs of whitespace, punctuation, trimming, and accents were unhandled. Fixed by NFKD-normalizing and stripping combining marks, collapsing non-alphanumeric runs to `-`, and trimming edge hyphens.
+`npm install` succeeded and the CLI works end to end:
+- `node src/cli.js "Crème Brûlée, World!"` → `creme-brulee-world`
+- `node src/cli.js --version` → `slugkit 1.0.0`
+- no args → red usage message, exit 1
 
-CLI verified: `Crème Brûlée --- Test` → `creme-brulee-test`, `--version` works, missing arg exits 1.
+Committed as `a502155` on `moat-session-2026-09-20-02-21` (added `.gitignore` for `node_modules/`, committed `package-lock.json`).
 
 Final `npm test`:
 ```
-1..6
 # tests 6
 # pass 6
 # fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 82.621869
+# duration_ms 93.059254
 ```
 
-`npm install` succeeded (1 package, 0 vulnerabilities). Committed the fix, `package-lock.json`, and a `.gitignore` for `node_modules/` (not committed, per convention).
 
-
-session ses_f44646551ffejkrlKJ6i4fRPK5   12 tool call(s)
+session ses_f436112bfffe7QrpEv8aZBLAQ1   10 tool call(s)
 --- exit 0
 
 == 4. verify the agent's claims independently
@@ -271,37 +260,89 @@ curl-exit=28
 
 == 6. copy the work back, without touching the working tree
 
---- $ node /home/user/Projects/moat/cmd/main.ts fetch
-→ copy-out: git fetch /home/user/.moat/envs/1ade356a6e72/rootfs/work +refs/heads/moat-session-2026-09-19-21-38:refs/moat/moat-session-2026-09-19-21-38
-✓ fetched moat-session-2026-09-19-21-38 -> refs/moat/moat-session-2026-09-19-21-38 (b79c2b2eb7ef)
-  2 commit(s) reachable, HEAD 8630f3056e79 -> 8630f3056e79
-    b79c2b2eb7ef  Fix slugify to handle whitespace, punctuation, and accents
-    8630f3056e79  slugkit: initial commit (test suite currently failing)
+--- $ node /home/ektor/Projects/moat/cmd/main.ts fetch
+→ copy-out: git fetch /home/ektor/.moat/envs/1ade356a6e72/rootfs/work +refs/heads/moat-session-2026-09-20-02-21:refs/moat/moat-session-2026-09-20-02-21
+✓ fetched moat-session-2026-09-20-02-21 -> refs/moat/moat-session-2026-09-20-02-21 (a5021551c07f)
+  2 commit(s) reachable, HEAD 2f174d627e8d -> 2f174d627e8d
+    a5021551c07f  Fix slugify to handle whitespace, punctuation, and accents
+    2f174d627e8d  slugkit: initial commit (test suite currently failing)
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-19-21-38
-  apply with:    moat apply moat-session-2026-09-19-21-38  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-20-02-21
+  apply with:    moat apply moat-session-2026-09-20-02-21  (or --checkout)
 --- exit 0
-host HEAD before: 8630f3056e792325cdf087fb6674bf33751abce3
-host HEAD after : 8630f3056e792325cdf087fb6674bf33751abce3
+host HEAD before: 2f174d627e8deeecd7568df08ca5b1f9cefc004c
+host HEAD after : 2f174d627e8deeecd7568df08ca5b1f9cefc004c
 HEAD unchanged: yes
 working tree unchanged: yes
 
 --- what the agent produced, as the host now sees it ---
-b79c2b2 Fix slugify to handle whitespace, punctuation, and accents
-8630f30 (HEAD -> main) slugkit: initial commit (test suite currently failing)
+a502155 Fix slugify to handle whitespace, punctuation, and accents
+2f174d6 (HEAD -> main) slugkit: initial commit (test suite currently failing)
  .gitignore        |  1 +
  package-lock.json | 21 +++++++++++++++++++++
  src/slugify.js    |  8 ++++++--
  3 files changed, 28 insertions(+), 2 deletions(-)
 
-== 7. teardown
+== 7. the default runtime (codex) does a turn in the same environment
+the opencode turn above ran the session client; this one is the runtime a new
+environment gets by default, driving the same sandbox and the same /work.
 
---- $ node /home/user/Projects/moat/cmd/main.ts down
-✓ sandbox stopped (pid 307411); the environment and its snapshots are kept
+
+--- $ node /home/ektor/Projects/moat/cmd/main.ts up --runtime codex --model deepseek-flash --credential-env DEEPSEEK_API_KEY
+! runtime changed (opencode -> codex); restarting the sandbox
+→ installing the codex runtime into this environment
+profiles: everything requested is already installed
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+model: deepseek/deepseek-flash (context 1M, out 384k)
+! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-20-02-22
+checks: npm run test
+→ sandbox booted (pid 534934); the codex runtime has no server to wait for
+✓ sandbox up, warm start 1.09s (image reused)
+
+  project    /home/ektor/moat-demo/live-project
+  env        /home/ektor/.moat/envs/1ade356a6e72
+  runtime    codex (deepseek/deepseek-flash) — `moat` opens its TUI
+  workspace  /work (inside the sandbox)
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T06:22:49.613Z
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)
+--- exit 0
+
+--- $ timeout 1800 node /home/ektor/Projects/moat/cmd/main.ts run --runtime codex Create a file named CODEX-LIVE.txt in the working tree whose contents are exactly: codex live. Do not modify any other file. Then finish.
+detected: package.json -> node
+          adding profile(s) node; use --no-detect or --profile to override
+sandbox already running (pid 534934) on port 42855
+! restarting the idle codex box for this run (its tasks do not go through a server)
+profiles: everything requested is already installed
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+model: deepseek/deepseek-flash (context 1M, out 384k)
+! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-20-02-22
+checks: npm run test
+→ sandbox booted (pid 535045); the codex runtime has no server to wait for
+  ✓ /bin/sh -lc "printf 'codex live\\n' > CODEX-LIVE.txt && cat CODEX-LIVE.txt"
+  ✓ /bin/sh -lc "printf 'codex live' > CODEX-LIVE.txt && wc -c < CODEX-LIVE.txt"
+
+Created `CODEX-LIVE.txt` in `/work` containing exactly `codex live` (no trailing newline). No other files touched.
+! Model metadata for `deepseek-flash` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.
+  27360 tokens  $0.0006 off-peak  2 tools · 1 error
+--- exit 0
+
+--- the file, read by moat, and what the work tree looks like now ---
+codex live
+?? CODEX-LIVE.txt
+
+== 8. teardown
+
+--- $ node /home/ektor/Projects/moat/cmd/main.ts down
+✓ sandbox stopped (pid 535045); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- exit 0
 
-evidence: /home/user/Projects/moat/test/evidence/live-session.txt
+evidence: /home/ektor/Projects/moat/test/evidence/live-session.txt
 REMINDER: revoke the DEEPSEEK_API_KEY you used for this run.

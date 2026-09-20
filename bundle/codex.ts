@@ -93,6 +93,19 @@ export type CodexTurn = {
   messages: string[]
   usage: CodexUsage | null
   errors: string[]
+  /**
+   * Advisories that arrive on the same channel as errors but are not failures.
+   *
+   * Codex prints "Model metadata for <id> not found. Defaulting to fallback metadata" as an
+   * `error` item on the first run in a fresh `~/.codex` — it is a cache miss, not a broken
+   * turn, and counting it made a successful run read `1 error` in the footer (measured).
+   */
+  notices: string[]
+}
+
+/** The one advisory this parser knows is not a failure. */
+function isNotice(message: string): boolean {
+  return /^Model metadata for .* not found/.test(message)
 }
 
 function numberField(source: Record<string, unknown>, key: string): number {
@@ -116,7 +129,7 @@ function detailOf(item: Record<string, unknown>): string {
  * must not make this parser invent rows.
  */
 export function parseCodexEvents(text: string): CodexTurn {
-  const turn: CodexTurn = { tools: [], messages: [], usage: null, errors: [] }
+  const turn: CodexTurn = { tools: [], messages: [], usage: null, errors: [], notices: [] }
   const byId = new Map<string, CodexToolRun>()
   for (const line of text.split("\n")) {
     const trimmed = line.trim()
@@ -145,8 +158,9 @@ export function parseCodexEvents(text: string): CodexTurn {
       continue
     }
     if (type === "error") {
-      const message = event.message
-      turn.errors.push(typeof message === "string" ? message : "codex reported an error")
+      const message = typeof event.message === "string" ? event.message : "codex reported an error"
+      if (isNotice(message)) turn.notices.push(message)
+      else turn.errors.push(message)
       continue
     }
     const item = event.item as Record<string, unknown> | undefined
@@ -157,8 +171,9 @@ export function parseCodexEvents(text: string): CodexTurn {
       continue
     }
     if (item.type === "error") {
-      const message = item.message
-      turn.errors.push(typeof message === "string" ? message : "codex reported an error")
+      const message = typeof item.message === "string" ? item.message : "codex reported an error"
+      if (isNotice(message)) turn.notices.push(message)
+      else turn.errors.push(message)
       continue
     }
     const id = typeof item.id === "string" ? item.id : `item-${turn.tools.length}`
