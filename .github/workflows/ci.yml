@@ -27,6 +27,7 @@ jobs:
           ./cmd/main.ts version
           ./cmd/main.ts --help
           node dist/cmd/main.js version
+          node dist/cmd/main.js --help > /dev/null
       - name: host capability probe (must not crash on a host without namespaces)
         run: ./cmd/main.ts doctor --json || true
 
@@ -70,18 +71,21 @@ jobs:
             echo "user namespaces: available, running the full suite"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Sandbox suite skipped::This runner cannot create unprivileged user namespaces, which moat requires and will not work around. The build, CLI and catalog checks above still ran; run 'bash test/e2e.sh' on a real machine for the sandbox suite."
+            echo "::warning title=Sandbox suite skipped::This runner cannot create unprivileged user namespaces, which moat requires and will not work around. The build, CLI and catalog checks above still ran; run 'bash test/e2e-codex.sh' on a real machine for the sandbox suite."
           fi
       - name: list the toolchain profiles
         run: ./cmd/main.ts profiles
       - name: model catalog (network)
         run: ./cmd/main.ts models deepseek
-      - name: full acceptance suite
+      - name: acceptance suite, keyless (Codex against the Responses stub)
         if: steps.userns.outputs.available == 'true'
-        run: bash test/e2e.sh
+        run: bash test/e2e-codex.sh
       - name: secondary suite (snapshots, apply, credential expiry)
         if: steps.userns.outputs.available == 'true'
         run: bash test/e2e-extras.sh
+      - name: egress suite (own namespace, slirp datapath, closed loopback, allowlist)
+        if: steps.userns.outputs.available == 'true'
+        run: bash test/e2e-egress.sh
       - name: upload evidence
         if: always() && steps.userns.outputs.available == 'true'
         uses: actions/upload-artifact@v5
