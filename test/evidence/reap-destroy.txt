@@ -2,5 +2,5 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-! reaped the datapath of a sandbox that is no longer running (pid 273270)
+! reaped the datapath of a sandbox that is no longer running (pid 294098)
 ✓ destroyed /home/user/.moat/envs/f7355b303b3e

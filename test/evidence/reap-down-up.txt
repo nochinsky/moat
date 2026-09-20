@@ -2,11 +2,11 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.56s (extract cached image 1.32s)
+✓ image provisioned in 1.49s (extract cached image 1.28s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-20-23-38
+agent branch: moat-session-2026-09-20-23-48
 ✓ sandbox up, cold start 1.86s (image built)
 
   project    /home/user/moat-demo/datapath-reap

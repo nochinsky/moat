@@ -531,6 +531,25 @@ else
   fail "--quiet control" "the control printed no progress lines, so the --quiet check proves nothing"
 fi
 
+# --verbose: the flag was read at module load and set inside main() afterwards, so it
+# was a no-op and all thirteen log.debug sites were unreachable. The claim is checked
+# from outside the process: the same boot, with the flag, has to print a debug line,
+# and the boot without it has to not print that line. Both halves in one pair.
+capture down-before-verbose $MOAT down
+capture verbose-up $MOAT up --verbose --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+DEBUG_LINE="profiles: requested="
+if grep -q "$DEBUG_LINE" "$EVIDENCE/verbose-up.txt"; then
+  pass "--verbose" "the boot with --verbose printed a debug line"
+else
+  fail "--verbose" "--verbose printed nothing: the debug line is still unreachable"
+fi
+if grep -q "$DEBUG_LINE" "$EVIDENCE/loud-up.txt"; then
+  fail "--verbose control" "the boot without --verbose printed the debug line too, so the check above proves nothing"
+else
+  pass "--verbose control" "the boot without --verbose did not print it"
+fi
+capture down-after-verbose $MOAT down
+
 capture help-flag $MOAT profiles --help
 if grep -q "Usage: moat <command>" "$EVIDENCE/help-flag.txt" && ! grep -q "Node.js / TypeScript" "$EVIDENCE/help-flag.txt"; then
   pass "--help" "prints the help text instead of running the command"

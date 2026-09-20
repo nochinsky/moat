@@ -6,10 +6,10 @@ project      /home/user/moat-demo/codex-runtime
 env          /home/user/.moat/envs/a3e8fefc7c25
 status       running
 codex        0.155.1 / alpine 3.21.4
-pid          275006
+pid          295131
 model        deepseek/deepseek-flash (deepseek)
-branch       moat-session-2026-09-20-23-38
+branch       moat-session-2026-09-20-23-49
 egress       filtered (own network namespace, default-deny allowlist)
 rootfs       298.7 MiB
 snapshots    none
-branches     main, moat-session-2026-09-20-23-38*
+branches     main, moat-session-2026-09-20-23-49*

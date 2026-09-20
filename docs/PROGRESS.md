@@ -300,14 +300,26 @@ every boot failed — dozens of unrelated checks failed with it, which proves no
 patches the real suite in place and restores it from a trap (including on INT/TERM), stopping the
 run after the sabotaged check so the proof takes about a minute rather than a full pass.
 
-Measured results (`MOAT_FAIL_GUARD_E2E=1 bash test/fail-guard.sh`):
-- with section C's `apply --name` check broken on purpose, the suite exits **1**, and the evidence
+Measured results:
+- with section C's `apply --name` check broken on purpose in the real suite
+  (`MOAT_FAIL_GUARD_E2E=1 bash test/fail-guard.sh`), the suite exits **1**, and the evidence
   records `FAILED: 1` for exactly the sabotaged check;
-- with the fix restored, `bash test/e2e-extras.sh` exits **0**.
+- on the committed tree, from one clean run: `bash test/e2e-egress.sh` **0**,
+  `bash test/e2e-codex.sh` **0**, `bash test/e2e-extras.sh` **0** with
+  `checks passed: 49, failed: 0` in `test/evidence/extras.txt`, and `bash test/fail-guard.sh`
+  **0**.
 
-`--verbose` produces output: `lib/log.ts` now has `setVerbose()` (mirroring `setQuiet()`), which
-`main()` calls when `--verbose` is parsed, closing the module-load race that made all thirteen
-`log.debug` sites unreachable.
+`--verbose` produces output, proven twice. Mechanically: `lib/log.ts` now has
+`setVerbose()` (mirroring `setQuiet()`), which `main()` calls when `--verbose` is parsed,
+closing the module-load race that made all thirteen `log.debug` sites unreachable;
+`test/unit/verbose-check.test.ts` runs a witness process with the switch on and off and
+compares its stderr — checked by making `setVerbose` a no-op and watching it fail.
+End to end: `test/e2e-extras.sh` section Z boots the same environment twice, once with
+`--verbose` and once without, and requires the debug line in the first and not the second.
+That check needed a debug line on a path every boot takes, so `cmdUp` now logs its profile
+decision at debug level — every other `log.debug` site is conditional (a cache hit, an
+untracked-file count, a merge), and a flag whose output only appears sometimes cannot be
+checked from outside the process.
 
 Two things the gate does **not** cover, stated so absence is not read as success: the
 end-to-end sabotage is opt-in (`MOAT_FAIL_GUARD_E2E=1`) because it boots a real sandbox, and

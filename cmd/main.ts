@@ -612,6 +612,15 @@ async function cmdUp(argv: string[]): Promise<number> {
   }
 
   let profileRequest = (flag<string>(p, "profile") ?? process.env.MOAT_PROFILES ?? "").trim()
+  // A debug line on the path every boot takes, whether or not it auto-detects: it is
+  // what makes `--verbose` observable end to end. Every other `log.debug` site is
+  // conditional (a cache hit, an untracked-file count, a merge), so `--verbose` could
+  // print nothing at all on an ordinary boot, and "the flag works" is exactly the
+  // claim that has to be checkable from outside the process.
+  log.debug(
+    `profiles: requested=${profileRequest || "(none)"} recorded=${state?.profiles?.length ? state.profiles.join(",") : "(none)"} ` +
+      `detect=${flag<boolean>(p, "no-detect") ? "off" : "on"}`,
+  )
   if (!profileRequest && !state?.profiles?.length && !flag<boolean>(p, "no-detect")) {
     const detected = detectProfiles(paths.projectDir)
     if (detected.profiles.length > 0) {
