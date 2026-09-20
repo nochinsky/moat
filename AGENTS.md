@@ -511,6 +511,20 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   `test/unit/datapath-reap.test.ts` fails on a direct `slirpPid: null` write outside
   `forgetBox`, and extras section AG is the end-to-end reap.
 
+* **Two runtimes.** `--runtime codex` selects Codex CLI instead of opencode; absent/`opencode`
+  is the default, and `state.runtime` records it. Codex is a CLI, not a server, so under that
+  runtime the box is a keepalive (`codexEntryScript`) and every task, TUI session and check
+  runs in its own ephemeral boot of the same rootfs. The two rules that matter: the config
+  moat renders (`bundle/codex.ts`, written through the rootfs guard on every boot) is what
+  keeps Codex from asking for approvals or adding its own sandbox — never let the agent own
+  that file — and the runtime is *pinned and digested* in `lib/pins.ts` like slirp4netns,
+  because it becomes the code the agent runs. The npm platform tarball ships a **musl** build,
+  so it runs on the Alpine image with no gcompat and no Node. Adding a binary to the image
+  means adding its version to `imageCachePath` or a cached image will silently lack it.
+  `bundle/codex.ts` also parses `codex exec --json`; `test/unit/codex-runtime.test.ts` pins
+  the parser against a real captured stream and the rendered config against the two
+  load-bearing lines. `docs/RUNTIME-SPIKE-codex.md` is the measurement behind it.
+
 **opencode 1.18.31**
 
 * The model-facing argument for file tools is `filePath`, not `path`. opencode's

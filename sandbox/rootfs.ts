@@ -9,6 +9,10 @@ import {
   ALPINE_ROOTFS_SHA256,
   ALPINE_ROOTFS_URL,
   ALPINE_VERSION,
+  CODEX_PLATFORM_PACKAGE,
+  CODEX_TARBALL_SHA256,
+  CODEX_VENDOR_TRIPLE,
+  CODEX_VERSION,
   NPM_REGISTRY,
   OPENCODE_TARBALL_INTEGRITY,
   OPENCODE_VERSION,
@@ -16,7 +20,7 @@ import {
   SANDBOX_TRIPLE,
   SANDBOX_WORKDIR,
 } from "../lib/pins.ts"
-import { cacheDir, opencodeCachePath, partPath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
+import { cacheDir, codexCachePath, opencodeCachePath, partPath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
 import { chmodRootfsDir, ensureRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { out, run } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
@@ -140,6 +144,46 @@ export async function ensureOpencodeBinary(triple = SANDBOX_TRIPLE): Promise<str
   return dest
 }
 
+/**
+ * The Codex CLI binary, for environments that use the codex runtime.
+ *
+ * The npm platform tarball ships a **musl** build under `vendor/<triple>/bin/codex`, which
+ * is why it runs on the Alpine image with no gcompat and no Node runtime. It is installed
+ * for every environment, not only codex ones: the image cache is keyed on the versions it
+ * contains, and one image for both runtimes keeps `--runtime` a flag rather than a rebuild.
+ *
+ * A triple with no pinned digest is refused. An unverified binary that becomes the agent
+ * runtime is the one artefact moat cannot be casual about.
+ */
+export async function ensureCodexBinary(triple = SANDBOX_TRIPLE): Promise<string> {
+  const dest = codexCachePath(triple)
+  if (fs.existsSync(dest)) return dest
+  const platform = CODEX_PLATFORM_PACKAGE[triple]
+  const vendor = CODEX_VENDOR_TRIPLE[triple]
+  const sha256 = CODEX_TARBALL_SHA256[triple]
+  if (!platform || !vendor) throw new Error(`codex is not pinned for the ${triple} sandbox triple`)
+  if (!sha256) throw new Error(`codex has no pinned digest for ${triple}, so moat will not install it`)
+  const pkg = `codex-${CODEX_VERSION}-${platform}`
+  const url = `${NPM_REGISTRY}/@openai/codex/-/${pkg}.tgz`
+  const tarball = path.join(path.dirname(dest), `${pkg}.tgz`)
+  await download(url, tarball, { sha256 })
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  const tmp = partPath(dest)
+  // Straight to disk, like the opencode binary: 269 MiB must never pass through a string.
+  const fd = fs.openSync(tmp, "w")
+  try {
+    const result = spawnSync("tar", ["-xzOf", tarball, `package/vendor/${vendor}/bin/codex`], {
+      stdio: ["ignore", fd, "inherit"],
+    })
+    if (result.status !== 0) throw new Error(`failed to extract the codex binary from ${tarball}`)
+  } finally {
+    fs.closeSync(fd)
+  }
+  fs.chmodSync(tmp, 0o755)
+  fs.renameSync(tmp, dest)
+  return dest
+}
+
 export function extractRootfs(tarball: string, rootfs: string): void {
   fs.mkdirSync(rootfs, { recursive: true })
   const result = spawnSync("tar", ["-xzf", tarball, "-C", rootfs], { stdio: ["ignore", "ignore", "pipe"] })
@@ -166,7 +210,7 @@ const IMAGE_EXCLUDES = ["./work", "./proc", "./sys", "./dev", "./tmp", "./run", 
 export function imageCachePath(packages: string[] = PROVISION_PACKAGES): string {
   const key = crypto
     .createHash("sha256")
-    .update(`${ALPINE_VERSION}|${OPENCODE_VERSION}|${SANDBOX_TRIPLE}|${[...packages].sort().join(",")}`)
+    .update(`${ALPINE_VERSION}|${OPENCODE_VERSION}|${CODEX_VERSION}|${SANDBOX_TRIPLE}|${[...packages].sort().join(",")}`)
     .digest("hex")
     .slice(0, 12)
   return path.join(cacheDir(), "images", `alpine-${ALPINE_VERSION}-${key}.tar.gz`)
@@ -305,6 +349,13 @@ rm -rf /var/cache/apk/*
   fs.copyFileSync(binary, target)
   fs.chmodSync(target, 0o755)
   t = mark("install opencode", t)
+
+  const codexBinary = await ensureCodexBinary()
+  const codexTarget = path.join(p.rootfs, "usr/local/bin/codex")
+  fs.mkdirSync(path.dirname(codexTarget), { recursive: true })
+  fs.copyFileSync(codexBinary, codexTarget)
+  fs.chmodSync(codexTarget, 0o755)
+  t = mark("install codex", t)
 
   // The bundle is NOT baked into the image: `moat up` renders and installs it on
   // every boot, so there is exactly one place that decides the config and a

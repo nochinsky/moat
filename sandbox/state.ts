@@ -44,6 +44,14 @@ export type EnvState = {
   provider: string | null
   /** Host-visible base URL of the injected provider (no credential in it). */
   providerBaseUrl: string | null
+  /**
+   * The agent runtime this environment was created with.
+   *
+   * Absent means `opencode`, which is every environment made before the field existed. It
+   * decides what `moat` opens and how a task is driven, so it is recorded rather than
+   * inferred from what happens to be installed.
+   */
+  runtime?: "opencode" | "codex"
   /** Branch the agent was told to commit to. */
   branch: string | null
   /** The branch that was checked out when the agent's branch was created. */

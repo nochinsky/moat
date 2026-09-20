@@ -37,7 +37,7 @@ import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import { recoverStateFromDisk } from "../sandbox/recover.ts"
 import { beginBoot, bootAgeSeconds, bootInFlight, endBoot, waitForBoot } from "../sandbox/boot.ts"
 import { stripAnsi } from "./display.ts"
-import { readRootfsFile, readRootfsFileHead, readRootfsFileTail } from "../lib/rootfs-fs.ts"
+import { readRootfsFile, readRootfsFileHead, readRootfsFileTail, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import {
   credentialExpired,
   envExists,
@@ -74,6 +74,8 @@ import {
 } from "../sandbox/launcher.ts"
 import { serveEntryScript } from "../sandbox/serve.ts"
 import { installBundle } from "../bundle/install.ts"
+import { describeCodexTurn, parseCodexEvents, renderCodexConfig } from "../bundle/codex.ts"
+import { computeCost, formatUSD } from "../lib/pricing.ts"
 import { TOOL_PRESETS, type ToolPreset } from "../bundle/render.ts"
 import { runIsolationChecks, type IsolationReport } from "../sandbox/isolation.ts"
 import { onboard } from "../secrets/onboard.ts"
@@ -540,6 +542,14 @@ async function cmdUp(argv: string[]): Promise<number> {
   // running sandbox used to be dropped on the floor by the reuse path below.
   const task = p._.join(" ").trim()
 
+  // Which agent runtime this environment uses. Codex is a CLI, not a server, so it changes
+  // what the box runs and how a task or a session is driven; it does not change the sandbox.
+  const runtimeFlag = flag<string>(p, "runtime")
+  if (runtimeFlag !== undefined && runtimeFlag !== "codex" && runtimeFlag !== "opencode") {
+    log.fail(`unknown --runtime "${runtimeFlag}". Use "codex" (Codex CLI) or "opencode".`)
+  }
+  const runtime: "opencode" | "codex" = runtimeFlag ?? state?.runtime ?? "opencode"
+
   // Whether a human is actually attached. This decides two things that must
   // agree: whether the agent may ask a question, and what its instructions say
   // about asking. Getting them out of step is how you get a hang.
@@ -791,7 +801,13 @@ async function cmdUp(argv: string[]): Promise<number> {
       log.warn(`--port ${portFlag} was not applied: this sandbox is already listening on ${state!.port}`)
     }
     const password = readPassword(paths)!
-    const ready = await waitForServer(state!, password, { timeoutMs: 15000 })
+    // A codex box has no server. Its tasks and sessions run in their own ephemeral boots
+    // of the same rootfs, so the flow below stops this idle box and takes the boot path —
+    // which is where the model, egress and credential are resolved for the runtime.
+    const ready =
+      runtime === "codex"
+        ? { ok: false, detail: "the codex runtime has no server" }
+        : await waitForServer(state!, password, { timeoutMs: 15000 })
     if (ready.ok) {
       if (task.length > 0) {
         const result = await driveTask(state!, password, task, {
@@ -815,7 +831,11 @@ async function cmdUp(argv: string[]): Promise<number> {
       else printUpSummary(paths, state!, password, { coldStart: 0, reused: true, provisioned: false })
       return 0
     }
-    log.warn("recorded sandbox pid is alive but the server is not answering; restarting it")
+    log.warn(
+      runtime === "codex"
+        ? "restarting the idle codex box for this run (its tasks do not go through a server)"
+        : "recorded sandbox pid is alive but the server is not answering; restarting it",
+    )
     await stopSandbox(state!.pid, {
       startTime: state!.pidStart,
       envId: paths.id,
@@ -1100,7 +1120,7 @@ ${command}
   const password = randomPassword()
   writePassword(paths, password)
 
-  const entry = serveEntryScript({
+  const entry = runtime === "codex" ? codexEntryScript() : serveEntryScript({
     port,
     // Normalised here and again in serveEntryScript: "--log-level debug" used to
     // fall through the uppercase set and silently become INFO.
@@ -1111,6 +1131,25 @@ ${command}
     // covers `filtered` too: it is the same namespace with a ruleset on top.
     hostname: ownNetns(egress) ? "0.0.0.0" : "127.0.0.1",
   })
+
+  if (runtime === "codex") {
+    // Rendered on every boot, like the opencode bundle, and written through the rootfs
+    // guard: the agent's home is inside the box, and this file is what decides that Codex
+    // asks for no approvals and adds no second sandbox next to moat's.
+    writeRootfsFile(
+      paths.rootfs,
+      "/root/.codex/config.toml",
+      renderCodexConfig({
+        model: resolvedModel.modelID,
+        providerID: "deepseek-moat",
+        baseURL: baseUrl,
+        envKey: resolvedModel.native ? DEEPSEEK.envVar : "MOAT_INJECTED_CREDENTIAL",
+        contextWindow: resolvedModel.meta?.context,
+        maxOutputTokens: resolvedModel.meta?.output,
+      }),
+      0o600,
+    )
+  }
 
   const managedEnv: Record<string, string> = {
     OPENCODE_SERVER_PASSWORD: password,
@@ -1168,6 +1207,7 @@ ${command}
     provider: provider.opencodeID,
     branch,
     baseBranch,
+    runtime,
     profiles: resolvedProfiles.profiles,
     lastUpAt: new Date().toISOString(),
     credential: credential
@@ -1180,13 +1220,22 @@ ${command}
       : null,
   }
   writeState(paths, state)
-  log.step(`sandbox booted (pid ${sandbox.pid}, port ${port}); waiting for opencode serve`)
+  log.step(
+    runtime === "codex"
+      ? `sandbox booted (pid ${sandbox.pid}); the codex runtime has no server to wait for`
+      : `sandbox booted (pid ${sandbox.pid}, port ${port}); waiting for opencode serve`,
+  )
 
   // --timeout is SECONDS (driveTask and the checks runner take it as timeoutSeconds).
   // Reading it as milliseconds here capped the boot readiness wait at the value the
   // user meant for the whole turn: measured, `moat up --timeout 600` failed with
   // "opencode serve did not come up ... after 600ms".
-  const ready = await waitForServer(state, password, { timeoutMs: (optionalPositiveIntFlag(p, "timeout") ?? 90) * 1000 })
+  // The codex runtime has no server: the box is up when unshare is, and every task, TUI
+  // and check runs in its own ephemeral boot of the same rootfs.
+  const ready =
+    runtime === "codex"
+      ? { ok: true, detail: "the codex runtime has no server to wait for" }
+      : await waitForServer(state, password, { timeoutMs: (optionalPositiveIntFlag(p, "timeout") ?? 90) * 1000 })
   const bootMs = Date.now() - bootStart
   if (!ready.ok) {
     const tail = sandboxLogTail(paths, 40)
@@ -1230,6 +1279,17 @@ ${command}
   // bringing up a box you are not going to use is not a step worth having.
   // At a terminal, a task is the first line of a conversation rather than the
   // whole of one: start it, then stay so it can be steered while it runs.
+  if (runtime === "codex") {
+    const showOutput = flag<boolean>(p, "show-output") ?? false
+    const timeoutSeconds = optionalPositiveIntFlag(p, "timeout")
+    const runOptions = { env: sandboxEnvVars, egress, slirpBinary: egressConfig.slirpBinary, egressRules: egressConfig.egressRules }
+    // A task at a terminal is the first line of a conversation, exactly as it is for the
+    // opencode path: open Codex's own TUI with the task as its first message.
+    if (task.length > 0 && interactive) return await runInteractive(paths, codexTuiBody(task), runOptions)
+    if (task.length > 0) return await runCodexTask(paths, codexExecBody(task), { ...runOptions, timeoutSeconds, showOutput, json })
+    if (interactive) return await runInteractive(paths, codexTuiBody(), runOptions)
+  }
+
   if (task.length > 0 && interactive) {
     return await runRepl({
       paths,
@@ -1312,9 +1372,16 @@ function printUpSummary(
   log.info("")
   log.info(`  project    ${paths.projectDir}`)
   log.info(`  env        ${paths.dir}`)
-  log.info(`  opencode   http://127.0.0.1:${state.port}  (basic auth user "opencode")`)
-  log.info(`  password   ${password}`)
-  log.info(`  workspace  ${SANDBOX_WORKDIR} (inside the sandbox)`)
+  if (state.runtime === "codex") {
+    // No server, so no endpoint and no password to report: the TUI and the tasks run in
+    // the box's own rootfs, and the credential is what the box talks to the provider with.
+    log.info(`  runtime    codex (${state.model ?? "default model"}) — \`moat\` opens its TUI`)
+    log.info(`  workspace  ${SANDBOX_WORKDIR} (inside the sandbox)`)
+  } else {
+    log.info(`  opencode   http://127.0.0.1:${state.port}  (basic auth user "opencode")`)
+    log.info(`  password   ${password}`)
+    log.info(`  workspace  ${SANDBOX_WORKDIR} (inside the sandbox)`)
+  }
   if (state.credential) {
     log.info(`  credential ${state.credential.provider} ${state.credential.fingerprint} expires ${state.credential.expiresAt}`)
   }
@@ -1332,6 +1399,11 @@ async function cmdAttach(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   const { state, password } = requireRunning(paths)
+  // Attach is the opencode session client. A codex environment has no server to attach to;
+  // its interactive surface is Codex's own TUI, which `moat` opens.
+  if (state.runtime === "codex") {
+    log.fail("this environment uses the codex runtime, which has no server to attach to.\n  Run \`moat\` for its TUI, or \`moat run --runtime codex \"task\"\`.")
+  }
   const prompt = flag<string>(p, "prompt")
 
   if (!prompt) {
@@ -2009,9 +2081,14 @@ async function cmdStatus(argv: string[]): Promise<number> {
     log.info(
       `status       ${booting ? log.cyan(`booting (pid ${booting.pid}, ${bootAgeSeconds(booting)}s in)`) : running ? log.green("running") : log.yellow("stopped")}`,
     )
-    if (running) log.info(`endpoint     ${baseUrl(state!)}`)
+    if (state!.runtime === "codex") {
+      // No server and no opencode in this one: say what is actually there.
+      log.info(`runtime      codex (${state!.model ?? "default model"})`)
+    } else {
+      if (running) log.info(`endpoint     ${baseUrl(state!)}`)
+      log.info(`opencode     ${state!.opencodeVersion} / alpine ${state!.alpineVersion}`)
+    }
     if (state!.pid) log.info(`pid          ${state!.pid}`)
-    log.info(`opencode     ${state!.opencodeVersion} / alpine ${state!.alpineVersion}`)
     if (state!.model) log.info(`model        ${state!.model}${state!.provider ? ` (${state!.provider})` : ""}`)
     if (state!.branch) log.info(`branch       ${state!.branch}`)
     const egressLabel =
@@ -2636,6 +2713,103 @@ A flag a command does not read is refused rather than ignored.
 Docs: docs/SPEC.md, docs/VERIFICATION.md
 `
 
+// ---------------------------------------------------------------------------
+// the codex runtime
+// ---------------------------------------------------------------------------
+
+/**
+ * The long-running box under the codex runtime.
+ *
+ * Codex is a CLI, not a server: there is nothing to wait for and nothing listening. The
+ * box exists so `moat status`, `down` and `destroy` keep their meaning and so the
+ * environment is really up before a task or a session attaches to it. Tasks and the TUI
+ * run in their own ephemeral boots of the same rootfs, like `moat exec`.
+ */
+function codexEntryScript(): string {
+  return `#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+echo "[moat] codex runtime ready (pid $$)"
+exec sleep 2147483647
+`
+}
+
+/** One non-interactive Codex turn. The prompt is an argument; the stream is JSONL. */
+function codexExecBody(prompt: string): string {
+  return `#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+cd ${SANDBOX_WORKDIR}
+exec codex exec --json --skip-git-repo-check ${shellQuote(prompt)} </dev/null
+`
+}
+
+/** Codex's own TUI, inside the box, on the terminal moat inherited. */
+function codexTuiBody(prompt?: string): string {
+  return `#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+cd ${SANDBOX_WORKDIR}
+exec codex ${prompt && prompt.length > 0 ? shellQuote(prompt) : ""}
+`
+}
+
+type CodexRunOptions = {
+  env: Record<string, string>
+  egress: EgressMode
+  slirpBinary?: string
+  egressRules?: string
+  timeoutSeconds?: number
+  showOutput?: boolean
+  json?: boolean
+}
+
+/**
+ * Drive one Codex turn and report it the way `moat run` reports an opencode turn.
+ *
+ * Everything the host sees is the JSONL stream, parsed by `parseCodexEvents`; the token
+ * counts in it are the same fields `lib/pricing.ts` prices for opencode, so the footer
+ * stays comparable between the two runtimes.
+ */
+async function runCodexTask(paths: EnvPaths, body: string, opts: CodexRunOptions): Promise<number> {
+  const result = await runInSandbox(paths, body, {
+    env: opts.env,
+    egress: opts.egress,
+    slirpBinary: opts.slirpBinary,
+    egressRules: opts.egressRules,
+    timeoutMs: (opts.timeoutSeconds ?? 2700) * 1000,
+  })
+  const turn = parseCodexEvents(result.output)
+  if (opts.json) {
+    log.emit({ ...turn, code: result.code, timedOut: result.timedOut })
+    return result.code
+  }
+  for (const tool of turn.tools) {
+    const failed = tool.status === "completed" && (tool.exitCode ?? 0) !== 0
+    const marker = tool.status === "started" ? log.dim("…") : failed ? log.red("✗") : log.green("✓")
+    const label = tool.kind === "command_execution" ? "" : log.dim(tool.kind + " ")
+    log.info(`  ${marker} ${label}${log.dim(stripAnsi(tool.detail.split("\n")[0] ?? "").slice(0, 120))}`)
+  }
+  for (const message of turn.messages) log.info(`\n${stripAnsi(message).trimEnd()}`)
+  for (const error of turn.errors) log.warn(stripAnsi(error))
+  if (turn.usage) {
+    const usage = {
+      input: turn.usage.input,
+      output: turn.usage.output,
+      reasoning: turn.usage.reasoning,
+      cacheRead: turn.usage.cached,
+    }
+    const modelID = opts.env.MOAT_MODEL_ID ?? ""
+    const cost = computeCost(modelID, usage)
+    const tokens = usage.input + usage.cacheRead + usage.output + usage.reasoning
+    const money = cost.known ? `  ${log.dim(`${formatUSD(cost.usd)} ${cost.peak ? "peak" : "off-peak"}`)}` : ""
+    log.info(`  ${log.dim(`${tokens} tokens`)}${money}  ${log.dim(describeCodexTurn(turn))}`)
+  } else if (turn.tools.length > 0) {
+    log.info(`  ${log.dim(describeCodexTurn(turn))}`)
+  }
+  if (result.timedOut) log.warn(`the turn was still running after ${opts.timeoutSeconds ?? 2700}s and was killed`)
+  return result.code
+}
 async function main(): Promise<number> {
   // ~/.moat holds the credential store and the server password; make sure it is
   // 0700 before anything reads or writes there.

@@ -95,6 +95,31 @@ Three things worth keeping:
 (OpenAI's "Unlocking the Codex harness" post describes it; the page was behind Cloudflare and
 could not be read from here).
 
+## What was built from this spike
+
+The spike turned into a working first integration in the same session:
+
+* `lib/pins.ts` pins `CODEX_VERSION` and the platform tarball's sha256, per triple; a triple
+  without a digest is refused rather than downloaded unverified.
+* `sandbox/rootfs.ts` installs the binary into every image, and `imageCachePath` includes
+  the Codex version, so a cached image cannot silently lack it. Measured cold start: 62s
+  (from 13s), image +269 MB.
+* `bundle/codex.ts` renders `~/.codex/config.toml` on every boot through the rootfs guard
+  (approvals never, Codex's sandbox off, `wire_api = "responses"`, a `[model_providers.*]`
+  block, and the context window from the catalog so the first run is not a guess), and parses
+  `codex exec --json` into tool rows, messages and the usage the pricing table already knows.
+* `--runtime codex` on `up`/`run`: the box is a keepalive, tasks run through
+  `runCodexTask`, and `moat` opens Codex's TUI over a pty in its own ephemeral boot.
+  `moat status` reports the runtime instead of an endpoint that does not exist.
+* `test/unit/codex-runtime.test.ts` (5 tests) pins the config renderer and the event parser
+  against a real captured stream. `moat up --runtime codex` then `moat run --runtime codex
+  "..."` created a file in `/work` with the exact contents, reported
+  `26129 tokens  $0.0027 off-peak  1 tool` and exited 0.
+
+Not done yet: an e2e section in `test/e2e-extras.sh`; suppressing Codex's
+"Model metadata … not found" advisory, which currently counts as one error in the footer;
+the TUI (untested here, no pty); and SPEC's runtime paragraph.
+
 ## What an adapter would cost
 
 * **Provisioning.** Pin the Codex version and per-arch tarball digest in `lib/pins.ts`, verify

@@ -16,6 +16,38 @@ export const SANDBOX_TRIPLE = "linux-x64-musl"
 /** Target triple of the host helper binary (used only for the interactive `opencode attach` TUI). */
 export const HOST_TRIPLE = "linux-x64"
 
+/**
+ * Codex CLI, the alternative runtime.
+ *
+ * 0.155.1 was checked against the real artifact: `npm view @openai/codex version`, and the
+ * platform tarball's sha256 after download. The linux platform packages are named
+ * `<version>-linux-x64` / `-linux-arm64` and ship **musl** binaries under
+ * `vendor/<triple>/bin/codex`, so they run on the Alpine image unmodified — measured, no
+ * gcompat, no Node. `docs/RUNTIME-SPIKE-codex.md` has the capture.
+ */
+export const CODEX_VERSION = "0.155.1"
+
+/** npm platform package suffix per sandbox triple. Only what moat actually provisions. */
+export const CODEX_PLATFORM_PACKAGE: Record<string, string> = {
+  "linux-x64-musl": "linux-x64",
+  "linux-arm64-musl": "linux-arm64",
+}
+
+/** Target directory inside the tarball per sandbox triple. */
+export const CODEX_VENDOR_TRIPLE: Record<string, string> = {
+  "linux-x64-musl": "x86_64-unknown-linux-musl",
+  "linux-arm64-musl": "aarch64-unknown-linux-musl",
+}
+
+/**
+ * Published digests, per platform package. A triple with no digest is **refused** rather
+ * than downloaded unverified: an unpinned binary that becomes the agent runtime is the one
+ * artefact moat cannot be casual about.
+ */
+export const CODEX_TARBALL_SHA256: Record<string, string> = {
+  "linux-x64-musl": "f110cccdd50b0be8130b84f45b3144ea775c233f1c8bd8226da6ee719d63d206",
+}
+
 export const ALPINE_BRANCH = "v3.21"
 export const ALPINE_VERSION = "3.21.4"
 export const ALPINE_ROOTFS_URL =
