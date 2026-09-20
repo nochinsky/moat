@@ -79,6 +79,7 @@ import {
 } from "../sandbox/launcher.ts"
 import { serveEntryScript } from "../sandbox/serve.ts"
 import { installBundle } from "../bundle/install.ts"
+import { renderInstructions } from "../bundle/instructions.ts"
 import { describeCodexTurn, parseCodexEvents, renderCodexConfig } from "../bundle/codex.ts"
 import { computeCost, formatUSD } from "../lib/pricing.ts"
 import { TOOL_PRESETS, type ToolPreset } from "../bundle/render.ts"
@@ -1070,6 +1071,20 @@ ${command}
     log.info(`checks: ${projectChecks.map((c) => c.command).join(", ")}`)
   }
 
+  // One brief input, two consumers: the opencode bundle (legacy) and Codex's own global
+  // AGENTS.md, so the agent is told about the boot that was actually made under either
+  // runtime, from the same source of truth.
+  const briefInput = {
+    provider: provider.label,
+    model: resolvedModel.model,
+    branch,
+    profiles: resolvedProfiles.profiles,
+    installedPackages: resolvedProfiles.profiles.length > 0 ? resolvedProfiles.packages : BASE_PACKAGES,
+    hasCredential: Boolean(credential),
+    canAsk: interactive,
+    egress,
+    checks: projectChecks.map((c) => ({ label: c.label, command: c.command })),
+  }
   const bundleManifest = installBundle(paths.rootfs, {
     render: {
       provider,
@@ -1080,17 +1095,7 @@ ${command}
       preset: toolPreset,
       modelMeta: resolvedModel.meta,
     },
-    brief: {
-      provider: provider.label,
-      model: resolvedModel.model,
-      branch,
-      profiles: resolvedProfiles.profiles,
-      installedPackages: resolvedProfiles.profiles.length > 0 ? resolvedProfiles.packages : BASE_PACKAGES,
-      hasCredential: Boolean(credential),
-      canAsk: interactive,
-      egress,
-      checks: projectChecks.map((c) => ({ label: c.label, command: c.command })),
-    },
+    brief: briefInput,
     installedPackages: resolvedProfiles.profiles.length > 0 ? resolvedProfiles.packages : BASE_PACKAGES,
   })
   report.bundle = { curated: bundleManifest.curated, excluded: bundleManifest.excluded, preset: bundleManifest.preset }
@@ -1145,6 +1150,18 @@ ${command}
         // rendered when Codex accepts the level, and left out otherwise.
         reasoningEffort: state?.effort ?? undefined,
       }),
+      0o600,
+    )
+
+    // Codex reads a global brief from its home directory (default ~/.codex, or CODEX_HOME if
+    // that is set). Measured through the recording proxy: the content arrives in the request
+    // body wrapped as AGENTS.md instructions, not in the top-level instructions field.
+    // Rendering the brief here — not only inside the opencode bundle — is what keeps the
+    // agent knowing where it is once opencode is gone.
+    writeRootfsFile(
+      paths.rootfs,
+      "/root/.codex/AGENTS.md",
+      renderInstructions({ ...briefInput, workspace: SANDBOX_WORKDIR }),
       0o600,
     )
   }

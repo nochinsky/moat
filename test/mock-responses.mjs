@@ -160,7 +160,12 @@ const server = http.createServer((req, res) => {
           tools: (parsed.tools ?? []).map((t) => t.name ?? t.type),
           inputCount: Array.isArray(parsed.input) ? parsed.input.length : null,
           lastInput: Array.isArray(parsed.input) ? parsed.input[parsed.input.length - 1] : null,
-          instructionsHead: typeof parsed.instructions === "string" ? parsed.instructions.slice(0, 120) : null,
+          // The whole instructions block: a test may need to prove that a brief reached the
+          // model (the AGENTS.md discovery path), and the marker can sit anywhere in it.
+          instructions: typeof parsed.instructions === "string" ? parsed.instructions : null,
+          // The raw body too: an AGENTS.md brief arrives wrapped in the conversation, not in
+          // the instructions field, so a test that greps the body is the one that proves it.
+          body: text.length > 200000 ? text.slice(0, 200000) : text,
         }
       } catch (error) {
         summary.parseError = String(error)

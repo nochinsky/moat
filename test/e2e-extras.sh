@@ -1142,7 +1142,20 @@ export MOAT_MOCK_CREDENTIAL="moat-e2e-responses-stub"
 # no model involved. This is the half that says the runtime swap did not cost moat its loop.
 ( cd "$CK" && capture codex-mock-verify $MOAT verify )
 ( cd "$CK" && capture codex-mock-fetch $MOAT fetch )
+# moat's brief has to reach the model under this runtime, and Codex reads it from its own
+# home: measured through the recording proxy, the content arrives in the request body wrapped
+# as AGENTS.md instructions. Both halves are checked — the file in the box, and the text the
+# provider actually received.
+# The marker is a line every rendered brief carries, whatever the egress mode and credential
+# state: asserting on a conditional sentence is how this check first reported a false negative.
+( cd "$CK" && capture codex-mock-brief $MOAT exec -- sh -c 'grep -m1 "disposable Linux container" /root/.codex/AGENTS.md' )
 kill "$RESP_PID" 2>/dev/null
+BRIEF_IN_REQUEST=$(python3 - "$WORK/responses-requests.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+print("yes" if any("disposable Linux container" in (r.get("body") or "") for r in rows) else "no")
+PY
+)
 REQS=$(wc -l < "$WORK/responses-requests.jsonl" 2>/dev/null || echo 0)
 if grep -q "a + b" "$EVIDENCE/codex-mock-fix.txt" \
    && grep -q "fix: sum adds" "$EVIDENCE/codex-mock-fix.txt" \
@@ -1150,10 +1163,12 @@ if grep -q "a + b" "$EVIDENCE/codex-mock-fix.txt" \
    && ! grep -qE "FAIL +npm test" "$EVIDENCE/codex-mock-verify.txt" \
    && grep -q "fetched .*refs/moat/" "$EVIDENCE/codex-mock-fetch.txt" \
    && grep -q "src/sum.js" "$EVIDENCE/codex-mock-run.txt" \
+   && grep -q "disposable Linux container" "$EVIDENCE/codex-mock-brief.out" \
+   && [ "$BRIEF_IN_REQUEST" = "yes" ] \
    && [ "$REQS" -ge 2 ]; then
-  echo "codex: a keyless turn fixes the fixture, the project's own checks pass, and the commit fetches ($REQS model requests)" | tee -a "$EVIDENCE/extras.txt"
+  echo "codex: a keyless turn fixes the fixture, the checks pass, the commit fetches, and moat's brief reached the model ($REQS model requests)" | tee -a "$EVIDENCE/extras.txt"
 else
-  echo "codex: FAILED — the mocked turn did not fix the fixture (requests=$REQS, see $WORK/mock-responses.log)" | tee -a "$EVIDENCE/extras.txt"
+  echo "codex: FAILED — no fix, or the brief did not reach the model (requests=$REQS, brief_in_request=$BRIEF_IN_REQUEST)" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$CK" && $MOAT destroy --yes >/dev/null 2>&1 )
 
