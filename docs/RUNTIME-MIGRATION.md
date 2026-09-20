@@ -12,6 +12,19 @@ the checklist for ending it without breaking the product on the way.
   fetches the commit it produced) and live (live suite section 7).
 * The sandbox, credential, copy-out and egress layers are runtime-agnostic; their suites do not
   care which runtime produced the work, and all three batteries are green.
+* **The acceptance list exists for Codex**: `test/e2e-codex.sh`, 45 checks, keyless, including the
+  loop that matters (a mocked turn fixes a failing test, `moat verify` passes, `moat fetch`
+  writes one ref with the host tree byte-identical).
+* **The brief reaches the model under Codex**: moat renders its usual brief into
+  `/root/.codex/AGENTS.md` on every boot, and extras AK checks both ends — the file in the box
+  and the text in the provider's request body (measured through the Responses stub, which
+  records the raw body). That is what makes `bundle/render.ts` + the opencode bundle removable
+  without the agent losing its instructions.
+* **The interactive surface works**: `test/codex-tui.py` (extras AL) drives `moat` through a
+  real pty and requires the TUI to be reached, drawn, alive, and to leave the box running.
+* **Nothing is silently dropped**: `--effort` is refused rather than ignored, and the two
+  criteria that only exist because opencode serves a session are named in `test/e2e-codex.sh`
+  with what stands in for them.
 
 ## What deleting opencode removes — say it out loud
 

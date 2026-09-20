@@ -3,19 +3,19 @@
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5597/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.95s (extract cached image 1.68s)
+✓ image provisioned in 1.98s (extract cached image 1.68s)
 ✓ copy-in via git: 3 files, 0.3 KiB, digest 2bed46acc1086825
 model: moat/mock-model
 ! injecting moat credential sha256:35a96f4ab6d9388a (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-03-20
+agent branch: moat-session-2026-09-20-14-14
 checks: npm run test
-✓ sandbox up, cold start 2.11s (image built)
+✓ sandbox up, cold start 2.17s (image built)
 
   project    /home/user/moat-demo/codex-mock
   env        /home/user/.moat/envs/30983ebe0b2d
   runtime    codex (moat/mock-model) — `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:35a96f4ab6d9388a expires 2026-09-20T07:20:05.093Z
+  credential moat sha256:35a96f4ab6d9388a expires 2026-09-20T18:14:39.922Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

@@ -2,19 +2,19 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-! the recorded sandbox pid 596039 is not moat's any more; ignoring it
+! the recorded sandbox pid 19491 is not moat's any more; ignoring it
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-20-03-17
-! reaped the datapath of a sandbox that is no longer running (pid 596061)
-✓ sandbox up, warm start 1.79s (image reused)
+agent branch: moat-session-2026-09-20-14-12
+! reaped the datapath of a sandbox that is no longer running (pid 19513)
+✓ sandbox up, warm start 1.81s (image reused)
 
   project    /home/user/moat-demo/killed
   env        /home/user/.moat/envs/00edb0f8f18c
-  opencode   http://127.0.0.1:46257  (basic auth user "opencode")
-  password   S6iCQOwwUisL1wAhAhTPpmDPtHKLQgZW
+  opencode   http://127.0.0.1:41731  (basic auth user "opencode")
+  password   uzc7r7LT2RoCk-seTH2TIrYiVg0uEOey
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do

@@ -1,7 +1,8 @@
-planted in /home/user/.moat/envs/0cc7b2c8dbc5: branch moat-session-2026-09-20-03-15, log.showSignature=true, gpg.program=<work>/evil-gpg.sh
+planted in /home/user/.moat/envs/0cc7b2c8dbc5: branch moat-session-2026-09-20-14-10, log.showSignature=true, gpg.program=<work>/evil-gpg.sh
 ✗ this environment uses the codex runtime, which has no server to attach to.
   Run `moat` for its TUI, or `moat run --runtime codex "task"`.
 /diff
+/quit
 
 
 --- checks ---

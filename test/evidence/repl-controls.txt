@@ -10,13 +10,6 @@
 /thinking
 /verbose
 /verbose
-/agent
-fix the failing tests
-/undo
-/redo
-/compact
-/status
-/quit
 
 
 --- checks ---
@@ -31,6 +24,6 @@ fix the failing tests
   FAIL  /undo reported a result
   FAIL  /redo reported a result
   FAIL  /compact reported a result
-  pass  /help lists the new commands
+  FAIL  /help lists the new commands
 
-1/12 checks passed
+0/12 checks passed

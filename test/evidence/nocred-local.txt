@@ -1,17 +1,17 @@
---- $ node /home/user/Projects/moat/cmd/main.ts run --runtime opencode --no-credential --no-detect --model mock-model --base-url http://127.0.0.1:45997/v1 do the task
+--- $ node /home/user/Projects/moat/cmd/main.ts run --runtime opencode --no-credential --no-detect --model mock-model --base-url http://127.0.0.1:51545/v1 do the task
 --- exit 0
 --- stdout ---
 --- stderr ---
-egress: open, because the provider is on the host's loopback (http://127.0.0.1:45997/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
+egress: open, because the provider is on the host's loopback (http://127.0.0.1:51545/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-db69c015961d.tar.gz
-✓ image provisioned in 1.02s (extract cached image 868ms)
+✓ image provisioned in 1.03s (extract cached image 866ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 3b51b9bbd854d89f
 model: moat/mock-model
-! no credential injected, so requests to http://127.0.0.1:45997/v1 will carry no Authorization header. If that endpoint needs one, pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-20-03-17
-→ sandbox booted (pid 595605, port 45363); waiting for opencode serve
+! no credential injected, so requests to http://127.0.0.1:51545/v1 will carry no Authorization header. If that endpoint needs one, pass --credential-env NAME (or --credential VALUE).
+agent branch: moat-session-2026-09-20-14-11
+→ sandbox booted (pid 19064, port 43389); waiting for opencode serve
 [tool] bash (running) 
 [tool] bash (completed) pwd && ls -la && cat README.md
 [tool] write (running) 
@@ -25,7 +25,7 @@ agent branch: moat-session-2026-09-20-03-17
 Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
 
 
-session ses_f432e7859ffeRl5CQ6NK39reIt   5 tool call(s)
+session ses_f40d71de7ffeOeV4qM3XTbJhgN   5 tool call(s)
 
   moat take    review and apply what the agent did
   moat run     give it another task, e.g. moat run "add tests"
