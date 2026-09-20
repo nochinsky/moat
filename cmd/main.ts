@@ -24,6 +24,7 @@ import {
   type EgressMode,
 } from "../lib/pins.ts"
 import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, checkBaseUrl, isDeepSeekHost } from "../lib/provider.ts"
+import { resolveProvider, type ResolvedProvider } from "../lib/resolve-provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from "../sandbox/profiles.ts"
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
@@ -392,64 +393,9 @@ function ms(value: number): string {
 // provider, model and profile resolution
 // ---------------------------------------------------------------------------
 
-type ResolvedProvider = {
-  opencodeID: string
-  label: string
-  npm: string
-  baseUrl: string
-  /** Where traffic really goes, when it is not the catalog's own endpoint. */
-  upstream?: string
-  native: boolean
-  modelID: string
-}
-
-/**
- * DeepSeek, or whatever `--base-url` points at.
- *
- * There is no provider to choose and nothing to infer: the model defaults to
- * DeepSeek's, and `--base-url` switches to any OpenAI-compatible endpoint.
- */
-function resolveProvider(p: Parsed, state?: EnvState | null): ResolvedProvider {
-  const custom = flag<string>(p, "base-url")
-  const upstream = flag<string>(p, "upstream")
-  if (custom && upstream) {
-    log.fail("--base-url and --upstream are different things. --base-url replaces the provider; --upstream keeps it and moves its address.")
-  }
-  if (custom) {
-    return {
-      opencodeID: CUSTOM_ENDPOINT.opencodeID,
-      label: CUSTOM_ENDPOINT.label,
-      npm: CUSTOM_ENDPOINT.npm,
-      baseUrl: custom.replace(/\/+$/, ""),
-      upstream: undefined,
-      native: false,
-      modelID: flag<string>(p, "model") ?? state?.model?.split("/").pop() ?? DEEPSEEK.defaultModel,
-    }
-  }
-  if (flag<string>(p, "model") === undefined && state?.model?.startsWith(`${DEEPSEEK.opencodeID}/`)) {
-    // Same provider, so the environment's model is a better default than the
-    // built-in one. Typing the model once should be enough.
-    return {
-      opencodeID: DEEPSEEK.opencodeID,
-      label: DEEPSEEK.label,
-      npm: DEEPSEEK.npm,
-      baseUrl: upstream?.replace(/\/+$/, "") ?? DEEPSEEK.baseUrl,
-      upstream: upstream?.replace(/\/+$/, ""),
-      native: true,
-      modelID: state.model.slice(DEEPSEEK.opencodeID.length + 1),
-    }
-  }
-  return {
-    opencodeID: DEEPSEEK.opencodeID,
-    label: DEEPSEEK.label,
-    npm: DEEPSEEK.npm,
-    baseUrl: upstream?.replace(/\/+$/, "") ?? DEEPSEEK.baseUrl,
-    upstream: upstream?.replace(/\/+$/, ""),
-    native: true,
-    modelID: flag<string>(p, "model") ?? DEEPSEEK.defaultModel,
-  }
-}
-
+// Provider resolution lives in lib/resolve-provider.ts, where it can be unit tested
+// without a CLI: it is the decision that remembered too little (an environment's own
+// endpoint) and silently reverted it on the next boot.
 type ResolvedModel = {
   providerID: string
   modelID: string
@@ -643,7 +589,12 @@ async function cmdUp(argv: string[]): Promise<number> {
 
   // Where the provider lives decides the default network policy, so resolve it
   // first; nothing below this point changes it.
-  const provider = resolveProvider(p, state)
+  let provider: ResolvedProvider
+  try {
+    provider = resolveProvider(p, state)
+  } catch (error) {
+    log.fail((error as Error).message)
+  }
 
   // Network policy is part of the environment's identity: it is persisted, and a
   // change means the box has to be booted again in different namespaces.
