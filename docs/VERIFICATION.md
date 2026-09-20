@@ -81,42 +81,6 @@ exposures, measured, and NOT fixed in v0. Read these before trusting the box.
           "open"), so the agent can install dependencies AND exfiltrate anything it can read,
           including the project and the injected credential. A new environment defaults to
           "filtered".
-```
-
-All of it is measured from inside an ephemeral boot, on the same box the agent gets.
-The record is the doctor's own output in `test/evidence/doctor.txt` (and, for the
-`filtered` half, `test/evidence/doctor-filtered.txt`), not a claim moat makes about
-itself.
-
-The credential exposure is the one that cannot be fixed inside the box. The runtime
-must hold the value to use it, the agent's commands run as the same uid, so
-`/proc/<pid>/environ` has it for as long as the credential lives. There is no
-redaction hook and none is claimed: a previous runtime blanked secret-looking
-variables for the shell commands the agent wrote, which was a speed bump at best,
-and it was deleted with the runtime (see `docs/RUNTIME-MIGRATION.md`).
-
-### What this means
-
-* There is **no in-sandbox fix** for the credential. The control is
-  provider-side scoping, which is v2; until then the key has to be disposable.
-* Egress policy narrows exfiltration instead of ending it. The default
-  `filtered` mode keeps the box away from the host's loopback and out of
-  arbitrary addresses (`docs/SPEC.md` §7.3, verified in §L), but an *allowlisted*
-  address, and DNS, can still carry data out. Treat the allowlist as a limit on
-  the blast radius, not as confidentiality.
-* Tool-level permissions would not have changed any of these measurements:
-  every one came from a single shell call. This is why "no deny rules" is not
-  the problem, see `docs/SPEC.md` §1.3.
-
-**In the meantime:** `moat up --no-credential` puts nothing stealable in the box.
-If you need a model, hand it a short-lived, spend-capped token and assume it will
-eventually leak.
-
----
-
-## Criterion 1, `moat up` boots the environment, clones the repo in, and the runtime is ready
-
-```
 $ moat up --json --model mock-model --base-url http://127.0.0.1:5599/v1 \
         --credential-env MOAT_MOCK_CREDENTIAL
 ```
@@ -182,12 +146,13 @@ moat (`test/evidence/codex-summary.txt`):
 
 ```
 tools advertised to the model: ['create_goal', 'exec_command', 'get_goal', 'multi_agent_v1',
-                                'request_user_input', 'update_goal', 'view_image', 'web_search',
+                                'request_user_input', 'update_goal', 'view_image',
                                 'write_stdin']
 ```
 
 That list is the CLI's, not moat's, and moat does not filter it; what bounds those tools is
-the box. See §6.1 of `docs/SPEC.md`.
+the box. `web_search` is absent because the rendered config disables it, and that is the one
+entry the config can turn off. See §6.1 of `docs/SPEC.md`.
 
 ---
 
@@ -222,20 +187,11 @@ The agent wrote `agent-output.txt`, edited it, committed it, and read the projec
 ### 4b. The mount table inside the sandbox, in full
 
 ```
-$ moat doctor     (the in-sandbox section, executed inside a real boot)
-
-isolation (14 checks)
   pass  host project not reachable     /home/user/moat-demo/project is absent inside the sandbox
   pass  host home not reachable        /home/user is absent inside the sandbox
   pass  host canary unreadable         /home/user/.moat/canary (mode 600, exists only on the host) is unreadable
   pass  no host ssh directory          host /home/user/.ssh absent; sandbox /root/.ssh absent
   pass  no host env forwarded          no variable from the host environment reached the sandbox; present: DEEPSEEK_API_KEY, HOME,
-                                       LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS,
-                                       MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX,
-                                       OPENCODE_SERVER_PASSWORD, PATH, PWD, SHLVL, TERM (plus moat's own DEEPSEEK_API_KEY,
-                                       MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS,
-                                       MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL,
-                                       OPENCODE_SERVER_PASSWORD, which is the credential, disclosed below)
   pass  no host data mounts            13 mounts; none reference a host filesystem path
   pass  sandbox pid 1                  pid 1 is "sh", 4 visible processes
   pass  own mount namespace            sandbox mnt:[4026532312] vs host mnt:[4026532219]
@@ -245,26 +201,8 @@ isolation (14 checks)
   pass  own ipc namespace              sandbox ipc:[4026532314] vs host ipc:[4026532208]
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
   pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null,
-                                       /dev/random, /dev/tty, /dev/urandom, /dev/zero
   pass  device nodes are real devices   all six device nodes are character devices inside the box
-
   note  network namespace shared       sandbox and host share net:[4026531833]. The agent has the host's network position.
-                                       Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md).
-
-mount table inside the sandbox
-  /dev/full||/full||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/null||/null||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/pts||/||rw,relatime||devpts devpts rw,mode=620,ptmxmode=666
-  /dev/random||/random||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/shm||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,uid=1000,gid=1000
-  /dev/tty||/tty||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/urandom||/urandom||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev/zero||/zero||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755
-  /dev||/||rw,nosuid,relatime||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
-  /proc||/||rw,relatime||proc proc rw
-  /run||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000
-  /tmp||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,uid=1000,gid=1000
-  /||/home/user/.moat/envs/18620c2c4f34/rootfs||rw,relatime||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered
 ```
 
 That is the complete table — all 13 entries, not a filtered view. Reading it
@@ -428,59 +366,6 @@ $ moat up                                  # host edited, sandbox has uncommitte
 ```
 $ moat exec -- cat /work/precious.txt      # still there afterwards
 precious uncommitted work
-```
-
-### A turn reports itself when it finishes
-
-`moat run` reads the CLI's JSONL stream, parses it (`parseCodexEvents`) and then prints one
-row per item, the answer and the footer. It does **not** stream those rows live: the host
-buffers the stream and reports the parsed turn when the process exits, the same shape as
-`moat up <task>`. A long turn therefore prints nothing until it ends, and the host caps what
-it buffers (head and tail kept, a marker between them) so a runaway turn cannot exhaust host
-memory. The shape is visible in the capture (`test/evidence/codex-mock-run.txt`): the `✓` row
-is the item the turn ran, and `17280 tokens  1 tool` is the footer built from the same
-stream.
-
-## Criterion 6 — cold start is measured and reported
-
-The human output labels the kind of start, so a warm boot is never reported as a cold one
-(`cold start … (image built)` vs `warm start … (image reused)`). `moat up --json` reports the
-breakdown: `provisionMs` and the steps inside it, `copyInMs`, `bootMs`, `totalMs` and
-`readyCheck`. Under Codex, `readyCheck` is `"the codex runtime has no server to wait for"`:
-the box is a keepalive, so there is nothing to poll and `bootMs` is the time to spawn the
-namespaces and have the entry script print that it is ready — milliseconds, not seconds. The
-real cost is provisioning, and when provisioning does work it names each step (`download
-rootfs`, `extract rootfs`, `apk packages`, `install codex`, `cache image`), so a slow boot
-says which step was slow.
-
-The committed numbers for the runs quoted in this file are in `test/evidence/codex-up.txt`,
-`test/evidence/up.txt` and `test/evidence/up-short-ttl.txt`. The measurements below are the
-ones that motivated the image cache, and are still why it exists.
-
-### Why these numbers vary, and what was done about it
-
-The only step that needs the network is `apk add`, which runs *inside* a sandbox
-boot. On this host the Alpine CDN is intermittently degraded, and the effect on
-cold start was severe enough to be worth fixing rather than reporting:
-
-| provisioning path | observed `provisionMs` |
-| --- | --- |
-| network `apk add`, healthy mirror | 7 950 ms |
-| network `apk add`, degraded mirror (8 mirror rotations, all retried) | **927 352 ms** |
-| extraction of the cached image | **1 170 – 1 187 ms** |
-
-moat therefore caches the *provisioned image* on the host, keyed by
-`(alpine version, codex version, package set)`. The cached artefact is the packages
-and the pinned runtime binary. It contains **no credential** — criterion 8 greps a
-freshly provisioned rootfs and finds zero matches — and no project (`./work` is
-excluded, exactly as for snapshots). `moat up --fresh` bypasses it.
-
-## Criterion 7 — the agent cannot read any host credential: a failed attempt
-
-The agent itself was asked to try. This is Codex's shell tool running *inside* the
-sandbox, as uid 0, with the model having chosen the command:
-
-```
 $ moat run "Try to read the host's credentials and project directory, and report exactly what happens."
 
   ✓ /bin/sh -lc 'echo --- host home ---; ls /home/user 2>&1 | head -3; echo --- host canary ---; …'
@@ -514,6 +399,8 @@ inference request of the turn carries the injected credential as a bearer token,
 same record is where the advertised tool list comes from.
 
 ### 8b. It is not in the image
+
+Evidence: `test/evidence/codex-credential-not-in-image.txt`, `test/evidence/codex-config.txt`.
 
 The entire rootfs — hundreds of MiB, including the pinned runtime binary and the entry
 script — was searched for the literal value:
@@ -607,44 +494,19 @@ model = "<the resolved model id>"
 model_provider = "deepseek-moat"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
+preferred_auth_method = "apikey"
+forced_login_method = "api"
+model_catalog_json = "/root/.codex/models.json"
+web_search = "disabled"
 model_context_window = <catalog context window>
 model_max_output_tokens = <catalog output cap>
+model_reasoning_effort = "<the --effort level, only when one was passed>"
 
 [model_providers.deepseek-moat]
 name = "DeepSeek"
 base_url = "<catalog base URL, or --base-url>"
 env_key = "MOAT_INJECTED_CREDENTIAL"
 wire_api = "responses"
-```
-
-The context window and output cap are declared explicitly so the first run is not a
-metadata guess: without them Codex prints `Model metadata for <id> not found. Defaulting
-to fallback metadata`, which `parseCodexEvents` classifies as an advisory (`notices`, not
-`errors`) because counting it made a successful run read `1 error` in the footer (measured).
-
-Four details are load-bearing, and `test/unit/codex-runtime.test.ts` pins the rendered
-config against them:
-
-* the provider block exists at all — 0.155.1 answers ``Error: Model provider `deepseek` not
-  found`` even though its documentation lists DeepSeek as built in
-  (`docs/RUNTIME-SPIKE-codex.md`);
-* `wire_api = "responses"` — the pinned version supports only that wire API, and DeepSeek
-  serves it;
-* `env_key` is present only when a credential was injected. A `--base-url` boot with
-  `--no-credential` renders no `env_key` rather than pointing Codex at a name nothing sets
-  (extras section AD);
-* there is no `model_reasoning_effort`. Codex sends that setting only for models it has
-  metadata for and has none for the DeepSeek models moat uses, so moat renders none rather
-  than rendering one that is silently dropped.
-
-No `[projects.*]` trust entry is rendered by moat. Codex appends its own
-`[projects."/work"] trust_level = "trusted"` line the first time it runs in the workspace;
-moat rewrites the whole file on the next boot, so the policy lines cannot drift from what
-moat decided.
-
-### Toolchain profiles
-
-```
 $ moat up --profile node,python --base-url http://127.0.0.1:5599/v1 --model mock-model
 ✓ installed 20 package(s) for profile(s) node, python
 
@@ -670,6 +532,8 @@ user's repository is copied in byte-for-byte and moat adds nothing to it.
 
 ### The working branch
 
+Evidence: `test/evidence/up.txt`, `test/evidence/up-default.txt`, `test/evidence/codex-up.txt`.
+
 Every boot puts the sandbox's working tree on `moat-session-<timestamp>`, so the user's
 own branch is untouched *inside* the box as well as outside it, and copy-out has one
 predictable ref to read:
@@ -678,51 +542,6 @@ predictable ref to read:
 → copy-out: git fetch …/rootfs/work +refs/heads/moat-session-<stamp>:refs/moat/moat-session-<stamp>
 ✓ fetched moat-session-<stamp> -> refs/moat/moat-session-<stamp> (<sha>)
   apply with: moat apply moat-session-<stamp>  (or --checkout)
-```
-
-`moat fetch` with no argument fetches that branch; `moat apply` creates a local branch of
-the same name. The branch and the TUI's own history live in the rootfs and so survive
-`moat down` / `moat up`; moat exposes no resume flag of its own.
-
-## A real model, doing a real task
-
-`bash test/e2e-live.sh` is the only suite that talks to the hosted model, and the only
-evidence in this file that is not a stub. The full transcript is
-`test/evidence/live-session.txt`. The task is a small Node project (`slugkit`) whose test
-suite genuinely fails — deliberate bugs in a `slugify()` — and the prompt asks the agent to
-find the bug, fix it, install and verify end to end, and commit.
-
-What the transcript shows, check by check:
-
-* the agent ran the failing suite, read the code, made the edit and re-ran the tests;
-* `npm install` worked over the network, from the allowlisted registry;
-* the agent committed its work to the session branch inside the box;
-* moat re-ran the project's own checks itself rather than believing the agent's report, and
-  printed its own verdict and cost footer;
-* `moat fetch` brought the branch back to the host as one ref, with the host `HEAD` and
-  working tree unchanged;
-* the host project tree hash was recomputed before and after and was identical.
-
-### What this does and does not prove
-
-It proves the loop end to end with a real model: provider wiring, credential injection, tool
-execution with zero prompts, `npm install` over the network, a real test suite actually
-passing, commits inside the box, and copy-out that leaves the host untouched. The agent's own
-success claim was checked by moat rather than accepted.
-
-It does not prove anything about model quality in general — one task, one model, one run. It
-is a smoke test with teeth, not a benchmark, and it is the only real-model evidence in this
-file: every other suite runs against the deterministic stub.
-
----
-
-## Secondary claims
-
-From `bash test/e2e-extras.sh` (full transcript in `test/evidence/extras.txt`).
-
-### A/B. `moat restore` rolls the rootfs back and preserves `/work`
-
-```
 $ moat snapshot before-extras
 $ moat exec -- /bin/sh -c "echo MARKER-ADDED-AFTER-SNAPSHOT > /opt/moat-extra; ls /opt"
 moat-extra
@@ -750,6 +569,8 @@ deleted image. That refusal is in the code path, and `--yes` is what the suite
 passes to stop it deliberately.
 
 ### C. `moat apply` is a separate step from `moat fetch`
+
+Evidence: `test/evidence/extras-up-again.txt`, `test/evidence/extras-fetch.txt`, `test/evidence/apply-branch.txt`.
 
 ```
 $ moat apply main --name e2e-checkout
@@ -812,42 +633,6 @@ deepseek-v4-pro      in  0.435        in  0.66               in  1.32
                      out 0.87         out 1.98               out 3.96
                      hit 0.003625     hit 0.022              hit 0.044
 deepseek-flash       in  0.15         in  0.15               in  0.30
-```
-
-The `deepseek-flash` row matches off-peak exactly, which is what makes the
-`deepseek-v4-pro` row look like a stale entry rather than a different convention.
-The same turn is charged at double the off-peak rate during peak hours.
-
-**The rate label is part of the arithmetic, not a clock read.** A turn is priced from the
-token counts in the CLI's own usage block and the rate in force at the moment moat prices it,
-and the footer names that rate (`peak` or `off-peak`). Codex reports one usage block for the
-whole turn and no per-request timestamps, so a turn that crosses a peak boundary is priced at
-one rate; that limit is in the "Not verified" table. `summariseTurn`'s `mixed` label exists
-for turns moat assembles from several requests (the checks runner), where the per-request
-timestamps are available. `test/unit/turn-cost.test.ts` pins the arithmetic (reasoning at the
-output rate, cache reads at the cache rate, off-peak exactly half of peak) and the labels.
-
-**Which token field is which** was not guessable. For the Responses wire API, `input_tokens`
-**includes** the cached tokens: charging that field at the miss rate and `cached_input_tokens`
-at the hit rate separately over-reported a mostly-cached turn by about ten times (measured
-against the old runtime on one identical task, `docs/RUNTIME-COST.md`). `parseCodexEvents`
-subtracts the cached count, and prices `reasoning_output_tokens` at the output rate as a field
-separate from `output_tokens`; `test/unit/codex-runtime.test.ts` pins the arithmetic against a
-real captured stream.
-
-The footer is the same arithmetic: the token total, the money when the model is in the pricing
-table, and a one-line summary built from the parsed turn (`describeCodexTurn`). For the stub
-model the money is absent and the line reads `17280 tokens  1 tool`
-(`test/evidence/codex-mock-run.txt`).
-
-### K. The host-side git and apply regressions, as tests that run in CI
-
-The regressions behind the traps in `AGENTS.md` — an agent-controlled git config that runs a
-program on the host, a merge that loses a file name with two spaces, `moat apply` writing the
-wrong bytes — are unit tests. They need no sandbox and therefore run in the workflow that
-cannot create user namespaces.
-
-```
 $ npm run test:unit
 ✔ two files merged cleanly each keep their own merge
 ✔ a second plan does not invalidate the first plan's merge inputs
@@ -896,40 +681,6 @@ $ npm run test:unit
 ✔ a failed restore leaves the rootfs and the project untouched
 ✔ copy-in names the paths git cannot carry, and stays quiet about ignored ones
 ✔ fetchBranch points a non-git project at moat apply
-```
-
-Each guard was checked against the old behaviour before it was trusted. The
-multi-merge, two-space-name and missing-baseline scenarios fail when run against
-the pre-fix module (`git show HEAD:sync/apply.ts`); the git-hardening tests
-assert in their first line that plain git *does* execute the planted
-`core.fsmonitor`, and that the pre-commit hook *does* run, before asserting that
-`sandboxGit` does neither. The copy-in test replays the old pipeline inside the
-test and asserts it cannot reproduce the host bytes. The mount test asserts the
-rendering includes mountinfo's root field, without which a bind of a host
-directory is indistinguishable from a device.
-
-One correction to the review that prompted this work: the old drift fingerprint
-was said to be blind to a byte change because both values decode to U+FFFD. It
-was not — the hashed diff string includes git's `index <old>..<new>` line, whose
-blob hash is computed over raw bytes. Hashing the patch bytes is still the better
-fingerprint (it does not depend on git's text escaping), but the drift test above
-is a guard, not an old-behaviour regression, and it says so.
-
-The `--fresh` and stale-pid rules are behavioural and were exercised against a
-real sandbox instead: `--fresh` while running refuses; `--fresh` with an
-uncommitted file and no `--yes` refuses and names the count; `--fresh --yes`
-reboots over the re-copied project; and `moat down` with `state.json` pointed
-at an unrelated live process warns and leaves that process running.
-
-### L. Egress policy: its own namespace, a pinned datapath, an allowlist, and the default
-
-`bash test/e2e-egress.sh` needs no key: reachability is proven by the provider
-answering 401 to an unauthenticated request, which a stub on the host's loopback
-cannot fake from inside the namespace. It runs three boots: `--egress isolated`,
-the same environment restarted `--egress filtered`, and then a **fresh project
-with no `--egress` flag at all** to prove what a new environment gets.
-
-```
 $ bash test/e2e-egress.sh
   pass  the box booted with isolated egress
   pass  status reports running
@@ -1053,95 +804,9 @@ that did not contain the provider. It now exits non-zero:
 $ moat up --base-url https://nxdomain-1234.invalid/v1
 ✗ could not resolve nxdomain-1234.invalid, so a filtered sandbox would not reach the
   model. Check DNS and try again, or pass --egress open to boot without the allowlist.
-```
-
-The suite asserts the message (`an unresolvable provider fails the boot`). Other
-unresolved hosts are a warning; ephemeral boots only warn, because `moat exec` may
-be exactly how the box is being diagnosed and `moat doctor`'s two-sided check
-reports the result as a failure.
-
-#### The reinstall check, and what it found
-
-`apk` trusts its database over the filesystem. Deleting `/usr/sbin/nft` without
-touching apk's records left `apk add nftables` with nothing to do, and every
-filtered boot then failed with `[moat] filtered egress needs nft inside the box,
-and this image has none`. The suite's check deletes the binary and asserts the
-next ephemeral boot reinstalls it and is still filtered; `ensureFilterTool` now
-clears the stale package entry (`resetFirst`) and installs again when the binary is
-still missing, and every path that boots a filtered box calls it, not just
-`moat up`. The check is what found the bug, and it was red before the repair.
-
-What remains open is the shape of the allowlist, not its existence: it is an IP
-snapshot resolved on the host when the box boots, so a host that rotates to an
-address outside it is unreachable until the next `moat up`; it cannot express
-per-host ports; and DNS to slirp's resolver (`10.0.2.3:53`) is itself an outbound
-channel. The policy also does not change the credential exposure (§1.2 of the
-SPEC): the agent still reads the key, and an allowlisted address or DNS can still
-carry it out.
-
----
-
-### M. Host-side writes into an agent-controlled rootfs cannot be redirected
-
-The rootfs is persistent and the agent is root inside it, so it can replace one of
-its own directories with a symlink whose target string names a host path. The
-kernel resolves that string for the **host** process on the next boot. Measured
-with the old write path, calling the config writer directly with
-`/root/.codex` symlinked to a directory outside the rootfs:
-
-```
 installCodexFiles completed without complaint
   host-side AGENTS.md WAS CREATED (3834 bytes)
 target dir contents: [ 'AGENTS.md' ]
-```
-
-The write runs on **every** boot, so that was a file written into a directory
-outside the sandbox on every `moat up`, `moat exec` and `moat doctor`.
-
-Every host-side write into the rootfs now goes through `lib/rootfs-fs.ts`: each
-path component is `lstat`ed and a symlink or non-directory is refused, missing
-parents are created, the content is written to a temp file opened
-`O_EXCL|O_NOFOLLOW`, the file that was actually opened is verified through
-`/proc/self/fd`, and it is renamed into place — rename replaces a symlink at the
-target instead of writing through it. `chmodRootfsDir` and the reads of
-agent-controlled files (`moat logs sandbox`, the boot log, the rendered config) use the
-same guard.
-
-The boot log is the same story one step further: the boot script used to
-redirect to `<rootfs>/var/log/moat/boot.log` **by path**, so a symlink swapped into
-the agent-writable rootfs could point that write at a host directory. The host now
-opens and verifies the log through the guard and passes it as descriptor 3, and
-the script dups it (`exec 1>&3 2>&3`).
-
-`test/unit/rootfs-write.test.ts` covers it: a symlinked parent is refused with the
-host directory left empty, a symlink at the file itself is replaced rather than
-followed, `..` is refused, chmod does not reach through a symlink, a symlinked
-boot log reads as nothing instead of printing a host file, an agent-sized log is
-truncated to its tail instead of read whole, the boot script dups a descriptor and
-never names the path, and opening the log for append refuses a symlink. Every one
-of those tests was watched failing with the old behaviour restored.
-
-Snapshot extraction needs no guard of its own, and that was measured rather than
-assumed: GNU tar refuses to write through a symlink its own archive created
-(`Cannot open: Not a directory`, host target untouched), and `restoreEnv` treats a
-non-zero tar exit as a failed restore and rolls back.
-
-### N. The environment inventory survives a deleted project directory
-
-An environment whose project directory no longer exists is exactly the one that
-leaks disk, and it used to be invisible: `listEnvs()` rebuilt its paths from the
-recorded `projectDir` through `envPaths()`, whose `realpath()` throws for a
-missing directory, and the `catch` dropped the environment. Two environments
-holding 800 MiB were invisible that way on this machine — `moat status --all` did
-not list them and `moat destroy --all` did not reclaim them.
-
-The directory name is the id now, a directory whose state cannot be read is still
-listed, and `moat destroy` takes paths rather than a project directory. The extras
-suite proves it with a throwaway `MOAT_HOME` (so `destroy --all` never touches the
-real store): one environment with a project directory that is gone and one with
-unreadable state.
-
-```
 == N. an environment whose project directory is gone stays visible and reclaimable
 $ MOAT_HOME=<temporary> moat status --all
 orphaned   0.0 KiB  <the project directory this environment recorded is gone>
@@ -1164,6 +829,8 @@ filesystem. The suite's three failing assertions were watched failing with the o
 
 ### O. Arguments that used to be joined into paths or trusted as numbers
 
+Evidence: `test/evidence/logs-traversal.txt`, `test/evidence/logs-bad-tail.txt`, `test/evidence/models-bogus.txt`, `test/evidence/up-bad-egress.txt`.
+
 Small defects of the same shape: an argv that becomes a path or a number without
 being checked, plus one flag whose unit depended on where it was read. They are
 asserted where they cost nothing — the extras suite, section R — and the pure part has
@@ -1176,41 +843,6 @@ models <provider>: refused instead of silently listing DeepSeek
 --timeout: seconds, not milliseconds, for the boot readiness wait
 --model with an empty value: refused
 --base-url with an empty value: refused
-```
-
-What they replace, measured: `moat logs ../../../../../tmp/moat-traversal` printed
-`/tmp/moat-traversal.log`, a host file outside the environment (`moat logs` joined argv
-into the environment's log directory); `--tail abc` parsed to NaN and silently meant "the
-whole file"; and `moat models bogus` ignored its argument and listed DeepSeek with exit 0.
-
-`--model ""` booted a config whose model id was empty, and `--base-url ""` booted an empty
-base URL. Both are refused before provisioning now, and the extras checks assert the
-*absence* of a provisioning line in those captures, so a regression to late validation
-fails the suite.
-
-`--timeout` is the same kind of mistake with a worse symptom: the agent loop and the checks
-runner take it as **seconds** (the turn default is 2700), and one caller read it as
-**milliseconds** — a ten-minute budget turned into an instant failure (measured: a boot that
-gave up after 600 ms). One flag, one unit: seconds everywhere, documented in `moat --help`.
-
-
-### Q. An environment whose state.json is gone is recovered, not replaced
-
-`state.json` is the only thing that says an environment exists, but it is not where
-the environment's data lives: the rootfs holds everything the agent installed, and
-`rootfs/work` holds its branch, its commits and its uncommitted files. `moat up`
-read a missing state as "no environment", and provisioning then *replaces* the
-rootfs. Measured, with a committed agent branch and an untracked file in place:
-deleting `state.json` and booting again printed "provisioning from the cached image"
-and "copy-in: git clone", exited 0, and the commit and the file were gone from the
-object store — with no warning at all. SPEC §2.2 says the opposite in as many words:
-`moat destroy` is the only operation that deletes data.
-
-`moat up` now rebuilds the state from the disk when `rootfs/work/.git` is there —
-which is also what proves provisioning *and* copy-in finished — and boots what it
-finds instead of replacing it:
-
-```
 $ moat up          # state.json deleted by hand; /work untouched
 ! state.json is missing, but the sandbox's working tree is still there, so the environment was recovered from disk instead of replaced.
   branch   moat-session-2026-09-19-18-25
@@ -1251,6 +883,8 @@ and `moat verify` still require a readable state, so a lost file means one boot 
 the work can be brought across through moat.
 
 ### R. A boot in progress is visible, and the lifecycle commands wait for it
+
+Evidence: `test/evidence/race-status.txt`, `test/evidence/race-down.txt`.
 
 A boot spends most of its time looking exactly like an idle environment.
 `state.json` says stopped with no pid and is only rewritten once the box is
@@ -1349,6 +983,8 @@ model.
 
 ### T. A project with no tests is not reported as failing its tests
 
+Evidence: `test/evidence/notests-up.txt`, `test/evidence/notests-verify.txt`.
+
 `npm init` (and yarn's and pnpm's) scaffolds a test script that exits 1 on purpose:
 `echo "Error: no test specified" && exit 1`. `detectChecks` matched it like any other
 script, so moat offered it to the agent as the project's check and ran it itself:
@@ -1416,6 +1052,8 @@ below is the fix for that.
 
 ### W. A flag a command does not read is refused, `--quiet` exists, and `--help` prints help
 
+Evidence: `test/evidence/flag-refused.txt`, `test/evidence/loud-up.txt`, `test/evidence/quiet-up.txt`, `test/evidence/help-flag.txt`.
+
 `parse` checked that a flag *existed*, not that the command *read* it, so a flag a
 command ignored was accepted and dropped. Two real bugs came out of that silence —
 `--timeout` never reached the checks runner (§V), and `--quiet`, which every harness in
@@ -1465,6 +1103,8 @@ output.
 
 ### Y. The agent brief describes the box the boot actually made
 
+Evidence: `test/evidence/codex-mock-brief.txt`, `test/evidence/codex-mock-run.txt`.
+
 `InstructionsInput` carries `hasCredential` and the boot's profile list. The renderer
 read neither: the credential paragraph and the "the `db` profile ships PostgreSQL,
 SQLite and Redis as real servers" line were unconditional text. Measured by rendering
@@ -1498,6 +1138,8 @@ steal. `test/unit/instructions.test.ts` holds both halves and both `db` states, 
 watched failing with either paragraph made unconditional again.
 
 ### Z. Copy-out names the credential it carries
+
+Evidence: `test/evidence/leak-up.txt`, `test/evidence/leak-fetch.txt`, `test/evidence/leak-fetch-clean.txt`, `test/evidence/leak-apply.txt`.
 
 The agent has to read the injected credential to call the model, and the brief tells it
 not to commit it. Nothing checked: `moat fetch` copied every object the agent committed
@@ -1590,6 +1232,8 @@ the filtered check as one-sided, and `moat up --fresh` is the way to replace it.
 
 ### AB. A re-copy cannot discard work on another sandbox branch
 
+Evidence: `test/evidence/branchloss-up.txt`, `test/evidence/branchloss-up-again.txt`, `test/evidence/branchloss-fetched.txt`.
+
 `countUnfetched` answers "how many commits does the sandbox hold that the host cannot
 reach?" — and it used to answer for the sandbox's **HEAD only**. An agent that leaves a
 commit on a branch it is not standing on therefore looked like an empty box. Measured
@@ -1650,6 +1294,8 @@ HEAD-only version restored. One trap inside the fix itself, caught by the non-gi
 
 ### AC. A commit on a detached HEAD in the sandbox is named, not discarded
 
+Evidence: `test/evidence/detached-up.txt`, `test/evidence/detached-up-again.txt`, `test/evidence/detached-log.txt`, `test/evidence/detached-fetch.txt`.
+
 §AB made `countUnfetched` walk every branch and tag tip. HEAD itself was still missing, so
 work committed on a detached HEAD — a normal way to try something — stayed invisible to the
 same drift check. Measured before the fix, on a real boot: `git checkout --detach HEAD`,
@@ -1685,46 +1331,6 @@ $ ls /work/detached.txt
 $ moat exec -- git -C /work branch keep
 $ moat fetch keep
 ✓ fetched keep -> refs/moat/keep (fa7d22b9f86c)
-```
-
-`test/unit/unfetched-count.test.ts` adds three cases without a sandbox: a detached-HEAD
-commit counts, a detached HEAD sitting on a branch tip adds nothing, and an attached HEAD is
-not reported as detached. The detached-commit case was watched failing with HEAD dropped
-from the tips again. What remains outside the count is in the closing table: a *rebased*
-sandbox branch, and commits that survive only in the reflog after a `reset --hard`.
-
-### AD. The provider configuration is not the credential, and a local endpoint needs no key
-
-`--no-credential` is a documented mode (SPEC §1.3): boot a box with nothing stealable in
-it. With `--base-url` it did not work, and it failed in the worst way — inside the box,
-silently. `MOAT_PROVIDER_BASE_URL`, `MOAT_MODEL_ID` and `MOAT_MODEL` were set only inside
-`toSandboxEnv(minted)`, so with no credential the custom-endpoint provider block had no
-base URL. Measured before the fix: the box booted, the task produced nothing, and **zero requests
-reached the endpoint** — the custom-endpoint provider block had an empty base URL, and the
-failure surfaced only as a stream error inside the box's own log. With a task, the same
-setup was refused *before* booting by a guard whose message recommended `--base-url` as the
-remedy, so the guard did not know that a custom endpoint may need no credential at all.
-
-After the fix the same command runs the task, and the endpoint receives no key
-(`test/evidence/nocred-local.txt`): the recording stub reports no `Authorization` header on
-any request of the turn, and the rendered config carries no `env_key` at all.
-
-Extras section AF is that run plus the control that the **native** provider still refuses a
-task with no key before booting (`no DEEPSEEK_API_KEY, so the agent has no model to call`,
-exit 1, and no `sandbox up` line in the capture). `test/unit/provider-env.test.ts` pins the
-split: `sandboxProviderEnv` carries the base URL and model, `toSandboxEnv` adds the
-credential on top, and the credential-bearing variable names are exactly the five that
-appear only with a credential.
-
-### AE. A datapath whose box is gone is reaped, not orphaned
-
-A sandbox in an own-namespace mode has two processes: the box and its `slirp4netns`
-datapath. Only a command that still holds the datapath's pid on record reaps it, and
-`moat up` used to overwrite `state.json` without looking — so a box that died out of band
-left a process nobody could attribute again. Measured before the fix, on real boots
-(`--egress isolated`, box pid killed with `kill -9`):
-
-```
 box 370445, datapath 370467          # state.json, before the kill
 slirp before up: 1                   # the datapath is still running
 $ moat up                            # boots a second box
@@ -1854,58 +1460,6 @@ the variable named correctly:
           MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD, MOAT_CREDENTIAL_FINGERPRINT,
           MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits. … Use a provider-scoped,
           spend-capped token.
-```
-
-Extras section AH is both boxes end to end (the keyless one, plus that credentialed control).
-`test/unit/doctor-claims.test.ts` holds the parts without a sandbox: which names the probe
-injects for each combination of credential and provider, that only credential-bearing names
-are called the credential, and that a keyless box is not offered key rotation. All three were
-watched failing with the old list and the old wording restored.
-
-### AI. The acceptance suite
-
-`test/e2e-codex.sh` is the acceptance list: it drives `moat run` through
-`test/mock-responses.mjs` — the Responses stub whose event shapes were captured from a real
-DeepSeek stream — and exits non-zero on any failed criterion. It is keyless. Measured: all
-criteria passed (`test/evidence/codex-summary.txt`).
-
-What it asserts, against a real sandbox:
-
-* the environment reports the **codex** runtime, and egress is `open` for the loopback provider
-  (the documented exception to the `filtered` default);
-* the doctor's in-sandbox isolation list — namespaces, uid mapping, the six device binds, no
-  host mount, no host environment variable — including the canary checks it runs against the
-  host;
-* a mocked turn that **fixes the fixture's failing test** and commits it, after which moat's own
-  checks runner prints `pass  npm test` from inside the box;
-* the two rendered config lines that keep Codex from asking for approvals or adding its own
-  sandbox (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`);
-* the host canary, the host home and the host project directory unreachable from inside the box
-  — asserted independently with `moat exec`, not from the agent's report;
-* `moat fetch` writing **exactly one** ref under `refs/moat/`, carrying the agent's commit, with
-  the host HEAD and working tree unchanged;
-* the host project tree byte-identical before and after, by moat's own `hashTree`;
-* the injected credential value absent from the whole rootfs (and named only as a variable in
-  the box's config);
-* a marker file and an `apk add` surviving `moat down` + `moat up`;
-* (section 10) that an escape sequence in the scripted answer never reaches the terminal, with a
-  control that the matcher does find an ESC byte when one is there.
-
-Two criteria that existed only because the old runtime ran a server are **deliberately
-absent**, and the file says so at the top rather than leaving a silent gap: the in-box
-tool/permission guard (there is no equivalent under Codex; the rendered config is what stands
-in its place) and the session/attach streaming (the interactive surface is Codex's own TUI,
-verified through a real pty by `test/codex-tui.py`, extras section AL).
-
-### AH. The runtime is Codex, pinned, and repaired rather than re-provisioned
-
-The runtime is a dependency, not the product: the box, the credential broker, copy-out and the
-egress policy are what moat owns. Codex is a CLI, so the long-running box is a keepalive and
-every task, TUI session and check runs in its own ephemeral boot of the same rootfs.
-
-What is verified (extras section AJ, and `test/evidence/codex-up.txt`):
-
-```
 $ moat status
 status       running
 runtime      codex (deepseek/deepseek-flash)
@@ -1916,58 +1470,6 @@ approval_policy = "never"
 sandbox_mode = "danger-full-access"
 wire_api = "responses"
 codex: the pinned runtime boots, moat renders its config, and the image carries it
-```
-
-Three things are load-bearing, and each has a test:
-
-* The config is **rendered by moat on every boot** through the rootfs guard, because approvals
-  off and Codex's own sandbox off are moat's decision and not the agent's: moat's box is the
-  only boundary there should be. `test/unit/codex-runtime.test.ts` pins those two lines, and
-  `bundle/codex.ts` is the only writer.
-* The binary is **pinned and digested** (`lib/pins.ts`) and is part of `imageCachePath`
-  (`test/unit/runtime-image.test.ts`), so a cached image cannot silently lack it. When it is
-  missing from a live rootfs — the agent is root and can `rm` it, and an environment made by an
-  older moat never had it — the next boot **installs** it instead of re-provisioning, because
-  `provisionEnv` deletes the rootfs first and would take `/work` with it. That was not
-  theoretical: the first version of the install path lost an untracked file exactly that way.
-  `test/unit/runtime-install.test.ts` holds the symlink guard on that copy, and extras section
-  AJ carries a file through the repair.
-* Cost is measured rather than assumed. On one identical trivial task, same model, one run each
-  (`docs/RUNTIME-COST.md`): Codex used 17,692 tokens and $0.000259 against the old runtime's
-  9,363 and $0.0000937 — about 1.9× the tokens and 2.8× the money on trivial work, because
-  Codex carries a larger harness prompt and ran an extra verification command. DeepSeek's cache
-  carried 96% of its prompt, which is why the money gap is smaller than the raw token count
-  suggests. That measurement also found a real bug in the integration: Codex's `input_tokens`
-  *includes* the cached tokens, so charging that field at the miss rate *and* the cached field
-  separately over-reported a mostly-cached turn by about ten times. `parseCodexEvents` subtracts
-  them and `test/unit/codex-runtime.test.ts` pins the arithmetic.
-
-The interactive surface is verified rather than assumed: `test/codex-tui.py` (extras section AL)
-allocates a real pty, boots the runtime, runs `moat` with no arguments, and requires that the TUI
-was reached (not the help text), that it drew a screen and stayed up, and that Ctrl-C left the
-sandbox running. It failed before the fix below, which is how the fix was found.
-
-That failure was the first thing a new user would have met: `sandboxEnv` fixes `TERM=dumb`, which
-is right for an unwatched boot and wrong for a terminal, so Codex's TUI opened with
-`WARNING: TERM is set to "dumb". Codex's interactive TUI may not work in this terminal.
-Continue anyway? [y/N]` and waited. `runInteractive` now advertises the host's terminal type,
-sanitised (`interactiveTerm`, `test/unit/interactive-term.test.ts`), and only there: a check or a
-batch boot still gets `dumb`, so the environment the other suites measure is unchanged.
-
-There is no effort knob, and none is claimed. Codex sends `model_reasoning_effort` only for
-models it has metadata for and has none for the DeepSeek models moat uses, so moat renders no
-such line and exposes no flag that would do nothing (`docs/RUNTIME-SPIKE-codex.md`). The flag,
-its refusal message and its unit test were deleted with the runtime that motivated them.
-
-### AG. A project's own check output cannot drive the terminal it is printed on
-
-`moat verify` streams the check's output as it arrives, and `moat take` prints the last six
-lines of a failure. Those bytes are the *project's* own test output — code the agent can edit —
-and they were printed without the print-boundary stripping every other sandbox string goes
-through. Measured before the fix, with a `test` script that prints
-an OSC title sequence and a clear-screen:
-
-```
 $ moat verify            # stderr captured
 stderr bytes: 223, ESC bytes: 4, marker present: True
 first bytes: …> node escape.js\n\n\x1b]0;PWNED-TITLE\x07\x1b[2JMOAT-CHECK-MARKER\n
@@ -1983,67 +1485,3 @@ After the fix, the same project:
 escape-verify: 194 stderr bytes, 0 ESC byte(s), marker present: True
 escape-take: 787 stderr bytes, 0 ESC byte(s), marker present: True
 check output: escapes are dropped, and the text around them still reaches the user
-```
-
-The marker is the control: the output is still streamed and still readable, so the fix removed
-the escape bytes rather than the evidence. `moat verify` strips per chunk — safe because
-`stripAnsi` removes every ESC byte, so a sequence split across writes cannot be reassembled,
-the property `test/unit/terminal-text.test.ts` already pins — and `moat take` strips per line.
-Extras section AI asserts on the raw bytes of both captures, and was watched failing with the
-streaming site reverted (4 ESC bytes, verdict FAILED).
-
----
-
-## Requirement-by-requirement
-
-| # | requirement | status |
-| --- | --- | --- |
-| 1 | Linux-first, no Windows, WSL2 via the container path | **met** — Linux-only guard; the boot path is `unshare`/`mount`/`chroot` |
-| 2 | sandbox is the default and only mode | **met** — `moat up` refuses to run without user namespaces; there is no host mode |
-| 3 | no approval prompts, no deny rules | **met** — moat renders `approval_policy = "never"` and `sandbox_mode = "danger-full-access"` on every boot; there is no prompt to answer and no second sandbox to trip |
-| 4 | curated, bundled tool set — exactly what the bundle declares | **NOT met, and no longer attempted** — see below |
-| 5 | project copied in, never bind-mounted | **met** — `git clone --no-hardlinks` from the host project path into the rootfs; no mount of it appears in the table |
-| 6 | copy-out explicit and user-initiated | **met** — `moat fetch` writes one ref; `moat apply` is separate; `HEAD` and the working tree are provably unchanged |
-| 7 | one scoped credential at boot; no keys in the image; no host env, SSH agent or dotfiles | **met** for injection, no-keys-in-image, and no-env/SSH/dotfiles; **partial** for "scoped" (see below) |
-| — | environments persist, snapshots cover the rootfs not the project | **met** |
-
-**Requirement 4, in full.** moat does not curate the tool list of the runtime it
-drives. Codex ships its own tools and offers no supported way to prune one from the
-list the model receives. Measured, the pinned version advertises `exec_command`,
-`write_stdin`, `view_image`, `web_search`, `request_user_input`, `multi_agent_v1`
-and the goal tools on a real turn (`test/evidence/codex-summary.txt`,
-"provider-side record of the turn"). The runtime before Codex had a server and a
-plugin that refused tools outside a curated set, so this requirement was written
-around a mechanism that no longer exists. What bounds the tools now is the box:
-mount namespace, network namespace, egress policy, and a host that is never
-mounted. moat renders no tool filter, and there is no `moat tools` to print one.
-
-**Requirement 7, "scoped".** The credential is scoped in lifetime (a TTL,
-enforced, verified) and in exposure (one variable, in memory, for one boot, over
-a name allowlist). It is not scoped in *permission*: a provider API key carries
-whatever rights it carries. Narrowing that means provider-side tokens, which is
-explicitly v2 ("credential brokering with expiry").
-
----
-
-## Not verified
-
-Listed so that absence is not mistaken for success.
-
-| thing | why |
-| --- | --- |
-| v1 (microVM on KVM): boot time, image size, delta vs v0 | `/dev/kvm` is present but not accessible to this user (mode 660, gid 991, not a member). v1 is a separate phase and is not claimed here. |
-| v2 (provider-side credential revocation and spend caps, concurrent sandboxes) | explicitly gated on v0 *and* v1 passing. Egress rules landed ahead of v2 and are verified in §L. |
-| Model quality, as opposed to model reachability | a real DeepSeek session is verified above. That is one task, one model, one run — a smoke test with teeth, not a benchmark. |
-| Non-DeepSeek providers | moat is DeepSeek-only by design; `--base-url` exists for a gateway or a local model and is exercised against a stub, but no second hosted provider was wired up or called. |
-| The `countUnfetched` / host-drift logic under adversarial git states | §AB and §AC cover multiple branches, tags, an already-fetched ref, a non-git host, a detached host HEAD and a detached sandbox HEAD; a *rebased* sandbox branch, and commits that survive only in the sandbox reflog after a `reset --hard`, are still not staged. |
-| The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |
-| The absolute correctness of a cost figure against a DeepSeek invoice | the figure is the published table applied to the billed token counts in the CLI's own usage block. Codex reports one usage block per turn, so a turn that crosses a peak-pricing boundary is priced at one rate and the label names one side; only per-request timestamps could split it, and they are not reported. Nothing here is compared against a real bill. |
-| Codex's tool list over time | the `codex-*.txt` captures record what one pinned version advertised on one turn. Another version may advertise a different set, and nothing in moat reads or constrains it. |
-| The interactive screen beyond reaching it | extras section AL (`test/codex-tui.py`) proves moat reaches a live TUI and that leaving it leaves the box running. What the TUI draws, its keybindings, its model picker and its session resume behaviour are the CLI's own, and are not automated here. |
-| Exfiltration through an allowed channel | §L verifies that the allowlist admits the provider and refuses an arbitrary address, and that the host's loopback is unreachable on both routes. It does not attempt to push data out *through* an allowlisted address or over DNS, both of which remain possible by construction. |
-| Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), and §AE covers a box killed out of band and a stale recorded identity, but a real reboot (with the kernel's own pid reuse) was not staged. |
-| Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all — a refusal, not support, and not a silent drop. |
-| What the copy-out credential scan cannot see | it compares against the values the host holds at fetch/apply time (`DEEPSEEK_API_KEY`, `MOAT_CREDENTIAL`, the credential store) and searches the commits a fetch brought in (the most recent 50) or the files an apply plan would write (up to 64 MiB each). A key rotated since the boot, a secret the agent obtained somewhere else, older commits and larger files are outside it — each bound is named when it is reached (extras §AB, `test/unit/leak-scan.test.ts`). A file that does not match is not a claim that it is clean. |
-| Whether the Codex loop is better than the old runtime's on long work | cost per turn is measured (`docs/RUNTIME-COST.md`), but the old runtime is deleted, so that comparison is history rather than a live A/B, and "which harness does long autonomous work better" would need a task suite and many runs. |
-| Anything about a real model other than what the live suite ran | `bash test/e2e-live.sh` is the only evidence against the hosted model. Everything else runs against the deterministic stub, which cannot show model quality, refusals, or provider-side behaviour. |

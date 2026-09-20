@@ -1,5 +1,98 @@
+import fs from "node:fs"
+import { fileURLToPath } from "node:url"
+
 import { CODEX_VERSION } from "../lib/pins.ts"
 import { writeRootfsFile } from "../lib/rootfs-fs.ts"
+
+/**
+ * The DeepSeek model catalog Codex reads, vendored from DeepSeek's documented Codex setup.
+ *
+ * Source: https://api-docs.deepseek.com/quick_start/agent_integrations/codex — their `models.json`,
+ * the file their setup script writes to `~/.codex/models.json`. It is what turns a model Codex has
+ * no metadata for into one it treats like a built-in: context window, reasoning-effort levels, the
+ * patch-tool type, parallel tool calls, the multi-agent version. Without it Codex prints "Model
+ * metadata for `<id>` not found" and sends **no** `reasoning.effort` at all — measured through
+ * test/mock-responses.mjs, and the reason `--effort` had to be removed before this file existed.
+ *
+ * Dropped from DeepSeek's copy, deliberately:
+ *
+ *  - `model_messages` — its `instructions_template` is the same ~18 KB prompt as
+ *    `base_instructions`; Codex accepts either.
+ *  - `base_instructions` **as DeepSeek ships it** — their text ("You are Codex, an agent based on
+ *    GPT-5…") is OpenAI's Codex CLI system prompt vendored at their snapshot, so shipping it would
+ *    freeze the agent's instructions at DeepSeek's copy of someone else's prompt and silently stop
+ *    every upstream Codex improvement to tool descriptions and safety rules from applying.
+ *
+ * The field itself cannot be deleted, and that was measured rather than assumed. With
+ * `base_instructions` removed from both entries, the pinned 0.155.1 binary refuses the catalog at
+ * startup and exits 1:
+ *
+ *   $ CODEX_HOME=<dir> codex exec --json --skip-git-repo-check "say hi"
+ *   Error: failed to parse model_catalog_json path `<dir>/models.json` as JSON: model
+ *   `deepseek-flash` is missing both `base_instructions` and `model_messages.instructions_template`
+ *   at line 119 column 1
+ *
+ * Codex requires one of the two fields, so a strictly metadata-only catalog is not expressible
+ * without a fork. The field stays; what fills it does not have to be DeepSeek's text.
+ *
+ * It is the prompt our own pinned binary sends for a model it has no metadata for, captured from
+ * that binary through the recording stub. With the catalog installed, Codex sends exactly this
+ * text as the request's top-level `instructions`, and it is byte-identical to the no-catalog
+ * request (sha256 below, the same text for both entries), so adopting the catalog changes metadata
+ * only — never the prompt. Shipping DeepSeek's text instead would change it: measured, the
+ * provider then receives their prompt. The sha is pinned and `test/unit/codex-runtime.test.ts`
+ * checks the vendored file against it, so a Codex upgrade that moves the built-in prompt fails a
+ * test rather than silently serving a stale one.
+ *
+ * MAINTAINER TRAP: a Codex version bump can move this built-in prompt, and the pin has to be
+ * refreshed in the same commit or the agent keeps running the old prompt while the binary moves.
+ * To re-capture, run the new binary against the recording stub with a config that has NO
+ * `model_catalog_json`, then sha256 the `instructions` field of the request it sent:
+ *
+ *   $ CODEX_HOME=<dir> DEEPSEEK_API_KEY=… codex exec --json --skip-git-repo-check "say hi"
+ *   $ python3 -c 'import hashlib,json;print(hashlib.sha256(json.load(open("<record>"))["instructions"].encode()).hexdigest())'
+ *   3b08633fa672906666659d764864dfda1d7af5b5111ea5817c8f46e5de4e1a8d
+ *
+ * and copy that `instructions` text into both entries' `base_instructions` (measured: the same
+ * text for both). To use DeepSeek's tuning instead, replace `base_instructions` with their text
+ * (or add `model_messages.instructions_template`) and re-record the sha.
+ */
+export const CATALOG_SOURCE_URL = "https://api-docs.deepseek.com/quick_start/agent_integrations/codex"
+export const CATALOG_INSTRUCTIONS_SHA256 =
+  "3b08633fa672906666659d764864dfda1d7af5b5111ea5817c8f46e5de4e1a8d"
+
+export type CodexCatalogModel = {
+  slug: string
+  display_name: string
+  default_reasoning_level: string
+  supported_reasoning_levels: { effort: string; description: string }[]
+  base_instructions: string
+} & Record<string, unknown>
+
+export type CodexCatalog = { models: CodexCatalogModel[] }
+
+/**
+ * The vendored catalog, read once: it ships beside this file and never changes at runtime. The raw
+ * text is kept too, and installed byte-for-byte, so what the box reads is the file in this
+ * repository rather than a re-serialization of it.
+ */
+const VENDORED_CATALOG = fs.readFileSync(fileURLToPath(new URL("./deepseek-models.json", import.meta.url)), "utf8")
+export const CODEX_CATALOG: CodexCatalog = JSON.parse(VENDORED_CATALOG) as CodexCatalog
+
+/** The catalog entry for a model, or null when moat has no metadata for it. */
+export function catalogModel(model: string): CodexCatalogModel | null {
+  return CODEX_CATALOG.models.find((entry) => entry.slug === model) ?? null
+}
+
+/** The reasoning levels the catalog declares for a model. Empty when it is not listed. */
+export function catalogEffortLevels(model: string): string[] {
+  return catalogModel(model)?.supported_reasoning_levels.map((level) => level.effort) ?? []
+}
+
+/** The level Codex would use on its own for this model, from the catalog. */
+export function catalogDefaultEffort(model: string): string | null {
+  return catalogModel(model)?.default_reasoning_level ?? null
+}
 
 /**
  * The Codex runtime: the config moat renders for it, and the host side of `codex exec --json`.
@@ -18,7 +111,7 @@ import { writeRootfsFile } from "../lib/rootfs-fs.ts"
  *    in one place, not by whatever the agent left in `~/.codex`.
  *  - the provider is a `[model_providers.*]` block even though Codex's documentation lists
  *    DeepSeek as built in: 0.155.1 answers `Error: Model provider \`deepseek\` not found`.
- *    Measured; see docs/RUNTIME-SPIKE-codex.md.
+ *    Measured; see `docs/HISTORY.md`.
  */
 
 export type CodexConfigInput = {
@@ -39,6 +132,27 @@ export type CodexConfigInput = {
   /** Context window to declare, so the first run is not a metadata guess. */
   contextWindow?: number
   maxOutputTokens?: number
+  /**
+   * `model_reasoning_effort`, when the user asked for one.
+   *
+   * The levels are DeepSeek's, not OpenAI's: the vendored catalog declares `low`, `high` and
+   * `max` for both models, and `--effort` is validated against them before provisioning. This
+   * line is what decides the wire. Measured through the recording stub with the catalog installed:
+   * `high` sends `reasoning.effort = "high"` and `low` sends `"low"`, regardless of the catalog
+   * entry's `default_reasoning_level` (which is left alone); a model with no catalog entry gets
+   * the same key plus the metadata notice. Rendering the chosen level into the catalog instead
+   * does nothing — the config line wins.
+   */
+  reasoningEffort?: string
+}
+
+/** Every reasoning level the vendored catalog declares, from the catalog rather than a list here. */
+export function catalogAllEffortLevels(): string[] {
+  const levels = new Set<string>()
+  for (const model of CODEX_CATALOG.models) {
+    for (const level of model.supported_reasoning_levels ?? []) levels.add(level.effort)
+  }
+  return [...levels].sort()
 }
 
 function tomlString(value: string): string {
@@ -55,9 +169,22 @@ export function renderCodexConfig(input: CodexConfigInput): string {
     // moat's box is the sandbox; Codex must not add a second one or ask for approvals.
     'approval_policy = "never"',
     'sandbox_mode = "danger-full-access"',
+    // DeepSeek's documented setup: an API key is the only authentication, so Codex skips the
+    // ChatGPT/OpenAI account paths entirely. The key itself still arrives through env_key.
+    'preferred_auth_method = "apikey"',
+    'forced_login_method = "api"',
+    // The model catalog below is what tells Codex what these models can do (reasoning levels,
+    // context window, tool shapes). Without it 0.155.1 prints "Model metadata for ... not found.
+    // Defaulting to fallback metadata", measured; with it the notice is gone, also measured.
+    `model_catalog_json = ${tomlString(CODEX_CATALOG_PATH)}`,
+    // DeepSeek's Responses API accepts a web_search tool and IGNORES it (measured live: HTTP 200,
+    // no web_search_call item, the model answered that it cannot search). Disabled, as their own
+    // setup does, rather than advertised to the model as something that works.
+    'web_search = "disabled"',
   ]
   if (input.contextWindow) lines.push(`model_context_window = ${input.contextWindow}`)
   if (input.maxOutputTokens) lines.push(`model_max_output_tokens = ${input.maxOutputTokens}`)
+  if (input.reasoningEffort) lines.push(`model_reasoning_effort = ${tomlString(input.reasoningEffort)}`)
   lines.push(
     "",
     `[model_providers.${input.providerID}]`,
@@ -81,6 +208,9 @@ export function codexBriefPath(home = "/root"): string {
   return `${home}/.codex/AGENTS.md`
 }
 
+/** The model catalog Codex reads, as DeepSeek's setup writes it. Rendered on every boot. */
+export const CODEX_CATALOG_PATH = "/root/.codex/models.json"
+
 /**
  * Fail loudly if a literal secret is about to be written into the sandbox.
  *
@@ -101,21 +231,23 @@ const LITERAL_KEY = new RegExp(
 )
 
 /**
- * Write the two files that decide how the agent behaves, through the rootfs guard.
+ * Write the three files that decide how the agent behaves, through the rootfs guard.
  *
  * This runs on EVERY boot, not only when the image is provisioned: the rootfs may come from
- * the host image cache or from an environment created days ago, and both files are policy. A
- * stale one silently running an old policy is a bug that already happened once with the
+ * the host image cache or from an environment created days ago, and all three files are policy.
+ * A stale one silently running an old policy is a bug that already happened once with the
  * opencode bundle.
  *
  * The credential reaches the box as an environment variable and never as a file, so anything
- * that looks like a key in either text is refused rather than written: that is what makes
- * "grep the image for the key and find nothing" checkable.
+ * that looks like a key in any of the three texts is refused rather than written: that is what
+ * makes "grep the image for the key and find nothing" checkable.
  */
 export function installCodexFiles(rootfs: string, files: { config: string; brief: string }): void {
+  const catalog = VENDORED_CATALOG
   for (const [name, text] of [
     ["config.toml", files.config],
     ["AGENTS.md", files.brief],
+    ["models.json", catalog],
   ] as const) {
     if (LITERAL_KEY.test(text)) {
       throw new Error(`refusing to write ${name} into the sandbox: it appears to contain a literal API key`)
@@ -126,6 +258,7 @@ export function installCodexFiles(rootfs: string, files: { config: string; brief
   // guard existed: an AGENTS.md of 3834 bytes landed outside the rootfs, every boot.
   writeRootfsFile(rootfs, codexConfigPath(), files.config, 0o600)
   writeRootfsFile(rootfs, codexBriefPath(), files.brief, 0o600)
+  writeRootfsFile(rootfs, CODEX_CATALOG_PATH, catalog, 0o600)
 }
 
 export type CodexToolRun = {
@@ -207,7 +340,7 @@ export function parseCodexEvents(text: string): CodexTurn {
       // not opencode's: there `input` is the cache-*miss* count and the hits are separate.
       // Charging the raw field at the miss rate and the cached field at the hit rate double
       // counts them, which over-reported a mostly-cached turn by about ten times. Measured
-      // against the identical task on both runtimes: docs/RUNTIME-COST.md.
+      // against the identical task on both runtimes: `docs/HISTORY.md`.
       turn.usage = {
         input: Math.max(0, numberField(usage, "input_tokens") - cached),
         cached,

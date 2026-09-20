@@ -9,11 +9,11 @@ before: ℹ pass 1 ℹ fail 5
 
 == 2. boot with the real provider
 
---- $ node /home/ektor/Projects/moat/cmd/main.ts destroy --yes
+--- $ node /home/user/Projects/moat/cmd/main.ts destroy --yes
 nothing to destroy
 --- exit 0
 
---- $ node /home/ektor/Projects/moat/cmd/main.ts up --model deepseek-flash --profile node --credential-env DEEPSEEK_API_KEY
+--- $ node /home/user/Projects/moat/cmd/main.ts up --model deepseek-flash --profile node --credential-env DEEPSEEK_API_KEY
 → provisioning sandbox image (alpine 3.21.4 + codex 0.155.1 + node)
 → provisioning from the cached image alpine-3.21.4-2c1b310cad94.tar.gz
 ✓ image provisioned in 1.91s (extract cached image 1.66s)
@@ -26,8 +26,8 @@ checks: npm run test
 → sandbox booted (pid 113153); the codex runtime has no server to wait for
 ✓ sandbox up, cold start 2.80s (image built)
 
-  project    /home/ektor/moat-demo/live-project
-  env        /home/ektor/.moat/envs/1ade356a6e72
+  project    /home/user/moat-demo/live-project
+  env        /home/user/.moat/envs/1ade356a6e72
   runtime    codex (deepseek/deepseek-flash) — `moat` opens its TUI
   workspace  /work (inside the sandbox)
   credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T20:17:36.555Z
@@ -40,7 +40,7 @@ checks: npm run test
 == 3. the agent does the work
 the turn streams Codex's own events; --show-output adds each tool's output as it runs
 
---- $ timeout 1800 node /home/ektor/Projects/moat/cmd/main.ts run --show-output npm test is failing. Run it, find the bug in src/slugify.js, and fix it so the whole suite passes. Then run npm install and verify the CLI works end to end. Commit everything to the branch you are on, and report the final test output.
+--- $ timeout 1800 node /home/user/Projects/moat/cmd/main.ts run --show-output npm test is failing. Run it, find the bug in src/slugify.js, and fix it so the whole suite passes. Then run npm install and verify the CLI works end to end. Commit everything to the branch you are on, and report the final test output.
 sandbox already running (pid 113153); restarting it for this run
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
@@ -159,8 +159,8 @@ curl-exit=28
 
 == 6. copy the work back, without touching the working tree
 
---- $ node /home/ektor/Projects/moat/cmd/main.ts fetch
-→ copy-out: git fetch /home/ektor/.moat/envs/1ade356a6e72/rootfs/work +refs/heads/moat-session-2026-09-20-16-17:refs/moat/moat-session-2026-09-20-16-17
+--- $ node /home/user/Projects/moat/cmd/main.ts fetch
+→ copy-out: git fetch /home/user/.moat/envs/1ade356a6e72/rootfs/work +refs/heads/moat-session-2026-09-20-16-17:refs/moat/moat-session-2026-09-20-16-17
 ✓ fetched moat-session-2026-09-20-16-17 -> refs/moat/moat-session-2026-09-20-16-17 (1c5a7ee3a01c)
   2 commit(s) reachable, HEAD 60b40e743d42 -> 60b40e743d42
     1c5a7ee3a01c  Fix slugify to handle whitespace, punctuation and accents
@@ -188,7 +188,7 @@ one runtime, so this is the same box and the same /work: a second task must not
 need another boot, and the file it writes must be there to read afterwards.
 
 
---- $ timeout 1800 node /home/ektor/Projects/moat/cmd/main.ts run Create a file named CODEX-LIVE.txt in the working tree whose contents are exactly: codex live. Do not modify any other file. Then finish.
+--- $ timeout 1800 node /home/user/Projects/moat/cmd/main.ts run Create a file named CODEX-LIVE.txt in the working tree whose contents are exactly: codex live. Do not modify any other file. Then finish.
 detected: package.json -> node
           adding profile(s) node; use --no-detect or --profile to override
 sandbox already running (pid 113266); restarting it for this run
@@ -219,11 +219,11 @@ codex live
 
 == 8. teardown
 
---- $ node /home/ektor/Projects/moat/cmd/main.ts down
+--- $ node /home/user/Projects/moat/cmd/main.ts down
 ✓ sandbox stopped (pid 114087); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- exit 0
 
-evidence: /home/ektor/Projects/moat/test/evidence/live-session.txt
+evidence: /home/user/Projects/moat/test/evidence/live-session.txt
 REMINDER: revoke the DEEPSEEK_API_KEY you used for this run.

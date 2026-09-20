@@ -5,6 +5,10 @@ model = "mock-model"
 model_provider = "deepseek-moat"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
+preferred_auth_method = "apikey"
+forced_login_method = "api"
+model_catalog_json = "/root/.codex/models.json"
+web_search = "disabled"
 
 [model_providers.deepseek-moat]
 name = "DeepSeek"

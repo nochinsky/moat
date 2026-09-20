@@ -1041,9 +1041,12 @@ node "$REPO/test/mock-responses.mjs" --port "$RESP_PORT" --script "$REPO/test/sc
 RESP_PID=$!
 sleep 1
 export MOAT_MOCK_CREDENTIAL="moat-e2e-responses-stub"
-( cd "$CK" && capture codex-mock-up $MOAT up --quiet --profile node --model mock-model \
+# deepseek-flash, not mock-model: it is the model the vendored catalog describes, which is what
+# removes Codex's fallback-metadata notice and gives --effort something to move. The endpoint is
+# still the stub; only the id changes, and the stub ignores it.
+( cd "$CK" && capture codex-mock-up $MOAT up --quiet --profile node --model deepseek-flash --effort high \
   --base-url "http://127.0.0.1:$RESP_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
-( cd "$CK" && capture codex-mock-run $MOAT run "Make the failing test pass." )
+( cd "$CK" && capture codex-mock-run $MOAT run --effort high "Make the failing test pass." )
 ( cd "$CK" && capture codex-mock-fix $MOAT exec -- sh -c 'cat /work/src/sum.js; git -C /work log --oneline -1' )
 # The project's own checks are the verdict the user reads, and they run inside the box with
 # no model involved. This is the half that says the runtime swap did not cost moat its loop.
@@ -1057,6 +1060,21 @@ export MOAT_MOCK_CREDENTIAL="moat-e2e-responses-stub"
 # state: asserting on a conditional sentence is how this check first reported a false negative.
 ( cd "$CK" && capture codex-mock-brief $MOAT exec -- sh -c 'grep -m1 "disposable Linux container" /root/.codex/AGENTS.md' )
 kill "$RESP_PID" 2>/dev/null
+# The other half of --effort: a second boot of the same environment, same stub, same model, only
+# the level changed. The record is a separate file so the two turns cannot be confused, and the
+# endpoint is passed again because state records the previous one. What is asserted is the
+# REQUEST the provider received, not the config moat says it wrote — a later boot of this
+# environment (exec, verify) re-renders config.toml from that boot's flags, with no effort in it.
+RESP_PORT_LOW=5598
+rm -f "$WORK/responses-requests-low.jsonl"
+node "$REPO/test/mock-responses.mjs" --port "$RESP_PORT_LOW" --script "$REPO/test/scripts/responses-basic.json" \
+  --record "$WORK/responses-requests-low.jsonl" > "$WORK/mock-responses-low.log" 2>&1 &
+RESP_PID_LOW=$!
+sleep 1
+( cd "$CK" && capture codex-mock-run-low $MOAT run --effort low --model deepseek-flash \
+  --base-url "http://127.0.0.1:$RESP_PORT_LOW/v1" "Make the failing test pass." )
+kill "$RESP_PID_LOW" 2>/dev/null
+PINNED_SHA=$( cd "$REPO" && node -e 'import("./bundle/codex.ts").then(m => console.log(m.CATALOG_INSTRUCTIONS_SHA256))' )
 BRIEF_IN_REQUEST=$(python3 - "$WORK/responses-requests.jsonl" <<'PY'
 import json, sys
 rows = [json.loads(l) for l in open(sys.argv[1])]
@@ -1064,6 +1082,33 @@ print("yes" if any("disposable Linux container" in (r.get("body") or "") for r i
 PY
 )
 REQS=$(wc -l < "$WORK/responses-requests.jsonl" 2>/dev/null || echo 0)
+# The catalog's three claims, read from what the provider received (and from the CLI's own output
+# for the notice, which never reaches the wire). The pre-catalog control was measured on this
+# fixture: the notice was present, the advertised tools included web_search, and the wire carried
+# no reasoning.effort for either level. Each of these can therefore fail.
+EFFORT_OK=0
+python3 - "$WORK/responses-requests.jsonl" "$WORK/responses-requests-low.jsonl" "$PINNED_SHA" <<'PY' | tee -a "$EVIDENCE/extras.txt" || EFFORT_OK=1
+import hashlib, json, sys
+pinned = sys.argv[3]
+def rows(path):
+    return [json.loads(l) for l in open(path)]
+high, low = rows(sys.argv[1]), rows(sys.argv[2])
+def efforts(rs):
+    return sorted({(r.get("reasoning") or {}).get("effort") for r in rs if r.get("reasoning")})
+tools = sorted({t for r in high + low for t in (r.get("tools") or [])})
+shas = sorted({hashlib.sha256((r.get("instructions") or "").encode()).hexdigest() for r in high + low})
+print("effort high record : requests", len(high), "reasoning", efforts(high))
+print("effort low record  : requests", len(low), "reasoning", efforts(low))
+print("tools advertised   :", tools)
+print("instructions sha256:", shas)
+ok = (
+    efforts(high) == ["high"]
+    and efforts(low) == ["low"]
+    and "web_search" not in tools
+    and shas == [pinned]
+)
+sys.exit(0 if ok else 1)
+PY
 if grep -q "a + b" "$EVIDENCE/codex-mock-fix.txt" \
    && grep -q "fix: sum adds" "$EVIDENCE/codex-mock-fix.txt" \
    && grep -qE "pass +npm test" "$EVIDENCE/codex-mock-verify.txt" \
@@ -1072,10 +1117,14 @@ if grep -q "a + b" "$EVIDENCE/codex-mock-fix.txt" \
    && grep -q "src/sum.js" "$EVIDENCE/codex-mock-run.txt" \
    && grep -q "disposable Linux container" "$EVIDENCE/codex-mock-brief.out" \
    && [ "$BRIEF_IN_REQUEST" = "yes" ] \
-   && [ "$REQS" -ge 2 ]; then
+   && [ "$REQS" -ge 2 ] \
+   && [ "$EFFORT_OK" = "0" ] \
+   && ! grep -q "Model metadata for" "$EVIDENCE/codex-mock-run.txt" \
+   && ! grep -q "Model metadata for" "$EVIDENCE/codex-mock-run-low.txt"; then
   echo "codex: a keyless turn fixes the fixture, the checks pass, the commit fetches, and moat's brief reached the model ($REQS model requests)" | tee -a "$EVIDENCE/extras.txt"
+  echo "codex: the catalog removed the metadata notice, disabled web_search, and --effort high/low reached the wire as asked (see the record lines above)" | tee -a "$EVIDENCE/extras.txt"
 else
-  echo "codex: FAILED — no fix, or the brief did not reach the model (requests=$REQS, brief_in_request=$BRIEF_IN_REQUEST)" | tee -a "$EVIDENCE/extras.txt"
+  echo "codex: FAILED — no fix, or the brief did not reach the model (requests=$REQS, brief_in_request=$BRIEF_IN_REQUEST, effort_ok=$EFFORT_OK)" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$CK" && $MOAT destroy --yes >/dev/null 2>&1 )
 

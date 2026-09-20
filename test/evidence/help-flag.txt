@@ -40,6 +40,9 @@ Diagnostics
 
 Options that apply to up/run
   --model ID             DeepSeek model id; see: moat models
+  --effort LEVEL         reasoning effort: low, high or max, the levels the
+                         vendored DeepSeek model catalog declares. Renders Codex's
+                         model_reasoning_effort; default is the catalog's own.
   --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project

@@ -37,12 +37,22 @@ const model = script.model || "mock-model"
 let requestCount = 0
 const record = recordPath ? fs.createWriteStream(recordPath, { flags: "a" }) : null
 
+/**
+ * The usage a scripted turn reports.
+ *
+ * The real shape nests the reasoning count — `output_tokens_details.reasoning_tokens` — which is
+ * also what Codex reads, so a script can drive a non-zero value through the wire and a test can
+ * see what Codex's own JSONL reports back (`turn.completed.usage`). Pinned to 0 by default.
+ */
+const scriptUsage = script.usage || {}
+const inputTokens = scriptUsage.input_tokens ?? 8600
+const outputTokens = scriptUsage.output_tokens ?? 40
 const usage = () => ({
-  input_tokens: 8600,
-  input_tokens_details: { cached_tokens: 8400 },
-  output_tokens: 40,
-  output_tokens_details: { reasoning_tokens: 0 },
-  total_tokens: 8640,
+  input_tokens: inputTokens,
+  input_tokens_details: { cached_tokens: scriptUsage.cached_tokens ?? 8400 },
+  output_tokens: outputTokens,
+  output_tokens_details: { reasoning_tokens: scriptUsage.reasoning_tokens ?? 0 },
+  total_tokens: inputTokens + outputTokens,
 })
 
 const responseShell = (status, output) => ({

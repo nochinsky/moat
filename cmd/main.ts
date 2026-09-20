@@ -71,7 +71,13 @@ import {
   writeOuterScript,
 } from "../sandbox/launcher.ts"
 import { renderInstructions } from "../bundle/instructions.ts"
-import { describeCodexTurn, installCodexFiles, parseCodexEvents, renderCodexConfig } from "../bundle/codex.ts"
+import {
+  catalogAllEffortLevels,
+  describeCodexTurn,
+  installCodexFiles,
+  parseCodexEvents,
+  renderCodexConfig,
+} from "../bundle/codex.ts"
 import { computeCost, formatUSD } from "../lib/pricing.ts"
 import { runIsolationChecks, type IsolationReport } from "../sandbox/isolation.ts"
 import { onboard } from "../secrets/onboard.ts"
@@ -448,6 +454,13 @@ async function cmdUp(argv: string[]): Promise<number> {
   // --timeout is seconds everywhere. Validating it here means a typo fails before
   // provisioning rather than after the boot.
   optionalPositiveIntFlag(p, "timeout")
+  // --effort is validated against the levels the vendored catalog declares (low/high/max for
+  // DeepSeek), before provisioning: a level Codex would silently drop is the bug class this
+  // project keeps finding, and the catalog is the only honest source for the list.
+  const effortFlag = flag<string>(p, "effort")
+  if (effortFlag !== undefined && !catalogAllEffortLevels().includes(effortFlag)) {
+    log.fail(`unknown --effort "${effortFlag}". DeepSeek catalog declares: ${catalogAllEffortLevels().join(", ")}`)
+  }
   // --credential-ttl is parsed with the same function that will parse it at mint time, for the
   // same reason: measured before this, a typo ran the whole copy-in and then failed.
   try {
@@ -977,6 +990,7 @@ ${command}
       // The native provider's key is read from its own variable; a custom endpoint reads moat's.
       // With --no-credential there is nothing to read, so no env_key is written at all.
       envKey: resolvedModel.native ? DEEPSEEK.envVar : credential ? "MOAT_INJECTED_CREDENTIAL" : undefined,
+      reasoningEffort: effortFlag,
       contextWindow: resolvedModel.meta?.context,
       maxOutputTokens: resolvedModel.meta?.output,
     }),
@@ -2095,6 +2109,9 @@ Diagnostics
 
 Options that apply to up/run
   --model ID             DeepSeek model id; see: moat models
+  --effort LEVEL         reasoning effort: low, high or max, the levels the
+                         vendored DeepSeek model catalog declares. Renders Codex's
+                         model_reasoning_effort; default is the catalog's own.
   --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project

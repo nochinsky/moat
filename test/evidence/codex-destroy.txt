@@ -2,4 +2,4 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ destroyed /home/user/.moat/envs/5f160b318512
+nothing to destroy

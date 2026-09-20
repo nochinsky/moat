@@ -1,10 +1,18 @@
 import assert from "node:assert/strict"
+import crypto from "node:crypto"
 import { test } from "node:test"
 
-import { describeCodexTurn, parseCodexEvents, renderCodexConfig } from "../../bundle/codex.ts"
+import {
+  CATALOG_INSTRUCTIONS_SHA256,
+  CODEX_CATALOG,
+  catalogAllEffortLevels,
+  describeCodexTurn,
+  parseCodexEvents,
+  renderCodexConfig,
+} from "../../bundle/codex.ts"
 
 // A real `codex exec --json` stream, captured from the sandbox during the spike
-// (docs/RUNTIME-SPIKE-codex.md): the start/completion pair for one command, the answer,
+// (`docs/HISTORY.md`): the start/completion pair for one command, the answer,
 // the metadata notice, and the usage line.
 const SAMPLE = [
   '{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Model metadata for `deepseek-v4-pro` not found. Defaulting to fallback metadata."}}',
@@ -58,13 +66,24 @@ test("the rendered config turns approvals and codex's own sandbox off, per provi
     envKey: "DEEPSEEK_API_KEY",
     contextWindow: 131072,
     maxOutputTokens: 32768,
+    reasoningEffort: "high",
   })
   assert.match(config, /^model = "deepseek-v4-pro"$/m)
   assert.match(config, /^model_provider = "deepseek-moat"$/m)
   assert.match(config, /^approval_policy = "never"$/m)
   assert.match(config, /^sandbox_mode = "danger-full-access"$/m)
+  // DeepSeek's documented setup: API key only, no ChatGPT/OpenAI account path.
+  assert.match(config, /^preferred_auth_method = "apikey"$/m)
+  assert.match(config, /^forced_login_method = "api"$/m)
+  // The vendored catalog is what removes the "Model metadata for ... not found" fallback and is
+  // what makes model_reasoning_effort mean anything; the box file is written by installCodexFiles
+  // at exactly this path.
+  assert.match(config, /^model_catalog_json = "\/root\/\.codex\/models\.json"$/m)
+  // DeepSeek's API accepts a web_search tool and ignores it (measured live): advertise nothing.
+  assert.match(config, /^web_search = "disabled"$/m)
   assert.match(config, /^model_context_window = 131072$/m)
   assert.match(config, /^model_max_output_tokens = 32768$/m)
+  assert.match(config, /^model_reasoning_effort = "high"$/m)
   assert.match(config, /^\[model_providers\.deepseek-moat\]$/m)
   assert.match(config, /^base_url = "https:\/\/api\.deepseek\.com"$/m)
   assert.match(config, /^env_key = "DEEPSEEK_API_KEY"$/m)
@@ -73,7 +92,33 @@ test("the rendered config turns approvals and codex's own sandbox off, per provi
   assert.ok(!/sk-/.test(config))
   const withoutWindow = renderCodexConfig({ model: "m", providerID: "p", baseURL: "http://x", envKey: "K" })
   assert.ok(!/model_context_window/.test(withoutWindow))
+  assert.ok(!/model_reasoning_effort/.test(withoutWindow), "no effort asked for means no effort rendered")
   assert.match(withoutWindow, /^base_url = "http:\/\/x"$/m)
+  const low = renderCodexConfig({ model: "m", providerID: "p", baseURL: "http://x", envKey: "K", reasoningEffort: "low" })
+  assert.match(low, /^model_reasoning_effort = "low"$/m)
+})
+
+test("the vendored catalog carries codex's own built-in prompt, so it changes metadata only", () => {
+  // Codex refuses an entry with neither base_instructions nor model_messages.instructions_template
+  // (measured; see the comment in bundle/codex.ts), so the field stays. It must stay the prompt
+  // the pinned binary sends for a model it has no metadata for, or installing the catalog would
+  // silently change the agent's system prompt. The sha is the pin; a refreshed catalog that swaps
+  // the prompt fails here instead of reaching the wire.
+  for (const model of CODEX_CATALOG.models) {
+    const sha = crypto.createHash("sha256").update(model.base_instructions).digest("hex")
+    assert.equal(sha, CATALOG_INSTRUCTIONS_SHA256, model.slug + " base_instructions")
+  }
+  assert.equal(
+    CODEX_CATALOG.models[0]!.base_instructions,
+    CODEX_CATALOG.models[1]!.base_instructions,
+    "the built-in prompt is model-independent (measured)",
+  )
+  assert.ok(
+    CODEX_CATALOG.models.every((model) => !("model_messages" in model)),
+    "model_messages stays dropped: its instructions_template is the same prompt",
+  )
+  // The levels --effort is validated against come from the catalog, not a list in the CLI.
+  assert.deepEqual(catalogAllEffortLevels(), ["high", "low", "max"])
 })
 
 test("a provider id that is not a TOML key is refused rather than quoted wrongly", () => {

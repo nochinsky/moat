@@ -18,7 +18,7 @@ export const SANDBOX_TRIPLE = "linux-x64-musl"
  * platform tarball's sha256 after download. The linux platform packages are named
  * `<version>-linux-x64` / `-linux-arm64` and ship **musl** binaries under
  * `vendor/<triple>/bin/codex`, so they run on the Alpine image unmodified — measured, no
- * gcompat, no Node. `docs/RUNTIME-SPIKE-codex.md` has the capture.
+ * gcompat, no Node. `docs/HISTORY.md` has the capture.
  */
 export const CODEX_VERSION = "0.155.1"
 
