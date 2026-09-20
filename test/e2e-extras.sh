@@ -1109,10 +1109,22 @@ section "AK. the codex runtime drives a keyless model stub end to end"
 # Codex speaks the Responses wire API, so the chat-completions stub that drives opencode
 # cannot drive it. test/mock-responses.mjs replays the event shapes captured from a real
 # DeepSeek stream through a recording proxy, which makes the DEFAULT runtime testable
-# without a key. That is the piece that has to exist before opencode can be removed.
+# without a key — including the project's own checks, which are the verdict the user reads.
 CK="$WORK/codex-mock"
-rm -rf "$CK"; mkdir -p "$CK"
-( cd "$CK" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
+rm -rf "$CK"; mkdir -p "$CK/src" "$CK/test"
+cat > "$CK/package.json" <<'JSON'
+{ "name": "ak-fix", "type": "module", "scripts": { "test": "node --test" } }
+JSON
+cat > "$CK/src/sum.js" <<'JS'
+export const sum = (a, b) => a - b
+JS
+cat > "$CK/test/sum.test.js" <<'JS'
+import test from "node:test"
+import assert from "node:assert/strict"
+import { sum } from "../src/sum.js"
+test("adds", () => assert.equal(sum(1, 2), 3))
+JS
+( cd "$CK" && git init -q -b main . && git add -A \
   && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
 ( cd "$CK" && $MOAT destroy --yes >/dev/null 2>&1 )
 RESP_PORT=5597
@@ -1122,26 +1134,29 @@ node "$REPO/test/mock-responses.mjs" --port "$RESP_PORT" --script "$REPO/test/sc
 RESP_PID=$!
 sleep 1
 export MOAT_MOCK_CREDENTIAL="moat-e2e-responses-stub"
-( cd "$CK" && capture codex-mock-up $MOAT up --quiet --no-detect --model mock-model \
+( cd "$CK" && capture codex-mock-up $MOAT up --quiet --profile node --model mock-model \
   --base-url "http://127.0.0.1:$RESP_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
-( cd "$CK" && capture codex-mock-run $MOAT run --runtime codex "Create the file the script asks for." )
-( cd "$CK" && capture codex-mock-file $MOAT exec -- sh -c 'cat /work/MOCK-CODEX.txt' )
-( cd "$CK" && capture codex-mock-branch $MOAT exec -- sh -c 'git -C /work log --oneline -1' )
-# The work Codex produced is ordinary sandbox work: the copy-out path must see it like any
-# other agent's. This is the half that says the runtime swap did not cost moat its loop.
+( cd "$CK" && capture codex-mock-run $MOAT run --runtime codex "Make the failing test pass." )
+( cd "$CK" && capture codex-mock-fix $MOAT exec -- sh -c 'cat /work/src/sum.js; git -C /work log --oneline -1' )
+# The project's own checks are the verdict the user reads, and they run inside the box with
+# no model involved. This is the half that says the runtime swap did not cost moat its loop.
+( cd "$CK" && capture codex-mock-verify $MOAT verify )
 ( cd "$CK" && capture codex-mock-fetch $MOAT fetch )
 kill "$RESP_PID" 2>/dev/null
 REQS=$(wc -l < "$WORK/responses-requests.jsonl" 2>/dev/null || echo 0)
-if grep -q "^hello from mock codex$" "$EVIDENCE/codex-mock-file.txt" \
-   && grep -q "mock: add MOCK-CODEX.txt" "$EVIDENCE/codex-mock-branch.txt" \
+if grep -q "a + b" "$EVIDENCE/codex-mock-fix.txt" \
+   && grep -q "fix: sum adds" "$EVIDENCE/codex-mock-fix.txt" \
+   && grep -qE "pass +npm test" "$EVIDENCE/codex-mock-verify.txt" \
+   && ! grep -qE "FAIL +npm test" "$EVIDENCE/codex-mock-verify.txt" \
    && grep -q "fetched .*refs/moat/" "$EVIDENCE/codex-mock-fetch.txt" \
-   && grep -q "MOCK-CODEX.txt" "$EVIDENCE/codex-mock-run.txt" \
+   && grep -q "src/sum.js" "$EVIDENCE/codex-mock-run.txt" \
    && [ "$REQS" -ge 2 ]; then
-  echo "codex: a keyless Responses stub drives the runtime end to end, and its commit fetches ($REQS model requests)" | tee -a "$EVIDENCE/extras.txt"
+  echo "codex: a keyless turn fixes the fixture, the project's own checks pass, and the commit fetches ($REQS model requests)" | tee -a "$EVIDENCE/extras.txt"
 else
-  echo "codex: FAILED — the mocked turn did not produce the file (requests=$REQS, see $WORK/mock-responses.log)" | tee -a "$EVIDENCE/extras.txt"
+  echo "codex: FAILED — the mocked turn did not fix the fixture (requests=$REQS, see $WORK/mock-responses.log)" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$CK" && $MOAT destroy --yes >/dev/null 2>&1 )
+
 section "AL. the default runtime opens a live TUI"
 # The interactive surface of the codex runtime is Codex's own TUI on a pty inside the box.
 # This allocates a real pty, runs moat with no arguments, and requires that the TUI was

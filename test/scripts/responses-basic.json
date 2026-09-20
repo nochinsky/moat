@@ -1,7 +1,7 @@
 {
   "model": "mock-model",
   "turns": [
-    { "tool": { "cmd": "printf 'hello from mock codex\n' > MOCK-CODEX.txt && git add MOCK-CODEX.txt && git -c user.email=mock@example.com -c user.name=mock commit -qm 'mock: add MOCK-CODEX.txt' && git log --oneline -1" } },
-    { "text": "Created and committed MOCK-CODEX.txt on the session branch." }
+    { "tool": { "cmd": "cd /work && sed -i 's/a - b/a + b/' src/sum.js && git add -A && git -c user.email=mock@example.com -c user.name=mock commit -qm 'fix: sum adds' && git log --oneline -1" } },
+    { "text": "Fixed src/sum.js so the test passes, and committed it." }
   ]
 }
