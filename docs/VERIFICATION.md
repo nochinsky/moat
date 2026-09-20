@@ -93,7 +93,7 @@ must hold the value to use it, the agent's commands run as the same uid, so
 `/proc/<pid>/environ` has it for as long as the credential lives. There is no
 redaction hook and none is claimed: a previous runtime blanked secret-looking
 variables for the shell commands the agent wrote, which was a speed bump at best,
-and it was deleted with the runtime (see `docs/RUNTIME-MIGRATION.md`).
+and it was deleted with the runtime (see `docs/HISTORY.md`).
 
 ### What this means
 
@@ -805,7 +805,7 @@ output rate, cache reads at the cache rate, off-peak exactly half of peak) and t
 **Which token field is which** was not guessable. For the Responses wire API, `input_tokens`
 **includes** the cached tokens: charging that field at the miss rate and `cached_input_tokens`
 at the hit rate separately over-reported a mostly-cached turn by about ten times (measured
-against the old runtime on one identical task, `docs/RUNTIME-COST.md`). `parseCodexEvents`
+against the old runtime on one identical task, `docs/HISTORY.md`). `parseCodexEvents`
 subtracts the cached count, and prices `reasoning_output_tokens` at the output rate as a field
 separate from `output_tokens`; `test/unit/codex-runtime.test.ts` pins the arithmetic against a
 real captured stream.
@@ -1899,7 +1899,7 @@ Three things are load-bearing, and each has a test:
   `test/unit/runtime-install.test.ts` holds the symlink guard on that copy, and extras section
   AJ carries a file through the repair.
 * Cost is measured rather than assumed. On one identical trivial task, same model, one run each
-  (`docs/RUNTIME-COST.md`): Codex used 17,692 tokens and $0.000259 against the old runtime's
+  (`docs/HISTORY.md`): Codex used 17,692 tokens and $0.000259 against the old runtime's
   9,363 and $0.0000937, about 1.9× the tokens and 2.8× the money on trivial work, because
   Codex carries a larger harness prompt and ran an extra verification command. DeepSeek's cache
   carried 96% of its prompt, which is why the money gap is smaller than the raw token count
@@ -2008,6 +2008,6 @@ Listed so that absence is not mistaken for success.
 | Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), and §AE covers a box killed out of band and a stale recorded identity, but a real reboot (with the kernel's own pid reuse) was not staged. |
 | Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all: a refusal, not support, and not a silent drop. |
 | What the copy-out credential scan cannot see | it compares against the values the host holds at fetch/apply time (`DEEPSEEK_API_KEY`, `MOAT_CREDENTIAL`, the credential store) and searches the commits a fetch brought in (the most recent 50) or the files an apply plan would write (up to 64 MiB each). A key rotated since the boot, a secret the agent obtained somewhere else, older commits and larger files are outside it: each bound is named when it is reached (extras §AB, `test/unit/leak-scan.test.ts`). A file that does not match is not a claim that it is clean. |
-| Whether the Codex loop is better than the old runtime's on long work | cost per turn is measured (`docs/RUNTIME-COST.md`), but the old runtime is deleted, so that comparison is history rather than a live A/B, and "which harness does long autonomous work better" would need a task suite and many runs. |
+| Whether the Codex loop is better than the old runtime's on long work | cost per turn is measured (`docs/HISTORY.md`), but the old runtime is deleted, so that comparison is history rather than a live A/B, and "which harness does long autonomous work better" would need a task suite and many runs. |
 | Anything about a real model other than what the live suite ran | `bash test/e2e-live.sh` is the only evidence against the hosted model. Everything else runs against the deterministic stub, which cannot show model quality, refusals, or provider-side behaviour. |
 
