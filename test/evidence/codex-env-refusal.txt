@@ -1,0 +1,6 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts env
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ this environment uses the codex runtime, which has no server to connect to.
+  Run `moat` for its TUI, or `moat run --runtime codex "task"`.

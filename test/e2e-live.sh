@@ -111,7 +111,7 @@ say ""
 say "== 2. boot with the real provider"
 # ---------------------------------------------------------------------------
 run $MOAT destroy --yes
-run $MOAT up --model "$MODEL" --profile "$PROFILE" --credential-env "$KEYVAR"
+run $MOAT up --runtime opencode --model "$MODEL" --profile "$PROFILE" --credential-env "$KEYVAR"
 
 # ---------------------------------------------------------------------------
 say ""
@@ -168,7 +168,20 @@ git diff --stat "$BEFORE_HEAD" "$(git for-each-ref --format='%(objectname)' 'ref
 
 # ---------------------------------------------------------------------------
 say ""
-say "== 7. teardown"
+say "== 7. the default runtime (codex) does a turn in the same environment"
+# ---------------------------------------------------------------------------
+say "the opencode turn above ran the session client; this one is the runtime a new"
+say "environment gets by default, driving the same sandbox and the same /work."
+say ""
+run $MOAT up --runtime codex --model "$MODEL" --credential-env "$KEYVAR"
+run timeout "$TIMEOUT" $MOAT run --runtime codex "Create a file named CODEX-LIVE.txt in the working tree whose contents are exactly: codex live. Do not modify any other file. Then finish."
+say ""
+say "--- the file, read by moat, and what the work tree looks like now ---"
+$MOAT exec -- /bin/sh -c 'cat /work/CODEX-LIVE.txt; echo; git -C /work status --short | head -4' 2>&1 | tee -a "$LOG"
+
+# ---------------------------------------------------------------------------
+say ""
+say "== 8. teardown"
 # ---------------------------------------------------------------------------
 run $MOAT down
 say ""

@@ -1,17 +1,17 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --no-credential --egress isolated --model deepseek-flash
+--- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --quiet --no-detect --no-credential --egress isolated --model deepseek-flash
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 2.30s (extract cached image 2.00s)
+✓ image provisioned in 1.03s (extract cached image 868ms)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-20-01-51
-✓ sandbox up, cold start 14.35s (image built)
+agent branch: moat-session-2026-09-20-02-14
+✓ sandbox up, cold start 12.32s (image built)
 
   project    /home/user/moat-demo/nocred-doctor
   env        /home/user/.moat/envs/bc47e2d49e4f
-  opencode   http://127.0.0.1:38139  (basic auth user "opencode")
-  password   0RCun5xxRkGEoHSsKOjMY_4JErZpNOZZ
+  opencode   http://127.0.0.1:45277  (basic auth user "opencode")
+  password   d2z2EIG4ollqkxNc5IERq8dbfAq4zMfN
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do

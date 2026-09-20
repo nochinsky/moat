@@ -1,18 +1,18 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --no-credential --egress isolated --model mock-model --base-url http://127.0.0.1:5599/v1
+--- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --quiet --no-detect --no-credential --egress isolated --model mock-model --base-url http://127.0.0.1:5599/v1
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 2.24s (extract cached image 1.92s)
+✓ image provisioned in 1.02s (extract cached image 866ms)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-20-01-50
-✓ sandbox up, cold start 13.59s (image built)
+agent branch: moat-session-2026-09-20-02-14
+✓ sandbox up, cold start 12.32s (image built)
 
   project    /home/user/moat-demo/datapath-reap
   env        /home/user/.moat/envs/f7355b303b3e
-  opencode   http://127.0.0.1:44215  (basic auth user "opencode")
-  password   coysPUqUHADzBdzPkMNx0mU_1p_ey97q
+  opencode   http://127.0.0.1:45035  (basic auth user "opencode")
+  password   MKKDQHuM9VsGjHDZb5dfB1ye42m5Mrmq
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do

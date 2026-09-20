@@ -2616,6 +2616,53 @@ injects for each combination of credential and provider, that only credential-be
 are called the credential, and that a keyless box is not offered key rotation. All three were
 watched failing with the old list and the old wording restored.
 
+### AH. Codex is the default runtime, and the two runtimes do not cost the same
+
+The runtime is a dependency, not the product: the box, the credential broker, copy-out and the
+egress policy are identical under both. What changes is which binary the box runs and what the
+host does with it. Codex is a CLI, so under that runtime the long-running box is a keepalive
+and every task, TUI session and check runs in its own ephemeral boot of the same rootfs.
+
+Measured, extras section AJ, on a fresh environment with no `--runtime` flag:
+
+```
+$ moat status
+status       running
+runtime      codex (deepseek/deepseek-flash)
+
+$ moat exec -- sh -c 'codex --version; cat /root/.codex/config.toml; …'
+codex-cli 0.155.1
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+wire_api = "responses"
+opencode absent
+codex: the default runtime boots, moat renders its config, and its image carries no opencode
+codex: a server command refuses with a pointer instead of failing obscurely
+runtime switch: the other runtime is installed into the live rootfs and /work survives
+```
+
+Three things are load-bearing, and each has a test:
+
+* The config is **rendered by moat on every boot** through the rootfs guard, because approvals
+  off and Codex's own sandbox off are moat's decision and not the agent's: moat's box is the
+  only boundary there should be. `test/unit/codex-runtime.test.ts` pins those two lines, and
+  `bundle/codex.ts` is the only writer.
+* The image carries only the runtime the environment was created with — the runtime set is part
+  of `imageCachePath` (`test/unit/runtime-image.test.ts`), so an image cannot silently lack the
+  binary — and a switch **installs** the other runtime into the live rootfs instead of
+  re-provisioning, because `provisionEnv` deletes the rootfs first and would take `/work` with
+  it. That was not theoretical: the first version of the switch lost an untracked file exactly
+  that way. Extras AJ now carries a file through the switch in both directions, and
+  `test/unit/runtime-install.test.ts` holds the symlink guard on that copy.
+* Cost differs, and pretending otherwise would be the dishonest part. Same task, same model, one
+  run each (`docs/RUNTIME-COST.md`): Codex used 17,692 tokens and $0.000259 against opencode's
+  9,363 and $0.0000937 — about 1.9× the tokens and 2.8× the money on trivial work, because Codex
+  carries a larger harness prompt and ran an extra verification command. DeepSeek's cache carried
+  96% of its prompt, which is why the money gap is smaller than the raw token count suggests.
+  That same measurement found a real bug in the first integration: Codex's `input_tokens`
+  *includes* the cached tokens, so charging that field at the miss rate *and* the cached field
+  separately over-reported a mostly-cached turn by about ten times.
+
 ### AG. A project's own check output cannot drive the terminal it is printed on
 
 `moat verify` streams the check's output as it arrives, and `moat take` and the session's
@@ -2726,3 +2773,4 @@ Listed so that absence is not mistaken for success.
 | Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all — a refusal, not support, and not a silent drop. |
 | What the copy-out credential scan cannot see | it compares against the values the host holds at fetch/apply time (`DEEPSEEK_API_KEY`, `MOAT_CREDENTIAL`, the credential store) and searches the commits a fetch brought in (the most recent 50) or the files an apply plan would write (up to 64 MiB each). A key rotated since the boot, a secret the agent obtained somewhere else, older commits and larger files are outside it — each bound is named when it is reached (extras §AB, `test/unit/leak-scan.test.ts`). A file that does not match is not a claim that it is clean. |
 | A live event stream that stays open and goes quiet | the *end* of the stream is detected and reported (secondary claim P), and the box dying closes its sockets, which is the case measured. A connection that stays open while delivering nothing — no FIN, no error — is not detected: there is no watchdog on the server's 10s heartbeat. Nothing observed produced one. |
+| Whether one runtime's *loop* is better than the other's on long work | cost per turn is measured (`docs/RUNTIME-COST.md`) and both run a task end to end (live suite §3 for opencode, §7 for Codex), but "which harness does long autonomous work better" needs a task suite and many runs, not one file-creation prompt. The TUI is Codex's own program: the plumbing moat owns for it (`runInteractive` over a pty, the rendered config, the credential in the environment) is covered by extras AJ, the screen is not automated. |

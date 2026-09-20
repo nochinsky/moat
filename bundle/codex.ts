@@ -130,9 +130,15 @@ export function parseCodexEvents(text: string): CodexTurn {
     const type = event.type
     if (type === "turn.completed") {
       const usage = (event.usage ?? {}) as Record<string, unknown>
+      const cached = numberField(usage, "cached_input_tokens")
+      // `input_tokens` **includes** the cached ones — that is the Responses shape, and it is
+      // not opencode's: there `input` is the cache-*miss* count and the hits are separate.
+      // Charging the raw field at the miss rate and the cached field at the hit rate double
+      // counts them, which over-reported a mostly-cached turn by about ten times. Measured
+      // against the identical task on both runtimes: docs/RUNTIME-COST.md.
       turn.usage = {
-        input: numberField(usage, "input_tokens"),
-        cached: numberField(usage, "cached_input_tokens"),
+        input: Math.max(0, numberField(usage, "input_tokens") - cached),
+        cached,
         output: numberField(usage, "output_tokens"),
         reasoning: numberField(usage, "reasoning_output_tokens"),
       }

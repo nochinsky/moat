@@ -50,6 +50,9 @@ Options that apply to up/run
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project
   --tools core|extended  core = 8 coding tools (default); extended adds webfetch + subagents
+  --runtime NAME         codex (default) or opencode. Codex is a CLI: "moat" opens
+                         its TUI, and every task runs in the box. opencode is the
+                         older server-based runtime, kept while it is migrated away.
   --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek.
                          Must be an http:// or https:// URL with a host: a
                          scheme-less localhost:11434/v1 has no host to allow.

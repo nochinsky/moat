@@ -17,7 +17,10 @@ import {
   OPENCODE_TARBALL_INTEGRITY,
   OPENCODE_VERSION,
   PROVISION_PACKAGES,
+  RUNTIMES,
+  RUNTIME_BINARY,
   SANDBOX_TRIPLE,
+  type Runtime,
   SANDBOX_WORKDIR,
 } from "../lib/pins.ts"
 import { cacheDir, codexCachePath, opencodeCachePath, partPath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
@@ -184,6 +187,36 @@ export async function ensureCodexBinary(triple = SANDBOX_TRIPLE): Promise<string
   return dest
 }
 
+/**
+ * Install one runtime binary into an existing rootfs, without re-provisioning.
+ *
+ * The image carries only the runtime an environment was created with, so switching runtimes
+ * (or repairing a binary the agent deleted) means putting the other one there. Re-provisioning
+ * is **not** an option: it deletes the rootfs first, taking \`/work\` — the agent's uncommitted
+ * work — with it. Measured: a switch through provisioning lost an untracked file.
+ *
+ * The destination is inside the agent-writable rootfs, so this goes through the same guard as
+ * every other host-side write there: a symlinked component is refused rather than followed,
+ * and the copy lands on a temp name that is renamed into place. The box must not be running;
+ * callers stop it first (a running box has the old binary open anyway).
+ */
+export async function installRuntimeBinary(p: EnvPaths, runtime: Runtime): Promise<void> {
+  const target = RUNTIME_BINARY[runtime]
+  // Guard first, so a planted symlink fails before anything is downloaded or copied.
+  ensureRootfsDir(p.rootfs, path.posix.dirname(target))
+  const source = runtime === "codex" ? await ensureCodexBinary() : await ensureOpencodeBinary()
+  const dest = path.join(p.rootfs, target.slice(1))
+  const tmp = partPath(dest)
+  try {
+    fs.copyFileSync(source, tmp, fs.constants.COPYFILE_EXCL)
+    fs.chmodSync(tmp, 0o755)
+    fs.renameSync(tmp, dest)
+  } catch (error) {
+    fs.rmSync(tmp, { force: true })
+    throw error
+  }
+}
+
 export function extractRootfs(tarball: string, rootfs: string): void {
   fs.mkdirSync(rootfs, { recursive: true })
   const result = spawnSync("tar", ["-xzf", tarball, "-C", rootfs], { stdio: ["ignore", "ignore", "pipe"] })
@@ -207,10 +240,15 @@ export function extractRootfs(tarball: string, rootfs: string): void {
  */
 const IMAGE_EXCLUDES = ["./work", "./proc", "./sys", "./dev", "./tmp", "./run", "./.moat", "./var/log/moat"]
 
-export function imageCachePath(packages: string[] = PROVISION_PACKAGES): string {
+export function imageCachePath(packages: string[] = PROVISION_PACKAGES, runtimes: readonly Runtime[] = RUNTIMES): string {
+  // The runtime set is part of the key: an image built before (or without) a runtime must
+  // never be handed to an environment that asked for it. The measured form of that bug is a
+  // cached image with the binary missing, which surfaces as "command not found" in the box.
   const key = crypto
     .createHash("sha256")
-    .update(`${ALPINE_VERSION}|${OPENCODE_VERSION}|${CODEX_VERSION}|${SANDBOX_TRIPLE}|${[...packages].sort().join(",")}`)
+    .update(
+      `${ALPINE_VERSION}|${OPENCODE_VERSION}|${CODEX_VERSION}|${SANDBOX_TRIPLE}|${[...runtimes].sort().join(",")}|${[...packages].sort().join(",")}`,
+    )
     .digest("hex")
     .slice(0, 12)
   return path.join(cacheDir(), "images", `alpine-${ALPINE_VERSION}-${key}.tar.gz`)
@@ -226,6 +264,8 @@ export type ProvisionResult = {
   imageCache: string
   /** Every package the image is expected to contain. */
   packages: string[]
+  /** The agent runtime(s) the image carries. */
+  runtimes: Runtime[]
 }
 
 /**
@@ -237,9 +277,10 @@ export type ProvisionResult = {
  */
 export async function provisionEnv(
   p: EnvPaths,
-  opts: { useImageCache?: boolean; packages?: string[] } = {},
+  opts: { useImageCache?: boolean; packages?: string[]; runtimes?: readonly Runtime[] } = {},
 ): Promise<ProvisionResult> {
   const packages = opts.packages ?? [...PROVISION_PACKAGES]
+  const runtimes = [...(opts.runtimes ?? RUNTIMES)]
   const started = Date.now()
   const steps: ProvisionStep[] = []
   const mark = (name: string, from: number) => {
@@ -249,7 +290,7 @@ export async function provisionEnv(
     return Date.now()
   }
 
-  const imageCache = imageCachePath(packages)
+  const imageCache = imageCachePath(packages, runtimes)
   const useImageCache = opts.useImageCache !== false
 
   if (useImageCache && fs.existsSync(imageCache)) {
@@ -276,7 +317,7 @@ export async function provisionEnv(
     fs.rmSync(path.join(p.rootfs, "var/log/moat"), { recursive: true, force: true })
     fs.mkdirSync(path.join(p.rootfs, "var/log/moat"), { recursive: true })
       t = mark("extract cached image", t)
-      return { steps, totalMs: Date.now() - started, fromImageCache: true, imageCache, packages }
+      return { steps, totalMs: Date.now() - started, fromImageCache: true, imageCache, packages, runtimes }
     }
   }
 
@@ -343,19 +384,23 @@ rm -rf /var/cache/apk/*
   }
   t = mark("apk packages", t)
 
-  const binary = await ensureOpencodeBinary()
-  const target = path.join(p.rootfs, "usr/local/bin/opencode")
-  fs.mkdirSync(path.dirname(target), { recursive: true })
-  fs.copyFileSync(binary, target)
-  fs.chmodSync(target, 0o755)
-  t = mark("install opencode", t)
+  if (runtimes.includes("opencode")) {
+    const binary = await ensureOpencodeBinary()
+    const target = path.join(p.rootfs, "usr/local/bin/opencode")
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.copyFileSync(binary, target)
+    fs.chmodSync(target, 0o755)
+    t = mark("install opencode", t)
+  }
 
-  const codexBinary = await ensureCodexBinary()
-  const codexTarget = path.join(p.rootfs, "usr/local/bin/codex")
-  fs.mkdirSync(path.dirname(codexTarget), { recursive: true })
-  fs.copyFileSync(codexBinary, codexTarget)
-  fs.chmodSync(codexTarget, 0o755)
-  t = mark("install codex", t)
+  if (runtimes.includes("codex")) {
+    const codexBinary = await ensureCodexBinary()
+    const codexTarget = path.join(p.rootfs, "usr/local/bin/codex")
+    fs.mkdirSync(path.dirname(codexTarget), { recursive: true })
+    fs.copyFileSync(codexBinary, codexTarget)
+    fs.chmodSync(codexTarget, 0o755)
+    t = mark("install codex", t)
+  }
 
   // The bundle is NOT baked into the image: `moat up` renders and installs it on
   // every boot, so there is exactly one place that decides the config and a
@@ -375,7 +420,7 @@ rm -rf /var/cache/apk/*
     log.warn(`could not cache the provisioned image: ${(error as Error).message}`)
   }
 
-  return { steps, totalMs: Date.now() - started, fromImageCache: false, imageCache, packages }
+  return { steps, totalMs: Date.now() - started, fromImageCache: false, imageCache, packages, runtimes }
 }
 
 /**

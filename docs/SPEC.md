@@ -165,6 +165,31 @@ was gone or no longer theirs, leaving the process running with nothing on disk n
 A recorded pid is signalled only while its `/proc` start time still matches the record, so
 a pid the host has handed to another process is left alone.
 
+### 2.2b The agent runtime
+
+moat ships two runtimes and one box. **Codex** (`--runtime codex`, the default) is a CLI:
+the long-running box is a keepalive, and every task, TUI session and check runs in its own
+ephemeral boot of the same rootfs; the host attaches a terminal to Codex's TUI or reads the
+JSONL of `codex exec`. **opencode** (`--runtime opencode`) is the older server-based
+runtime: one HTTP server inside the box, driven by the host over its API. Both are pinned
+and digest-verified in `lib/pins.ts` — an unpinned binary that becomes the agent runtime is
+the one artefact this project cannot be casual about — and both get a config **rendered by
+moat on every boot** through the rootfs guard: `permission: {"*": "allow"}` for opencode,
+`approval_policy = "never"` plus `sandbox_mode = "danger-full-access"` for Codex, so that
+moat's box is the only boundary and the agent never owns the file that says so.
+
+The image carries only the runtime its environment was created with (the runtime set is part
+of the image cache key). Changing the runtime installs the other binary into the live rootfs;
+it must **not** go through provisioning, which deletes the rootfs first and would take
+`/work` — the agent's uncommitted work — with it. Measured: the first version of the switch
+lost an untracked file exactly that way. A runtime switch is also a restart: the recorded box
+is stopped before anything touches the rootfs.
+
+The two runtimes do not cost the same per turn. Measured on one identical trivial task:
+Codex used 17,692 tokens ($0.000259) against opencode's 9,363 ($0.0000937), because it
+carries a larger harness prompt and does more work per step; the full method and the fields
+that make the arithmetic honest are in `docs/RUNTIME-COST.md`.
+
 ### 2.3 Boot sequence, the exact commands
 
 `moat up` performs, in order:

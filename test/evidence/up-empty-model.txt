@@ -1,4 +1,4 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --model 
+--- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --model 
 --- exit 1
 --- stdout ---
 --- stderr ---

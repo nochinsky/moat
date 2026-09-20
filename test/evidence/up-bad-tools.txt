@@ -1,4 +1,4 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --tools bogus
+--- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --tools bogus
 --- exit 1
 --- stdout ---
 --- stderr ---

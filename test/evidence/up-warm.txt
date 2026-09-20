@@ -1,4 +1,4 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --json --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --json --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
 {
@@ -6,7 +6,7 @@
   "envId": "18620c2c4f34",
   "profileInstall": {
     "installed": [],
-    "ms": 108
+    "ms": 112
   },
   "copyInMs": 10,
   "provider": {
@@ -39,15 +39,15 @@
   },
   "egress": "open",
   "status": "running",
-  "port": 44703,
-  "pid": 498510,
-  "bootMs": 3937,
-  "totalMs": 4180,
+  "port": 42693,
+  "pid": 518764,
+  "bootMs": 3929,
+  "totalMs": 4174,
   "readyCheck": "GET /config -> 200",
   "credential": {
     "provider": "moat",
     "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-20T05:39:54.119Z",
+    "expiresAt": "2026-09-20T06:07:25.891Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -70,5 +70,5 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-01-39
-→ sandbox booted (pid 498510, port 44703); waiting for opencode serve
+agent branch: moat-session-2026-09-20-02-07
+→ sandbox booted (pid 518764, port 42693); waiting for opencode serve

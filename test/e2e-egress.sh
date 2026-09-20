@@ -80,7 +80,7 @@ git commit -qm "egress fixture"
 
 say ""
 say "--- boot isolated ---"
-capture up $M up --egress isolated
+capture up $M up --runtime opencode --egress isolated
 check "the box booted with isolated egress" "sandbox up" "$EVIDENCE/up.txt"
 
 capture status $M status
@@ -122,7 +122,7 @@ else
   FAIL=1
 fi
 
-capture up-filtered $M up --egress filtered
+capture up-filtered $M up --runtime opencode --egress filtered
 check "the box booted with filtered egress" "sandbox up" "$EVIDENCE/up-filtered.txt"
 
 capture status-filtered $M status
@@ -197,7 +197,7 @@ echo "# default" > README.md
 git add -A
 git commit -qm "default fixture"
 
-capture up-default $M up
+capture up-default $M up --runtime opencode
 check "a fresh environment boots filtered by default" "sandbox up" "$EVIDENCE/up-default.txt"
 capture status-default $M status
 check "the default policy is reported as filtered" "egress       filtered" "$EVIDENCE/status-default.txt"
@@ -217,7 +217,7 @@ say "--- a filtered boot refuses to start when the provider does not resolve ---
 say "the allowlist is built from the provider host. If that name resolves to"
 say "nothing, a boot would leave a box with no way to reach the model; it fails"
 say "instead, naming the host and the way out."
-capture up-nxdomain $M up --base-url "https://nxdomain-$RANDOM.invalid/v1"
+capture up-nxdomain $M up --runtime opencode --base-url "https://nxdomain-$RANDOM.invalid/v1"
 check "an unresolvable provider fails the boot" "could not resolve" "$EVIDENCE/up-nxdomain.txt"
 capture destroy-nxdomain $M destroy --yes
 

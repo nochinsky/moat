@@ -2,4 +2,4 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ snapshot reap-base (205.5 MiB) -> /home/user/.moat/envs/f7355b303b3e/snapshots/reap-base.tar.gz
+✓ snapshot reap-base (108.7 MiB) -> /home/user/.moat/envs/f7355b303b3e/snapshots/reap-base.tar.gz

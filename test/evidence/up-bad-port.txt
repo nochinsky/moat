@@ -1,4 +1,4 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --port 99999
+--- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --port 99999
 --- exit 1
 --- stdout ---
 --- stderr ---

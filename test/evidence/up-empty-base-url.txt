@@ -1,4 +1,4 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --base-url 
+--- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --base-url 
 --- exit 1
 --- stdout ---
 --- stderr ---

@@ -1,81 +1,23 @@
-
-› moat · moat/mock-model · /home/user/moat-demo/slugkit
-› type a task and press enter. /help for commands, ctrl-c to interrupt.
-› 
-› › /status
-
-›   project     /home/user/moat-demo/slugkit
-›   endpoint    http://127.0.0.1:41915
-›   model       moat/mock-model
-›   agent       default
-›   thinking    hidden
-›   branch      moat-session-2026-09-20-01-40
-›   session     none yet
-›   profiles    node
-›   credential  14387s left
-› 
-› › fix the failing tests and commit it
-
-  ⠏ bash  ⠋ bash  ✓ bash       pwd && ls -la && cat README.md                                                 149ms
-
-  ⠙ thinking 1s  ⠹ thinking 1s  ⠹ write  ✓ write      agent-output.txt                                                             +1 25ms
-
-  ⠸ thinking 1s  ⠼ thinking 1s  ⠼ edit  ✓ edit       agent-output.txt                                                          +1 -1 25ms
-
-  ⠴ thinking 2s  ⠦ thinking 2s  ⠦ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agen…  27ms
-
-  ⠧ thinking 2s  ⠇ thinking 2s  ⠇ bash  ⠏ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the s…  24ms
-
-  ⠋ thinking 2s  ⠙ thinking 2s│   Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
-
-  ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 2.1s  6% of context  cost unknown
-› › /diff
-
-›   f253505 agent: add agent-output.txt from inside the sandbox
-› 
-›    agent-output.txt | 2 ++
-›    1 file changed, 2 insertions(+)
-› 
-› › /help
-
-›   type anything to send it to the agent. It queues if the agent is mid-turn.
-› 
-›   /help      this list
-›   /stop      abort the turn the agent is running
-›   /diff      everything the agent has changed since it started
-›   /take      bring the agent's branch onto the host and show it
-›   /status    model, effort, branch, session and credential time left
-›   /model     show or change the model: /model [name]
-›   /think     reasoning effort: /think [level]
-›   /thinking  show or hide the model's reasoning as it streams
-›   /agent     show or change the agent: /agent [name]
-›   /compact   summarise the session so far, to free up context
-›   /undo      roll the conversation back to before your last message
-›   /redo      put back a turn removed with /undo
-›   /verbose   show or hide tool output
-›   /sessions  list past sessions in this environment
-›   /use       switch to another session: /use <id>
-›   /new       start a fresh session
-›   /shell     open a shell inside the sandbox (ctrl-d to come back)
-›   /apply     merge the agent's work into your directory (asks first)
-›   /verify    run the project's own tests against the agent's work
-›   /quit      leave (the sandbox keeps running)
-›   /exit      leave (the sandbox keeps running)
-› 
-› › /quit
+✗ this environment uses the codex runtime, which has no server to attach to.
+  Run `moat` for its TUI, or `moat run --runtime codex "task"`.
+/status
+fix the failing tests and commit it
+/diff
+/help
+/quit
 
 
 --- checks ---
-  pass  banner and prompt
-  pass  /status printed the environment
-  pass  agent activity streamed live
-  pass  the model's answer was displayed
-  pass  a turn summary was printed
-  pass  an unpriced model says cost unknown
-  pass  tool calls show elapsed time
-  pass  an edit reports lines added and removed
-  pass  /diff reported the agent's work
-  pass  /help listed the commands
-  pass  commands still worked after the turn
+  FAIL  banner and prompt
+  FAIL  /status printed the environment
+  FAIL  agent activity streamed live
+  FAIL  the model's answer was displayed
+  FAIL  a turn summary was printed
+  FAIL  an unpriced model says cost unknown
+  FAIL  tool calls show elapsed time
+  FAIL  an edit reports lines added and removed
+  FAIL  /diff reported the agent's work
+  FAIL  /help listed the commands
+  FAIL  commands still worked after the turn
 
-11/11 checks passed
+0/11 checks passed

@@ -1,0 +1,15 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts status
+--- exit 0
+--- stdout ---
+--- stderr ---
+project      /home/user/moat-demo/codex-runtime
+env          /home/user/.moat/envs/a3e8fefc7c25
+status       running
+runtime      codex (deepseek/deepseek-flash)
+pid          527576
+model        deepseek/deepseek-flash (deepseek)
+branch       moat-session-2026-09-20-02-15
+egress       filtered (own network namespace, default-deny allowlist)
+rootfs       298.7 MiB
+snapshots    baseline
+branches     main, moat-session-2026-09-20-02-15*

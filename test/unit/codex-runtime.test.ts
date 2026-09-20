@@ -23,7 +23,9 @@ test("a real codex exec stream becomes one row per tool, the answer, and usage",
   assert.equal(turn.tools[0]!.exitCode, 0)
   assert.match(turn.tools[0]!.detail, /CODEX-SPIKE\.txt/)
   assert.deepEqual(turn.messages, ["Created /work/CODEX-SPIKE.txt with contents exactly hello."])
-  assert.deepEqual(turn.usage, { input: 18118, cached: 9088, output: 238, reasoning: 0 })
+  // `input_tokens` includes the cached ones: 18118 total prompt, 9088 of it cache hits, so
+  // the cache-*miss* count is 9030. Charging both fields would double count the hits.
+  assert.deepEqual(turn.usage, { input: 9030, cached: 9088, output: 238, reasoning: 0 })
   assert.equal(turn.errors.length, 1, "the metadata notice is reported, not swallowed")
 })
 

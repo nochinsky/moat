@@ -27,6 +27,23 @@ export const HOST_TRIPLE = "linux-x64"
  */
 export const CODEX_VERSION = "0.155.1"
 
+/**
+ * The agent runtimes moat can provision, and the binaries each one needs.
+ *
+ * The runtime is *not* a user-facing choice: one of them is the default and the flag exists
+ * to move between them. The image carries only the runtime an environment was created with,
+ * so the type is shared by the image cache key, the state file and the CLI flag.
+ */
+export type Runtime = "opencode" | "codex"
+
+export const RUNTIMES: readonly Runtime[] = ["opencode", "codex"]
+
+/** Where each runtime's binary lands inside the rootfs. */
+export const RUNTIME_BINARY: Record<Runtime, string> = {
+  opencode: "/usr/local/bin/opencode",
+  codex: "/usr/local/bin/codex",
+}
+
 /** npm platform package suffix per sandbox triple. Only what moat actually provisions. */
 export const CODEX_PLATFORM_PACKAGE: Record<string, string> = {
   "linux-x64-musl": "linux-x64",

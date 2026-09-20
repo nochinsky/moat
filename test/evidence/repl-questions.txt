@@ -1,34 +1,14 @@
-
-› moat · moat/mock-model · /home/user/moat-demo/question-demo
-› type a task and press enter. /help for commands, ctrl-c to interrupt.
-› 
-› › make the migration
-
-›   ? Which database should the new migration target?
-›     1. postgres           Add a Postgres migration
-›     2. sqlite             Add a SQLite migration
-›   a number 1-2, a label, or type your own answer
-› › 
-  ⠏ question  ⠋ question  ⠙ question  ⠹ question  ⠸ question  ⠼ question  ⠴ question  ⠦ question  ⠧ question  ⠇ question  ⠏ question  ⠋ question  ⠙ question  ⠹ question  ⠸ question  ⠼ question  ⠴ question  ⠦ question  ⠧ question  ⠇ question  ⠏ question  ⠋ question  ⠙ question  ⠹ question  ⠸ question  ⠼ question  ⠴ question  ⠦ question  ⠧ question  ⠇ question  ⠏ question  ⠋ question  ⠙ question  ⠹ question  ⠸ question  ⠼ question  ⠴ question  ⠦ question  ⠧ question  ⠇ question  ⠏ question  ⠋ question  ⠙ question  ⠹ question  ⠸ question  ⠼ question  ⠴ question  ⠦ question  ⠧ question  ⠇ question  ⠏ question  ⠋ question2
-
-  answered
-› 
-  ✓ question   Asked 1 question                                                                5.1s
-
-  ⠙ thinking 6s  ⠙ bash  ⠹ bash  ⠸ bash  ✓ bash       echo 'the user chose' > choice.txt && git add -A && git commit -q -m 'add mi…  140ms
-
-  ⠼ thinking 6s  ⠴ thinking 7s  ⠦ thinking 7s│   Done, using the answer you gave.
-
-  ─ 3.2k in · 40 out · 16 reasoning · 2 tools · 6.7s  3% of context  cost unknown
-› › /verify
-no test, lint or typecheck command found for this project
-› › /quit
+✗ this environment uses the codex runtime, which has no server to attach to.
+  Run `moat` for its TUI, or `moat run --runtime codex "task"`.
+make the migration
+2
+/verify
 
 
 --- checks ---
-  pass  the agent asked a question
-  pass  the options were shown
-  pass  the answer was delivered
-  pass  the agent continued after the answer
+  FAIL  the agent asked a question
+  FAIL  the options were shown
+  FAIL  the answer was delivered
+  FAIL  the agent continued after the answer
 
-4/4 checks passed
+0/4 checks passed

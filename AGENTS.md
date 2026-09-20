@@ -511,8 +511,9 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   `test/unit/datapath-reap.test.ts` fails on a direct `slirpPid: null` write outside
   `forgetBox`, and extras section AG is the end-to-end reap.
 
-* **Two runtimes.** `--runtime codex` selects Codex CLI instead of opencode; absent/`opencode`
-  is the default, and `state.runtime` records it. Codex is a CLI, not a server, so under that
+* **Two runtimes.** The default runtime is **Codex** (`--runtime codex`, and what an
+  environment gets when the flag is absent); `--runtime opencode` selects the older
+  server-based runtime, and `state.runtime` records which one an environment was made with. Codex is a CLI, not a server, so under that
   runtime the box is a keepalive (`codexEntryScript`) and every task, TUI session and check
   runs in its own ephemeral boot of the same rootfs. The two rules that matter: the config
   moat renders (`bundle/codex.ts`, written through the rootfs guard on every boot) is what
@@ -523,7 +524,21 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   means adding its version to `imageCachePath` or a cached image will silently lack it.
   `bundle/codex.ts` also parses `codex exec --json`; `test/unit/codex-runtime.test.ts` pins
   the parser against a real captured stream and the rendered config against the two
-  load-bearing lines. `docs/RUNTIME-SPIKE-codex.md` is the measurement behind it.
+  load-bearing lines. `docs/RUNTIME-SPIKE-codex.md` is the measurement behind it, and
+  `docs/RUNTIME-COST.md` is what each runtime costs per turn (Codex ≈ 2.8× on a trivial
+  task, mostly output and a larger prompt — know this before claiming the swap is free).
+* **Codex is the default runtime; a switch must never re-provision.** Turning
+  `--runtime` is not a config change, it is a different binary in the image, so the image
+  cache key includes the runtime set (`imageCachePath`); without that an image silently lacks
+  the binary and the box dies with "command not found". The switch itself goes through
+  `installRuntimeBinary` (guarded copy into the live rootfs), **not** provisioning:
+  `provisionEnv` starts with `fs.rmSync(rootfs)` and takes `/work` with it — measured, an
+  untracked file was lost when the switch was first written that way, and
+  `test/unit/runtime-install.test.ts` holds the symlink guard while extras section AJ holds
+  the /work half end to end. A switch is also a restart: the recorded box is stopped before
+  anything touches the rootfs. The existing suites pin `--runtime opencode` because they
+  verify the opencode adapter (server, attach, tools, REPL); extras section AJ and live
+  suite §7 cover Codex. When opencode is deleted, those pins and sections go with it.
 
 **opencode 1.18.31**
 

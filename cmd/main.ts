@@ -14,8 +14,11 @@ import {
   CURATED_TOOLS,
   EXCLUDED_TOOLS,
   OPENCODE_VERSION,
+  RUNTIMES,
+  RUNTIME_BINARY,
   SANDBOX_WORKDIR,
   UNADVERTISED_GAPS,
+  type Runtime,
   defaultEgress,
   ownNetns,
   type EgressMode,
@@ -53,6 +56,7 @@ import {
   baselineSnapshot,
   destroyEnv,
   ensurePackages,
+  installRuntimeBinary,
   listSnapshots,
   provisionEnv,
   restoreEnv,
@@ -548,7 +552,22 @@ async function cmdUp(argv: string[]): Promise<number> {
   if (runtimeFlag !== undefined && runtimeFlag !== "codex" && runtimeFlag !== "opencode") {
     log.fail(`unknown --runtime "${runtimeFlag}". Use "codex" (Codex CLI) or "opencode".`)
   }
-  const runtime: "opencode" | "codex" = runtimeFlag ?? state?.runtime ?? "opencode"
+  const runtime: Runtime = runtimeFlag ?? state?.runtime ?? "codex"
+
+  // A runtime change is a restart, and it has to happen before anything else touches the
+  // rootfs: provisioning extracts the new runtime's image over the rootfs, which must not
+  // race a live box. Stopping here is also what makes the flag meaningful on a running
+  // environment instead of silently ignored.
+  if (state?.pid && sandboxAlive(state, paths) && (state.runtime ?? "opencode") !== runtime) {
+    log.warn(`runtime changed (${state.runtime ?? "opencode"} -> ${runtime}); restarting the sandbox`)
+    await stopSandbox(state.pid, {
+      startTime: state.pidStart,
+      envId: paths.id,
+      slirpPid: state.slirpPid,
+      slirpStart: state.slirpStart,
+    })
+    state = await forgetBox(paths, state)
+  }
 
   // Whether a human is actually attached. This decides two things that must
   // agree: whether the agent may ask a question, and what its instructions say
@@ -616,6 +635,10 @@ async function cmdUp(argv: string[]): Promise<number> {
         "  to discard the sandbox's copy instead: moat up --fresh --yes",
     )
   }
+  // The image carries only the runtime this environment was created with, so a switch shows
+  // up as a missing binary. It is installed into the live rootfs below, not by re-provisioning:
+  // provisioning deletes the rootfs first, and that would take the agent's work with it.
+  const runtimePresent = fs.existsSync(path.join(paths.rootfs, RUNTIME_BINARY[runtime]))
   const needsProvision = fresh || !envExists(paths) || !state
 
   // Where the provider lives decides the default network policy, so resolve it
@@ -738,7 +761,7 @@ async function cmdUp(argv: string[]): Promise<number> {
       `provisioning sandbox image (alpine ${ALPINE_VERSION} + opencode ${OPENCODE_VERSION}` +
         `${resolvedProfiles.profiles.length > 0 ? ` + ${resolvedProfiles.profiles.join(", ")}` : ""})`,
     )
-    const provision = await provisionEnv(paths, { useImageCache: !fresh, packages: resolvedProfiles.packages })
+    const provision = await provisionEnv(paths, { useImageCache: !fresh, packages: resolvedProfiles.packages, runtimes: [runtime] })
     report.provisionMs = provision.totalMs
     report.provisionFromImageCache = provision.fromImageCache
     report.imageCache = provision.imageCache
@@ -750,6 +773,14 @@ async function cmdUp(argv: string[]): Promise<number> {
     state = initialState(paths, { opencode: OPENCODE_VERSION, alpine: ALPINE_VERSION })
     writeState(paths, state)
     log.success(`image provisioned in ${ms(provision.totalMs)} (${provision.steps.map((s) => `${s.name} ${ms(s.ms)}`).join(", ")})`)
+  }
+
+  // A runtime the image does not carry — a switch, or a binary the agent deleted — is
+  // installed into the live rootfs here. The runtime-change restart above has already
+  // stopped any box that was running, and /work is untouched by a copy into /usr/local/bin.
+  if (!needsProvision && !runtimePresent) {
+    log.step(`installing the ${runtime} runtime into this environment`)
+    await installRuntimeBinary(paths, runtime)
   }
 
   // The recorded pid is only meaningful if it is still the process moat started.
@@ -2402,6 +2433,10 @@ async function cmdEnv(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   const { state, password } = requireRunning(paths)
+  // The codex runtime has no server, so there is no url or password to report.
+  if (state.runtime === "codex") {
+    log.fail("this environment uses the codex runtime, which has no server to connect to.\n  Run \`moat\` for its TUI, or \`moat run --runtime codex \"task\"\`.")
+  }
   const payload = {
     url: baseUrl(state),
     username: "opencode",
@@ -2491,6 +2526,12 @@ async function cmdTools(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const paths = resolveEnv()
   const { state, password } = requireRunning(paths)
+  // The registry comes from the opencode server, which the codex runtime does not run. The
+  // curated list still exists — it is what the rendered Codex config allows — but this
+  // command's answer would be a fiction without the server, so it refuses instead.
+  if (state.runtime === "codex") {
+    log.fail("this environment uses the codex runtime, which has no tool registry to read.\n  Its tools are Codex's own; see the rendered config in the box.")
+  }
   const client = await connect(state, password, SANDBOX_WORKDIR)
 
   // Two different lists, and the difference between them is the whole point:
@@ -2683,6 +2724,9 @@ Options that apply to up/run
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project
   --tools core|extended  core = 8 coding tools (default); extended adds webfetch + subagents
+  --runtime NAME         codex (default) or opencode. Codex is a CLI: "moat" opens
+                         its TUI, and every task runs in the box. opencode is the
+                         older server-based runtime, kept while it is migrated away.
   --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek.
                          Must be an http:// or https:// URL with a host: a
                          scheme-less localhost:11434/v1 has no host to allow.

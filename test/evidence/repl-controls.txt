@@ -1,113 +1,35 @@
-
-› moat · moat/mock-model · /home/user/moat-demo/controls
-› type a task and press enter. /help for commands, ctrl-c to interrupt.
-› 
-› › /status
-
-›   project     /home/user/moat-demo/controls
-›   endpoint    http://127.0.0.1:43559
-›   model       moat/mock-model
-›   agent       default
-›   thinking    hidden
-›   branch      moat-session-2026-09-20-01-43
-›   session     none yet
-›   profiles    node
-›   credential  14389s left
-› 
-› › /model
-
-›   ›  1. moat/mock-model       128k ctx
-› 
-›   retired names still work but are served by the current flash model
-›   switch with /model <number or name>
-› › /think
-moat/mock-model does not expose reasoning effort levels; there is nothing to set.
-› › /think high
-moat/mock-model does not expose reasoning effort levels; there is nothing to set.
-› › /status
-
-›   project     /home/user/moat-demo/controls
-›   endpoint    http://127.0.0.1:43559
-›   model       moat/mock-model
-›   agent       default
-›   thinking    hidden
-›   branch      moat-session-2026-09-20-01-43
-›   session     none yet
-›   profiles    node
-›   credential  14380s left
-› 
-› › /think bogus
-moat/mock-model does not expose reasoning effort levels; there is nothing to set.
-› › /thinking
-showing reasoning (/thinking to hide)
-› › /thinking
-hiding reasoning
-› › /verbose
-showing tool output
-› › /verbose
-hiding tool output
-› › /agent
-
-›     build        The default agent. Executes tools based on configured permissions.
-›     compaction   
-›     plan         Plan mode. Disallows all edit tools.
-›     summary      
-›     title        
-›   › default
-› 
-›   switch with /agent <name>
-› › fix the failing tests
-
-  ⠋ thinking 1s  ⠋ bash  ⠙ bash  ✓ bash       pwd && ls -la && cat README.md                                                 157ms
-
-  ⠹ thinking 1s  ⠸ thinking 1s  ⠸ write  ✓ write      agent-output.txt                                                             +1 25ms
-
-  ⠼ thinking 1s  ⠴ thinking 2s  ⠴ edit  ✓ edit       agent-output.txt                                                          +1 -1 23ms
-
-  ⠦ thinking 2s  ⠧ thinking 2s  ⠧ bash  ✓ bash       printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agen…  24ms
-
-  ⠇ thinking 2s  ⠏ thinking 2s  ⠏ bash  ⠋ bash  ✓ bash       git add -A && git commit -q -m 'agent: add agent-output.txt from inside the s…  40ms
-
-  ⠙ thinking 2s  ⠹ thinking 2s│   Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
-
-  ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 2.2s  6% of context  cost unknown
-› › /undo
-undone  (/redo to put it back)
-› › /redo
-restored
-› › /compact
-compacting...
-› session error: Tool call not allowed while generating summary: bash
-›   ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 31s  6% of context  cost unknown
-› › compacted
-› ›   ─ 7.1k in · 102 out · 40 reasoning · 5 tools · 31s  6% of context  cost unknown
-› › /status
-
-›   project     /home/user/moat-demo/controls
-›   endpoint    http://127.0.0.1:43559
-›   model       moat/mock-model
-›   agent       default
-›   thinking    hidden
-›   branch      moat-session-2026-09-20-01-43
-›   session     ses_f438453e1ffeHG1wDPpnwNKlnU
-›   profiles    node
-›   credential  14327s left
-› 
-› › /quit
+✗ this environment uses the codex runtime, which has no server to attach to.
+  Run `moat` for its TUI, or `moat run --runtime codex "task"`.
+/status
+/model
+/think
+/think high
+/status
+/think bogus
+/thinking
+/thinking
+/verbose
+/verbose
+/agent
+fix the failing tests
+/undo
+/redo
+/compact
+/status
 
 
 --- checks ---
-  pass  banner names the model
-  pass  /status reports model and effort rows
-  pass  /model listed the current model
-  pass  /think says so when a model has no levels
-  pass  /thinking toggled both ways
-  pass  /verbose toggled both ways
-  pass  /agent listed agents
-  pass  the turn still ran and streamed tool calls
-  pass  /undo reported a result
-  pass  /redo reported a result
-  pass  /compact reported a result
+  FAIL  banner names the model
+  FAIL  /status reports model and effort rows
+  FAIL  /model listed the current model
+  FAIL  /think says so when a model has no levels
+  FAIL  /thinking toggled both ways
+  FAIL  /verbose toggled both ways
+  FAIL  /agent listed agents
+  FAIL  the turn still ran and streamed tool calls
+  FAIL  /undo reported a result
+  FAIL  /redo reported a result
+  FAIL  /compact reported a result
   pass  /help lists the new commands
 
-12/12 checks passed
+1/12 checks passed

@@ -1,26 +1,26 @@
 
---- $ node /home/user/Projects/moat/cmd/main.ts up --egress isolated
+--- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --egress isolated
 --- exit 0
 --- stdout ---
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
-→ provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
-→ provisioning from the cached image alpine-3.21.4-634230caeed9.tar.gz
-✓ image provisioned in 2.27s (extract cached image 1.97s)
+! the recorded sandbox pid 530329 is not moat's any more; ignoring it
+profiles: everything requested is already installed
+! the host project has changed since it was copied in, and the sandbox holds nothing that is not already on the host. Re-copying it now.
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest a6e0969b405179d9
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and send it anywhere: its namespace is isolated from yours, its egress is not filtered. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-01-51
-→ sandbox booted (pid 508694, port 44835); waiting for opencode serve
-✓ sandbox up, cold start 13.38s (image built)
+agent branch: moat-session-2026-09-20-02-17
+→ sandbox booted (pid 530561, port 45939); waiting for opencode serve
+✓ sandbox up, warm start 63.77s (image reused)
 
   project    /home/user/moat-demo/egress-project
   env        /home/user/.moat/envs/16a525996d67
-  opencode   http://127.0.0.1:44835  (basic auth user "opencode")
-  password   VJ7fNAUeuZKsI7gIbd03v9cB4hqxRYMy
+  opencode   http://127.0.0.1:45939  (basic auth user "opencode")
+  password   tR6ADocmQ6K7n0tDJvq5iFeoe4V-Wp8r
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T05:51:51.754Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T06:17:49.037Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
