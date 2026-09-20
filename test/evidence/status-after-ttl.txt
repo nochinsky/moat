@@ -7,9 +7,9 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 codex        0.155.1 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-20-14-46
-egress       filtered (own network namespace, default-deny allowlist)
+branch       moat-session-2026-09-20-16-15
+egress       open (host network namespace)
 rootfs       400.1 MiB
-credential   moat sha256:7726b438889c7f57 expires in -7s (EXPIRED — the box stops at this deadline)
+credential   moat sha256:7726b438889c7f57 expires in -6s (EXPIRED — the box stops at this deadline)
 snapshots    before-extras, baseline
-branches     main, moat-session-2026-09-20-14-46*
+branches     main, moat-session-2026-09-20-16-15*

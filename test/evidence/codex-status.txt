@@ -1,61 +1,15 @@
---- $ node /home/user/Projects/moat/cmd/main.ts status --json
+--- $ node /home/user/Projects/moat/cmd/main.ts status
 --- exit 0
 --- stdout ---
-{
-  "version": 1,
-  "id": "5f160b318512",
-  "projectDir": "/home/user/moat-demo/codex-project",
-  "createdAt": "2026-09-20T14:49:35.489Z",
-  "lastUpAt": "2026-09-20T14:49:35.640Z",
-  "status": "running",
-  "alpineVersion": "3.21.4",
-  "model": "moat/mock-model",
-  "provider": "moat",
-  "providerBaseUrl": "http://127.0.0.1:5597/v1",
-  "branch": "moat-session-2026-09-20-14-49",
-  "baseBranch": "main",
-  "profiles": [
-    "node"
-  ],
-  "pid": 79777,
-  "pidStart": "342145",
-  "egress": "open",
-  "egressAllow": [],
-  "slirpPid": null,
-  "slirpStart": null,
-  "baselineDigest": "c1ccc1457def136b9277f19aedd312435a50013452c7f0bc9ce9c1a7d1f9ead7",
-  "baselineHostState": "git:db6836eba3ed5ca21124716f19b5ba07cfa9f668:1f41ff19b72e60c8",
-  "baselineCommit": "37ec6f515157a75d7d5e2a12927197797f5e8309",
-  "credential": {
-    "provider": "moat",
-    "fingerprint": "sha256:304e485880327eb8",
-    "mintedAt": "2026-09-20T14:49:35.617Z",
-    "expiresAt": "2026-09-20T18:49:35.617Z"
-  },
-  "snapshots": [
-    "baseline"
-  ],
-  "lastBootMs": 6,
-  "envDir": "/home/user/.moat/envs/5f160b318512",
-  "rootfsDir": "/home/user/.moat/envs/5f160b318512/rootfs",
-  "running": true,
-  "booting": null,
-  "rootfsBytes": 419514501,
-  "sandboxBranches": [
-    {
-      "name": "main",
-      "sha": "db6836eba3ed5ca21124716f19b5ba07cfa9f668",
-      "subject": "initial project (the test fails)",
-      "committedAt": "2026-09-20T16:49:26+02:00",
-      "current": false
-    },
-    {
-      "name": "moat-session-2026-09-20-14-49",
-      "sha": "db6836eba3ed5ca21124716f19b5ba07cfa9f668",
-      "subject": "initial project (the test fails)",
-      "committedAt": "2026-09-20T16:49:26+02:00",
-      "current": true
-    }
-  ]
-}
 --- stderr ---
+project      /home/user/moat-demo/codex-runtime
+env          /home/user/.moat/envs/a3e8fefc7c25
+status       running
+codex        0.155.1 / alpine 3.21.4
+pid          111583
+model        deepseek/deepseek-flash (deepseek)
+branch       moat-session-2026-09-20-16-16
+egress       filtered (own network namespace, default-deny allowlist)
+rootfs       298.7 MiB
+snapshots    baseline
+branches     main, moat-session-2026-09-20-16-16*

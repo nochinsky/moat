@@ -126,11 +126,16 @@ export type MountAnalysis = {
 
 export function analyseMounts(mounts: string[], stateRoot: string): MountAnalysis {
   const hostDataPattern = /\/home\/|\/mnt\/|\/media\/|\/usr\/lib\/wsl|^\/init/
+  // A pseudo-filesystem legitimately has "/" as its *root* field: proc, tmpfs and devpts are
+  // mounted at a point and their root is the whole of it. A **bind of the host's /** also shows
+  // "/", and that is the one mount that would hand the box every host file, so the "/" exemption
+  // is by filesystem rather than by root alone.
+  const pseudoFilesystem = /^(proc|tmpfs|sysfs|devpts|mqueue|cgroup2?|securityfs|debugfs|tracefs|pstore|bpf|configfs|fusectl|hugetlbfs|binfmt_misc|nsfs|ramfs)\b/
   const suspicious = mounts.filter((line) => {
     const [mountPoint = "", root = "", , rest = ""] = line.split("||")
     if (hostDataPattern.test(mountPoint) || hostDataPattern.test(rest)) return true
     if (!root.startsWith("/")) return false
-    if (root === "/") return false
+    if (root === "/" && pseudoFilesystem.test(rest)) return false
     if (/^devtmpfs/.test(rest)) return false
     return root !== stateRoot && !root.startsWith(stateRoot + "/")
   })
@@ -162,6 +167,11 @@ set -u
 echo "MOAT_ID=$(id)"
 echo "MOAT_ALPINE=$(cat /etc/alpine-release 2>/dev/null || echo unknown)"
 echo "MOAT_PID_COUNT=$(ls -d /proc/[0-9]* 2>/dev/null | wc -l)"
+# The device nodes are host binds; a failed bind used to leave a regular file behind, so the
+# doctor measures what is actually there rather than trusting the boot to have worked.
+DEV_MISSING=""
+for n in null zero full random urandom tty; do [ -c "/dev/$n" ] || DEV_MISSING="$DEV_MISSING $n"; done
+echo "MOAT_DEV_MISSING=$(echo $DEV_MISSING)"
 echo "MOAT_PID1=$(cat /proc/1/comm 2>/dev/null || echo unknown)"
 for ns in mnt pid user net uts ipc; do
   echo "MOAT_NS_$(echo $ns | tr a-z A-Z)=$(readlink /proc/self/ns/$ns 2>/dev/null || echo unknown)"
@@ -561,6 +571,19 @@ export async function runIsolationChecks(
   // so it could not fail and could not report a missing device. The binds are
   // read-write, not read-only: a device node is an interface, not a file, and a
   // read-only bind makes `> /dev/null` fail (verified). They carry no host data.
+  // A bind that is not a device inside the box: writes to it land in the rootfs, reads of
+  // /dev/urandom return nothing, and nothing else would say so.
+  const devMissing = (parsed.MOAT_DEV_MISSING ?? "?").trim()
+  checks.push({
+    name: "device nodes are real devices",
+    ok: devMissing === "",
+    detail:
+      devMissing === ""
+        ? "all six device nodes are character devices inside the box"
+        : devMissing === "?"
+          ? "the probe did not report the device nodes at all"
+          : `not a character device inside the box:${devMissing}`,
+  })
   checks.push({
     name: "device nodes are the only host mounts",
     ok: deviceBinds.length === 6,

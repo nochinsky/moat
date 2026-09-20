@@ -5,17 +5,16 @@
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
-! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-14-47
+! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-20-16-15
 checks: npm run test
-! the egress allowlist could not resolve: not, a, host; the box will not reach them
-✓ sandbox up, warm start 949ms (image reused)
+✓ sandbox up, warm start 224ms (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
   runtime    codex (moat/mock-model) — `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-20T18:47:36.127Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-20T20:15:39.099Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

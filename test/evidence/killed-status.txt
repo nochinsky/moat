@@ -5,25 +5,25 @@
   "version": 1,
   "id": "00edb0f8f18c",
   "projectDir": "/home/user/moat-demo/killed",
-  "createdAt": "2026-09-20T14:48:02.149Z",
-  "lastUpAt": "2026-09-20T14:48:02.303Z",
+  "createdAt": "2026-09-20T16:16:04.037Z",
+  "lastUpAt": "2026-09-20T16:16:04.182Z",
   "status": "running",
   "alpineVersion": "3.21.4",
   "model": "moat/mock-model",
   "provider": "moat",
   "providerBaseUrl": "http://127.0.0.1:5599/v1",
-  "branch": "moat-session-2026-09-20-14-48",
+  "branch": "moat-session-2026-09-20-16-16",
   "baseBranch": "main",
   "profiles": [],
-  "pid": 74739,
-  "pidStart": "332809",
+  "pid": 109995,
+  "pidStart": "860997",
   "egress": "isolated",
   "egressAllow": [],
-  "slirpPid": 74761,
-  "slirpStart": "332812",
+  "slirpPid": 110018,
+  "slirpStart": "861000",
   "baselineDigest": "6bdc92b0668ce66c1b51f3308654946a0e08ceddfdeb37828c80c1b8a877144f",
-  "baselineHostState": "git:37dfb03f30c7d3cba925b17200c1606ccdfdc825:6e340b9cffb37a98",
-  "baselineCommit": "8de1e222001e836bcf3548916d709724b335a7ab",
+  "baselineHostState": "git:30e2a809a208c5727d87516e52bcdff7a9e59541:6e340b9cffb37a98",
+  "baselineCommit": "c44ff33027f1c9ca05beacfdd352ebb698c0f64c",
   "credential": null,
   "snapshots": [
     "baseline"
@@ -37,16 +37,16 @@
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "37dfb03f30c7d3cba925b17200c1606ccdfdc825",
+      "sha": "30e2a809a208c5727d87516e52bcdff7a9e59541",
       "subject": "base",
-      "committedAt": "2026-09-20T16:48:00+02:00",
+      "committedAt": "2026-09-20T18:16:02+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-20-14-48",
-      "sha": "37dfb03f30c7d3cba925b17200c1606ccdfdc825",
+      "name": "moat-session-2026-09-20-16-16",
+      "sha": "30e2a809a208c5727d87516e52bcdff7a9e59541",
       "subject": "base",
-      "committedAt": "2026-09-20T16:48:00+02:00",
+      "committedAt": "2026-09-20T18:16:02+02:00",
       "current": true
     }
   ]

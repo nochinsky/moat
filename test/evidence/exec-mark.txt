@@ -4,4 +4,3 @@
 in-sandbox /opt now contains:
 moat-extra
 --- stderr ---
-! the egress allowlist could not resolve: not, a, host; the box will not reach them

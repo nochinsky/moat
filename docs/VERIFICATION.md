@@ -246,6 +246,7 @@ isolation (14 checks)
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
   pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null,
                                        /dev/random, /dev/tty, /dev/urandom, /dev/zero
+  pass  device nodes are real devices   all six device nodes are character devices inside the box
 
   note  network namespace shared       sandbox and host share net:[4026531833]. The agent has the host's network position.
                                        Documented v0 limitation; fixed in v1/v2 (docs/SPEC.md).
@@ -278,6 +279,15 @@ against the criterion:
   no host data, and remounting them read-only makes `> /dev/null` fail, which is
   why the mount flags in the table above say `rw`. `docs/SPEC.md` §7.2 states
   this in full.
+* **each of those binds is verified, not assumed.** The boot binds a device,
+  checks `[ -c ... ]` on the result and refuses otherwise (the failure mode is a
+  regular file at `/dev/null`, which accepts writes and reports success), and
+  `moat doctor` re-measures it as the row above. The control for that row is in
+  `test/e2e-codex.sh` §3: the same `-c` test, run in a live box over
+  `/dev/null` and `/etc/hosts`, reports the regular file — so the passing row is
+  a measurement that can fail. `test/unit/rootfs-write.test.ts` holds the boot
+  script's refusals and `test/unit/doctor-mounts.test.ts` holds the mount
+  analysis; both were watched failing against the previous revision.
 * **`/` is `ext4 /dev/sdd`** — the sandbox root is a directory on the host disk,
   which is how it persists between sessions. It is the sandbox's own rootfs, not
   a view of the host's `/`. Confirmed by the next check: neither `/home/user` nor

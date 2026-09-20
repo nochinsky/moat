@@ -2,5 +2,4 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-! reaped the datapath of a sandbox that is no longer running (pid 69705)
 sandbox is not running

@@ -262,18 +262,28 @@ unshare --user --map-root-user --mount --pid --fork --uts --ipc --kill-child sh 
    `envs/<id>/runtime/boot.sh` so it can be read rather than trusted):
 
 ```
-mount --make-rprivate /
+mount --make-rprivate /                             # or the boot refuses to continue
 mount --bind  <rootfs> <mnt>              # the root becomes a mount point
 mount -t proc proc <mnt>/proc
 mount -t tmpfs -o mode=755,nosuid tmpfs <mnt>/dev
-mount --bind  /dev/{null,zero,full,random,urandom,tty} <mnt>/dev/*   # device nodes (rw)
+mount --bind  /dev/{null,zero,full,random,urandom,tty} <mnt>/dev/*   # device nodes (rw),
+                                          # each verified with `[ -c ... ]` or the boot refuses
 mount -t devpts -o newinstance,ptmxmode=0666,mode=620 devpts <mnt>/dev/pts
+                                          # proved mounted (mountpoint -q) or the boot refuses
 mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs <mnt>/dev/shm
 mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs <mnt>/tmp
 mount -t tmpfs -o mode=755,nosuid,nodev tmpfs <mnt>/run
 cp /etc/resolv.conf <mnt>/etc/resolv.conf          # a copy, not a mount
-exec chroot <mnt> /bin/sh /.moat/entry.sh
+exec chroot <mnt> /bin/sh -c 'cd / && unset OLDPWD && exec /.moat/entry.sh'
 ```
+
+Nothing on that list is best-effort. A step whose failure used to be swallowed — the private
+propagation, the six device binds, the devpts mount — refuses the boot now, because the failure
+mode is a box that looks healthy while `> /dev/null` writes into its own rootfs or `/dev/urandom`
+returns nothing. `moat doctor` measures the same thing from inside, as the row **device nodes are
+real devices**, and `cd /` is explicit rather than inherited from `chroot`; `OLDPWD` is unset in
+the same shell, since dash's `cd` exports it and the box would otherwise carry the host's
+previous directory into the environment diff.
 
 6. **Run**: the box execs `/.moat/entry.sh`, the keepalive described in §2.2b.
    There is no server and nothing listening. A task or a session is a separate
@@ -860,7 +870,10 @@ create them from nothing in a user namespace and a userspace process needs
 `/dev/null` to exist. This is what every rootless container runtime does. They
 carry no host data. They are bound **read-write**: a device node is an interface
 rather than a file, and remounting the bind `ro` makes `> /dev/null` fail with
-EACCES, which was measured before the docs were changed to match.
+EACCES, which was measured before the docs were changed to match. Each bind is
+verified to have produced a character device — the boot refuses otherwise, and
+`moat doctor` re-measures it inside the box — because the failure that matters here
+is silent: a regular file at `/dev/null` accepts writes and reports success.
 
 An acceptance criterion was that `mount` should show *no* host bind-mounts.
 Taken literally that is impossible on this host. The nearest true statement,

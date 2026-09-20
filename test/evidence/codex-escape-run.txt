@@ -4,14 +4,14 @@
 --- stderr ---
 detected: package.json -> node
           adding profile(s) node; use --no-detect or --profile to override
-sandbox already running (pid 81098); restarting it for this run
+sandbox already running (pid 105317); restarting it for this run
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-14-50
+agent branch: moat-session-2026-09-20-16-14
 checks: npm run test
-→ sandbox booted (pid 81262); the codex runtime has no server to wait for
+→ sandbox booted (pid 105484); the codex runtime has no server to wait for
 
 clearing the screen, retitling the window, and done.
   Model metadata for `mock-model` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.

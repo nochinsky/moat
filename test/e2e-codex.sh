@@ -136,6 +136,19 @@ capture codex-doctor-json $MOAT doctor --json
 grep -q "no variable from the host environment reached the sandbox" "$EVIDENCE/codex-doctor.txt" \
   && verdict 0 "the doctor env diff found no host variable in the box" \
   || verdict 1 "the doctor did not report a clean environment diff"
+# The device nodes are host binds. This row measures that each one is a character device inside
+# the box, which is what a swallowed bind failure used to break without a symptom.
+grep -q "pass  device nodes are real devices" "$EVIDENCE/codex-doctor.txt" \
+  && verdict 0 "the six /dev nodes are character devices inside the box, measured there" \
+  || verdict 1 "a device node in the box is not a device"
+# The control for that row: the probe's own test, run over one device and one regular file in a
+# live box. (Breaking /dev/null itself is not possible from inside: it is a bind mount, so unlink
+# fails with EBUSY — which is also why the boot verifies the bind instead of trusting `-e`.)
+# Without this, "6/6 are character devices" is a claim no run of the suite could contradict.
+capture codex-dev-control $MOAT exec -- sh -c 'M=""; for p in /dev/null /etc/hosts; do [ -c "$p" ] || M="$M $p"; done; echo "MOAT_DEV_MISSING=$(echo $M)"'
+grep -q "MOAT_DEV_MISSING=/etc/hosts" "$EVIDENCE/codex-dev-control.txt" \
+  && verdict 0 "control: the same test reports a regular file where a device is expected" \
+  || verdict 1 "control: the device test does not distinguish a regular file from a device"
 
 section "4. the agent completes a task needing bash + file edits, and the project checks pass"
 start_mock "$REPO/test/scripts/responses-acceptance-task.json" | tee -a "$EVIDENCE/codex-summary.txt"

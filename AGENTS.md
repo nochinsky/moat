@@ -98,7 +98,12 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 
 * `mknod` is denied inside a user namespace. Device nodes are bind-mounted from
   the host instead — those six binds are the only host mounts. They stay
-  read-write: remounting them `ro` makes `> /dev/null` fail with EACCES.
+  read-write: remounting them `ro` makes `> /dev/null` fail with EACCES. **Never
+  add `|| true` to one of those binds, or to the devpts mount or the
+  `--make-rprivate`:** a swallowed failure leaves a regular file where the device
+  should be, and the box writes its output into its own rootfs while `> /dev/null`
+  reports success. The boot checks each one (`[ -c ... ]`, `mountpoint -q`) and
+  refuses, and the doctor re-measures it as **device nodes are real devices**.
 * `devpts` fails with `EINVAL` if you pass `gid=5`, because that gid is not mapped
   in a single-id userns.
 * `/proc/self/ns/mount` does not exist. The symlink is `mnt`.

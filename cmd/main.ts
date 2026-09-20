@@ -855,6 +855,16 @@ ${command}
       "  or pass --credential-env NAME if it lives under a different name"
     : `no credential injected, so requests to ${baseUrl} will carry no Authorization header. ` +
       "If that endpoint needs one, pass --credential-env NAME (or --credential VALUE)."
+  // The value is on the host command line when it is passed this way: every local user reads
+  // argv through ps, and the shell keeps it in history. Say so where it is passed, not only in
+  // the risk notice after the fact.
+  if (flag<string>(p, "credential") !== undefined) {
+    log.warn(
+      "--credential puts the key in this process's argv, where every local user can read it " +
+        "(and your shell has it in history). Prefer --credential-env NAME, or the credential " +
+        "store that moat fills in on first run.",
+    )
+  }
   if (!flag<boolean>(p, "no-credential")) {
     credential = mint({
       literal: flag<string>(p, "credential"),

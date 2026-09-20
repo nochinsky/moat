@@ -7,6 +7,5 @@ package.json
 src
 test
 --- agent commit still present? ---
-fa33689 initial project
+321dce1 initial project
 --- stderr ---
-! the egress allowlist could not resolve: not, a, host; the box will not reach them

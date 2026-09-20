@@ -155,6 +155,29 @@ test("the boot script never resolves the log path; it dups a verified descriptor
   assert.doesNotMatch(outerScript(p), /exec 1>&3/)
 })
 
+test("the boot refuses a device table or a mount tree it could not build", (t) => {
+  // Measured shape of the old failure: `: > "$N/dev/null"` created a regular file and the bind
+  // result was swallowed by `|| true`, so the box booted with a /dev/null whose writes landed in
+  // its own rootfs and a /dev/urandom that returned nothing. Nothing said so.
+  const { rootfs } = withDirs(t)
+  const p = { mountpoint: path.join(rootfs, "mnt"), rootfs, entryScript: path.join(rootfs, ".moat/entry.sh") } as EnvPaths
+  const script = outerScript(p)
+  for (const node of ["null", "zero", "full", "random", "urandom", "tty"]) {
+    assert.match(script, new RegExp(`mount --bind "/dev/${node}" "\\$N/dev/${node}"`), node)
+    assert.match(script, new RegExp(`\\[ ! -c "\\$N/dev/${node}" \\]`), node + " is verified as a device")
+  }
+  // The propagation boundary fails the boot now instead of being best-effort, and /dev/pts is
+  // proved mounted rather than assumed.
+  assert.match(script, /if ! mount --make-rprivate \/ 2>\/dev\/null; then/)
+  assert.equal(script.includes("mount --make-rprivate / 2>/dev/null || true"), false)
+  assert.match(script, /mountpoint -q "\$N\/dev\/pts"/)
+  assert.equal(/\|\| true/.test(script.split("\n").filter((l) => l.includes("$N/dev/")).join("\n")), false)
+  // The chroot is the barrier, and the cwd is set explicitly rather than inherited from chroot.
+  // OLDPWD is unset in the same breath: dash's cd exports it, and the box would otherwise carry
+  // the host's previous directory into the doctor's env diff.
+  assert.match(script, /exec chroot "\$N" \/bin\/sh -c 'cd \/ && unset OLDPWD && exec \/\.moat\//)
+})
+
 test("opening the boot log for append refuses a symlink and writes nothing outside", (t) => {
   const { rootfs, outside } = withDirs(t)
   const host = path.join(outside, "boot.log")

@@ -33,3 +33,18 @@ test("a host bind is flagged, moat's own rootfs and the six devices are not", ()
   // A missing device must not pass silently either: the caller checks 6/6.
   assert.equal(analyseMounts([...DEVICES.slice(0, 5)], stateRoot).deviceBinds.length, 5)
 })
+
+test("a bind of the host root is flagged, while a pseudo-filesystem mounted at one is not", () => {
+  // The hole this closes: proc, tmpfs and devpts legitimately have "/" as their root field, so
+  // the check exempted root === "/" outright -- which also exempted `mount --bind / $N/mnt`, the
+  // one mount that would hand the box every host file. The exemption is by filesystem now.
+  const stateRoot = "/home/me/.moat"
+  const hostRoot = "/mnt||/||rw,relatime||ext4 /dev/sdd rw,discard"
+  const proc = "/proc||/||rw,relatime||proc proc rw"
+  const devTmpfs = "/dev||/||rw,nosuid||tmpfs tmpfs rw,mode=755"
+  const devpts = "/dev/pts||/||rw,relatime||devpts devpts rw,mode=620"
+  const devShm = "/dev/shm||/||rw,nosuid,nodev||tmpfs tmpfs rw,mode=1777"
+  const analysis = analyseMounts([hostRoot, proc, devTmpfs, devpts, devShm, ...DEVICES], stateRoot)
+  assert.deepEqual(analysis.suspicious, [hostRoot])
+  assert.equal(analysis.deviceBinds.length, 6)
+})

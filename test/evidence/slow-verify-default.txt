@@ -10,5 +10,5 @@ $ npm run test
 
 [moat] exit 0
 
-  pass  npm test                 3.2s
+  pass  npm test                 3.1s
 
