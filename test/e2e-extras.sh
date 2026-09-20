@@ -111,20 +111,28 @@ section "D. moat env reports the connection details"
 capture env-details $MOAT env
 
 section "E. the injected credential is short-lived, and expiry is enforced"
-echo "booting with --credential-ttl 6s and watching the sandbox stop on its own..." | tee -a "$EVIDENCE/extras.txt"
+# The deadline is the credential's own expiry timestamp, not a TTL counted from the entry
+# script's start, and the box enforces it itself: it sleeps until the deadline and exits, so a
+# sandbox can never outlive its key. Ported to the default runtime before the runtime that used
+# to own this behaviour was retired.
+echo "booting with --credential-ttl 6s and watching the box stop on its own..." | tee -a "$EVIDENCE/extras.txt"
 capture down-for-ttl $MOAT down
-capture up-short-ttl $MOAT up --runtime opencode --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL --credential-ttl 6s
-echo "waiting 12s for the TTL watchdog to fire..." | tee -a "$EVIDENCE/extras.txt"
+capture up-short-ttl $MOAT up --quiet --no-detect --credential-env MOAT_MOCK_CREDENTIAL --credential-ttl 6s
+echo "waiting 12s for the deadline to pass..." | tee -a "$EVIDENCE/extras.txt"
 sleep 12
 capture status-after-ttl $MOAT status
-echo "" | tee -a "$EVIDENCE/extras.txt"
-echo "--- sandbox log: the expiry notice ---" | tee -a "$EVIDENCE/extras.txt"
-{
-  echo "\$ grep -iE 'expired|stopping agent' \$HOME/.moat/envs/*/rootfs/var/log/moat/boot.log"
-  grep -iE "expired|stopping agent|agent exited" "$HOME"/.moat/envs/*/rootfs/var/log/moat/boot.log | tail -4
-  echo ""
-  echo "\$ moat status  -> status line above shows the box is stopped, which it did to itself"
-} | scrub | tee -a "$EVIDENCE/extras.txt"
+capture logs-ttl $MOAT logs sandbox
+# Three separate facts, because "the box stopped" is also what a crash looks like: the box is
+# stopped, moat reports the credential as expired, and the entry script names the deadline it
+# counted down from the credential's own timestamp (a single-digit remainder, not the default).
+if grep -qE "status +stopped" "$EVIDENCE/status-after-ttl.txt" \
+   && grep -q "EXPIRED" "$EVIDENCE/status-after-ttl.txt" \
+   && grep -qE "expires in [0-9]s; the box stops then" "$EVIDENCE/logs-ttl.txt" \
+   && grep -q "expired; stopping the sandbox" "$EVIDENCE/logs-ttl.txt"; then
+  echo "credential ttl: the box stopped itself at the credential deadline, and says so" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "credential ttl: FAILED — the box outlived its credential" | tee -a "$EVIDENCE/extras.txt"
+fi
 
 section "F. the interactive CLI, driven through a real pty"
 echo "an interactive session cannot be checked by piping stdin, so this allocates a pty," | tee -a "$EVIDENCE/extras.txt"

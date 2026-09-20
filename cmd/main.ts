@@ -2117,7 +2117,7 @@ async function cmdStatus(argv: string[]): Promise<number> {
     log.info(`rootfs       ${human(payload.rootfsBytes)}`)
     if (state!.credential) {
       const remaining = Math.round((new Date(state!.credential.expiresAt).getTime() - Date.now()) / 1000)
-      const note = remaining <= 0 ? log.red(" (EXPIRED, the sandbox watchdog stops the agent)") : ""
+      const note = remaining <= 0 ? log.red(" (EXPIRED — the box stops at this deadline)") : ""
       log.info(`credential   ${state!.credential.provider} ${state!.credential.fingerprint} expires in ${remaining}s${note}`)
     }
     log.info(`snapshots    ${snapshots.map((s) => s.name).join(", ") || "none"}`)
@@ -2748,16 +2748,35 @@ Docs: docs/SPEC.md, docs/VERIFICATION.md
 /**
  * The long-running box under the codex runtime.
  *
- * Codex is a CLI, not a server: there is nothing to wait for and nothing listening. The
- * box exists so `moat status`, `down` and `destroy` keep their meaning and so the
- * environment is really up before a task or a session attaches to it. Tasks and the TUI
- * run in their own ephemeral boots of the same rootfs, like `moat exec`.
+ * Codex is a CLI, not a server: there is nothing to wait for and nothing listening. The box
+ * exists so `moat status`, `down` and `destroy` keep their meaning. Tasks and the TUI run in
+ * their own ephemeral boots of the same rootfs, like `moat exec`.
+ *
+ * It also enforces the credential deadline, which is the box's own promise: the timestamp
+ * comes from the host (`MOAT_CREDENTIAL_EXPIRES_EPOCH`), and the box exits when it passes. A
+ * credential that is already dead at boot stops the box instead of leaving one that cannot
+ * call a model. The deadline is the credential's own expiry, not a TTL counted from this
+ * script's start — counting from the start let a box outlive its key by however long the boot
+ * took, and that was a measured bug under the runtime this one replaced.
  */
 function codexEntryScript(): string {
   return `#!/bin/sh
+set -u
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/root
 echo "[moat] codex runtime ready (pid $$)"
+EXPIRES_EPOCH=\${MOAT_CREDENTIAL_EXPIRES_EPOCH:-0}
+if [ "$EXPIRES_EPOCH" -gt 0 ]; then
+  REMAIN=$((EXPIRES_EPOCH - $(date +%s)))
+  if [ "$REMAIN" -le 0 ]; then
+    echo "[moat] the injected credential expired before the box started; stopping"
+    exit 0
+  fi
+  echo "[moat] the injected credential expires in \${REMAIN}s; the box stops then"
+  sleep "$REMAIN"
+  echo "[moat] injected credential expired; stopping the sandbox"
+  exit 0
+fi
 exec sleep 2147483647
 `
 }
