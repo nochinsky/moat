@@ -146,7 +146,27 @@ const server = http.createServer((req, res) => {
   req.on("data", (c) => body.push(c))
   req.on("end", () => {
     const text = Buffer.concat(body).toString("utf8")
-    if (record) record.write(JSON.stringify({ url: req.url, body: text.slice(0, 4000) }) + "\n")
+    if (record) {
+      // Record what a test would assert on, parsed, rather than a truncated body: the
+      // interesting fields (model, reasoning) sit behind the long instructions block.
+      let summary = { url: req.url, parseError: null }
+      try {
+        const parsed = JSON.parse(text)
+        summary = {
+          url: req.url,
+          model: parsed.model,
+          reasoning: parsed.reasoning ?? null,
+          toolChoice: parsed.tool_choice ?? null,
+          tools: (parsed.tools ?? []).map((t) => t.name ?? t.type),
+          inputCount: Array.isArray(parsed.input) ? parsed.input.length : null,
+          lastInput: Array.isArray(parsed.input) ? parsed.input[parsed.input.length - 1] : null,
+          instructionsHead: typeof parsed.instructions === "string" ? parsed.instructions.slice(0, 120) : null,
+        }
+      } catch (error) {
+        summary.parseError = String(error)
+      }
+      record.write(JSON.stringify(summary) + "\n")
+    }
     if (!/\/responses$/.test((req.url || "").split("?")[0] || "")) {
       res.writeHead(404, { "content-type": "application/json" })
       res.end(JSON.stringify({ error: { message: "the responses mock only serves /responses" } }))

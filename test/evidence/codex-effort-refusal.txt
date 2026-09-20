@@ -1,0 +1,6 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --runtime codex --effort high --no-detect --no-credential
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ the codex runtime does not take --effort: Codex sends reasoning effort only for models it has metadata for, and it has none for the DeepSeek models moat uses.
+  use --runtime opencode for effort levels, or drop the flag.

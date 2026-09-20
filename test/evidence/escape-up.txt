@@ -2,17 +2,17 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.50s (extract cached image 1.30s)
+✓ image provisioned in 1.49s (extract cached image 1.29s)
 ✓ copy-in via git: 2 files, 0.2 KiB, digest b27d5e7ef3c1a586
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-20-02-38
+agent branch: moat-session-2026-09-20-03-06
 checks: npm run test
-✓ sandbox up, cold start 10.00s (image built)
+✓ sandbox up, cold start 10.20s (image built)
 
   project    /home/user/moat-demo/escape-check
   env        /home/user/.moat/envs/376d0bba6c50
-  opencode   http://127.0.0.1:36813  (basic auth user "opencode")
-  password   6rg5vrjSI-fQK9dRQJxEbmJ6uYfH0E10
+  opencode   http://127.0.0.1:34805  (basic auth user "opencode")
+  password   j8UsbgDdUd5ASdCx9T7depiXbHUEHa4U
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do

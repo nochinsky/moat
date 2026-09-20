@@ -32,7 +32,20 @@ export type CodexConfigInput = {
   /** Context window to declare, so the first run is not a metadata guess. */
   contextWindow?: number
   maxOutputTokens?: number
+  /**
+   * Reasoning effort, when the environment already recorded one.
+   *
+   * Codex's `model_reasoning_effort` takes minimal/low/medium/high; the opencode runtime's
+   * scale also has `max` and `off`, which are **omitted** rather than passed through as an
+   * invalid enum. The `--effort` *flag* is refused under this runtime — see cmdUp — because
+   * Codex drops the setting for models it has no metadata for, which is every DeepSeek model
+   * today (measured: `model_reasoning_effort = "high"` never reached the wire).
+   */
+  reasoningEffort?: string
 }
+
+/** The reasoning levels Codex accepts. Anything else is left out of the config. */
+export const CODEX_EFFORT_LEVELS = ["minimal", "low", "medium", "high"]
 
 function tomlString(value: string): string {
   return '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"'
@@ -51,6 +64,9 @@ export function renderCodexConfig(input: CodexConfigInput): string {
   ]
   if (input.contextWindow) lines.push(`model_context_window = ${input.contextWindow}`)
   if (input.maxOutputTokens) lines.push(`model_max_output_tokens = ${input.maxOutputTokens}`)
+  if (input.reasoningEffort && CODEX_EFFORT_LEVELS.includes(input.reasoningEffort)) {
+    lines.push(`model_reasoning_effort = ${tomlString(input.reasoningEffort)}`)
+  }
   lines.push(
     "",
     `[model_providers.${input.providerID}]`,

@@ -16,6 +16,7 @@ fix the failing tests
 /redo
 /compact
 /status
+/quit
 
 
 --- checks ---

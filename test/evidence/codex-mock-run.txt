@@ -3,14 +3,14 @@
 --- stdout ---
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
-sandbox already running (pid 553677) on port 39741
+sandbox already running (pid 584325) on port 34109
 ! restarting the idle codex box for this run (its tasks do not go through a server)
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-02-39
-→ sandbox booted (pid 553776); the codex runtime has no server to wait for
+agent branch: moat-session-2026-09-20-03-06
+→ sandbox booted (pid 584422); the codex runtime has no server to wait for
   ✓ /bin/sh -lc "printf 'hello from mock codex
 
 Created and committed MOCK-CODEX.txt on the session branch.

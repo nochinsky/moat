@@ -1,5 +1,5 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c cd /work && printf 'agent work\n' > precious.txt && git add -A && git -c user.email=agent@moat.invalid -c user.name=agent commit -qm 'agent: work the host has never seen' && git rev-parse HEAD
 --- exit 0
 --- stdout ---
-3452fbc0b9c2e53df21783865bdbbf7d011ff12f
+b70a677c7fdc491f639f9062faeeb4f9bee07c13
 --- stderr ---

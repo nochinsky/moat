@@ -1,5 +1,5 @@
 --- moat down said ---
-✓ sandbox stopped (pid 546981); the environment and its snapshots are kept
+✓ sandbox stopped (pid 577659); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 
@@ -7,8 +7,6 @@
 ✗ this environment uses the codex runtime, which has no server to attach to.
   Run `moat` for its TUI, or `moat run --runtime codex "task"`.
 write a file called hello.txt with the word hi in it
-are you still there
-/help
 
 
 --- checks ---

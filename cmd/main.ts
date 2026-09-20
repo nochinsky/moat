@@ -500,6 +500,19 @@ async function cmdUp(argv: string[]): Promise<number> {
   }
   const runtime: Runtime = runtimeFlag ?? state?.runtime ?? "codex"
 
+  // --effort under the codex runtime: refused, not ignored. Codex renders reasoning as
+  // model_reasoning_effort and drops it for models it has no metadata for, which is every
+  // DeepSeek model today (measured through the recording proxy: model_reasoning_effort =
+  // "high" never reached the wire). A flag that silently does nothing is the bug class this
+  // project keeps finding, so it fails with the way out instead.
+  if (runtime === "codex" && flag<string>(p, "effort") !== undefined) {
+    log.fail(
+      "the codex runtime does not take --effort: Codex sends reasoning effort only for models it " +
+        "has metadata for, and it has none for the DeepSeek models moat uses.\n" +
+        "  use --runtime opencode for effort levels, or drop the flag.",
+    )
+  }
+
   // A runtime change is a restart, and it has to happen before anything else touches the
   // rootfs: provisioning extracts the new runtime's image over the rootfs, which must not
   // race a live box. Stopping here is also what makes the flag meaningful on a running
@@ -1128,6 +1141,9 @@ ${command}
         envKey: resolvedModel.native ? DEEPSEEK.envVar : "MOAT_INJECTED_CREDENTIAL",
         contextWindow: resolvedModel.meta?.context,
         maxOutputTokens: resolvedModel.meta?.output,
+        // A stored effort (recorded when the environment was created under opencode) is
+        // rendered when Codex accepts the level, and left out otherwise.
+        reasoningEffort: state?.effort ?? undefined,
       }),
       0o600,
     )

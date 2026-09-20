@@ -8,6 +8,7 @@ approval_policy = "never"
 sandbox_mode = "danger-full-access"
 model_context_window = 1000000
 model_max_output_tokens = 384000
+model_reasoning_effort = "high"
 
 [model_providers.deepseek-moat]
 name = "DeepSeek"

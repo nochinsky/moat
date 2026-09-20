@@ -1085,6 +1085,15 @@ if grep -q "codex runtime" "$EVIDENCE/codex-env-refusal.txt"; then
 else
   echo "codex: FAILED — moat env did not explain that the runtime has no server" | tee -a "$EVIDENCE/extras.txt"
 fi
+# --effort is refused under this runtime rather than accepted and dropped: Codex renders
+# reasoning as model_reasoning_effort and sends it only for models it has metadata for, and it
+# has none for the DeepSeek models moat uses (measured through a recording proxy).
+( cd "$CDX" && capture codex-effort-refusal $MOAT up --runtime codex --effort high --no-detect --no-credential )
+if grep -q "does not take --effort" "$EVIDENCE/codex-effort-refusal.txt"; then
+  echo "codex: --effort is refused with the reason, instead of silently doing nothing" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "codex: FAILED — --effort was accepted under the codex runtime" | tee -a "$EVIDENCE/extras.txt"
+fi
 ( cd "$CDX" && $MOAT exec -- sh -c 'echo keep > /work/KEEP.txt; mkdir -p /work/sub && echo deep > /work/sub/DEEP.txt' ) >/dev/null 2>&1
 ( cd "$CDX" && capture codex-switch $MOAT up --quiet --runtime opencode --no-detect --no-credential )
 ( cd "$CDX" && capture codex-switch-check $MOAT exec -- sh -c 'cat /work/KEEP.txt /work/sub/DEEP.txt; opencode --version' )
