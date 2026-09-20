@@ -72,6 +72,52 @@ test("applyBranch refuses a ref that was never fetched", (t) => {
   })()
 })
 
+test("applyBranch never moves a branch that already exists and points elsewhere", (t) => {
+  // `git branch --force <name> <ref>` and `git checkout -B <name> <ref>` both reset an
+  // existing branch in silence, and this is the command where the user decides what the
+  // agent's work becomes — it is not allowed to discard work that was already theirs.
+  // Reintroducing `--force` here makes this test fail, which is the point of it.
+  //
+  // Every assertion below reads a fully-qualified refname, because `refs/moat/agent` and
+  // `refs/heads/moat/agent` both exist here and the short name is ambiguous: git warns and
+  // picks one, which is exactly how a test can pass while looking at the wrong object.
+  const { host } = hostRepo(t)
+  withFetchedRef(host)
+  const mine = git(host, "rev-parse", "HEAD").trim()
+  git(host, "branch", "moat/agent") // the user already has a branch by that name
+  const head = "refs/heads/moat/agent"
+  const p = { projectDir: host } as EnvPaths
+  return (async () => {
+    await assert.rejects(() => applyBranch(p, "agent"), /refusing to move the existing branch moat\/agent/)
+    assert.equal(git(host, "rev-parse", head).trim(), mine, "their branch is where it was")
+    // --checkout has the same shape and the same refusal.
+    await assert.rejects(() => applyBranch(p, "agent", { checkout: true }), /refusing to move the existing branch/)
+    assert.equal(git(host, "rev-parse", head).trim(), mine)
+    // The way through is a different name, and it still works.
+    const result = await applyBranch(p, "agent", { name: "their-branch" })
+    assert.equal(result.branch, "their-branch")
+    assert.equal(git(host, "rev-parse", "refs/heads/their-branch").trim(), git(host, "rev-parse", "refs/moat/agent").trim())
+    assert.equal(git(host, "rev-parse", head).trim(), mine, "and the name they had is untouched")
+  })()
+})
+
+test("applyBranch is a no-op on a branch already at the fetched ref", (t) => {
+  // A second apply of the same fetch is not a conflict: there is nothing to move, so
+  // refusing it would make the command un-rerunnable for no gain.
+  const { host } = hostRepo(t)
+  const tip = withFetchedRef(host)
+  git(host, "branch", "moat/agent", "refs/moat/agent")
+  const p = { projectDir: host } as EnvPaths
+  return (async () => {
+    const result = await applyBranch(p, "agent")
+    assert.equal(result.branch, "moat/agent")
+    assert.equal(git(host, "rev-parse", "refs/heads/moat/agent").trim(), tip)
+    // And --checkout onto a branch already at the ref is allowed: it moves HEAD, not the branch.
+    await applyBranch(p, "agent", { checkout: true })
+    assert.equal(git(host, "rev-parse", "HEAD").trim(), tip)
+  })()
+})
+
 test("suggestBranch prefers a branch whose tip the host cannot reach", (t) => {
   const { root, host } = hostRepo(t)
   const work = path.join(root, "work")

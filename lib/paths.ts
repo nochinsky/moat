@@ -126,8 +126,29 @@ export function envPathsForId(id: string, projectDir: string): EnvPaths {
   }
 }
 
+/**
+ * Paths for the environment of a project directory.
+ *
+ * The directory is resolved with `realpathSync`, which *throws* when it does not
+ * exist, and the caller's `projectDir` can come straight from argv. `moat status
+ * /nonexistent` used to die with a bare `ENOENT: no such file or directory,
+ * lstat '/nonexistent'`: an internal error where the user's mistake was a path
+ * that is not there, and no hint about which command would have made one. Name
+ * the path and the command instead. Inventory code that must tolerate a vanished
+ * project directory uses `envPathsForId`.
+ */
 export function envPaths(projectDir: string): EnvPaths {
-  const real = fs.realpathSync(path.resolve(projectDir))
+  const resolved = path.resolve(projectDir)
+  let real: string
+  try {
+    real = fs.realpathSync(resolved)
+  } catch {
+    throw new Error(
+      `no such directory: ${resolved}\n` +
+        `  \`moat up\` creates an environment for the directory you run it in; ` +
+        `\`moat status --all\` lists the ones that exist.`,
+    )
+  }
   return envPathsForId(projectId(real), real)
 }
 

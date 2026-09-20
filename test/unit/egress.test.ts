@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
+import type { EnvPaths } from "../../lib/paths.ts"
+
 import {
   SLIRP_DNS,
   SLIRP_NAMESERVER_LINE,
@@ -13,7 +15,7 @@ import {
   runtimeForEgress,
   slirpArgs,
 } from "../../sandbox/egress.ts"
-import { bootIsolation, unshareArgs } from "../../sandbox/launcher.ts"
+import { NFT_HEREDOC_MARKER, bootIsolation, outerScript, unshareArgs } from "../../sandbox/launcher.ts"
 import { defaultEgress, isLoopbackHost, ownNetns } from "../../lib/pins.ts"
 
 test("the allowlist parser splits on commas and whitespace without duplicates", () => {
@@ -97,7 +99,7 @@ test("filtered egress is isolated egress plus a ruleset", () => {
   assert.equal(bootIsolation({ egress: "open" }), false)
   assert.equal(bootIsolation({ egress: "isolated", slirpBinary: binary }), true)
   assert.equal(
-    bootIsolation({ egress: "filtered", slirpBinary: binary, egressRules: "/.moat/egress.nft" }),
+    bootIsolation({ egress: "filtered", slirpBinary: binary, egressRules: "table inet moat_egress {}" }),
     true,
   )
 })
@@ -106,7 +108,7 @@ test("a boot that cannot isolate itself refuses instead of running unfiltered", 
   assert.throws(() => bootIsolation({ egress: "isolated" }), /needs the slirp4netns binary/)
   assert.throws(() => bootIsolation({ egress: "filtered" }), /needs the slirp4netns binary/)
   assert.throws(
-    () => bootIsolation({ egress: "open", egressRules: "/.moat/egress.nft" }),
+    () => bootIsolation({ egress: "open", egressRules: "table inet moat_egress {}" }),
     /own network namespace/,
   )
 })
@@ -167,6 +169,53 @@ test("open egress needs no datapath binary", () => {
   return (async () => {
     assert.deepEqual(await runtimeForEgress("open"), { egress: "open" })
   })()
+})
+
+test("the ruleset travels in the boot script, not in the agent's rootfs", () => {
+  // The policy used to be a file at /.moat/egress.nft inside the rootfs. The agent
+  // is root in its own rootfs, so it could rewrite the file between boots and the
+  // next boot would faithfully apply the policy the box had chosen, report success,
+  // and come up "filtered" under the agent's own rules. The boot script lives in
+  // runtime/, outside the rootfs, so the ruleset is carried there instead.
+  const ruleset = renderNftRules(["203.0.113.7"], "10.0.2.3")
+  const p = {
+    mountpoint: "/tmp/moat-test/mnt",
+    rootfs: "/tmp/moat-test/rootfs",
+    entryScript: "/tmp/moat-test/rootfs/.moat/entry.sh",
+  } as EnvPaths
+  const script = outerScript(p, { egressRules: ruleset })
+  // The ruleset's own text is in the script, verbatim.
+  assert.ok(script.includes("table inet moat_egress {"), "the ruleset is carried in the boot script")
+  assert.ok(script.includes("203.0.113.7"), "including the resolved allowlist")
+  // It is applied from stdin, so no path inside the rootfs is read at all.
+  assert.match(script, /nft -f -/)
+  assert.equal(script.includes("egress.nft"), false, "no path inside the agent-writable rootfs")
+  // Quoted heredoc: the body is data, never shell input.
+  assert.ok(script.includes("<<'MOAT_EGRESS_RULESET_EOF'"))
+  // And the variable does not leak into the box's environment, which the entry
+  // script inherits.
+  assert.match(script, /^unset MOAT_EGRESS$/m)
+  // Without a ruleset, none of it is emitted.
+  const plain = outerScript(p)
+  assert.equal(plain.includes("MOAT_EGRESS"), false)
+  assert.equal(plain.includes("nft"), false)
+})
+
+test("a ruleset's own text cannot break out of the heredoc that carries it", () => {
+  // The delimiter is a constant, so a ruleset cannot forge the end of its own body
+  // and turn the rest into shell input. This is the injection check for the seam.
+  const hostile = "table inet x {\n}\nMOAT_EGRESS_RULESET_EOF\nrm -rf /\n"
+  const p = {
+    mountpoint: "/tmp/moat-test/mnt",
+    rootfs: "/tmp/moat-test/rootfs",
+    entryScript: "/tmp/moat-test/rootfs/.moat/entry.sh",
+  } as EnvPaths
+  const script = outerScript(p, { egressRules: hostile })
+  // The forged delimiter is inside the quoted heredoc, where it is data. Exactly one
+  // line is the real delimiter, and it is the one the shell will act on.
+  const delimiters = script.split("\n").filter((line) => line === NFT_HEREDOC_MARKER)
+  assert.equal(delimiters.length, 2, "the opener and the closer, and nothing the body added")
+  assert.equal(script.includes("rm -rf /"), true, "the hostile line is carried, as data")
 })
 
 test("the isolated sandbox resolves through slirp, not the host resolver", () => {

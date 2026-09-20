@@ -3,6 +3,11 @@
 Read this before changing anything. Most of the design here is load-bearing, and several
 constraints are not obvious from the code.
 
+If you are working through the product program rather than a one-off change, that is
+`docs/PROGRAM.md`: gated phases, its own journal at `docs/PROGRESS.md`, and a list of
+reported defects to confirm before fixing. This file stays the contract; that one says
+what to build next.
+
 ## The idea
 
 moat runs an AI coding agent inside a disposable Linux sandbox. The agent gets a copy of

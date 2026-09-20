@@ -379,8 +379,33 @@ export async function sandboxHeadDetached(p: EnvPaths): Promise<boolean> {
 }
 
 /**
+ * Where a local branch points, or null when there is no such branch.
+ *
+ * `git rev-parse --verify --quiet refs/heads/<name>` exits non-zero for a branch
+ * that does not exist, which is the answer, not a failure.
+ */
+async function localBranchTip(projectDir: string, name: string): Promise<string | null> {
+  const result = await run("git", ["-C", projectDir, "rev-parse", "--verify", "--quiet", `refs/heads/${name}`], {
+    env: SANITIZED_GIT_ENV,
+    allowFailure: true,
+  })
+  const sha = result.stdout.trim()
+  return result.code === 0 && sha.length > 0 ? sha : null
+}
+
+/**
  * The explicit second step: turn a fetched ref into a local branch. Refuses to
  * move a dirty working tree, and never checks anything out unless asked.
+ *
+ * It also refuses to *move* a branch that already exists and points somewhere
+ * else. `git branch --force <name> <ref>` and `git checkout -B <name> <ref>` both
+ * reset an existing branch without a word, so a name the user already had — a
+ * branch of their own, or one of moat's from an earlier fetch — would silently
+ * lose whatever it pointed at. That is the one thing this command must not do: it
+ * is the step where the user decides what the agent's work becomes, and it is not
+ * allowed to destroy work that was already theirs. A branch already at the fetched
+ * ref is not a conflict (there is nothing to move), and `--name` is the way
+ * through when the name is taken.
  */
 export async function applyBranch(
   p: EnvPaths,
@@ -397,6 +422,7 @@ export async function applyBranch(
     allowFailure: true,
   })
   if (exists.code !== 0) throw new Error(`nothing fetched at ${ref}. Run \`moat fetch ${branch}\` first.`)
+  const target = exists.stdout.trim()
 
   if (opts.checkout) {
     const status = await run("git", ["-C", p.projectDir, "status", "--porcelain"], { env: SANITIZED_GIT_ENV })
@@ -406,9 +432,23 @@ export async function applyBranch(
           "Commit or stash them, or run `moat apply` without --checkout to only create the branch.",
       )
     }
-    await run("git", ["-C", p.projectDir, "checkout", "-B", local, ref], { env: SANITIZED_GIT_ENV })
-  } else {
-    await run("git", ["-C", p.projectDir, "branch", "--force", local, ref], { env: SANITIZED_GIT_ENV })
   }
+
+  // Read the branch before writing it. `git branch --force` cannot be made
+  // conditional: there is no `--force-with-lease` for a local branch, so the only
+  // way not to move it is to look first.
+  const current = await localBranchTip(p.projectDir, local)
+  if (current !== null && current !== target) {
+    throw new Error(
+      `refusing to move the existing branch ${local} from ${current.slice(0, 12)} to ${target.slice(0, 12)}.\n` +
+        `  it is not the branch moat fetched, and resetting it would discard whatever it points at\n` +
+        `  fetch it under another name:  moat fetch ${branch} && moat apply ${branch} --name ${local}-moat\n` +
+        `  or delete it yourself:  git branch -D ${local}`,
+    )
+  }
+
+  if (opts.checkout) await run("git", ["-C", p.projectDir, "checkout", "-B", local, ref], { env: SANITIZED_GIT_ENV })
+  else if (current === null) await run("git", ["-C", p.projectDir, "branch", local, ref], { env: SANITIZED_GIT_ENV })
+  // `current === target` needs no command: the branch is already where it would be put.
   return { branch: local, ref }
 }

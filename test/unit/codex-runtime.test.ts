@@ -127,3 +127,31 @@ test("a provider id that is not a TOML key is refused rather than quoted wrongly
     /invalid codex provider id/,
   )
 })
+
+test("a token count that is not a positive integer never reaches the TOML bare", () => {
+  // The count comes from a fetched catalog (`lib/catalog.ts`), and these two lines are the only
+  // unquoted numbers moat writes. Interpolated raw, a value JSON can hold but TOML cannot read
+  // produced a config Codex refuses: `model_context_window = NaN` is a parse error naming a line
+  // the user never wrote, and `Infinity` is not TOML either. The line is optional — Codex falls
+  // back to its own metadata — so an unusable count is dropped, not written.
+  const bad: unknown[] = [NaN, Infinity, -Infinity, 1e999, -1, 0, 1.5, "131072", null, {}, []]
+  for (const value of bad) {
+    const config = renderCodexConfig({
+      model: "m",
+      providerID: "p",
+      baseURL: "http://x",
+      envKey: "K",
+      contextWindow: value as number,
+      maxOutputTokens: value as number,
+    })
+    assert.ok(!/model_context_window/.test(config), `contextWindow=${String(value)} was rendered`)
+    assert.ok(!/model_max_output_tokens/.test(config), `maxOutputTokens=${String(value)} was rendered`)
+    // The rest of the config still renders: a bad count is not a failed boot.
+    assert.match(config, /^model = "m"$/m)
+    assert.match(config, /^approval_policy = "never"$/m)
+  }
+  // The honest values still render, and as integers.
+  const good = renderCodexConfig({ model: "m", providerID: "p", baseURL: "http://x", contextWindow: 131072, maxOutputTokens: 32768 })
+  assert.match(good, /^model_context_window = 131072$/m)
+  assert.match(good, /^model_max_output_tokens = 32768$/m)
+})

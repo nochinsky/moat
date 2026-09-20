@@ -13,9 +13,21 @@ export const green = (text: string) => paint("32", text)
 export const yellow = (text: string) => paint("33", text)
 export const cyan = (text: string) => paint("36", text)
 
-export const verbose = process.env.MOAT_VERBOSE === "1"
+let verbose = process.env.MOAT_VERBOSE === "1"
 
 let quiet = false
+
+/**
+ * Show the `debug` lines.
+ *
+ * `--verbose` is parsed in `main()` *after* this module has been loaded, so a
+ * module-level read of the environment left the flag with nothing to switch on:
+ * all thirteen `log.debug` sites were unreachable and `moat up --verbose` printed
+ * exactly what `moat up` printed. Set from `--verbose` in main().
+ */
+export function setVerbose(value: boolean): void {
+  verbose = value
+}
 
 /**
  * Hide the progress lines (`step`).

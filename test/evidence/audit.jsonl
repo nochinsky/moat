@@ -1,6 +1,0 @@
-{"phase": "config", "permission": {"skill": "deny", "webfetch": "deny", "websearch": "deny", "task": "deny", "*": "allow"}, "toolOmissions": ["skill", "webfetch", "websearch", "task"]}
-{"phase": "before", "tool": "bash", "args": "{\"command\":\"pwd && ls -la && cat README.md\"}"}
-{"phase": "before", "tool": "write", "args": "{\"filePath\":\"agent-output.txt\",\"content\":\"written by the agent, inside the sandbox\\n\"}"}
-{"phase": "before", "tool": "edit", "args": "{\"filePath\":\"agent-output.txt\",\"oldString\":\"inside the sandbox\",\"newString\":\"inside the sandbox, via the edit tool\"}"}
-{"phase": "before", "tool": "bash", "args": "{\"command\":\"printf 'line two\\\\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt\"}"}
-{"phase": "before", "tool": "bash", "args": "{\"command\":\"git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && git log --oneline -1 && git rev-parse HEAD\"}"}

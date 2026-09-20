@@ -804,8 +804,6 @@ over DNS, and it does not protect the credential (§1.2).
   limitation.
 * **`exposure`**, a measured weakness that v0 does not fix. It must not fail the run,
   because it is a design choice rather than a bug, but it must be impossible to miss.
-* **`exposure`**, a measured weakness that v0 does not fix. It must not fail the run,
-  because it is a design choice rather than a bug, but it must be impossible to miss.
 
 The `exposure` kind exists so that a weakness cannot render as `pass`; one that reports
 `pass` for a sandbox whose shell can read the injected credential is worse than the

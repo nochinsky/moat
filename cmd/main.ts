@@ -21,7 +21,7 @@ import {
 import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, checkBaseUrl, isDeepSeekHost } from "../lib/provider.ts"
 import { resolveProvider, type ResolvedProvider } from "../lib/resolve-provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
-import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES } from "../sandbox/profiles.ts"
+import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES, PROFILES, FULL_PROFILE_ID } from "../sandbox/profiles.ts"
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
 import { runChecks, summarise } from "../sandbox/checks.ts"
 import {
@@ -66,7 +66,9 @@ import {
   startSandbox,
   stopSandbox,
   stopSlirp,
+  READY_MARKER,
   unshareArgs,
+  waitForSandboxReady,
   writeInnerScript,
   writeOuterScript,
 } from "../sandbox/launcher.ts"
@@ -1038,6 +1040,24 @@ ${command}
     slirpBinary: egressConfig.slirpBinary,
     egressRules: egressConfig.egressRules,
   })
+  // Wait for the box to say it is up before recording it as running. Spawning
+  // `unshare` is not a boot: the entry script's first act is the credential
+  // deadline, and an expired credential makes it exit 0 in milliseconds. Reporting
+  // that as "sandbox booted" wrote a running pid into state.json for a process that
+  // was already gone, and the failure surfaced later as a `moat exec` that could not
+  // reach the box. A boot that dies must fail here, where the log can be shown.
+  const ready = await waitForSandboxReady(sandbox.pid, () => readRootfsFileTail(paths.rootfs, "/var/log/moat/boot.log", LOG_TAIL_BYTES))
+  if (!ready.ok) {
+    await stopSandbox(sandbox.pid, {
+      startTime: sandbox.startTime,
+      envId: paths.id,
+      slirpPid: sandbox.slirp?.pid ?? null,
+      slirpStart: sandbox.slirp?.startTime ?? null,
+    })
+    if (state) await forgetBox(paths, state)
+    const tail = sandboxLogTail(paths, 20)
+    log.fail(`${ready.reason}\n  the last lines of the boot log:\n${tail}`)
+  }
   state = {
     ...(state as EnvState),
     status: "running",
@@ -1064,11 +1084,11 @@ ${command}
       : null,
   }
   writeState(paths, state)
-  // There is no server to wait for: the box is up when unshare is, and every task, TUI session
-  // and check runs in its own ephemeral boot of this rootfs. --timeout is SECONDS and is the
-  // budget for one of those turns, not for this readiness.
+  // There is no server to wait for, and every task, TUI session and check runs in
+  // its own ephemeral boot of this rootfs, so "ready" is the entry script's own
+  // readiness line (`waitForSandboxReady`, checked above) rather than a port.
+  // --timeout is SECONDS and is the budget for one of those turns, not for this boot.
   log.step(`sandbox booted (pid ${sandbox.pid}); the codex runtime has no server to wait for`)
-  const ready = { ok: true, detail: "the codex runtime has no server to wait for" }
   const bootMs = Date.now() - bootStart
 
   // The value is only ever meant to exist in the sandbox process environment.
@@ -1112,7 +1132,7 @@ ${command}
   report.pid = sandbox.pid
   report.bootMs = bootMs
   report.totalMs = Date.now() - started
-  report.readyCheck = ready.detail
+  report.readyCheck = `the entry script reported ready (${READY_MARKER})`
   report.credential = credential
     ? { provider: credential.provider, fingerprint: credential.fingerprint, expiresAt: credential.expiresAt, source: credential.source }
     : null
@@ -1481,7 +1501,8 @@ async function cmdApply(argv: string[]): Promise<number> {
   if (flag<boolean>(p, "json")) log.emit({ ...plan, ...result })
   else {
     log.success(`applied ${result.applied} change(s) to ${paths.projectDir}`)
-    if (result.skipped.length > 0) log.warn(`left alone: ${result.skipped.join(", ")}`)
+    if (result.skipped.length > 0)
+      log.warn(`left alone: ${result.skipped.map((item) => stripAnsi(item)).join(", ")}`)
   }
   return 0
 }
@@ -2051,7 +2072,23 @@ async function cmdModels(argv: string[]): Promise<number> {
 async function cmdProfiles(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   if (flag<boolean>(p, "json")) {
-    log.emit({ base: BASE_PACKAGES, profiles: resolveProfiles([]).profiles.length ? [] : undefined, ...({} as object) })
+    // The machine-readable form is the whole table, not a stub. This used to emit
+    // `{"base": [...]}` and then fall through to the human text: the ternary that
+    // was meant to choose between the two shapes was statically undefined, and
+    // there was no `return`, so `--json` printed a partial object *and* the prose.
+    log.emit({
+      base: BASE_PACKAGES,
+      profiles: PROFILES.map((profile) => ({
+        id: profile.id,
+        label: profile.label,
+        packages: profile.packages,
+        post: profile.post ?? [],
+        note: profile.note,
+      })),
+      full: FULL_PROFILE_ID,
+      baseProfileCount: BASE_PACKAGES.length,
+    })
+    return 0
   }
   log.info("")
   log.info(`${log.bold("toolchain profiles")}, added with --profile, installed on demand, persisted`)
@@ -2167,14 +2204,23 @@ function codexEntryScript(): string {
 set -u
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/root
-echo "[moat] codex runtime ready (pid $$)"
+# The deadline is checked BEFORE the readiness line, and that order is the point.
+# With the ready line first, a box whose credential was already dead printed
+# "codex runtime ready" and then exited, so moat up waited for the marker, saw it,
+# and recorded a running sandbox that was already gone: the same false success as
+# spawning and not waiting at all, one layer further in. Nothing here can be
+# reported as ready until the box has something it can actually call a model with.
 EXPIRES_EPOCH=\${MOAT_CREDENTIAL_EXPIRES_EPOCH:-0}
+REMAIN=0
 if [ "$EXPIRES_EPOCH" -gt 0 ]; then
   REMAIN=$((EXPIRES_EPOCH - $(date +%s)))
   if [ "$REMAIN" -le 0 ]; then
     echo "[moat] the injected credential expired before the box started; stopping"
     exit 0
   fi
+fi
+echo "[moat] codex runtime ready (pid $$)"
+if [ "$EXPIRES_EPOCH" -gt 0 ]; then
   echo "[moat] the injected credential expires in \${REMAIN}s; the box stops then"
   sleep "$REMAIN"
   echo "[moat] injected credential expired; stopping the sandbox"
@@ -2299,7 +2345,7 @@ async function main(): Promise<number> {
       process.stdout.write(HELP)
       return 0
     }
-    if (global.flags.verbose === true) process.env.MOAT_VERBOSE = "1"
+    if (global.flags.verbose === true) log.setVerbose(true)
     if (global.flags.quiet === true) log.setQuiet(true)
   }
 

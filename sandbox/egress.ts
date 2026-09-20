@@ -185,24 +185,29 @@ export function renderNftRules(ips: string[], dnsIp: string = SLIRP_DNS): string
 }
 
 /**
- * Write the ruleset where the boot script applies it, and return its path
- * inside the sandbox. Resolution happens on every call, so a fresh boot picks
- * up addresses that have rotated since the environment was created.
+ * Resolve the allowlist and render the ruleset the boot script will apply.
+ *
+ * The ruleset is *returned as text*, not written into the rootfs. It used to be a
+ * file at `/.moat/egress.nft` inside the sandbox, which the agent is root enough
+ * to rewrite between boots: the next boot would apply whatever policy the box had
+ * left there and come up "filtered" under rules the agent chose, with the boot
+ * log reporting success. The boot script lives outside the rootfs, so the policy
+ * travels with it and there is no path for the box to edit.
+ *
+ * Resolution happens on every call, so a fresh boot picks up addresses that have
+ * rotated since the environment was created.
  */
 export async function ensureEgressPolicy(
-  rootfs: string,
   hostnames: string[],
-): Promise<{ path: string; unresolved: string[] }> {
+): Promise<{ rules: string; unresolved: string[] }> {
   const { addresses, unresolved } = await resolveAllowlistDetailed(hostnames)
-  ensureRootfsDir(rootfs, "/.moat")
-  writeRootfsFile(rootfs, "/.moat/egress.nft", renderNftRules(addresses), 0o644)
-  return { path: "/.moat/egress.nft", unresolved }
+  return { rules: renderNftRules(addresses), unresolved }
 }
 
 export type EgressRuntime = {
   egress: EgressMode
   slirpBinary?: string
-  /** Path inside the sandbox of the ruleset the boot script must apply. */
+  /** The ruleset the boot script must apply, as text. */
   egressRules?: string
   /** Allowlist hosts that resolved to nothing, so the caller can say so. */
   unresolved?: string[]
@@ -211,6 +216,9 @@ export type EgressRuntime = {
 /**
  * What a fresh boot of an environment with this policy needs: the datapath
  * binary for any isolated mode, and the ruleset for a filtered one.
+ *
+ * `rootfs` is no longer needed to write into, and is only kept so a caller that
+ * has one does not have to change; the ruleset never touches the box.
  */
 export async function runtimeForEgress(
   egress: EgressMode,
@@ -218,9 +226,9 @@ export async function runtimeForEgress(
 ): Promise<EgressRuntime> {
   if (egress === "open") return { egress }
   const slirpBinary = await ensureSlirp4netns()
-  if (egress !== "filtered" || !opts.rootfs) return { egress, slirpBinary }
-  const policy = await ensureEgressPolicy(opts.rootfs, opts.allowHosts ?? [])
-  return { egress, slirpBinary, egressRules: policy.path, unresolved: policy.unresolved }
+  if (egress !== "filtered") return { egress, slirpBinary }
+  const policy = await ensureEgressPolicy(opts.allowHosts ?? [])
+  return { egress, slirpBinary, egressRules: policy.rules, unresolved: policy.unresolved }
 }
 
 export type StartSlirpOptions = {

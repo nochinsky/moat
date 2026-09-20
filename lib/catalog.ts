@@ -55,9 +55,26 @@ type RawModel = {
   tool_call?: boolean
   reasoning?: boolean
   attachment?: boolean
-  limit?: { context?: number; output?: number }
+  limit?: { context?: unknown; output?: unknown }
 }
 type RawProvider = { name?: string; env?: string[]; api?: string; npm?: string; models?: Record<string, RawModel> }
+
+/**
+ * A token count from the network, or nothing.
+ *
+ * `models.dev` is a fetched JSON document and its numbers are not moat's to trust.
+ * This used to be a bare cast, so anything JSON can hold — a string, `null`, an
+ * object, a negative number, a float — reached the config renderer, which
+ * interpolated it into TOML unquoted: `model_context_window = 1e999` is `Infinity`,
+ * `model_context_window = NaN` is not valid TOML at all, and Codex then refuses the
+ * config with a parse error that names a line the user never wrote. A count has to
+ * be a positive safe integer to be usable; everything else becomes "unknown", which
+ * the renderer already handles by leaving the line out.
+ */
+function tokenCount(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return undefined
+  return value
+}
 
 export function parseCatalog(raw: Record<string, RawProvider>): Catalog {
   const catalog: Catalog = new Map()
@@ -73,8 +90,8 @@ export function parseCatalog(raw: Record<string, RawProvider>): Catalog {
         id: modelID,
         name: model.name,
         toolCall: model.tool_call !== false,
-        context: model.limit?.context,
-        output: model.limit?.output,
+        context: tokenCount(model.limit?.context),
+        output: tokenCount(model.limit?.output),
         reasoning: model.reasoning,
         attachment: model.attachment,
       })),

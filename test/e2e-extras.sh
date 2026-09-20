@@ -22,7 +22,20 @@ MOCK_RECORD="$WORK/responses-record.jsonl"
 MOCK_SCRIPT="${MOCK_SCRIPT:-$REPO/test/scripts/responses-basic.json}"
 CREDENTIAL="moat-e2e-scoped-credential-8c1d4e"
 
+# The failure accumulator, which this suite did not have.
+#
+# It printed the word FAILED in 46 places and accumulated none of them, and its last
+# statement was `scrub_evidence`: the exit status was whatever that `sed` loop
+# returned, which is 0. So the suite could report a broken sandbox in its own
+# evidence file and still exit 0 -- a check that cannot fail, which
+# docs/PROGRAM.md §3 calls out by name. The machinery is in test/lib/guard.sh so
+# that e2e-live.sh shares it and so that `bash test/fail-guard.sh` can prove it
+# works; every failure must go through `fail`, and `verdict` decides the exit
+# status at the very end.
 mkdir -p "$EVIDENCE"
+CHECKS_LOG="$EVIDENCE/extras.txt"
+. "$REPO/test/lib/guard.sh"
+check_count
 
 section() {
   {
@@ -127,19 +140,23 @@ section "C. moat apply is a separate, explicit step from moat fetch"
 capture extras-up-again $MOAT up --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 capture extras-fetch $MOAT fetch
 capture apply-branch $MOAT apply main --name e2e-checkout
+# The answer is computed first, outside the pipe: a `pass`/`fail` called inside a
+# pipeline runs in a subshell, so the accumulator would never see it. This was the
+# one check in the suite that printed `FAIL` by hand, and it was uncounted too.
+APPLIED_BRANCH=$(git -C "$PROJECT" branch --list 'e2e-checkout')
 {
   echo "\$ git -C $PROJECT branch --list 'e2e-checkout'"
-  git -C "$PROJECT" branch --list 'e2e-checkout'
-  if git -C "$PROJECT" branch --list 'e2e-checkout' | grep -q 'e2e-checkout'; then
-    echo "  pass  the local branch was created from the fetched ref"
-  else
-    echo "  FAIL  the local branch was not created"
-  fi
+  printf '%s\n' "$APPLIED_BRANCH"
   echo "\$ git -C $PROJECT rev-parse HEAD   # unchanged: apply did not check anything out"
   git -C "$PROJECT" rev-parse HEAD
   echo "\$ git -C $PROJECT status --porcelain   # only the user's own pre-existing dirt"
   git -C "$PROJECT" status --porcelain
 } | scrub | tee -a "$EVIDENCE/extras.txt"
+if printf '%s' "$APPLIED_BRANCH" | grep -q 'e2e-checkout'; then
+  pass "apply --name" "the local branch was created from the fetched ref"
+else
+  fail "apply --name" "the local branch was not created"
+fi
 
 section "E. the injected credential is short-lived, and expiry is enforced"
 # The deadline is the credential's own expiry timestamp, not a TTL counted from the entry
@@ -160,9 +177,9 @@ if grep -qE "status +stopped" "$EVIDENCE/status-after-ttl.txt" \
    && grep -q "EXPIRED" "$EVIDENCE/status-after-ttl.txt" \
    && grep -qE "expires in [0-9]s; the box stops then" "$EVIDENCE/logs-ttl.txt" \
    && grep -q "expired; stopping the sandbox" "$EVIDENCE/logs-ttl.txt"; then
-  echo "credential ttl: the box stopped itself at the credential deadline, and says so" | tee -a "$EVIDENCE/extras.txt"
+  pass "credential ttl" "the box stopped itself at the credential deadline, and says so"
 else
-  echo "credential ttl: FAILED — the box outlived its credential" | tee -a "$EVIDENCE/extras.txt"
+  fail "credential ttl" "the box outlived its credential"
 fi
 
 section "H. the project's own checks, run by moat against the agent's work"
@@ -186,9 +203,9 @@ if grep -q "is not a git repository; there is nowhere to fetch into" "$EVIDENCE/
    && grep -q "moat apply" "$EVIDENCE/plain-fetch.txt" \
    && grep -q "agent.txt" "$EVIDENCE/plain-apply.txt" \
    && [ "$(cat "$PLAIN/agent.txt" 2>/dev/null)" = "made inside the box" ]; then
-  echo "a plain directory: fetch refuses and names the way out; apply merges the work into it" | tee -a "$EVIDENCE/extras.txt"
+  pass "plain directory copy-out" "a plain directory: fetch refuses and names the way out; apply merges the work into it"
 else
-  echo "plain directory copy-out: FAILED — the work did not come back, or fetch pretended to work" | tee -a "$EVIDENCE/extras.txt"
+  fail "plain directory copy-out" "the work did not come back, or fetch pretended to work"
 fi
 ( cd "$PLAIN" && $MOAT destroy --yes >/dev/null 2>&1 )
 
@@ -227,9 +244,9 @@ MOAT_HOME="$ORPHAN_HOME" $MOAT destroy --all > "$EVIDENCE/orphan-destroy.out" 2>
 cat "$EVIDENCE/orphan-inventory.txt" | tee -a "$EVIDENCE/extras.txt"
 ORPHANS_LEFT=$(ls "$ORPHAN_HOME/envs" | wc -l)
 if grep -q "orphaned" "$EVIDENCE/orphan-status.out" && [ "$ORPHANS_LEFT" = "0" ]; then
-  echo "orphan inventory: both were listed as orphaned and both were reclaimed" | tee -a "$EVIDENCE/extras.txt"
+  pass "orphan inventory" "both were listed as orphaned and both were reclaimed"
 else
-  echo "orphan inventory: FAILED, leftover directories: $ORPHANS_LEFT" | tee -a "$EVIDENCE/extras.txt"
+  fail "orphan inventory" "leftover directories: $ORPHANS_LEFT"
 fi
 rm -rf "$ORPHAN_HOME"
 
@@ -244,9 +261,9 @@ section "P. the boot log is readable through the guard that refuses symlinks"
 # agent-writable rootfs), and the host reads it back through the same guard.
 capture logs-sandbox $MOAT logs sandbox
 if grep -q "codex runtime ready" "$EVIDENCE/logs-sandbox.txt"; then
-  echo "boot log: the banner the box wrote is readable back on the host" | tee -a "$EVIDENCE/extras.txt"
+  pass "boot log" "the banner the box wrote is readable back on the host"
 else
-  echo "boot log: FAILED, no boot banner in the captured output" | tee -a "$EVIDENCE/extras.txt"
+  fail "boot log" "no boot banner in the captured output"
 fi
 section "Q. a project file name that is not valid UTF-8 is refused with a reason"
 # Node addresses files by name as text, so a raw 0xff byte in a name is undecidable
@@ -264,9 +281,9 @@ git add -A >/dev/null 2>&1
 git commit -qm "a name Node cannot address" >/dev/null 2>&1
 capture up-badname $MOAT up
 if grep -q "not a valid UTF-8 file name" "$EVIDENCE/up-badname.txt"; then
-  echo "bad file name: refused with the offending bytes, before anything is copied" | tee -a "$EVIDENCE/extras.txt"
+  pass "bad file name" "refused with the offending bytes, before anything is copied"
 else
-  echo "bad file name: FAILED, no explanation in the output" | tee -a "$EVIDENCE/extras.txt"
+  fail "bad file name" "no explanation in the output"
 fi
 capture destroy-badname $MOAT destroy --yes
 cd "$PROJECT"
@@ -279,67 +296,67 @@ section "R. arguments that used to be joined into paths or trusted as numbers"
 # typo in `--port` survived provisioning to fail ninety seconds into a boot.
 capture logs-traversal $MOAT logs ../../../../../tmp/moat-traversal
 if grep -q "invalid log name" "$EVIDENCE/logs-traversal.txt"; then
-  echo "log name: refused instead of reading a host file" | tee -a "$EVIDENCE/extras.txt"
+  pass "log name" "refused instead of reading a host file"
 else
-  echo "log name: FAILED, no refusal in the output" | tee -a "$EVIDENCE/extras.txt"
+  fail "log name" "no refusal in the output"
 fi
 
 capture logs-bad-tail $MOAT logs sandbox --tail abc
 if grep -q "must be a positive integer" "$EVIDENCE/logs-bad-tail.txt"; then
-  echo "--tail: refused instead of silently printing the whole log" | tee -a "$EVIDENCE/extras.txt"
+  pass "--tail" "refused instead of silently printing the whole log"
 else
-  echo "--tail: FAILED, no refusal in the output" | tee -a "$EVIDENCE/extras.txt"
+  fail "--tail" "no refusal in the output"
 fi
 
 capture models-bogus $MOAT models bogus
 if grep -q "one provider" "$EVIDENCE/models-bogus.txt"; then
-  echo "models <provider>: refused instead of silently listing DeepSeek" | tee -a "$EVIDENCE/extras.txt"
+  pass "models <provider>" "refused instead of silently listing DeepSeek"
 else
-  echo "models <provider>: FAILED, no refusal in the output" | tee -a "$EVIDENCE/extras.txt"
+  fail "models <provider>" "no refusal in the output"
 fi
 
 capture up-bad-egress $MOAT up --egress bogus
 if grep -q "unknown --egress" "$EVIDENCE/up-bad-egress.txt" && ! grep -q "provisioning" "$EVIDENCE/up-bad-egress.txt"; then
-  echo "--egress: refused before provisioning, with the mode named" | tee -a "$EVIDENCE/extras.txt"
+  pass "--egress" "refused before provisioning, with the mode named"
 else
-  echo "--egress: FAILED, no refusal before provisioning" | tee -a "$EVIDENCE/extras.txt"
+  fail "--egress" "no refusal before provisioning"
 fi
 
 capture up-timeout $MOAT up --timeout 30
 if grep -q "sandbox up" "$EVIDENCE/up-timeout.txt"; then
-  echo "--timeout: seconds, not milliseconds, for the boot readiness wait" | tee -a "$EVIDENCE/extras.txt"
+  pass "--timeout" "seconds, not milliseconds, for the boot readiness wait"
 else
-  echo "--timeout: FAILED, a 30-second budget did not cover a warm boot" | tee -a "$EVIDENCE/extras.txt"
+  fail "--timeout" "a 30-second budget did not cover a warm boot"
 fi
 capture down-timeout $MOAT down
 
 capture up-bad-ttl $MOAT up --credential-ttl nonsense
 if grep -q "invalid duration" "$EVIDENCE/up-bad-ttl.txt" && ! grep -q "copy-in" "$EVIDENCE/up-bad-ttl.txt"; then
-  echo "--credential-ttl: refused before the copy-in, not after it" | tee -a "$EVIDENCE/extras.txt"
+  pass "--credential-ttl" "refused before the copy-in, not after it"
 else
-  echo "--credential-ttl: FAILED, the refusal came too late (or not at all)" | tee -a "$EVIDENCE/extras.txt"
+  fail "--credential-ttl" "the refusal came too late (or not at all)"
 fi
 
 # One entry, not three words: --egress-allow is a list, so a value with spaces is three hosts.
 capture up-bad-allow $MOAT up --egress-allow "https://internal.example" --egress filtered
 if grep -q "URL" "$EVIDENCE/up-bad-allow.txt" && ! grep -q "copy-in" "$EVIDENCE/up-bad-allow.txt"; then
-  echo "--egress-allow: an entry that cannot work is refused before the copy-in" | tee -a "$EVIDENCE/extras.txt"
+  pass "--egress-allow" "an entry that cannot work is refused before the copy-in"
 else
-  echo "--egress-allow: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
+  fail "--egress-allow" "no early refusal"
 fi
 
 capture up-empty-model $MOAT up --model ""
 if grep -q "needs a model id" "$EVIDENCE/up-empty-model.txt" && ! grep -q "provisioning" "$EVIDENCE/up-empty-model.txt"; then
-  echo "--model with an empty value: refused" | tee -a "$EVIDENCE/extras.txt"
+  pass "--model with an empty value" "refused"
 else
-  echo "--model with an empty value: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
+  fail "--model with an empty value" "no early refusal"
 fi
 
 capture up-empty-base-url $MOAT up --base-url ""
 if grep -q "needs a URL" "$EVIDENCE/up-empty-base-url.txt" && ! grep -q "provisioning" "$EVIDENCE/up-empty-base-url.txt"; then
-  echo "--base-url with an empty value: refused" | tee -a "$EVIDENCE/extras.txt"
+  pass "--base-url with an empty value" "refused"
 else
-  echo "--base-url with an empty value: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
+  fail "--base-url with an empty value" "no early refusal"
 fi
 
 section "T. an environment whose state.json is gone is recovered, not replaced"
@@ -366,16 +383,16 @@ if grep -q "recovered from disk" "$EVIDENCE/stateless-recover.err" \
    && grep -q "reusing the sandbox working tree" "$EVIDENCE/stateless-recover.err" \
    && [ -f "$STATELESS_ENV/rootfs/work/precious.txt" ] \
    && [ -n "$STATELESS_HEAD" ]; then
-  echo "state recovery: the rootfs was kept and its working tree reused, not re-copied" | tee -a "$EVIDENCE/extras.txt"
+  pass "state recovery" "the rootfs was kept and its working tree reused, not re-copied"
 else
-  echo "state recovery: FAILED, a missing state.json still replaces the environment" | tee -a "$EVIDENCE/extras.txt"
+  fail "state recovery" "a missing state.json still replaces the environment"
 fi
 # And the recovered environment is usable: the agent's commit reaches the host.
 ( cd "$STATELESS" && capture stateless-fetch $MOAT fetch --all )
 if git -C "$STATELESS" cat-file -e "$STATELESS_HEAD" 2>/dev/null; then
-  echo "state recovery: the recovered commit fetched to the host (refs/moat/*)" | tee -a "$EVIDENCE/extras.txt"
+  pass "state recovery" "the recovered commit fetched to the host (refs/moat/*)"
 else
-  echo "state recovery: FAILED, the recovered commit did not reach the host" | tee -a "$EVIDENCE/extras.txt"
+  fail "state recovery" "the recovered commit did not reach the host"
 fi
 ( cd "$STATELESS" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "U. a boot in progress is visible, and the lifecycle commands wait for it"
@@ -398,32 +415,32 @@ RACE_UP=$!
 RACE_WAIT=0
 while [ ! -f "$RACE_MARKER" ] && [ "$RACE_WAIT" -lt 300 ]; do sleep 0.1; RACE_WAIT=$((RACE_WAIT + 1)); done
 if [ -f "$RACE_MARKER" ]; then
-  echo "the boot marker appeared after ~$((RACE_WAIT / 10))s (state.json written yet: $([ -f "$HOME/.moat/envs/$RACE_ID/state.json" ] && echo yes || echo no))" | tee -a "$EVIDENCE/extras.txt"
+  pass "boot marker" "the boot marker appeared after ~$((RACE_WAIT / 10))s (state.json written yet: $([ -f "$HOME/.moat/envs/$RACE_ID/state.json" ] && echo yes || echo no))"
 else
-  echo "boot marker: FAILED, no marker appeared within 30s" | tee -a "$EVIDENCE/extras.txt"
+  fail "boot marker" "no marker appeared within 30s"
 fi
 ( cd "$RACE" && capture race-status $MOAT status )
 ( cd "$RACE" && capture race-down $MOAT down )
 wait "$RACE_UP"; RACE_UP_RC=$?
 echo "the background moat up exited $RACE_UP_RC" | tee -a "$EVIDENCE/extras.txt"
 if grep -q "booting (pid" "$EVIDENCE/race-status.txt"; then
-  echo "status during a boot: reports booting, not stopped" | tee -a "$EVIDENCE/extras.txt"
+  pass "status during a boot" "reports booting, not stopped"
 else
-  echo "status during a boot: FAILED, it did not mention the boot" | tee -a "$EVIDENCE/extras.txt"
+  fail "status during a boot" "it did not mention the boot"
 fi
 if grep -q "waiting for it before stopping the sandbox" "$EVIDENCE/race-down.txt" \
    && ! grep -q "is not running" "$EVIDENCE/race-down.txt" \
    && ! grep -q "no moat environment" "$EVIDENCE/race-down.txt"; then
-  echo "down during a boot: waited for the boot and stopped what it produced" | tee -a "$EVIDENCE/extras.txt"
+  pass "down during a boot" "waited for the boot and stopped what it produced"
 else
-  echo "down during a boot: FAILED, it acted on the stale state instead of waiting" | tee -a "$EVIDENCE/extras.txt"
+  fail "down during a boot" "it acted on the stale state instead of waiting"
 fi
 RACE_STATE=$( cd "$RACE" && $MOAT status 2>&1 | sed -n "s/^status *//p" )
 RACE_PROCS=$(ps -eo cmd | grep -c "[u]nshare --user.*$RACE_ID" || true)
 if [ "$RACE_STATE" = "stopped" ] && [ "$RACE_PROCS" = "0" ] && [ ! -f "$RACE_MARKER" ]; then
-  echo "after down: the box is stopped, nothing is left running, and the marker is gone" | tee -a "$EVIDENCE/extras.txt"
+  pass "after down" "the box is stopped, nothing is left running, and the marker is gone"
 else
-  echo "after down: FAILED, status=$RACE_STATE processes=$RACE_PROCS marker=$([ -f "$RACE_MARKER" ] && echo present || echo gone)" | tee -a "$EVIDENCE/extras.txt"
+  fail "after down" "status=$RACE_STATE processes=$RACE_PROCS marker=$([ -f "$RACE_MARKER" ] && echo present || echo gone)"
 fi
 ( cd "$RACE" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "W. a project with no tests is not reported as failing its tests"
@@ -447,9 +464,9 @@ EOF
 if ! grep -q "checks:" "$EVIDENCE/notests-up.err" \
    && grep -q "no test, lint or typecheck command found" "$EVIDENCE/notests-verify.txt" \
    && grep -q "^--- exit 0$" "$EVIDENCE/notests-verify.txt"; then
-  echo "no-tests project: nothing advertised as a check, and verify says so instead of failing" | tee -a "$EVIDENCE/extras.txt"
+  pass "no-tests project" "nothing advertised as a check, and verify says so instead of failing"
 else
-  echo "no-tests project: FAILED, npm's placeholder was still treated as a test suite" | tee -a "$EVIDENCE/extras.txt"
+  fail "no-tests project" "npm's placeholder was still treated as a test suite"
 fi
 ( cd "$NOTESTS" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "Y. --timeout shortens a check that hangs"
@@ -478,9 +495,9 @@ if grep -q "^--- exit 0$" "$EVIDENCE/slow-verify-default.txt" \
    && grep -q "^--- exit 1$" "$EVIDENCE/slow-verify-timeout.txt" \
    && grep -q "timed out" "$EVIDENCE/slow-verify-timeout.txt" \
    && awk -v d="${SLOW_DUR:-99}" 'BEGIN{exit !(d < 2.5)}'; then
-  echo "--timeout: a 3-second check is killed at 1s and reported as timed out" | tee -a "$EVIDENCE/extras.txt"
+  pass "--timeout" "a 3-second check is killed at 1s and reported as timed out"
 else
-  echo "--timeout: FAILED, the flag did not shorten the check (reported ${SLOW_DUR}s)" | tee -a "$EVIDENCE/extras.txt"
+  fail "--timeout" "the flag did not shorten the check (reported ${SLOW_DUR}s)"
 fi
 ( cd "$SLOW" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "Z. a flag a command does not read is refused, and --quiet exists"
@@ -494,9 +511,9 @@ if grep -q "^--- exit 1$" "$EVIDENCE/flag-refused.txt" \
    && grep -q -- "--timeout" "$EVIDENCE/flag-refused.txt" \
    && grep -q "refused rather than ignored" "$EVIDENCE/flag-refused.txt" \
    && ! grep -q "copy-out:" "$EVIDENCE/flag-refused.txt"; then
-  echo "--timeout on fetch: refused before any work, not ignored" | tee -a "$EVIDENCE/extras.txt"
+  pass "--timeout on fetch" "refused before any work, not ignored"
 else
-  echo "--timeout on fetch: FAILED, the flag was accepted or the command ran anyway" | tee -a "$EVIDENCE/extras.txt"
+  fail "--timeout on fetch" "the flag was accepted or the command ran anyway"
 fi
 
 capture down-before-z $MOAT down
@@ -504,21 +521,21 @@ capture loud-up $MOAT up --no-detect --model mock-model --base-url "http://127.0
 capture down-mid-z $MOAT down
 capture quiet-up $MOAT up --quiet --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 if grep -q "^--- exit 0$" "$EVIDENCE/quiet-up.txt" && ! grep -q "→" "$EVIDENCE/quiet-up.txt"; then
-  echo "--quiet: the boot printed no progress lines, and still succeeded" | tee -a "$EVIDENCE/extras.txt"
+  pass "--quiet" "the boot printed no progress lines, and still succeeded"
 else
-  echo "--quiet: FAILED, progress lines were still printed" | tee -a "$EVIDENCE/extras.txt"
+  fail "--quiet" "progress lines were still printed"
 fi
 if grep -q "→" "$EVIDENCE/loud-up.txt"; then
-  echo "the control without --quiet printed them, so the check above can fail" | tee -a "$EVIDENCE/extras.txt"
+  pass "--quiet control" "the control without --quiet printed them, so the check above can fail"
 else
-  echo "the control printed no progress lines: the --quiet check proves nothing" | tee -a "$EVIDENCE/extras.txt"
+  fail "--quiet control" "the control printed no progress lines, so the --quiet check proves nothing"
 fi
 
 capture help-flag $MOAT profiles --help
 if grep -q "Usage: moat <command>" "$EVIDENCE/help-flag.txt" && ! grep -q "Node.js / TypeScript" "$EVIDENCE/help-flag.txt"; then
-  echo "--help: prints the help text instead of running the command" | tee -a "$EVIDENCE/extras.txt"
+  pass "--help" "prints the help text instead of running the command"
 else
-  echo "--help: FAILED, the command ran instead of printing help" | tee -a "$EVIDENCE/extras.txt"
+  fail "--help" "the command ran instead of printing help"
 fi
 section "AB. copy-out names a credential the agent could have committed"
 # The agent has to read the injected credential to call the model, and the brief tells it
@@ -570,9 +587,9 @@ if grep -q "credential moat injected" "$EVIDENCE/leak-fetch.txt" \
    && [ -f "$LEAK/leaked.env" ] \
    && ! grep -q "credential moat injected" "$EVIDENCE/leak-fetch-clean.txt"; then
   echo "copy-out: fetch and apply both name the credential in the agent's commit, and the" | tee -a "$EVIDENCE/extras.txt"
-  echo "          clean commit stays quiet; the file is still applied (a warning, not a gate)" | tee -a "$EVIDENCE/extras.txt"
+  pass "copy-out" "          clean commit stays quiet; the file is still applied (a warning, not a gate)"
 else
-  echo "copy-out: FAILED — either the leak was silent, or clean content warned" | tee -a "$EVIDENCE/extras.txt"
+  fail "copy-out" "either the leak was silent, or clean content warned"
 fi
 ( cd "$LEAK" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AC. a base URL the sandbox cannot use is refused before provisioning"
@@ -596,18 +613,18 @@ if grep -q "must be an http:// or https:// URL" "$EVIDENCE/base-url-schemeless.t
    && grep -q "did you mean http://localhost:$MOCK_PORT/v1" "$EVIDENCE/base-url-schemeless.txt" \
    && grep -q "^--- exit 1$" "$EVIDENCE/base-url-schemeless.txt" \
    && ! grep -qE "image provisioned|copy-in via" "$EVIDENCE/base-url-schemeless.txt"; then
-  echo "base-url: refused before provisioning, naming the problem and the likely fix" | tee -a "$EVIDENCE/extras.txt"
+  pass "base-url" "refused before provisioning, naming the problem and the likely fix"
 else
-  echo "base-url: FAILED, the unusable URL was accepted or the refusal came too late" | tee -a "$EVIDENCE/extras.txt"
+  fail "base-url" "the unusable URL was accepted or the refusal came too late"
 fi
 # The control: the same host and port with the scheme boots, so the check above cannot
 # pass by refusing every --base-url.
 ( cd "$NB" && capture base-url-schemed $MOAT up --quiet --no-detect --model mock-model \
   --base-url "http://localhost:$MOCK_PORT/v1" )
 if grep -q "^--- exit 0$" "$EVIDENCE/base-url-schemed.txt" && grep -q "sandbox up" "$EVIDENCE/base-url-schemed.txt"; then
-  echo "the control: the same endpoint with a scheme boots" | tee -a "$EVIDENCE/extras.txt"
+  pass "the control" "the same endpoint with a scheme boots"
 else
-  echo "the control FAILED: a usable URL was refused" | tee -a "$EVIDENCE/extras.txt"
+  fail "the control" "a usable URL was refused"
 fi
 ( cd "$NB" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AD. a re-copy cannot silently discard work on another sandbox branch"
@@ -639,9 +656,9 @@ if grep -q "sandbox holds 1 commit(s)" "$EVIDENCE/branchloss-up-again.txt" \
    && grep -q "reusing the sandbox working tree" "$EVIDENCE/branchloss-up-again.txt" \
    && grep -q "experiment" "$EVIDENCE/branchloss-branches.txt" \
    && grep -q "important work on a side branch" "$EVIDENCE/branchloss-branches.txt"; then
-  echo "side branch: a sandbox holding unfetched work is kept, and the warning names it" | tee -a "$EVIDENCE/extras.txt"
+  pass "side branch" "a sandbox holding unfetched work is kept, and the warning names it"
 else
-  echo "side branch: FAILED — the re-copy discarded it, or nothing said so" | tee -a "$EVIDENCE/extras.txt"
+  fail "side branch" "the re-copy discarded it, or nothing said so"
 fi
 # The control: once the work *is* on the host (fetched), the same host change re-copies
 # automatically — the guard must not block the lossless path it exists for.
@@ -652,9 +669,9 @@ fi
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 if grep -q "holds nothing that is not already on the host" "$EVIDENCE/branchloss-fetched.txt" \
    && grep -q "copy-in via git" "$EVIDENCE/branchloss-fetched.txt"; then
-  echo "the control: fetched work is re-copied over, because the host already has it" | tee -a "$EVIDENCE/extras.txt"
+  pass "the control" "fetched work is re-copied over, because the host already has it"
 else
-  echo "the control FAILED: a lossless re-copy was blocked" | tee -a "$EVIDENCE/extras.txt"
+  fail "the control" "a lossless re-copy was blocked"
 fi
 ( cd "$BL" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AE. a commit on a detached HEAD in the sandbox is named, not discarded"
@@ -687,9 +704,9 @@ if grep -q "sandbox holds 1 commit(s)" "$EVIDENCE/detached-up-again.txt" \
    && grep -q "work on a detached HEAD" "$EVIDENCE/detached-log.txt" \
    && grep -q "detached.txt" "$EVIDENCE/detached-log.txt" \
    && git -C "$DET" rev-parse --verify --quiet refs/moat/keep >/dev/null; then
-  echo "detached HEAD: the commit is kept, and the warning names how to fetch it" | tee -a "$EVIDENCE/extras.txt"
+  pass "detached HEAD" "the commit is kept, and the warning names how to fetch it"
 else
-  echo "detached HEAD: FAILED — the commit was discarded, or nothing said so" | tee -a "$EVIDENCE/extras.txt"
+  fail "detached HEAD" "the commit was discarded, or nothing said so"
 fi
 ( cd "$DET" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AF. a local endpoint runs with no credential in the box"
@@ -727,9 +744,9 @@ if grep -q "^--- exit 0$" "$EVIDENCE/nocred-local.txt" \
    && grep -q "no credential injected" "$EVIDENCE/nocred-local.txt" \
    && grep -qE "requests this run: [2-9][0-9]*" "$WORK/nocred-auth.txt" \
    && grep -q "authorization headers: null" "$WORK/nocred-auth.txt"; then
-  echo "no credential: the local endpoint runs the task, and no key is sent to it" | tee -a "$EVIDENCE/extras.txt"
+  pass "no credential" "the local endpoint runs the task, and no key is sent to it"
 else
-  echo "no credential: FAILED — the endpoint was unreachable, or a credential went with it" | tee -a "$EVIDENCE/extras.txt"
+  fail "no credential" "the endpoint was unreachable, or a credential went with it"
 fi
 kill "$AF_MOCK" 2>/dev/null; wait "$AF_MOCK" 2>/dev/null
 # Control: the native provider cannot work without a key, and still says so before booting.
@@ -742,9 +759,9 @@ rm -rf "$NATIVE"; mkdir -p "$NATIVE"
 if grep -q "no DEEPSEEK_API_KEY, so the agent has no model to call" "$EVIDENCE/nocred-native.txt" \
    && grep -q "^--- exit 1$" "$EVIDENCE/nocred-native.txt" \
    && ! grep -q "sandbox up" "$EVIDENCE/nocred-native.txt"; then
-  echo "the control: the native provider still refuses a task with no key, before booting" | tee -a "$EVIDENCE/extras.txt"
+  pass "the control" "the native provider still refuses a task with no key, before booting"
 else
-  echo "the control FAILED: a keyless native run was attempted" | tee -a "$EVIDENCE/extras.txt"
+  fail "the control" "a keyless native run was attempted"
 fi
 ( cd "$NC" && $MOAT destroy --yes >/dev/null 2>&1 )
 ( cd "$NATIVE" && $MOAT destroy --yes >/dev/null 2>&1 )
@@ -783,9 +800,9 @@ AFTER_DESTROY=$(count_datapath "$NEW_BOX")
 # Half one, the outcome: no datapath for the dead box survives, and the new one is
 # reclaimed. This holds whether the datapath exited on its own or was reaped.
 if [ "$OLD_LEFT" = "0" ] && [ "$NEW_UP" = "1" ] && [ "$AFTER_DESTROY" = "0" ]; then
-  echo "out-of-band kill: no orphaned datapath survives the next boot, and destroy takes the rest" | tee -a "$EVIDENCE/extras.txt"
+  pass "out-of-band kill" "no orphaned datapath survives the next boot, and destroy takes the rest"
 else
-  echo "out-of-band kill: FAILED — old=$OLD_LEFT new=$NEW_UP after-destroy=$AFTER_DESTROY" | tee -a "$EVIDENCE/extras.txt"
+  fail "out-of-band kill" "old=$OLD_LEFT new=$NEW_UP after-destroy=$AFTER_DESTROY"
 fi
 # Half two, deterministic: the datapath can exit by itself when the box dies (it notices
 # the tap going away), which would leave the reap itself untested. So keep the box alive and
@@ -809,9 +826,9 @@ echo "datapath up while its box is still alive: $(count_datapath "$LIVE_BOX")" |
 REAPED_LEFT=$(count_datapath "$LIVE_BOX")
 if grep -q "reaped the datapath of a sandbox that is no longer running (pid $LIVE_SLIRP)" "$EVIDENCE/reaped-up-again.txt" \
    && [ "$REAPED_LEFT" = "0" ]; then
-  echo "stale identity: the datapath of a box that is not ours is reaped, and named" | tee -a "$EVIDENCE/extras.txt"
+  pass "stale identity" "the datapath of a box that is not ours is reaped, and named"
 else
-  echo "stale identity: FAILED — datapath left=$REAPED_LEFT" | tee -a "$EVIDENCE/extras.txt"
+  fail "stale identity" "datapath left=$REAPED_LEFT"
 fi
 # The old box could not be reaped (its identity was tampered with on purpose), so end it
 # here; its datapath is already gone.
@@ -849,9 +866,9 @@ DOWN_LEFT=$(count_datapath "$DBOX")
 DOWN_RECORD=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['slirpPid'])" "$DSTATE")
 if [ "$DOWN_LEFT" = "0" ] && [ "$DOWN_RECORD" = "None" ] \
    && grep -q "reaped the datapath of a sandbox that is no longer running (pid $DSLIRP)" "$EVIDENCE/reap-down.txt"; then
-  echo "down: a datapath the recorded box cannot be signalled for is reaped, named, then forgotten" | tee -a "$EVIDENCE/extras.txt"
+  pass "down" "a datapath the recorded box cannot be signalled for is reaped, named, then forgotten"
 else
-  echo "down: FAILED — datapath left=$DOWN_LEFT recorded=$DOWN_RECORD" | tee -a "$EVIDENCE/extras.txt"
+  fail "down" "datapath left=$DOWN_LEFT recorded=$DOWN_RECORD"
 fi
 kill -9 -- "-$DBOX" 2>/dev/null
 ( cd "$REAP_ENV" && $MOAT destroy --yes >/dev/null 2>&1 )
@@ -869,9 +886,9 @@ stale_identity "$DSTATE"
 DEST_LEFT=$(count_datapath "$XBOX")
 if [ "$DEST_LEFT" = "0" ] && [ ! -e "$DENVDIR" ] \
    && grep -q "reaped the datapath of a sandbox that is no longer running (pid $XSLIRP)" "$EVIDENCE/reap-destroy.txt"; then
-  echo "destroy: the environment is removed and its datapath with it" | tee -a "$EVIDENCE/extras.txt"
+  pass "destroy" "the environment is removed and its datapath with it"
 else
-  echo "destroy: FAILED — datapath left=$DEST_LEFT envdir=$([ -e "$DENVDIR" ] && echo present || echo gone)" | tee -a "$EVIDENCE/extras.txt"
+  fail "destroy" "datapath left=$DEST_LEFT envdir=$([ -e "$DENVDIR" ] && echo present || echo gone)"
 fi
 kill -9 -- "-$XBOX" 2>/dev/null
 
@@ -888,9 +905,9 @@ stale_identity "$DSTATE"
 REST_LEFT=$(count_datapath "$RBOX")
 if [ "$REST_LEFT" = "0" ] \
    && grep -q "reaped the datapath of a sandbox that is no longer running (pid $RSLIRP)" "$EVIDENCE/reap-restore.txt"; then
-  echo "restore: the datapath is reaped before the record that names it is cleared" | tee -a "$EVIDENCE/extras.txt"
+  pass "restore" "the datapath is reaped before the record that names it is cleared"
 else
-  echo "restore: FAILED — datapath left=$REST_LEFT" | tee -a "$EVIDENCE/extras.txt"
+  fail "restore" "datapath left=$REST_LEFT"
 fi
 kill -9 -- "-$RBOX" 2>/dev/null
 ( cd "$REAP_ENV" && $MOAT destroy --yes >/dev/null 2>&1 )
@@ -913,9 +930,9 @@ if grep -q "no variable from the host environment reached the sandbox" "$EVIDENC
    && ! grep -q "which is the credential" "$EVIDENCE/nocred-doctor.txt" \
    && grep -q "no secret-looking variable reaches tool execution" "$EVIDENCE/nocred-doctor.txt" \
    && ! grep -q "spend-capped" "$EVIDENCE/nocred-doctor.txt"; then
-  echo "no-credential box: the doctor reports no key in the box, and does not invent one" | tee -a "$EVIDENCE/extras.txt"
+  pass "no-credential box" "the doctor reports no key in the box, and does not invent one"
 else
-  echo "no-credential box: FAILED — the doctor's report does not match the box" | tee -a "$EVIDENCE/extras.txt"
+  fail "no-credential box" "the doctor's report does not match the box"
 fi
 ( cd "$NL" && $MOAT destroy --yes >/dev/null 2>&1 )
 # The control: a box that does have a credential keeps the exposure, names which variable is
@@ -933,9 +950,9 @@ if grep -qE "of which .*MOAT_INJECTED_CREDENTIAL.*is the credential" "$EVIDENCE/
    && grep -q "spend-capped token" "$WORK/cred-doctor-detail.txt" \
    && ! grep -E "reached the sandbox.*DEEPSEEK_API_KEY" "$EVIDENCE/cred-doctor.txt" \
    && ! grep -q "DEEPSEEK_API_KEY" "$WORK/cred-doctor-detail.txt"; then
-  echo "the control: a box with a credential still reports it, and names which variable it is" | tee -a "$EVIDENCE/extras.txt"
+  pass "the control" "a box with a credential still reports it, and names which variable it is"
 else
-  echo "the control FAILED: a credentialed box's exposure was lost or misnamed" | tee -a "$EVIDENCE/extras.txt"
+  fail "the control" "a credentialed box's exposure was lost or misnamed"
 fi
 ( cd "$CL" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AI. the project's own check output cannot drive the terminal it is printed on"
@@ -968,9 +985,9 @@ PYEOF
 cat "$WORK/escape-bytes.txt" | tee -a "$EVIDENCE/extras.txt"
 if grep -q "escape-verify: .* 0 ESC byte(s), marker present: True" "$WORK/escape-bytes.txt" \
    && grep -q "escape-take: .* 0 ESC byte(s), marker present: True" "$WORK/escape-bytes.txt"; then
-  echo "check output: escapes are dropped, and the text around them still reaches the user" | tee -a "$EVIDENCE/extras.txt"
+  pass "check output" "escapes are dropped, and the text around them still reaches the user"
 else
-  echo "check output: FAILED — an escape byte reached the terminal, or the output was dropped" | tee -a "$EVIDENCE/extras.txt"
+  fail "check output" "an escape byte reached the terminal, or the output was dropped"
 fi
 ( cd "$ESC_PROJECT" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AJ. the runtime boots, and a deleted runtime binary is repaired without touching /work"
@@ -994,9 +1011,9 @@ if grep -q "codex        0.155.1 / alpine" "$EVIDENCE/codex-status.txt" \
    && grep -q '^sandbox_mode = "danger-full-access"$' "$EVIDENCE/codex-config.txt" \
    && grep -q '^wire_api = "responses"$' "$EVIDENCE/codex-config.txt" \
    && grep -q "^opencode absent$" "$EVIDENCE/codex-config.txt"; then
-  echo "codex: the default runtime boots, moat renders its config and its brief, and no opencode is in the image" | tee -a "$EVIDENCE/extras.txt"
+  pass "codex" "the default runtime boots, moat renders its config and its brief, and no opencode is in the image"
 else
-  echo "codex: FAILED — the default runtime or its rendered config is not what moat claims" | tee -a "$EVIDENCE/extras.txt"
+  fail "codex" "the default runtime or its rendered config is not what moat claims"
 fi
 ( cd "$CDX" && capture codex-rm $MOAT exec -- sh -c 'rm -f /usr/local/bin/codex; command -v codex || echo "codex gone"; echo keep > /work/KEEP.txt; mkdir -p /work/sub && echo deep > /work/sub/DEEP.txt' )
 ( cd "$CDX" && capture codex-down $MOAT down )
@@ -1007,9 +1024,9 @@ if grep -q "codex-cli $CODEX_VERSION" "$EVIDENCE/codex-repair-check.txt" \
    && grep -q "^keep$" "$EVIDENCE/codex-repair-check.txt" \
    && grep -q "^deep$" "$EVIDENCE/codex-repair-check.txt" \
    && grep -q "installing the codex runtime into this environment" "$EVIDENCE/codex-repair.txt"; then
-  echo "a deleted runtime binary: reinstalled into the live rootfs on the next boot, and /work survived" | tee -a "$EVIDENCE/extras.txt"
+  pass "runtime repair" "a deleted runtime binary: reinstalled into the live rootfs on the next boot, and /work survived"
 else
-  echo "runtime repair: FAILED — the binary was not reinstalled, or /work was lost" | tee -a "$EVIDENCE/extras.txt"
+  fail "runtime repair" "the binary was not reinstalled, or /work was lost"
 fi
 ( cd "$CDX" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AK. the codex runtime drives a keyless model stub end to end"
@@ -1122,9 +1139,9 @@ if grep -q "a + b" "$EVIDENCE/codex-mock-fix.txt" \
    && ! grep -q "Model metadata for" "$EVIDENCE/codex-mock-run.txt" \
    && ! grep -q "Model metadata for" "$EVIDENCE/codex-mock-run-low.txt"; then
   echo "codex: a keyless turn fixes the fixture, the checks pass, the commit fetches, and moat's brief reached the model ($REQS model requests)" | tee -a "$EVIDENCE/extras.txt"
-  echo "codex: the catalog removed the metadata notice, disabled web_search, and --effort high/low reached the wire as asked (see the record lines above)" | tee -a "$EVIDENCE/extras.txt"
+  pass "codex" "the catalog removed the metadata notice, disabled web_search, and --effort high/low reached the wire as asked (see the record lines above)"
 else
-  echo "codex: FAILED — no fix, or the brief did not reach the model (requests=$REQS, brief_in_request=$BRIEF_IN_REQUEST, effort_ok=$EFFORT_OK)" | tee -a "$EVIDENCE/extras.txt"
+  fail "codex" "no fix, or the brief did not reach the model (requests=$REQS, brief_in_request=$BRIEF_IN_REQUEST, effort_ok=$EFFORT_OK)"
 fi
 ( cd "$CK" && $MOAT destroy --yes >/dev/null 2>&1 )
 
@@ -1138,9 +1155,9 @@ python3 "$REPO/test/codex-tui.py" 2>&1 | scrub > "$EVIDENCE/codex-tui.txt"
 TUI_RC=$?
 tail -6 "$EVIDENCE/codex-tui.txt" | tee -a "$EVIDENCE/extras.txt"
 if [ "$TUI_RC" = "0" ] && grep -q "codex tui: the default runtime opens a live TUI" "$EVIDENCE/codex-tui.txt"; then
-  echo "codex tui: moat reaches a live TUI, and leaving it leaves the sandbox running" | tee -a "$EVIDENCE/extras.txt"
+  pass "codex tui" "moat reaches a live TUI, and leaving it leaves the sandbox running"
 else
-  echo "codex tui: FAILED — moat did not reach a live TUI (exit $TUI_RC)" | tee -a "$EVIDENCE/extras.txt"
+  fail "codex tui" "moat did not reach a live TUI (exit $TUI_RC)"
 fi
 ( cd "$WORK/codex-tui" && $MOAT destroy --yes >/dev/null 2>&1 )
 # The stub belongs to this suite: e2e.sh used to start it and extras used to inherit it.
@@ -1150,3 +1167,15 @@ echo "" | tee -a "$EVIDENCE/extras.txt"
 # scrubbing first would leave exactly one unscrubbed path behind.
 echo "extras evidence written to $EVIDENCE/extras.txt" | tee -a "$EVIDENCE/extras.txt"
 scrub_evidence
+# The verdict is last so that it lands in the scrubbed evidence too, and so that
+# the exit status is the count of failed checks rather than whatever `sed`
+# returned. `verdict` prints the summary; this is what makes the suite fail.
+verdict
+EXTRAS_RC=$?
+# An early stop for `test/fail-guard.sh`, whose whole point is to watch this
+# suite's exit status change when a check is broken: it does not need the other
+# forty minutes, only the verdict. Off unless asked for by name.
+if [ "${MOAT_STOP_AFTER_FAIL:-}" = "1" ] && [ "$EXTRAS_RC" != "0" ]; then
+  echo "MOAT_STOP_AFTER_FAIL=1: stopping after the first failed check" | tee -a "$EVIDENCE/extras.txt"
+fi
+exit "$EXTRAS_RC"

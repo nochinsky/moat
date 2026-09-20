@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url"
 
 import { CODEX_VERSION } from "../lib/pins.ts"
 import { writeRootfsFile } from "../lib/rootfs-fs.ts"
+import * as log from "../lib/log.ts"
 
 /**
  * The DeepSeek model catalog Codex reads, vendored from DeepSeek's documented Codex setup.
@@ -159,6 +160,26 @@ function tomlString(value: string): string {
   return '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"'
 }
 
+/**
+ * A token count bare in TOML, or nothing.
+ *
+ * These two lines are the only unquoted numbers moat writes into the config, and
+ * the value comes from a fetched catalog (`lib/catalog.ts`) through
+ * `resolvedModel.meta`. Interpolating it unvalidated is how a number that is not a
+ * number becomes a config Codex refuses to parse: `NaN`, `Infinity`, `1e999`, a
+ * negative count, a string. A bad count is not worth failing a boot over — the
+ * line is optional, and Codex falls back to its own metadata — so drop it and say
+ * so, rather than writing a config nobody can read.
+ */
+function tomlTokenCount(name: string, value: number | undefined): string[] {
+  if (value === undefined) return []
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    log.warn(`ignoring an unusable ${name} from the model catalog: ${String(value)}`)
+    return []
+  }
+  return [`${name} = ${value}`]
+}
+
 export function renderCodexConfig(input: CodexConfigInput): string {
   if (!/^[A-Za-z0-9_-]+$/.test(input.providerID)) {
     throw new Error(`invalid codex provider id: ${input.providerID}`)
@@ -182,8 +203,10 @@ export function renderCodexConfig(input: CodexConfigInput): string {
     // setup does, rather than advertised to the model as something that works.
     'web_search = "disabled"',
   ]
-  if (input.contextWindow) lines.push(`model_context_window = ${input.contextWindow}`)
-  if (input.maxOutputTokens) lines.push(`model_max_output_tokens = ${input.maxOutputTokens}`)
+  lines.push(
+    ...tomlTokenCount("model_context_window", input.contextWindow),
+    ...tomlTokenCount("model_max_output_tokens", input.maxOutputTokens),
+  )
   if (input.reasoningEffort) lines.push(`model_reasoning_effort = ${tomlString(input.reasoningEffort)}`)
   lines.push(
     "",

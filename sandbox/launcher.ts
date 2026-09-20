@@ -119,6 +119,16 @@ export function sandboxPidStatus(
  * `sh -c`) removes an entire class of quoting bugs, and means the exact boot
  * sequence is auditable on disk after the fact.
  */
+/**
+ * The heredoc delimiter that carries the egress ruleset inside the boot script.
+ *
+ * A quoted delimiter means the shell reads the body literally: no expansion, no
+ * command substitution, nothing a rule could use to escape the data position. It
+ * is a constant rather than interpolated so a ruleset can never forge the end of
+ * its own heredoc.
+ */
+export const NFT_HEREDOC_MARKER = "MOAT_EGRESS_RULESET_EOF"
+
 export type OuterScriptOptions = {
   /** Absolute path of the entry script this boot should exec (defaults to entry.sh). */
   innerScript?: string
@@ -140,9 +150,19 @@ export type OuterScriptOptions = {
    */
   waitForTap?: boolean
   /**
-   * Path inside the rootfs of an nftables ruleset to apply before anything runs.
-   * Set when egress is filtered: the rules go on inside the sandbox's own
-   * network namespace, which moat owns, before the entry script starts.
+   * The nftables ruleset to apply before anything runs, as text.
+   *
+   * Set when egress is filtered: the rules go on inside the sandbox's own network
+   * namespace, which moat owns, before the entry script starts.
+   *
+   * It is the ruleset *itself*, not a path to it, and that is the whole point. It
+   * used to be a path inside the rootfs (`/.moat/egress.nft`), which the agent is
+   * root enough to rewrite: the boot would then faithfully apply whatever policy
+   * the box had left there, and the box would come up "filtered" under rules the
+   * agent chose. The boot script is written outside the rootfs (`runtime/`), so
+   * carrying the text here means the policy cannot be edited by the thing it
+   * constrains. Same reasoning as the boot log's descriptor, different mechanism:
+   * there is no path resolve left to race.
    */
   egressRules?: string
 }
@@ -212,21 +232,37 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
   if (opts.egressRules) {
     // A policy that fails to load must stop the boot: running unfiltered while
     // the environment claims to be filtered is worse than not booting at all.
-    const rulesPath = opts.egressRules
-    lines.push('if [ ! -f "$N' + rulesPath + '" ]; then echo "[moat] egress policy file is missing" >&2; exit 1; fi')
-    // Two failures, two messages: a missing binary is a broken image, a
-    // ruleset nft refuses is a moat bug, and the second reads as the first
-    // unless they are told apart.
+    //
+    // The ruleset is fed to nft on stdin from a variable in *this* script, which
+    // the agent cannot write, rather than read from a path inside its own rootfs.
+    // It used to be `/.moat/egress.nft` in the rootfs, which the box is root
+    // enough to rewrite: the boot then applied whatever policy the box had left
+    // there, and came up "filtered" under rules the agent chose. `nft -f -` is
+    // nftables' own stdin form; test/e2e-egress.sh measures that the allowlist
+    // holds and that everything else is dropped.
+    //
+    // `printf '%s\n'` and not `echo`: a ruleset line a shell would treat as an
+    // option stays data, which is the same reason this is not a heredoc (a
+    // heredoc body has to come after every command that follows it, including the
+    // exec at the end of this script).
+    const marker = NFT_HEREDOC_MARKER
+    lines.push(`MOAT_EGRESS=$(cat <<'${marker}'`)
+    lines.push(opts.egressRules.replace(/\n$/, ""))
+    lines.push(marker)
+    lines.push(")")
     lines.push(
       "if ! chroot \"$N\" /bin/sh -c 'PATH=/usr/sbin:/usr/bin:/sbin:/bin; command -v nft >/dev/null'; then",
     )
     lines.push('  echo "[moat] filtered egress needs nft inside the box, and this image has none" >&2; exit 1')
     lines.push("fi")
     lines.push(
-      "if ! chroot \"$N\" /bin/sh -c 'PATH=/usr/sbin:/usr/bin:/sbin:/bin; nft -f " + rulesPath + "'; then",
+      "if ! printf '%s\\n' \"$MOAT_EGRESS\" | chroot \"$N\" /bin/sh -c 'PATH=/usr/sbin:/usr/bin:/sbin:/bin; nft -f -'; then",
     )
     lines.push('  echo "[moat] failed to apply the egress policy" >&2; exit 1')
     lines.push("fi")
+    // The variable is not needed past the chroot, and the entry script inherits
+    // this environment: leaving it set would put the policy in the box's env.
+    lines.push("unset MOAT_EGRESS")
   }
   // `cd /` explicitly rather than relying on chroot's own chdir: the barrier is the chroot, and
   // a cwd above the new root would let `..` walk the host tree. `unset OLDPWD` is not tidiness:
@@ -627,6 +663,59 @@ export async function startSandbox(
   }
 
   return { child, pid: child.pid, startTime: processStartTime(child.pid), logFile, slirp }
+}
+
+/**
+ * The line the entry script prints when the box is genuinely up.
+ *
+ * `codexEntryScript` (cmd/main.ts) writes it after the mounts, the chroot and the
+ * runtime are all in place, and a boot that fails before it never reaches it.
+ */
+export const READY_MARKER = "[moat] codex runtime ready"
+
+/**
+ * Wait until the box has actually said it is up, and refuse to report a boot that
+ * died on the way.
+ *
+ * `moat up` used to declare success as soon as `unshare` had been spawned, because
+ * "the codex runtime has no server to wait for". That is true about *servers* and
+ * false about *boots*: the entry script's first act after the mounts is to check
+ * the credential deadline, and an already-expired credential makes it print
+ * "expired before the box started; stopping" and exit 0 in milliseconds. Measured
+ * shape of the bug: `moat up` printed "sandbox booted (pid N)", wrote
+ * `status: "running"` into state.json, and the process had already exited when the
+ * next command looked. The next command then reported a running sandbox that was
+ * not there, and `moat exec` in it failed somewhere further away from the cause.
+ *
+ * Resolving on the marker rather than on a fixed sleep means a fast boot is not
+ * slowed down and a slow one is not cut off; `deadlineMs` is the budget for a
+ * *stuck* boot, not for a normal one.
+ */
+export async function waitForSandboxReady(
+  pid: number,
+  readLog: () => string | null,
+  opts: { deadlineMs?: number; pollMs?: number } = {},
+): Promise<{ ok: true } | { ok: false; reason: string; log: string | null }> {
+  const deadline = Date.now() + (opts.deadlineMs ?? 120_000)
+  const pollMs = opts.pollMs ?? 100
+  for (;;) {
+    const log = readLog()
+    if (log !== null && log.includes(READY_MARKER)) return { ok: true }
+    if (!isRunning(pid)) {
+      // The box is gone. One more read: the last lines are usually written before
+      // the process is reaped, and they are the whole explanation.
+      const final = readLog()
+      return { ok: false, reason: `the sandbox exited during boot (pid ${pid} is gone)`, log: final }
+    }
+    if (Date.now() >= deadline) {
+      return {
+        ok: false,
+        reason: `the sandbox did not finish booting within ${Math.round((opts.deadlineMs ?? 120_000) / 1000)}s (pid ${pid} is still running)`,
+        log,
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs))
+  }
 }
 
 /**

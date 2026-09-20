@@ -20,6 +20,89 @@ import path from "node:path"
 
 type LastKind = "skip" | "file" | "directory"
 
+/**
+ * The directory a write lands in, held open rather than named.
+ *
+ * A path check and a path use are two different moments, and the agent is root in
+ * its own rootfs: between them it can replace a directory component with a symlink
+ * to a host path. `writeRootfsFile` verified the temp file through `/proc/self/fd`
+ * and then called `renameSync(tmp, full)`, which resolves `full` from the top
+ * again — so the verification proved where the *temp* went and said nothing about
+ * where the rename went.
+ *
+ * A directory descriptor closes that: once the parent is open and verified, the
+ * file is created and renamed through `/proc/self/fd/<dirfd>/<name>`, which the
+ * kernel resolves to the directory that was opened, not to whatever the path
+ * means now. Measured consequence of a swap after the open: the operation fails
+ * with ENOENT (the held directory has no name left to reach it by) and nothing is
+ * written, which is the safe direction. Opening with O_NOFOLLOW|O_DIRECTORY makes
+ * a symlinked component fail with ENOTDIR.
+ */
+type ParentDir = { fd: number; path: string }
+
+/**
+ * Check and create every directory on the way, then open the *parent* directory
+ * of the target as a descriptor.
+ *
+ * The last component is a name, not a directory to walk into: a symlink sitting
+ * there is the normal case and gets replaced by the rename. The directory that
+ * holds it is the thing that has to be verified and held open.
+ *
+ * Throws with the same wording the path walker used, so the messages the tests and
+ * the docs quote ("refusing to follow a symlink inside the sandbox rootfs") stay
+ * the same.
+ */
+function openParentDir(rootfs: string, target: string): ParentDir {
+  const root = fs.realpathSync(rootfs)
+  const parts = (path.isAbsolute(target) ? target.slice(1) : target).split("/").filter((part) => part.length > 0)
+  if (parts.length < 2) throw new Error(`refusing to write to the sandbox rootfs itself: ${target}`)
+  if (parts.some((part) => part === "." || part === "..")) {
+    throw new Error(`refusing a path that leaves the sandbox rootfs: ${target}`)
+  }
+
+  let current = root
+  for (const part of parts.slice(0, -1)) {
+    current = path.join(current, part)
+    let stat: fs.Stats | null = null
+    try {
+      stat = fs.lstatSync(current)
+    } catch {
+      stat = null
+    }
+    if (stat === null) {
+      fs.mkdirSync(current, { mode: 0o755 })
+      continue
+    }
+    if (stat.isSymbolicLink()) {
+      throw new Error(
+        `refusing to follow a symlink inside the sandbox rootfs: ${path.relative(root, current)} -> ${fs.readlinkSync(current)}`,
+      )
+    }
+    if (!stat.isDirectory()) {
+      throw new Error(`refusing to write through a non-directory inside the sandbox rootfs: ${path.relative(root, current)}`)
+    }
+  }
+
+  const fd = fs.openSync(current, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW)
+  // The descriptor has to be the directory that was walked, not a second resolve
+  // of the same string.
+  const opened = fs.readlinkSync(`/proc/self/fd/${fd}`)
+  if (opened !== current) {
+    fs.closeSync(fd)
+    throw new Error(`refusing to write outside the sandbox rootfs: ${opened} is not ${current}`)
+  }
+  return { fd, path: current }
+}
+
+/** Remove a temp file through the directory it was created in, by name only. */
+function removeThroughDir(dir: ParentDir, name: string): void {
+  try {
+    fs.unlinkSync(`/proc/self/fd/${dir.fd}/${name}`)
+  } catch {
+    /* it was already renamed into place, or the directory is gone */
+  }
+}
+
 /** Resolve a path inside the rootfs, refusing every symlink on the way. */
 function walk(rootfs: string, target: string, opts: { create: boolean; last: LastKind }): string {
   const root = fs.realpathSync(rootfs)
@@ -69,25 +152,49 @@ function walk(rootfs: string, target: string, opts: { create: boolean; last: Las
  * The temp file is created with O_EXCL|O_NOFOLLOW beside the target and renamed
  * over it: rename replaces a symlink at the target instead of writing through it,
  * so a reader sees either the old file or the new one, never a partial script.
+ *
+ * Both the create and the rename go through a descriptor for the parent directory
+ * rather than the path again, because the agent can swap a directory for a symlink
+ * between the check and the use. See `ParentDir`.
  */
 export function writeRootfsFile(rootfs: string, target: string, content: string | Buffer, mode = 0o644): string {
-  const full = walk(rootfs, target, { create: true, last: "skip" })
-  const tmp = path.join(path.dirname(full), `.${path.basename(full)}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`)
+  const dir = openParentDir(rootfs, target)
+  const name = path.basename(target)
+  // Never the deterministic name: a fixed `.foo.tmp` lets the agent pre-create it,
+  // and O_EXCL then fails a boot it could have made succeed. Random, retried a few
+  // times, and only then reported.
+  let tmpName = ""
   let fd: number | null = null
   try {
-    fd = fs.openSync(tmp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, mode)
-    // The walk can be raced by the agent; /proc/self/fd names the file that was
+    for (let attempt = 0; attempt < 8 && fd === null; attempt++) {
+      const candidate = `.${name}.tmp-${process.pid}-${crypto.randomBytes(8).toString("hex")}`
+      try {
+        fd = fs.openSync(
+          `/proc/self/fd/${dir.fd}/${candidate}`,
+          fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW,
+          mode,
+        )
+        tmpName = candidate
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      }
+    }
+    if (fd === null) throw new Error(`could not create a temp file beside ${target} inside the sandbox rootfs`)
+
+    // The walk and the open can still be raced; /proc/self/fd names the file that was
     // actually opened, so a swapped directory cannot redirect this write.
     const opened = fs.readlinkSync(`/proc/self/fd/${fd}`)
-    if (opened !== tmp) throw new Error(`refusing to write outside the sandbox rootfs: opened ${opened}`)
+    if (path.dirname(opened) !== dir.path || path.basename(opened) !== tmpName) {
+      throw new Error(`refusing to write outside the sandbox rootfs: opened ${opened}`)
+    }
     // A single write() may be short; loop so a partial script is never renamed in.
     const bytes = typeof content === "string" ? Buffer.from(content, "utf8") : content
     let written = 0
     while (written < bytes.length) written += fs.writeSync(fd, bytes, written)
     fs.closeSync(fd)
     fd = null
-    fs.renameSync(tmp, full)
-    return full
+    fs.renameSync(`/proc/self/fd/${dir.fd}/${tmpName}`, `/proc/self/fd/${dir.fd}/${name}`)
+    return path.join(dir.path, name)
   } catch (error) {
     if (fd !== null) {
       try {
@@ -96,8 +203,10 @@ export function writeRootfsFile(rootfs: string, target: string, content: string 
         /* already closed */
       }
     }
-    fs.rmSync(tmp, { force: true })
+    if (tmpName.length > 0) removeThroughDir(dir, tmpName)
     throw error
+  } finally {
+    fs.closeSync(dir.fd)
   }
 }
 
