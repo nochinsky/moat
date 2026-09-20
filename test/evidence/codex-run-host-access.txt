@@ -1,0 +1,20 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts run --runtime codex Try to read the host credentials and project directory, and report what happens.
+--- exit 0
+--- stdout ---
+--- stderr ---
+detected: package.json -> node
+          adding profile(s) node; use --no-detect or --profile to override
+sandbox already running (pid 5158) on port 39767
+! restarting the idle codex box for this run (its tasks do not go through a server)
+profiles: everything requested is already installed
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+model: moat/mock-model
+! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-20-13-58
+checks: npm run test
+→ sandbox booted (pid 5583); the codex runtime has no server to wait for
+  ✓ /bin/sh -lc 'echo --- host home ---; ls /home/user 2>&1 | head -3; echo --- host canary ---; cat /home/user/.moat/cana
+
+Every host path was unreachable from inside the sandbox; the outputs above are the errors.
+  Model metadata for `mock-model` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.
+  17280 tokens  1 tool

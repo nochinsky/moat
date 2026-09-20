@@ -1,0 +1,18 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c cat /root/.codex/config.toml
+--- exit 0
+--- stdout ---
+model = "mock-model"
+model_provider = "deepseek-moat"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+model_reasoning_effort = "high"
+
+[model_providers.deepseek-moat]
+name = "DeepSeek"
+base_url = "http://127.0.0.1:5597/v1"
+env_key = "MOAT_INJECTED_CREDENTIAL"
+wire_api = "responses"
+
+[projects."/work"]
+trust_level = "trusted"
+--- stderr ---

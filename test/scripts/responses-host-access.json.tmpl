@@ -1,0 +1,7 @@
+{
+  "model": "mock-model",
+  "turns": [
+    { "tool": { "cmd": "echo --- host home ---; ls @HOSTHOME@ 2>&1 | head -3; echo --- host canary ---; cat @HOSTHOME@/.moat/canary 2>&1 | head -1; echo --- host project ---; ls @HOSTPROJECT@ 2>&1 | head -3" } },
+    { "text": "Every host path was unreachable from inside the sandbox; the outputs above are the errors." }
+  ]
+}

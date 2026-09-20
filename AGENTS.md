@@ -75,7 +75,8 @@ is wired with `npm link` and runs the source directly.
 
 ```bash
 npm run test:unit         # pure unit tests, no sandbox, so CI runs them
-bash test/e2e.sh          # acceptance criteria, ~4 min, no API key
+bash test/e2e-codex.sh    # acceptance criteria on the DEFAULT runtime (Codex), keyless
+bash test/e2e.sh          # the same list for the opencode runtime, ~4 min, no API key
 bash test/e2e-extras.sh   # snapshots, apply, credential expiry, the pty suites
 bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced, default (no key)
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
@@ -551,6 +552,16 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   halves, including that a check, a server or a batch boot still gets `dumb`, so the
   environment the other suites measure is unchanged; `test/codex-tui.py` (extras section AL)
   is the pty proof that `moat` reaches a live TUI and that leaving it leaves the box running.
+* **`test/e2e-codex.sh` is the acceptance suite for the default runtime.** It drives
+  `moat run --runtime codex` through `test/mock-responses.mjs` and asserts the criteria that do
+  not depend on opencode's server: cold start on the codex runtime, the doctor's isolation
+  checks, a mocked turn that fixes the fixture and whose `moat verify` passes, host paths and
+  the canary unreachable, one ref from `moat fetch` with the host tree byte-identical, the
+  credential absent from the rootfs, and persistence across `moat down` + `moat up`. The two
+  opencode-only criteria (the in-box permission guard and the session/attach streaming) are
+  named as deliberately absent at the top of the file; the guard's replacement is asserted
+  there instead (the two rendered config lines), and the TUI is extras section AL. Run it
+  alongside `test/e2e.sh` while both runtimes exist.
 
 **opencode 1.18.31**
 

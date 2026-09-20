@@ -223,7 +223,8 @@ the result before showing it to you. No model is involved in that verdict.
 ## Development
 
 ```bash
-bash test/e2e.sh                              # acceptance criteria, ~4 minutes
+bash test/e2e-codex.sh                        # acceptance on the default runtime, keyless
+bash test/e2e.sh                              # the same list for the opencode runtime, ~4 minutes
 bash test/e2e-extras.sh                       # snapshots, apply, credential expiry
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh    # a real model doing a real task
 ```

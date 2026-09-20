@@ -1,0 +1,4 @@
+inference requests observed : 2
+model                       : mock-model
+tools advertised to the model: ['create_goal', 'exec_command', 'get_goal', 'multi_agent_v1', 'request_user_input', 'update_goal', 'view_image', 'web_search', 'write_stdin']
+reasoning field             : {'effort': 'high', 'summary': 'auto'}

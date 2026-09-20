@@ -1,0 +1,7 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c ls /home 2>&1; cat /root/.ssh/id_rsa 2>&1 | head -1; echo canary:; ls /home/user/.moat/canary 2>&1
+--- exit 2
+--- stdout ---
+cat: /root/.ssh/id_rsa: No such file or directory
+canary:
+ls: cannot access '/home/user/.moat/canary': No such file or directory
+--- stderr ---

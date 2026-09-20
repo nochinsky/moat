@@ -2616,6 +2616,37 @@ injects for each combination of credential and provider, that only credential-be
 are called the credential, and that a keyless box is not offered key rotation. All three were
 watched failing with the old list and the old wording restored.
 
+### AI. The acceptance criteria on the default runtime
+
+`test/e2e-codex.sh` is the acceptance list for the runtime a new environment gets. It is
+keyless — it drives `moat run --runtime codex` through `test/mock-responses.mjs`, the
+Responses stub whose event shapes come from a real DeepSeek stream — and it exits non-zero on
+any failed criterion. Measured: **45 checks, all passed** (`test/evidence/codex-summary.txt`).
+
+What it asserts, against a real sandbox:
+
+* the environment is created on the **codex** runtime, and egress is `open` for the loopback
+  provider (the documented exception to the `filtered` default);
+* the doctor's in-sandbox isolation list — namespaces, uid mapping, the six device binds, no
+  host mount, no host environment variable — including the canary checks it runs against the
+  host;
+* a mocked turn that **fixes the fixture's failing test** and commits it, after which moat's own
+  checks runner prints `pass  npm test` from inside the box;
+* the two rendered config lines that stand in for the permission guard on this runtime
+  (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`);
+* the host canary, the host home and the host project directory unreachable from inside the box
+  — asserted independently with `moat exec`, not from the agent's report;
+* `moat fetch` writing **exactly one** ref under `refs/moat/`, carrying the agent's commit, with
+  the host HEAD and working tree unchanged;
+* the host project tree byte-identical before and after, by moat's own `hashTree`;
+* the injected credential value absent from the whole rootfs (and named only as a variable in
+  the box's config);
+* a marker file and an `apk add` surviving `moat down` + `moat up`.
+
+Two criteria that exist only because opencode runs a server are **deliberately absent**, and
+the file says so at the top rather than leaving a silent gap: the in-box bundle/permission
+guard (its replacement is the config assertion above) and the session/attach streaming (the TUI
+is verified through a real pty by `test/codex-tui.py`, extras section AL).
 ### AH. Codex is the default runtime, and the two runtimes do not cost the same
 
 The runtime is a dependency, not the product: the box, the credential broker, copy-out and the

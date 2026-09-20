@@ -39,9 +39,13 @@ the checklist for ending it without breaking the product on the way.
 
 ## The order that keeps every suite green
 
-1. Port the acceptance checks in `test/e2e.sh` to Codex + the Responses stub one at a time,
-   keeping the opencode version until the Codex one passes. Interactive checks (attach
-   streaming, sessions) become TUI checks or are dropped with the REPL.
+1. **Done: `test/e2e-codex.sh` is that port.** 45 checks, keyless, asserting the criteria
+   that do not depend on opencode's server: cold start, the doctor's isolation list, a mocked
+   turn that fixes the fixture with `moat verify` passing, host paths and the canary
+   unreachable, one ref from `moat fetch` with the host tree byte-identical, the credential
+   absent from the rootfs, and persistence across down/up. The two criteria that only exist
+   because of the server are named at the top of that file with what stands in for them. What
+   is left is to retire the equivalents in `test/e2e.sh` when opencode goes.
 2. Port or drop the extras sections that are opencode-specific (the pty REPL suites, tools,
    plugin guard, effort).
 3. Then delete, in this order: the plural runtime plumbing (`--runtime`, `RUNTIMES`,

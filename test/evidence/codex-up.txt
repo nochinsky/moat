@@ -1,18 +1,104 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --no-credential
+--- $ node /home/user/Projects/moat/cmd/main.ts up --json --model mock-model --base-url http://127.0.0.1:5597/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
+{
+  "project": "/home/user/moat-demo/codex-project",
+  "envId": "5f160b318512",
+  "provisionMs": 1987,
+  "provisionFromImageCache": true,
+  "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-eaeee125c8b0.tar.gz",
+  "provisionSteps": [
+    {
+      "name": "extract cached image",
+      "ms": 1712
+    }
+  ],
+  "baselineSnapshot": {
+    "name": "baseline",
+    "bytes": 154438191,
+    "linked": true
+  },
+  "copyIn": {
+    "transport": "git",
+    "head": "0f438db59046946a5d456821c39c1fb80e86726c",
+    "branch": "main",
+    "dirty": true,
+    "trackedChanges": 1,
+    "untrackedFiles": 1,
+    "digest": "c1ccc1457def136b9277f19aedd312435a50013452c7f0bc9ce9c1a7d1f9ead7",
+    "files": 5,
+    "bytes": 328,
+    "suspectSecrets": [],
+    "skippedFromCopy": [],
+    "hostState": "git:0f438db59046946a5d456821c39c1fb80e86726c:1f41ff19b72e60c8"
+  },
+  "copyInMs": 75,
+  "provider": {
+    "opencodeID": "moat",
+    "native": false,
+    "label": "custom OpenAI-compatible endpoint"
+  },
+  "model": {
+    "id": "moat/mock-model"
+  },
+  "bundle": {
+    "curated": [
+      "read",
+      "write",
+      "edit",
+      "apply_patch",
+      "glob",
+      "grep",
+      "bash",
+      "todowrite",
+      "question"
+    ],
+    "excluded": [
+      "skill",
+      "webfetch",
+      "websearch",
+      "task"
+    ],
+    "preset": "core"
+  },
+  "egress": "open",
+  "status": "running",
+  "port": 45861,
+  "pid": 4793,
+  "bootMs": 5,
+  "totalMs": 2164,
+  "readyCheck": "the codex runtime has no server to wait for",
+  "credential": {
+    "provider": "moat",
+    "fingerprint": "sha256:304e485880327eb8",
+    "expiresAt": "2026-09-20T17:57:49.837Z",
+    "source": "env:MOAT_MOCK_CREDENTIAL"
+  },
+  "host": "linux x64 wsl2 userns=yes kvm=no",
+  "credentialsInSandboxEnv": [
+    "MOAT_CREDENTIAL_EXPIRES_AT",
+    "MOAT_CREDENTIAL_EXPIRES_EPOCH",
+    "MOAT_CREDENTIAL_FINGERPRINT",
+    "MOAT_CREDENTIAL_TTL_SECONDS",
+    "MOAT_INJECTED_CREDENTIAL",
+    "MOAT_MODEL",
+    "MOAT_MODEL_ID",
+    "MOAT_PORT",
+    "MOAT_PROVIDER_BASE_URL",
+    "OPENCODE_SERVER_PASSWORD"
+  ]
+}
 --- stderr ---
-✓ image provisioned in 1.47s (extract cached image 1.26s)
-✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
-model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-20-03-19
-✓ sandbox up, cold start 2.15s (image built)
-
-  project    /home/user/moat-demo/codex-runtime
-  env        /home/user/.moat/envs/a3e8fefc7c25
-  runtime    codex (deepseek/deepseek-flash) — `moat` opens its TUI
-  workspace  /work (inside the sandbox)
-
-  next: moat         open a session here and tell it what to do
-        moat apply   merge what it did into this directory
-        moat down    stop the sandbox (state and snapshots are kept)
+egress: open, because the provider is on the host's loopback (http://127.0.0.1:5597/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
+detected: package.json -> node
+          adding profile(s) node; use --no-detect or --profile to override
+→ provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31 + node)
+→ provisioning from the cached image alpine-3.21.4-eaeee125c8b0.tar.gz
+✓ image provisioned in 1.99s (extract cached image 1.71s)
+→ copy-in: git clone --no-hardlinks
+✓ copy-in via git: 5 files, 0.3 KiB, digest c1ccc1457def136b (dirty tree: 1 modified, 1 untracked)
+model: moat/mock-model
+! injecting moat credential sha256:304e485880327eb8 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-20-13-57
+checks: npm run test
+→ sandbox booted (pid 4793); the codex runtime has no server to wait for

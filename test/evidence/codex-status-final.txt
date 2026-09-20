@@ -1,0 +1,15 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts status
+--- exit 0
+--- stdout ---
+--- stderr ---
+project      /home/user/moat-demo/codex-project
+env          /home/user/.moat/envs/5f160b318512
+status       stopped
+runtime      codex (moat/mock-model)
+model        moat/mock-model (moat)
+branch       moat-session-2026-09-20-13-58
+egress       open (host network namespace)
+rootfs       404.5 MiB
+credential   moat sha256:304e485880327eb8 expires in 14394s
+snapshots    baseline
+branches     main, moat-session-2026-09-20-13-57, moat-session-2026-09-20-13-58*
