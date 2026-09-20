@@ -13,7 +13,7 @@ import { applyPlan, describePlan, planApply, type ApplyPlan } from "../sync/appl
 import { runChecks } from "../sandbox/checks.ts"
 import { runtimeForEgress } from "../sandbox/egress.ts"
 import { runInteractive } from "../sandbox/launcher.ts"
-import { computeCost, describeRate, isRetiredModel, usageOf } from "../lib/pricing.ts"
+import { isRetiredModel, summariseTurn } from "../lib/pricing.ts"
 import {
   AnswerRenderer,
   colourEnabled,
@@ -440,32 +440,18 @@ export async function runRepl(options: ReplOptions): Promise<number> {
   let modelLevels: string[] = []
 
   const costOfTurn = (): TurnSummary => {
-    let prompt = 0
-    let cached = 0
-    let output = 0
-    let reasoningTokens = 0
-    let usd = 0
-    let known = true
-    const { providerID, modelID } = splitModel(modelRef)
-    void providerID
-    for (const entry of turnUsage.values()) {
-      const usage = usageOf(entry.tokens)
-      prompt += usage.input
-      cached += usage.cacheRead
-      output += usage.output
-      reasoningTokens += usage.reasoning
-      const cost = computeCost(modelID, usage, new Date(entry.at))
-      if (!cost.known) known = false
-      usd += cost.usd
-    }
+    // The tokens, the money and the rate all come from one pass over the same requests,
+    // so the rate word cannot name a different rate from the one the arithmetic used.
+    const { modelID } = splitModel(modelRef)
+    const totals = summariseTurn(modelID, turnUsage.values())
     return {
-      promptTokens: prompt + cached,
-      cachedTokens: cached,
-      outputTokens: output,
-      reasoningTokens,
-      usd,
-      costKnown: known && turnUsage.size > 0,
-      peak: describeRate() === "peak",
+      promptTokens: totals.input + totals.cached,
+      cachedTokens: totals.cached,
+      outputTokens: totals.output,
+      reasoningTokens: totals.reasoning,
+      usd: totals.usd,
+      costKnown: totals.costKnown,
+      rate: totals.rate,
       tools: toolStatus.size,
       failed: [...toolStatus.values()].filter((s) => s === "error").length,
       ms: turnStarted > 0 ? Date.now() - turnStarted : 0,

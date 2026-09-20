@@ -1353,6 +1353,18 @@ The `deepseek-flash` row matches off-peak exactly, which is what makes the
 `deepseek-v4-pro` row look like a stale entry rather than a different convention.
 The same turn is charged at double the off-peak rate during peak hours.
 
+The rate the footer *names* comes from the same per-request timestamps as the money
+(`summariseTurn`), not from the clock at print time. It was the latter — a different clock
+— so a turn that ran through a boundary was labelled `peak` or `off-peak` by whichever
+side it finished on, over arithmetic that had billed each request at its own time, and a
+turn spanning both was described by one of them; it now reads `mixed`.
+`test/unit/turn-cost.test.ts` pins the three cases, the arithmetic (reasoning at the
+output rate, cache reads at the cache rate, off-peak exactly half of peak) and the wiring:
+`cmd/repl.ts` must not decide the rate itself. Both halves were watched failing — the
+`mixed` case with `rateLabel` reduced to a single clock, the wiring check with
+`describeRate` back in the REPL — and no live capture of a boundary-crossing turn exists,
+so the label itself is unit-verified only.
+
 Which token field is which was not guessable; it was recovered by reconciling
 opencode's own arithmetic against its own reported cost, exactly:
 

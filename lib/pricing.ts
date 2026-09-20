@@ -73,7 +73,14 @@ export function isPeak(at: Date = new Date()): boolean {
   return (hour >= 1 && hour < 4) || (hour >= 6 && hour < 10)
 }
 
-/** How the next request would be billed, for display. */
+/**
+ * How a request made *now* would be billed.
+ *
+ * This describes one moment, not a turn. Do not use it to label a turn's cost: the
+ * requests in a turn have their own timestamps, and a turn can span a boundary, so the
+ * label has to come from the same pass as the money (`summariseTurn`). Labelling the
+ * footer from this function is exactly the bug `rateLabel` documents.
+ */
 export function describeRate(at: Date = new Date()): string {
   return isPeak(at) ? "peak" : "off-peak"
 }
@@ -154,6 +161,74 @@ export function formatTokens(count: number): string {
   return String(count)
 }
 
+
+/** Which of the two rates a set of billed requests was charged at. */
+export type RateLabel = "peak" | "off-peak" | "mixed"
+
+/** One billed request: its token counts and when it completed. */
+export type BilledUsage = { tokens: unknown; at: number | string | Date }
+
+export type TurnTotals = {
+  /** Cache-miss input tokens. */
+  input: number
+  /** Cache-hit input tokens. */
+  cached: number
+  output: number
+  /** Reasoning tokens, billed at the output rate. */
+  reasoning: number
+  usd: number
+  /** False when the model is not in the table: the figure is unknown, not zero. */
+  costKnown: boolean
+  rate: RateLabel
+  requests: number
+}
+
+/**
+ * The rate named for a set of requests, from the same timestamps as the money.
+ *
+ * This used to be `describeRate()` at print time, which is a different clock: a turn
+ * that ran through a peak boundary was named after whichever side it finished on, over
+ * arithmetic that had billed each request at its own time. When the requests disagree
+ * the honest answer is `mixed`; when there are none (the footer prints "cost unknown")
+ * the label describes the rate a request made now would get.
+ */
+export function rateLabel(peaks: boolean[], at: Date = new Date()): RateLabel {
+  if (peaks.length === 0) return isPeak(at) ? "peak" : "off-peak"
+  const peak = peaks.some(Boolean)
+  const offPeak = peaks.some((value) => !value)
+  if (peak && offPeak) return "mixed"
+  return peak ? "peak" : "off-peak"
+}
+
+/**
+ * Cost, tokens and rate for a set of billed requests, in one pass.
+ *
+ * The rate comes out of the same loop as the money on purpose: computing it anywhere
+ * else means two clocks that can disagree, which is the bug `rateLabel` documents.
+ */
+export function summariseTurn(modelID: string, entries: Iterable<BilledUsage>): TurnTotals {
+  let input = 0
+  let cached = 0
+  let output = 0
+  let reasoning = 0
+  let usd = 0
+  let known = true
+  let requests = 0
+  const peaks: boolean[] = []
+  for (const entry of entries) {
+    requests += 1
+    const usage = usageOf(entry.tokens)
+    input += usage.input
+    cached += usage.cacheRead
+    output += usage.output
+    reasoning += usage.reasoning
+    const cost = computeCost(modelID, usage, new Date(entry.at))
+    if (!cost.known) known = false
+    peaks.push(cost.peak)
+    usd += cost.usd
+  }
+  return { input, cached, output, reasoning, usd, costKnown: known && requests > 0, rate: rateLabel(peaks), requests }
+}
 export function pricingTable(): { model: string; retired: boolean; offPeak: Price; peak: Price }[] {
   return Object.entries(TABLE).map(([model, entry]) => ({
     model,

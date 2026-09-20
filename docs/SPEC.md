@@ -902,6 +902,12 @@ opencode's own arithmetic: `input` is the cache-*miss* count, `cache.read` the
 cache-hit count, and `reasoning` is billed at the output rate as a field separate
 from `output`.
 
+The turn footer names the rate the arithmetic used — `peak`, `off-peak`, or `mixed` for
+a turn whose requests span the boundary — and the name comes from the same per-request
+timestamps as the cost (`summariseTurn` in `lib/pricing.ts`). Naming it from the clock at
+print time is a different clock: a turn that crossed a boundary was labelled by whichever
+side it finished on, over money computed request by request.
+
 **The defaults are stated, not implied.** moat runs `deepseek-flash` at `high`
 reasoning. Both are DeepSeek's own defaults, so this is not moat imposing an
 opinion; it is moat saying which model it will use rather than leaving it to

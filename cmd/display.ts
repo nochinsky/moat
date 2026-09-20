@@ -486,7 +486,8 @@ export type TurnSummary = {
   reasoningTokens: number
   usd: number
   costKnown: boolean
-  peak: boolean
+  /** The rate these requests were billed at; "mixed" when the turn crossed the boundary. */
+  rate: "peak" | "off-peak" | "mixed"
   tools: number
   failed: number
   ms: number
@@ -527,7 +528,7 @@ export function turnSummaryLine(summary: TurnSummary, theme: Theme): string {
   if (summary.failed > 0) parts.push(theme.red(`${summary.failed} failed`))
   parts.push(formatDuration(summary.ms))
 
-  const right = summary.costKnown ? `${money(summary.usd)} ${theme.dim(summary.peak ? "peak" : "off-peak")}` : "cost unknown"
+  const right = summary.costKnown ? `${money(summary.usd)} ${theme.dim(summary.rate)}` : "cost unknown"
 
   const line = `  ${theme.dim("\u2500")} ${theme.dim(parts.join(" \u00b7 "))}`
 
