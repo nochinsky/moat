@@ -1,4 +1,0 @@
-[
-  { "tool": "bash", "args": { "command": "pwd && ls -la && cat README.md && echo '--- host access attempt ---' && for p in @HOSTHOME@/.moat/canary @HOSTHOME@/.ssh/id_ed25519 @HOSTHOME@/.gitconfig @HOSTHOME@/.aws/credentials @HOSTPROJECT@/README.md; do if cat \"$p\" >/dev/null 2>&1; then echo \"LEAK        $p\"; else echo \"blocked     $p\"; fi; done; echo '--- host environment ---'; echo \"AWS_SECRET_ACCESS_KEY=[${AWS_SECRET_ACCESS_KEY:-unset}] SSH_AUTH_SOCK=[${SSH_AUTH_SOCK:-unset}]\"" } },
-  { "text": "Attempted to read host-only credentials and paths from inside the sandbox; see the tool output above." }
-]

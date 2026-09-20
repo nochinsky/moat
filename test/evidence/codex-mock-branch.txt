@@ -1,5 +1,0 @@
---- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c git -C /work log --oneline -1
---- exit 0
---- stdout ---
-a7cafaa mock: add MOCK-CODEX.txt
---- stderr ---

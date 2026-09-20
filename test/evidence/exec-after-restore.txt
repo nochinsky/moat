@@ -2,12 +2,11 @@
 --- exit 0
 --- stdout ---
 in-sandbox /opt after restore:
-moat-marker
 --- /work preserved? ---
-README.md
-agent-output.txt
-greet.sh
-notes.txt
+package.json
+src
+test
 --- agent commit still present? ---
-994251a agent: add agent-output.txt from inside the sandbox
+fa33689 initial project
 --- stderr ---
+! the egress allowlist could not resolve: not, a, host; the box will not reach them

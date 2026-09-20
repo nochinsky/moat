@@ -1,0 +1,60 @@
+
+--- $ node /home/user/Projects/moat/cmd/main.ts status --json
+--- exit 0
+--- stdout ---
+{
+  "version": 1,
+  "id": "16a525996d67",
+  "projectDir": "/home/user/moat-demo/egress-project",
+  "createdAt": "2026-09-20T14:44:10.772Z",
+  "lastUpAt": "2026-09-20T14:44:10.929Z",
+  "status": "running",
+  "alpineVersion": "3.21.4",
+  "model": "deepseek/deepseek-flash",
+  "provider": "deepseek",
+  "providerBaseUrl": "https://api.deepseek.com",
+  "branch": "moat-session-2026-09-20-14-44",
+  "baseBranch": "main",
+  "profiles": [],
+  "pid": 65277,
+  "pidStart": "309672",
+  "egress": "isolated",
+  "egressAllow": [],
+  "slirpPid": 65299,
+  "slirpStart": "309674",
+  "baselineDigest": "a6e0969b405179d93138af8bad320ad97cd990c49c894ad9af73f8b724d391b8",
+  "baselineHostState": "git:d57d7149b062cd9bacb1c029d770f59ba0694668:6e340b9cffb37a98",
+  "baselineCommit": "a15ddb13c2dc3b96d1263aa2f4e2109b52a66344",
+  "credential": {
+    "provider": "deepseek",
+    "fingerprint": "sha256:34c4e933b47c1fb3",
+    "mintedAt": "2026-09-20T14:44:10.881Z",
+    "expiresAt": "2026-09-20T18:44:10.881Z"
+  },
+  "snapshots": [
+    "baseline"
+  ],
+  "lastBootMs": 27,
+  "envDir": "/home/user/.moat/envs/16a525996d67",
+  "rootfsDir": "/home/user/.moat/envs/16a525996d67/rootfs",
+  "running": true,
+  "booting": null,
+  "rootfsBytes": 313157902,
+  "sandboxBranches": [
+    {
+      "name": "main",
+      "sha": "d57d7149b062cd9bacb1c029d770f59ba0694668",
+      "subject": "egress fixture",
+      "committedAt": "2026-09-20T16:44:09+02:00",
+      "current": false
+    },
+    {
+      "name": "moat-session-2026-09-20-14-44",
+      "sha": "d57d7149b062cd9bacb1c029d770f59ba0694668",
+      "subject": "egress fixture",
+      "committedAt": "2026-09-20T16:44:09+02:00",
+      "current": true
+    }
+  ]
+}
+--- stderr ---

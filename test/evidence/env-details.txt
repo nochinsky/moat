@@ -1,9 +1,0 @@
---- $ node /home/user/Projects/moat/cmd/main.ts env
---- exit 0
---- stdout ---
---- stderr ---
-url           http://127.0.0.1:37817
-username      opencode
-password      GJMGyN_lcTTrsRLLKbJPI3I7iDpEiGbJ
-directory     /work
-authorization Basic b3BlbmNvZGU6R0pNR3lOX2xjVFRyc1JMTEtiSlBJM0k3aURwRWlHYko=

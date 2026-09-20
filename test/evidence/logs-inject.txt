@@ -1,4 +1,0 @@
---- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c printf 'LOG-INJECT \033]0;pwned-log\007 end\n' >> /var/log/moat/boot.log
---- exit 0
---- stdout ---
---- stderr ---

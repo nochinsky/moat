@@ -77,7 +77,6 @@ test("an environment whose state.json is gone is rebuilt from its rootfs", async
   // run), and a version the rootfs does not state.
   assert.equal(state.credential, null)
   assert.equal(state.baselineHostState, null)
-  assert.equal(state.opencodeVersion, "unknown")
 
   // And the work itself is untouched by the reading.
   assert.equal(git(fixture.work, "rev-parse", "HEAD").trim(), fixture.agentHead)

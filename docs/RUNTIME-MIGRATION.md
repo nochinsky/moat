@@ -1,79 +1,79 @@
-# Removing opencode: what it costs, and what has to happen first
+# The opencode runtime: what it was, and where its claims went
 
-State: Codex is the default runtime, opencode is selectable with `--runtime opencode`. Two
-runtimes is debt — two configs, two session models, two suites, a bigger image — and this is
-the checklist for ending it without breaking the product on the way.
+moat used to ship two runtimes: **opencode** — a server inside the box, driven over HTTP —
+and **Codex**, a CLI. Two runtimes meant two configs, two session models, two acceptance
+lists and a bigger image, and the server shape was the source of most of moat's incidental
+complexity. opencode is deleted. This file is the record: what it was, why it went, and where
+each of its claims lives now.
 
-## What is already true
+## What it was
 
-* Codex is pinned and digest-verified, installed per image, configured by moat on every boot,
-  and covered keylessly (extras section AK drives a scripted turn through
-  `test/mock-responses.mjs`, whose event shapes were captured from a real DeepSeek stream, then
-  fetches the commit it produced) and live (live suite section 7).
-* The sandbox, credential, copy-out and egress layers are runtime-agnostic; their suites do not
-  care which runtime produced the work, and all three batteries are green.
-* **The acceptance list exists for Codex**: `test/e2e-codex.sh`, 45 checks, keyless, including the
-  loop that matters (a mocked turn fixes a failing test, `moat verify` passes, `moat fetch`
-  writes one ref with the host tree byte-identical).
-* **The brief reaches the model under Codex**: moat renders its usual brief into
-  `/root/.codex/AGENTS.md` on every boot, and extras AK checks both ends — the file in the box
-  and the text in the provider's request body (measured through the Responses stub, which
-  records the raw body). That is what makes `bundle/render.ts` + the opencode bundle removable
-  without the agent losing its instructions.
-* **The interactive surface works**: `test/codex-tui.py` (extras AL) drives `moat` through a
-  real pty and requires the TUI to be reached, drawn, alive, and to leave the box running.
-* **Nothing is silently dropped**: `--effort` is refused rather than ignored, and the two
-  criteria that only exist because opencode serves a session are named in `test/e2e-codex.sh`
-  with what stands in for them.
+* `opencode serve --port N --hostname 127.0.0.1` ran inside the box as the agent's loop and
+  tool dispatcher; the host was a client of that server (`cmd/client.ts`), and `moat attach`
+  and `moat` opened moat's own interactive session (`cmd/repl.ts`, `cmd/display.ts`) against
+  the server's event stream.
+* Policy lived in a rendered `opencode.json` (`bundle/render.ts`) plus an in-box ESM plugin
+  (`bundle/plugin/moat-bundle.mjs`) that refused tools outside a curated set, confined
+  `write`/`edit`/`apply_patch` to the workspace, and recorded an audit log at
+  `/var/log/moat/tools.jsonl`.
+* `moat tools` printed the curated set, the registry, and the measured gap between them;
+  `moat env` printed the server's URL, user and password.
+* The image carried `opencode-ai@1.18.31` (musl). Both binaries were pinned and
+  digest-verified in `lib/pins.ts`.
 
-## What deleting opencode removes — say it out loud
+## Why it went
 
-1. `cmd/client.ts` (~650 lines) and `cmd/repl.ts` (~1220 lines): the HTTP session client and the
-   interactive session. Codex's TUI replaces the REPL, and `moat attach`, `/diff`, `/verify`,
-   `/model`, `/think`, `/sessions`, `/share` and the pty suites go with it.
-2. `sandbox/serve.ts`, `bundle/render.ts` and the in-box plugin: the opencode server entry, the
-   rendered opencode config, and the guard that asserts `permission: {"*": "allow"}`. Invariant 3
-   is written as an opencode *mechanism*; the equivalent guarantee under Codex is the
-   moat-rendered `approval_policy = "never"` + `sandbox_mode = "danger-full-access"`, which
-   `test/unit/codex-runtime.test.ts` and extras AJ already hold.
-3. `moat tools` and `moat env` (both already refuse on a codex environment): they become
-   codex-facing commands or they are deleted, not quietly kept as stubs.
-4. `--effort`/reasoning variants: Codex has `model_reasoning_effort`, but it sends the setting
-   only for models it has metadata for, and it has none for DeepSeek's (measured: the value
-   never reached the wire). The flag is therefore *refused* under the codex runtime rather
-   than ignored, and `bundle/codex.ts` renders a stored effort only for the levels Codex
-   accepts. Making it work needs model metadata Codex does not have; until then the honest
-   state is a refusal.
-5. The acceptance suite's **driver**: `test/e2e.sh` drives opencode through `moat attach` and the
-   chat-completions stub. Its criteria are the product's acceptance list, so they get *ported* to
-   Codex plus the Responses stub, not deleted.
-6. `test/mock-model.mjs`, the opencode pins, `ensureOpencodeBinary`, and the chat-completions
-   scripts, once nothing speaks chat completions.
+* **The box, not the server, is the product.** Everything moat actually guarantees —
+  namespaces, copy-in and copy-out, the credential rule, egress — is independent of which
+  program runs the agent loop.
+* **The curation was never complete.** opencode 1.18.31 had no supported way to remove a
+  built-in tool from the model-facing list; the plugin could refuse a call but not hide it,
+  so the "curated set" requirement was met in behaviour and not in advertisement. Under Codex
+  the same requirement is simply not attempted, and the docs say so.
+* **The interactive surface was a reimplementation.** moat owned the transcript, the input
+  line, `/model`, `/think`, `/undo`, `/compact` and the rendering, all of it code that had to
+  track a fast-moving upstream.
+* **Cost.** A turn on Codex uses more tokens and more money than the same turn did on
+  opencode, because Codex carries a larger harness prompt. The measurement is in
+  `docs/RUNTIME-COST.md`; the trade was made deliberately.
 
-## The order that keeps every suite green
+## Where things moved
 
-1. **Done: `test/e2e-codex.sh` is that port.** 45 checks, keyless, asserting the criteria
-   that do not depend on opencode's server: cold start, the doctor's isolation list, a mocked
-   turn that fixes the fixture with `moat verify` passing, host paths and the canary
-   unreachable, one ref from `moat fetch` with the host tree byte-identical, the credential
-   absent from the rootfs, and persistence across down/up. The two criteria that only exist
-   because of the server are named at the top of that file with what stands in for them. What
-   is left is to retire the equivalents in `test/e2e.sh` when opencode goes.
-2. Port or drop the extras sections that are opencode-specific (the pty REPL suites, tools,
-   plugin guard, effort).
-3. Then delete, in this order: the plural runtime plumbing (`--runtime`, `RUNTIMES`,
-   `RUNTIME_BINARY`); `cmd/repl.ts`, `cmd/client.ts`, `sandbox/serve.ts`, `bundle/render.ts` and
-   the plugin; the opencode install and pins; `test/mock-model.mjs`; the `--runtime opencode`
-   pins the suites currently carry.
-4. Update the docs last: SPEC §2.2b and §6b.5, the AGENTS opencode traps, and VERIFICATION —
-   deleting the sections whose subject no longer exists (session display, tool curation, the
-   plugin guard, effort variants) and updating the closing table.
+| opencode-era thing | now |
+| --- | --- |
+| `opencode serve`, `cmd/client.ts`, the HTTP session | gone; `codex exec --json` for a turn, Codex's own TUI for a session |
+| `cmd/repl.ts`, `cmd/display.ts`, `moat attach`, `/diff`, `/verify`, `/model`, `/think` | gone; the TUI is Codex's, on the terminal moat inherited |
+| `bundle/render.ts`, `opencode.json`, `permission: {"*": "allow"}` | `bundle/codex.ts`: `approval_policy = "never"`, `sandbox_mode = "danger-full-access"` |
+| `bundle/plugin/moat-bundle.mjs` (tool curation, write confinement, audit log) | gone; the tool list is the CLI's, and the box is the bound |
+| `--tools`, `--effort`, `moat tools`, `moat env`, `--port`, `--runtime` | gone; a flag that cannot do anything is refused, not accepted |
+| the literal-key check in `bundle/install.ts` | `installCodexFiles` in `bundle/codex.ts`, same refusal |
+| `test/e2e.sh`, `test/mock-model.mjs`, the chat-completions fixtures | `test/e2e-codex.sh`, `test/mock-responses.mjs` (Responses wire) |
+| `test/repl-*.py`, `test/wire-effort.py`, `test/inspect-tool-schemas.mts` | gone; `test/codex-tui.py` is the pty check |
+| `/var/log/moat/tools.jsonl`, `exposure.json`, `permissions.jsonl` | gone; the `codex exec --json` stream is the record of what a turn ran |
 
-## What must not be lost
+The unit tests that pinned the plugin, the bundle renderer, the effort variants and the
+session display were deleted with their subjects. The ones that pin the runtime
+(`test/unit/codex-runtime.test.ts`, `runtime-image.test.ts`, `runtime-install.test.ts`,
+`interactive-term.test.ts`) stayed.
 
-* `moat fetch` / `moat apply` / `moat verify` / `moat take` and their tests. The loop is the
-  product.
-* The credential rules (env only, never in the image, scanned on the way out) and the egress
-  policy.
-* The measured facts: `docs/RUNTIME-COST.md` says what each runtime costs, and it stays true
-  even after one of them is gone.
+## What this cost, and what it did not
+
+The image no longer carries a Node runtime for the agent, the box no longer listens on a
+port, and no host port forward exists in either direction. The agent's tool list is no longer
+moat's to choose. What did **not** change: the mount table and the six device binds, the
+credential rule (environment only, never in the image, scanned on the way out), copy-in by
+`git clone --no-hardlinks`, copy-out through `moat fetch` and `moat apply`, the egress
+policy, and `moat verify` / `moat take`.
+
+## Where the old claims went in the docs
+
+* `docs/SPEC.md` — §1.2 (what the box does not protect), §2.2b (one runtime, the config
+  moat renders), §2.3 (no server, nothing to wait for), §2.4 (the command table), §6 (what
+  moat does *not* control), §6b.5 (the interactive surface), §6b.7 (questions), §7.3 (no
+  forward), §9 and §10.
+* `docs/VERIFICATION.md` — the criteria that existed only because of the server were
+  deleted; the runtime sections quote `test/evidence/codex-*.txt` and `extras.txt`; the
+  closing "Not verified" table names the limits that replaced them.
+* `README.md` and `AGENTS.md` — the command list, the invariants and the traps.
+
+This file replaces the migration checklist that used to live here. The checklist is done.

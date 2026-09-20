@@ -3,7 +3,7 @@ import { flag, type Parsed } from "./flags.ts"
 
 /** What the boot will talk to: DeepSeek, or an OpenAI-compatible endpoint. */
 export type ResolvedProvider = {
-  opencodeID: string
+  id: string
   label: string
   npm: string
   baseUrl: string
@@ -50,7 +50,7 @@ export function resolveProvider(p: Parsed, state?: ProviderState | null): Resolv
 
   if (custom) {
     return {
-      opencodeID: CUSTOM_ENDPOINT.opencodeID,
+      id: CUSTOM_ENDPOINT.id,
       label: CUSTOM_ENDPOINT.label,
       npm: CUSTOM_ENDPOINT.npm,
       baseUrl: tidy(custom),
@@ -63,9 +63,9 @@ export function resolveProvider(p: Parsed, state?: ProviderState | null): Resolv
   // No flag: an environment that was created against a custom endpoint keeps it.
   const recordedProvider = state?.provider
   const recordedBase = state?.providerBaseUrl
-  if (recordedProvider && recordedProvider !== DEEPSEEK.opencodeID && recordedBase) {
+  if (recordedProvider && recordedProvider !== DEEPSEEK.id && recordedBase) {
     return {
-      opencodeID: recordedProvider,
+      id: recordedProvider,
       label: CUSTOM_ENDPOINT.label,
       npm: CUSTOM_ENDPOINT.npm,
       baseUrl: tidy(recordedBase),
@@ -75,20 +75,20 @@ export function resolveProvider(p: Parsed, state?: ProviderState | null): Resolv
     }
   }
 
-  if (modelFlag === undefined && state?.model?.startsWith(`${DEEPSEEK.opencodeID}/`)) {
+  if (modelFlag === undefined && state?.model?.startsWith(`${DEEPSEEK.id}/`)) {
     // Same provider, so the environment's model is a better default than the built-in one.
     return {
-      opencodeID: DEEPSEEK.opencodeID,
+      id: DEEPSEEK.id,
       label: DEEPSEEK.label,
       npm: DEEPSEEK.npm,
       baseUrl: upstream ? tidy(upstream) : DEEPSEEK.baseUrl,
       upstream: upstream ? tidy(upstream) : undefined,
       native: true,
-      modelID: state.model.slice(DEEPSEEK.opencodeID.length + 1),
+      modelID: state.model.slice(DEEPSEEK.id.length + 1),
     }
   }
   return {
-    opencodeID: DEEPSEEK.opencodeID,
+    id: DEEPSEEK.id,
     label: DEEPSEEK.label,
     npm: DEEPSEEK.npm,
     baseUrl: upstream ? tidy(upstream) : DEEPSEEK.baseUrl,

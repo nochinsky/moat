@@ -1,5 +1,0 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --port 99999
---- exit 1
---- stdout ---
---- stderr ---
-✗ --port must be an integer between 1 and 65535

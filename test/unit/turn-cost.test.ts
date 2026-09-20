@@ -67,13 +67,17 @@ test("reasoning is billed at the output rate and cache reads at the cache rate",
   assert.equal(unknown.usd, 0)
 })
 
-test("the footer rate word comes from the turn, not from the clock at print time", () => {
-  // The wiring half: cmd/repl.ts must not decide the rate itself. It did
-  // (peak: describeRate() === "peak"), which is the bug the tests above pin.
+test("no print site decides the rate from the clock", () => {
+  // The wiring half. The bug was a print-site clock: cmd/repl.ts asked "is it peak now?" while
+  // the money came from each request's own time, so a turn crossing the boundary was named by
+  // whichever side it finished on. `isPeak` belongs to lib/pricing.ts; a caller reads the
+  // answer off the priced usage.
   const here = path.dirname(fileURLToPath(import.meta.url))
-  const source = fs.readFileSync(path.join(here, "..", "..", "cmd", "repl.ts"), "utf8")
-  const offenders = source
-    .split("\n")
-    .flatMap((line, index) => (/describeRate/.test(line) ? [index + 1] : []))
-  assert.deepEqual(offenders, [], "the rate label is summariseTurn's answer, not the REPL's")
+  for (const file of ["cmd/main.ts", "bundle/codex.ts"]) {
+    const source = fs.readFileSync(path.join(here, "..", "..", ...file.split("/")), "utf8")
+    const offenders = source
+      .split("\n")
+      .flatMap((line, index) => (/isPeak\s*\(/.test(line) ? [index + 1] : []))
+    assert.deepEqual(offenders, [], `${file} must not ask the clock for the rate`)
+  }
 })

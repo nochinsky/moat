@@ -1,7 +1,0 @@
---- $ node /home/user/Projects/moat/cmd/main.ts logs sandbox --tail 3
---- exit 0
---- stdout ---
---- stderr ---
-[moat] agent exited with status 143
-LOG-INJECT  end
-

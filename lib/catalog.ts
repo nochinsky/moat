@@ -7,8 +7,8 @@ import * as log from "./log.ts"
 /**
  * The models.dev catalog, cached on the host.
  *
- * opencode is built on this dataset, so moat can use it for three things without
- * guessing:
+ * It is the dataset the runtime ecosystem is built on, so moat can use it for three things
+ * without guessing:
  *
  *  1. deciding whether a provider is *native* (models.dev describes it, so moat
  *     writes no provider block and inherits accurate context/output limits and

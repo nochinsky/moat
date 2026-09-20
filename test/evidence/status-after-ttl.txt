@@ -5,11 +5,11 @@
 project      /home/user/moat-demo/project
 env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
-opencode     1.18.31 / alpine 3.21.4
+codex        0.155.1 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-20-14-08
-egress       open (host network namespace)
-rootfs       382.5 MiB
-credential   moat sha256:7726b438889c7f57 expires in -10s (EXPIRED, the sandbox watchdog stops the agent)
+branch       moat-session-2026-09-20-14-46
+egress       filtered (own network namespace, default-deny allowlist)
+rootfs       400.1 MiB
+credential   moat sha256:7726b438889c7f57 expires in -7s (EXPIRED — the box stops at this deadline)
 snapshots    before-extras, baseline
-branches     main, moat-session-2026-09-20-14-06, moat-session-2026-09-20-14-07, moat-session-2026-09-20-14-08*
+branches     main, moat-session-2026-09-20-14-46*

@@ -1,26 +1,25 @@
 
---- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --egress isolated
+--- $ node /home/user/Projects/moat/cmd/main.ts up --egress isolated
 --- exit 0
 --- stdout ---
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
-→ provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
-→ provisioning from the cached image alpine-3.21.4-db69c015961d.tar.gz
-✓ image provisioned in 1.01s (extract cached image 854ms)
+→ provisioning sandbox image (alpine 3.21.4 + codex 0.155.1)
+→ provisioning from the cached image alpine-3.21.4-5fcd2d224a5c.tar.gz
+✓ image provisioned in 1.46s (extract cached image 1.25s)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest a6e0969b405179d9
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and send it anywhere: its namespace is isolated from yours, its egress is not filtered. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-14-15
-→ sandbox booted (pid 23101, port 46073); waiting for opencode serve
-✓ sandbox up, cold start 13.58s (image built)
+agent branch: moat-session-2026-09-20-14-44
+→ sandbox booted (pid 65277); the codex runtime has no server to wait for
+✓ sandbox up, cold start 1.64s (image built)
 
   project    /home/user/moat-demo/egress-project
   env        /home/user/.moat/envs/16a525996d67
-  opencode   http://127.0.0.1:46073  (basic auth user "opencode")
-  password   kBVt9_mpQqWc8R8AaAYci0e-a617m_FW
+  runtime    codex (deepseek/deepseek-flash) — `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T18:15:12.498Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T18:44:10.881Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

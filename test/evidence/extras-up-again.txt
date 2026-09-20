@@ -1,22 +1,26 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- $ node /home/user/Projects/moat/cmd/main.ts up --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
 --- stderr ---
-no project manifest found; booting with the base image only (see `moat profiles`)
+detected: package.json -> node
+          adding profile(s) node; use --no-detect or --profile to override
 profiles: everything requested is already installed
-copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+! the host project has changed since it was copied in, and the sandbox holds nothing that is not already on the host. Re-copying it now.
+→ copy-in: git clone --no-hardlinks
+✓ copy-in via git: 3 files, 0.3 KiB, digest ed2e86797199e208
 model: moat/mock-model
-! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-14-08
-→ sandbox booted (pid 14050, port 37817); waiting for opencode serve
-✓ sandbox up, warm start 1.70s (image reused)
+! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-20-14-46
+checks: npm run test
+! the egress allowlist could not resolve: not, a, host; the box will not reach them
+→ sandbox booted (pid 69471); the codex runtime has no server to wait for
+✓ sandbox up, warm start 1.03s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:37817  (basic auth user "opencode")
-  password   GJMGyN_lcTTrsRLLKbJPI3I7iDpEiGbJ
+  runtime    codex (moat/mock-model) — `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-20T18:08:18.736Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-20T18:46:54.975Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

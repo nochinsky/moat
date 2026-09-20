@@ -59,9 +59,9 @@ slirp_gone() {
 say "=============================================================="
 say "== egress policy: an isolated network namespace"
 say "=============================================================="
-say "the sandbox gets its own netns and the pinned slirp4netns datapath; the host"
-say "reaches opencode through an explicit port forward, and the host's loopback is"
-say "closed on both routes (127.0.0.1 inside the namespace and slirp's 10.0.2.2)."
+say "the sandbox gets its own netns and the pinned slirp4netns datapath, with nothing"
+say "forwarded in: the host's loopback is closed on both routes (127.0.0.1 inside the"
+say "namespace and slirp's 10.0.2.2 gateway), and the box has no host-facing server."
 
 # A host service on loopback, reachable only if the gateway is left open.
 python3 -m http.server "$HOSTPORT" --bind 127.0.0.1 >/dev/null 2>&1 &
@@ -80,7 +80,7 @@ git commit -qm "egress fixture"
 
 say ""
 say "--- boot isolated ---"
-capture up $M up --runtime opencode --egress isolated
+capture up $M up --egress isolated
 check "the box booted with isolated egress" "sandbox up" "$EVIDENCE/up.txt"
 
 capture status $M status
@@ -88,13 +88,16 @@ check "status reports running"            "status       running"  "$EVIDENCE/sta
 check "status reports isolated egress"    "egress       isolated" "$EVIDENCE/status.txt"
 
 say ""
-say "--- the host reaches the sandbox server only through slirp's forward ---"
-capture env $M env --json
-URL=$(python3 -c "import json;print(json.load(open('$EVIDENCE/env.out'))['url'])")
-PASSWORD=$(python3 -c "import json;print(json.load(open('$EVIDENCE/env.out'))['password'])")
-CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -u "opencode:$PASSWORD" "$URL/config")
-say "  GET $URL/config with basic auth -> HTTP $CODE"
-if [ "$CODE" = "200" ]; then say "  pass  the port forward works"; else say "  FAIL  the port forward works ($CODE)"; FAIL=1; fi
+say "--- there is no server in the box for the host to reach ---"
+# The port forward existed to reach the in-box agent server. There is no server now, and the
+# honest form of that claim is a check that nothing advertises an endpoint: if a url or a port
+# comes back to status, this fails.
+capture status-json $M status --json
+if python3 -c "import json,sys; d=json.load(open('$EVIDENCE/status-json.out')); sys.exit(0 if 'url' not in d and 'port' not in d else 1)"; then
+  say "  pass  status records no endpoint, so the host has nothing to reach"
+else
+  say "  FAIL  status still advertises an endpoint"; FAIL=1
+fi
 
 say ""
 say "--- outbound still works, the host's loopback does not ---"
@@ -122,7 +125,7 @@ else
   FAIL=1
 fi
 
-capture up-filtered $M up --runtime opencode --egress filtered
+capture up-filtered $M up --egress filtered
 check "the box booted with filtered egress" "sandbox up" "$EVIDENCE/up-filtered.txt"
 
 capture status-filtered $M status
@@ -197,7 +200,7 @@ echo "# default" > README.md
 git add -A
 git commit -qm "default fixture"
 
-capture up-default $M up --runtime opencode
+capture up-default $M up
 check "a fresh environment boots filtered by default" "sandbox up" "$EVIDENCE/up-default.txt"
 capture status-default $M status
 check "the default policy is reported as filtered" "egress       filtered" "$EVIDENCE/status-default.txt"
@@ -217,7 +220,7 @@ say "--- a filtered boot refuses to start when the provider does not resolve ---
 say "the allowlist is built from the provider host. If that name resolves to"
 say "nothing, a boot would leave a box with no way to reach the model; it fails"
 say "instead, naming the host and the way out."
-capture up-nxdomain $M up --runtime opencode --base-url "https://nxdomain-$RANDOM.invalid/v1"
+capture up-nxdomain $M up --base-url "https://nxdomain-$RANDOM.invalid/v1"
 check "an unresolvable provider fails the boot" "could not resolve" "$EVIDENCE/up-nxdomain.txt"
 capture destroy-nxdomain $M destroy --yes
 

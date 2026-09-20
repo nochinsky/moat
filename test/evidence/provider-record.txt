@@ -1,4 +1,0 @@
-inference requests observed : 6
-authorization header        : ['Bearer moat-e2e-scoped-credential-8c1d4e']
-advertised tool list        : ['bash', 'edit', 'glob', 'grep', 'question', 'read', 'skill', 'task', 'todowrite', 'webfetch', 'write']
-scripted steps executed     : [(0, 'bash'), (1, 'write'), (2, 'edit'), (3, 'bash'), (4, 'bash'), (5, 'text')]

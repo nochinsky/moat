@@ -90,7 +90,7 @@ export async function verifyKey(key: string): Promise<VerifyResult> {
 }
 
 /** Save the key where the broker looks, mode 0600, without disturbing anything else. */
-export function saveCredential(key: string, provider = DEEPSEEK.opencodeID): string {
+export function saveCredential(key: string, provider = DEEPSEEK.id): string {
   const file = credentialsFile()
   ensureMoatHome()
   let store: Record<string, { value: string; baseUrl?: string; model?: string }> = {}

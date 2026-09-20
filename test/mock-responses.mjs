@@ -154,6 +154,10 @@ const server = http.createServer((req, res) => {
         const parsed = JSON.parse(text)
         summary = {
           url: req.url,
+          // What the provider actually received as authentication. A box booted with
+          // --no-credential must send none, and that is a fact about the request, not about
+          // moat's account of it.
+          authorization: req.headers.authorization ?? null,
           model: parsed.model,
           reasoning: parsed.reasoning ?? null,
           toolChoice: parsed.tool_choice ?? null,

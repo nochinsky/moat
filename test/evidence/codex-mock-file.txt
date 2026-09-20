@@ -1,5 +1,0 @@
---- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c cat /work/MOCK-CODEX.txt
---- exit 0
---- stdout ---
-hello from mock codex
---- stderr ---

@@ -322,7 +322,7 @@ export function sandboxEnv(extra: SandboxEnv = {}): NodeJS.ProcessEnv {
  * Escape hatch for experiments: extra KEY=VALUE pairs for the sandbox
  * environment, from MOAT_SANDBOX_ENV.
  *
- * Names are restricted to the OPENCODE_/MOAT_ prefixes so this cannot become a
+ * Names are restricted to moat's own MOAT_ prefix so this cannot become a
  * channel that forwards host environment into the box, and names moat manages
  * itself are refused. The reserved list matters: this map used to be spread
  * *after* the credential and the server password, so an ambient MOAT_ variable
@@ -338,8 +338,8 @@ export function extraSandboxEnv(
     const index = pair.indexOf("=")
     if (index === -1) continue
     const key = pair.slice(0, index)
-    if (!/^(OPENCODE_|MOAT_)/.test(key)) {
-      log.warn(`ignoring MOAT_SANDBOX_ENV entry ${key}: only OPENCODE_/MOAT_ prefixed names may enter the sandbox`)
+    if (!/^MOAT_/.test(key)) {
+      log.warn(`ignoring MOAT_SANDBOX_ENV entry ${key}: only MOAT_ prefixed names may enter the sandbox`)
       continue
     }
     if (reserved.includes(key)) {
@@ -428,8 +428,6 @@ export type SandboxRunOptions = {
   onOutput?: (chunk: string) => void
   timeoutMs?: number
   egress?: EgressMode
-  /** Host port to forward into the namespace; only needed for a server. */
-  port?: number
   /** Path to the slirp4netns binary; required when egress is isolated. */
   slirpBinary?: string
   /** Path inside the sandbox of the nftables ruleset; required when filtered. */
@@ -456,10 +454,7 @@ export async function runInSandbox(
       const egress = await import("./egress.ts")
       const ready = child.pid ? await waitForNewNetns(child.pid) : false
       if (!ready) throw new Error("the sandbox did not enter its network namespace")
-      const runtime = path.join(p.dir, "runtime")
-      fs.mkdirSync(runtime, { recursive: true })
-      const apiSocket = path.join(runtime, `slirp-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sock`)
-      slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { apiSocket, port: opts.port })
+      slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
     }
   } catch (error) {
     child.kill("SIGKILL")
@@ -530,10 +525,7 @@ export async function runInteractive(
       const egress = await import("./egress.ts")
       const ready = child.pid ? await waitForNewNetns(child.pid) : false
       if (!ready) throw new Error("the sandbox did not enter its network namespace")
-      const runtime = path.join(p.dir, "runtime")
-      fs.mkdirSync(runtime, { recursive: true })
-      const apiSocket = path.join(runtime, `slirp-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sock`)
-      slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { apiSocket, port: opts.port })
+      slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
     }
   } catch (error) {
     child.kill("SIGKILL")
@@ -563,7 +555,6 @@ export type SandboxProcess = {
 
 export type SandboxStartOptions = {
   egress?: EgressMode
-  port?: number
   /** Path to the slirp4netns binary; required when egress is isolated. */
   slirpBinary?: string
   /** Path inside the sandbox of the nftables ruleset; required when filtered. */
@@ -610,12 +601,7 @@ export async function startSandbox(
       child.kill("SIGKILL")
       throw new Error("the sandbox did not enter its network namespace")
     }
-    fs.mkdirSync(path.join(p.dir, "runtime"), { recursive: true })
     const handle = await egress.startSlirp(opts.slirpBinary!, child.pid, {
-      // Unique per boot, like the boot scripts: a fixed name made a restart
-      // reuse the previous slirp's dead socket.
-      apiSocket: path.join(p.dir, "runtime", `slirp-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sock`),
-      port: opts.port,
       logFile: path.join(p.logs, "slirp.log"),
     })
     slirp = { pid: handle.pid, startTime: processStartTime(handle.pid) }
@@ -628,7 +614,7 @@ export async function startSandbox(
  * Stop a sandbox by killing its whole process group.
  *
  * The group is created by `detached: true`, so a single negative-pid signal
- * reaches unshare, the boot script and opencode together; `--kill-child` on
+ * reaches unshare and the boot script together; `--kill-child` on
  * unshare then guarantees the PID-namespace init cannot outlive it.
  */
 export type StopSandboxOptions = {

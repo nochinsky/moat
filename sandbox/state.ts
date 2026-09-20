@@ -3,7 +3,6 @@ import path from "node:path"
 
 import { ENV_ID, envPathsForId, envsDir, partPath, type EnvPaths } from "../lib/paths.ts"
 import type { EgressMode } from "../lib/pins.ts"
-import { DEEPSEEK } from "../lib/provider.ts"
 
 export type EnvStatus = "provisioning" | "stopped" | "running"
 
@@ -22,36 +21,13 @@ export type EnvState = {
   createdAt: string
   lastUpAt: string | null
   status: EnvStatus
-  opencodeVersion: string
   alpineVersion: string
-  /** TCP port the in-sandbox `opencode serve` is listening on (shared host netns in v0). */
-  port: number | null
-  /** The full `provider/model` string opencode was given. */
+  /** The `provider/model` string the agent was given. */
   model: string | null
-  /**
-   * Reasoning effort for that model (`off`, `low`, `high`, `max`), or null for
-   * the built-in default.
-   *
-   * This is opencode's "variant": sent as `reasoning_effort` on the request, or
-   * as `thinking: {type: disabled}` for `off`. Not every model accepts every
-   * level, so it is stored per environment next to the model it was chosen for,
-   * and it is checked against that model's levels before it is sent.
-   */
-  effort: string | null
-  /** Named opencode agent the session defaults to (`build`, `plan`, …), if chosen. */
-  agent: string | null
-  /** The provider's short id (`zai`, `deepseek`, `openai`, …). */
+  /** The provider's short id (`deepseek`, `local`, …). */
   provider: string | null
   /** Host-visible base URL of the injected provider (no credential in it). */
   providerBaseUrl: string | null
-  /**
-   * The agent runtime this environment was created with.
-   *
-   * Absent means `opencode`, which is every environment made before the field existed. It
-   * decides what `moat` opens and how a task is driven, so it is recorded rather than
-   * inferred from what happens to be installed.
-   */
-  runtime?: "opencode" | "codex"
   /** Branch the agent was told to commit to. */
   branch: string | null
   /** The branch that was checked out when the agent's branch was created. */
@@ -87,7 +63,7 @@ export type EnvState = {
   lastBootMs: number | null
 }
 
-export function initialState(p: EnvPaths, versions: { opencode: string; alpine: string }): EnvState {
+export function initialState(p: EnvPaths, versions: { alpine: string }): EnvState {
   return {
     version: 1,
     id: p.id,
@@ -95,12 +71,8 @@ export function initialState(p: EnvPaths, versions: { opencode: string; alpine: 
     createdAt: new Date().toISOString(),
     lastUpAt: null,
     status: "stopped",
-    opencodeVersion: versions.opencode,
     alpineVersion: versions.alpine,
-    port: null,
     model: null,
-    effort: DEEPSEEK.defaultEffort,
-    agent: null,
     provider: null,
     providerBaseUrl: null,
     branch: null,
@@ -149,11 +121,11 @@ export type RecoveredStateFields = {
  * baseline is *not* invented (so the drift check says it cannot run rather
  * than comparing against a baseline that was never recorded), and the
  * versions are only filled in from the rootfs when the rootfs still says.
- * Everything the next boot learns — port, model, egress, profiles, the new
- * branch — overwrites the placeholder before it is persisted.
+ * Everything the next boot learns — model, egress, profiles, the new branch —
+ * overwrites the placeholder before it is persisted.
  */
 export function recoveredState(p: EnvPaths, fields: RecoveredStateFields): EnvState {
-  const state = initialState(p, { opencode: "unknown", alpine: fields.alpineVersion ?? "unknown" })
+  const state = initialState(p, { alpine: fields.alpineVersion ?? "unknown" })
   if (fields.createdAt) state.createdAt = fields.createdAt
   state.branch = fields.branch
   state.baselineCommit = fields.baselineCommit
@@ -165,11 +137,7 @@ export function readState(p: EnvPaths): EnvState | null {
   try {
     const raw = JSON.parse(fs.readFileSync(p.state, "utf8")) as EnvState
     // Environments written before these fields existed are otherwise valid; fill
-    // them in rather than making every reader defend against undefined. An
-    // environment with no recorded effort gets the default rather than "unset",
-    // so it behaves the same as one created today.
-    if (raw.effort === undefined) raw.effort = DEEPSEEK.defaultEffort
-    if (raw.agent === undefined) raw.agent = null
+    // them in rather than making every reader defend against undefined.
     if (raw.pidStart === undefined) raw.pidStart = null
     if (raw.egress === undefined) raw.egress = "open"
     if (raw.egressAllow === undefined) raw.egressAllow = []
@@ -198,30 +166,16 @@ export function envExists(p: EnvPaths): boolean {
 /**
  * Has the injected credential's TTL elapsed?
  *
- * The in-sandbox watchdog stops the agent, but the host is the party that must
- * refuse to keep driving: a box whose credential is dead cannot serve a turn,
- * and silently trying produces a confusing provider error instead.
+ * The box stops itself at the deadline (the entry script sleeps to the credential's
+ * own expiry), but the host is the party that must refuse to keep driving: a box
+ * whose credential is dead cannot serve a turn, and silently trying produces a
+ * confusing provider error instead.
  */
 export function credentialExpired(state: EnvState, now = Date.now()): boolean {
   const expires = state.credential?.expiresAt
   if (!expires) return false
   const at = Date.parse(expires)
   return Number.isFinite(at) && at <= now
-}
-
-/** The per-boot server password lives outside the rootfs, readable only by the user. */
-export function passwordPath(p: EnvPaths): string {
-  return path.join(p.dir, "server-password")
-}
-
-export function writePassword(p: EnvPaths, password: string): void {
-  fs.mkdirSync(p.dir, { recursive: true })
-  fs.writeFileSync(passwordPath(p), `${password}\n`, { mode: 0o600 })
-}
-
-export function readPassword(p: EnvPaths): string | null {
-  const file = passwordPath(p)
-  return fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : null
 }
 
 /** Printed when an environment's recorded project directory is not usable. */

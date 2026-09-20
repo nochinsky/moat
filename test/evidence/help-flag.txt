@@ -13,9 +13,8 @@ Usage: moat <command> [options]
 
 That is the whole loop. Everything below exists but you should not need it.
 
-Attaching to a running box
+Working inside a running box
   moat run "<task>"      give it another task
-  moat attach            open a session against the running box (no boot)
   moat shell             a plain shell inside the sandbox
   moat exec -- <cmd>     run one command inside the sandbox
 
@@ -36,23 +35,14 @@ The environment
 
 Diagnostics
   moat doctor            host support, the in-sandbox isolation checks, the measured exposures
-  moat tools             the declared tools, and what opencode actually offers
-  moat env               connection details (url, password, auth header)
-  moat logs [sandbox|audit]
+  moat logs [sandbox]
   moat version
 
 Options that apply to up/run
   --model ID             DeepSeek model id; see: moat models
-  --effort LEVEL         reasoning effort: low, medium, high or max.
-                         Not every model takes every level; inside a session
-                         /model and /think show what the current one accepts.
   --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project
-  --tools core|extended  core = 8 coding tools (default); extended adds webfetch + subagents
-  --runtime NAME         codex (default) or opencode. Codex is a CLI: "moat" opens
-                         its TUI, and every task runs in the box. opencode is the
-                         older server-based runtime, kept while it is migrated away.
   --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek.
                          Must be an http:// or https:// URL with a host: a
                          scheme-less localhost:11434/v1 has no host to allow.
@@ -67,9 +57,8 @@ Options that apply to up/run
                          the host's loopback defaults to open instead, because the
                          box cannot reach it there.
   --egress-allow HOSTS   extra hosts the filtered allowlist permits, comma-separated
-  --timeout SECONDS      how long one turn may take (default 2700) and how long a
-                         boot waits for opencode serve (default 90). Seconds, always.
-  --continue             continue the last session instead of starting a new one
+  --timeout SECONDS      how long one turn may take (default 2700). Seconds, always.
+  --no-follow            run the task headless instead of opening Codex's TUI
   --show-output          print each tool's output as it runs
   --json                 machine-readable output on stdout
 

@@ -10,12 +10,7 @@ test("the doctor's probe mirrors the box's own credential state", () => {
   // "credential visible to the agent" for a box that deliberately had nothing stealable
   // in it — and for a custom endpoint it claimed DEEPSEEK_API_KEY, which that box never has.
   const keyless = doctorInjectedVarNames({ credential: false, native: true })
-  assert.deepEqual(keyless.sort(), [
-    "MOAT_MODEL",
-    "MOAT_MODEL_ID",
-    "MOAT_PROVIDER_BASE_URL",
-    "OPENCODE_SERVER_PASSWORD",
-  ])
+  assert.deepEqual(keyless.sort(), ["MOAT_MODEL", "MOAT_MODEL_ID", "MOAT_PROVIDER_BASE_URL"])
   assert.equal(keyless.some((name) => /CREDENTIAL|API_KEY/.test(name)), false)
 
   const custom = doctorInjectedVarNames({ credential: true, native: false })
@@ -33,19 +28,19 @@ test("only the names that carry a credential are called the credential", () => {
   const withKey = ownEnvNote(["DEEPSEEK_API_KEY", "MOAT_MODEL", "MOAT_PROVIDER_BASE_URL"])
   assert.match(withKey, /of which DEEPSEEK_API_KEY is the credential/)
 
-  const configOnly = ownEnvNote(["MOAT_MODEL", "MOAT_MODEL_ID", "MOAT_PROVIDER_BASE_URL", "OPENCODE_SERVER_PASSWORD"])
+  const configOnly = ownEnvNote(["MOAT_MODEL", "MOAT_MODEL_ID", "MOAT_PROVIDER_BASE_URL", "MOAT_SANDBOX"])
   assert.doesNotMatch(configOnly, /is the credential/)
-  assert.match(configOnly, /plus moat's own MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, OPENCODE_SERVER_PASSWORD/)
+  assert.match(configOnly, /plus moat's own MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX/)
   assert.equal(ownEnvNote([]), "")
 })
 
 test("the exposure does not offer key rotation for a box that has no key", () => {
-  const keyless = credentialExposureDetail(["OPENCODE_SERVER_PASSWORD"], false)
+  const keyless = credentialExposureDetail(["MOAT_MODEL"], false)
   assert.match(keyless, /None of them is a provider credential/)
-  assert.match(keyless, /OPENCODE_SERVER_PASSWORD/)
+  assert.match(keyless, /MOAT_MODEL/)
   assert.doesNotMatch(keyless, /spend-capped/)
 
-  const withKey = credentialExposureDetail(["MOAT_INJECTED_CREDENTIAL", "OPENCODE_SERVER_PASSWORD"], true)
+  const withKey = credentialExposureDetail(["MOAT_INJECTED_CREDENTIAL", "MOAT_MODEL"], true)
   assert.match(withKey, /spend-capped token/)
   assert.match(withKey, /MOAT_INJECTED_CREDENTIAL/)
 

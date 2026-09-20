@@ -6,48 +6,27 @@
   "envId": "5f160b318512",
   "profileInstall": {
     "installed": [],
-    "ms": 144
+    "ms": 145
   },
-  "copyInMs": 10,
+  "copyInMs": 9,
   "provider": {
-    "opencodeID": "moat",
+    "id": "moat",
     "native": false,
     "label": "custom OpenAI-compatible endpoint"
   },
   "model": {
     "id": "moat/mock-model"
   },
-  "bundle": {
-    "curated": [
-      "read",
-      "write",
-      "edit",
-      "apply_patch",
-      "glob",
-      "grep",
-      "bash",
-      "todowrite",
-      "question"
-    ],
-    "excluded": [
-      "skill",
-      "webfetch",
-      "websearch",
-      "task"
-    ],
-    "preset": "core"
-  },
   "egress": "open",
   "status": "running",
-  "port": 36139,
-  "pid": 11542,
-  "bootMs": 2,
-  "totalMs": 237,
+  "pid": 81098,
+  "bootMs": 3,
+  "totalMs": 239,
   "readyCheck": "the codex runtime has no server to wait for",
   "credential": {
     "provider": "moat",
     "fingerprint": "sha256:304e485880327eb8",
-    "expiresAt": "2026-09-20T18:06:01.907Z",
+    "expiresAt": "2026-09-20T18:50:07.294Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -59,9 +38,7 @@
     "MOAT_INJECTED_CREDENTIAL",
     "MOAT_MODEL",
     "MOAT_MODEL_ID",
-    "MOAT_PORT",
-    "MOAT_PROVIDER_BASE_URL",
-    "OPENCODE_SERVER_PASSWORD"
+    "MOAT_PROVIDER_BASE_URL"
   ]
 }
 --- stderr ---
@@ -69,6 +46,6 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:304e485880327eb8 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-14-06
+agent branch: moat-session-2026-09-20-14-50
 checks: npm run test
-→ sandbox booted (pid 11542); the codex runtime has no server to wait for
+→ sandbox booted (pid 81098); the codex runtime has no server to wait for

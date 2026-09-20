@@ -1,7 +1,0 @@
---- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c cat /work/KEEP.txt /work/sub/DEEP.txt; opencode --version
---- exit 0
---- stdout ---
-keep
-deep
-1.18.31
---- stderr ---

@@ -1,4 +1,5 @@
 import { CODEX_VERSION } from "../lib/pins.ts"
+import { writeRootfsFile } from "../lib/rootfs-fs.ts"
 
 /**
  * The Codex runtime: the config moat renders for it, and the host side of `codex exec --json`.
@@ -27,25 +28,18 @@ export type CodexConfigInput = {
   providerID: string
   /** Provider base URL, e.g. `https://api.deepseek.com`. */
   baseURL: string
-  /** Environment variable carrying the key *inside the box*. Never the value. */
-  envKey: string
+  /**
+   * Environment variable carrying the key *inside the box*. Never the value.
+   *
+   * Omitted for a custom endpoint booted with `--no-credential`: there is no key to read, and
+   * pointing Codex at a name nothing sets is a failure waiting to happen rather than a
+   * configuration.
+   */
+  envKey?: string
   /** Context window to declare, so the first run is not a metadata guess. */
   contextWindow?: number
   maxOutputTokens?: number
-  /**
-   * Reasoning effort, when the environment already recorded one.
-   *
-   * Codex's `model_reasoning_effort` takes minimal/low/medium/high; the opencode runtime's
-   * scale also has `max` and `off`, which are **omitted** rather than passed through as an
-   * invalid enum. The `--effort` *flag* is refused under this runtime — see cmdUp — because
-   * Codex drops the setting for models it has no metadata for, which is every DeepSeek model
-   * today (measured: `model_reasoning_effort = "high"` never reached the wire).
-   */
-  reasoningEffort?: string
 }
-
-/** The reasoning levels Codex accepts. Anything else is left out of the config. */
-export const CODEX_EFFORT_LEVELS = ["minimal", "low", "medium", "high"]
 
 function tomlString(value: string): string {
   return '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"'
@@ -64,15 +58,12 @@ export function renderCodexConfig(input: CodexConfigInput): string {
   ]
   if (input.contextWindow) lines.push(`model_context_window = ${input.contextWindow}`)
   if (input.maxOutputTokens) lines.push(`model_max_output_tokens = ${input.maxOutputTokens}`)
-  if (input.reasoningEffort && CODEX_EFFORT_LEVELS.includes(input.reasoningEffort)) {
-    lines.push(`model_reasoning_effort = ${tomlString(input.reasoningEffort)}`)
-  }
   lines.push(
     "",
     `[model_providers.${input.providerID}]`,
     'name = "DeepSeek"',
     `base_url = ${tomlString(input.baseURL)}`,
-    `env_key = ${tomlString(input.envKey)}`,
+    ...(input.envKey ? [`env_key = ${tomlString(input.envKey)}`] : []),
     // 0.155.1 supports only the Responses wire API, and that is what DeepSeek serves.
     'wire_api = "responses"',
     "",
@@ -83,6 +74,58 @@ export function renderCodexConfig(input: CodexConfigInput): string {
 /** The config as it is installed in the box, plus how it was produced. */
 export function codexConfigPath(home = "/root"): string {
   return `${home}/.codex/config.toml`
+}
+
+/** Where the brief lives, beside the config: Codex reads `$CODEX_HOME/AGENTS.md`. */
+export function codexBriefPath(home = "/root"): string {
+  return `${home}/.codex/AGENTS.md`
+}
+
+/**
+ * Fail loudly if a literal secret is about to be written into the sandbox.
+ *
+ * Every artefact moat writes into the box is checked, and the patterns cover the common key
+ * shapes rather than only DeepSeek's: the old `/sk-[A-Za-z0-9]{16,}/` did not match
+ * `sk-proj-...` or `sk-ant-api03-...` at all, because the hyphen ended the run.
+ */
+const LITERAL_KEY = new RegExp(
+  [
+    "sk-[A-Za-z0-9_-]{16,}", // OpenAI, Anthropic, DeepSeek
+    "AIza[0-9A-Za-z_-]{20,}", // Google
+    "AKIA[0-9A-Z]{16}", // AWS access key id
+    "gh[pousr]_[A-Za-z0-9]{20,}", // GitHub
+    "hf_[A-Za-z0-9]{20,}", // Hugging Face
+    "xox[baprs]-[A-Za-z0-9-]{10,}", // Slack
+    "-----BEGIN [A-Z ]*PRIVATE KEY-----",
+  ].join("|"),
+)
+
+/**
+ * Write the two files that decide how the agent behaves, through the rootfs guard.
+ *
+ * This runs on EVERY boot, not only when the image is provisioned: the rootfs may come from
+ * the host image cache or from an environment created days ago, and both files are policy. A
+ * stale one silently running an old policy is a bug that already happened once with the
+ * opencode bundle.
+ *
+ * The credential reaches the box as an environment variable and never as a file, so anything
+ * that looks like a key in either text is refused rather than written: that is what makes
+ * "grep the image for the key and find nothing" checkable.
+ */
+export function installCodexFiles(rootfs: string, files: { config: string; brief: string }): void {
+  for (const [name, text] of [
+    ["config.toml", files.config],
+    ["AGENTS.md", files.brief],
+  ] as const) {
+    if (LITERAL_KEY.test(text)) {
+      throw new Error(`refusing to write ${name} into the sandbox: it appears to contain a literal API key`)
+    }
+  }
+  // Through lib/rootfs-fs.ts, never a plain write: the agent is root in its box and can plant
+  // a symlink where a directory used to be, and this runs on every boot. Measured before the
+  // guard existed: an AGENTS.md of 3834 bytes landed outside the rootfs, every boot.
+  writeRootfsFile(rootfs, codexConfigPath(), files.config, 0o600)
+  writeRootfsFile(rootfs, codexBriefPath(), files.brief, 0o600)
 }
 
 export type CodexToolRun = {

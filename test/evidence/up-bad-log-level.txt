@@ -1,5 +1,0 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --log-level chatty
---- exit 1
---- stdout ---
---- stderr ---
-✗ unknown --log-level "chatty". Use one of: DEBUG, INFO, WARN, ERROR

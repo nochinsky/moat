@@ -1,0 +1,7 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c codex --version; cat /work/KEEP.txt /work/sub/DEEP.txt
+--- exit 0
+--- stdout ---
+codex-cli 0.155.1
+keep
+deep
+--- stderr ---

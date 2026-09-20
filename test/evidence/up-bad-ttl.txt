@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --credential-ttl nonsense
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ --credential-ttl: invalid duration "nonsense" (use e.g. 90s, 30m, 8h)

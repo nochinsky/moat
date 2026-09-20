@@ -13,14 +13,11 @@
   },
   "scripts": {
     "moat": "node cmd/main.ts",
-    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').cpSync('bundle/plugin','dist/bundle/plugin',{recursive:true})\"",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test:unit": "node --test test/unit/*.test.ts",
-    "test:e2e": "bash test/e2e.sh",
+    "test:e2e": "bash test/e2e-codex.sh",
     "test:extras": "bash test/e2e-extras.sh"
-  },
-  "dependencies": {
-    "@opencode-ai/sdk": "1.18.31"
   },
   "devDependencies": {
     "@types/node": "^24.13.5",
@@ -42,7 +39,7 @@
     "agent",
     "coding-agent",
     "isolation",
-    "opencode",
+    "codex",
     "ai",
     "containers",
     "userns"

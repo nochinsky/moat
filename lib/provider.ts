@@ -12,8 +12,8 @@
  */
 
 export const DEEPSEEK = {
-  /** The name opencode and the models.dev catalog use. */
-  opencodeID: "deepseek",
+  /** The provider id the models.dev catalog uses, and the model-string prefix. */
+  id: "deepseek",
   label: "DeepSeek",
   /** The one environment variable that holds the key. */
   envVar: "DEEPSEEK_API_KEY",
@@ -41,7 +41,7 @@ export const DEEPSEEK = {
 
 /** Used when `--base-url` points somewhere else. */
 export const CUSTOM_ENDPOINT = {
-  opencodeID: "moat",
+  id: "moat",
   label: "custom OpenAI-compatible endpoint",
   npm: "@ai-sdk/openai-compatible",
 } as const

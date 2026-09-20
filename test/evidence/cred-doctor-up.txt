@@ -1,20 +1,19 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --quiet --no-detect --egress isolated --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --egress isolated --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.01s (extract cached image 861ms)
+✓ image provisioned in 1.47s (extract cached image 1.27s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and send it anywhere: its namespace is isolated from yours, its egress is not filtered. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-14-13
-✓ sandbox up, cold start 8.74s (image built)
+agent branch: moat-session-2026-09-20-14-48
+✓ sandbox up, cold start 1.65s (image built)
 
   project    /home/user/moat-demo/cred-doctor
   env        /home/user/.moat/envs/1a606f7bca9f
-  opencode   http://127.0.0.1:35921  (basic auth user "opencode")
-  password   cPn3rq_t3xVXxrG3Yz2yKOYq9C-pPtxg
+  runtime    codex (moat/mock-model) — `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-20T18:13:54.166Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-20T18:48:47.798Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

@@ -34,17 +34,19 @@ Breaking any of these breaks the product, not a feature.
    `> /dev/null` fail; they are interfaces, not host data. `moat doctor` prints
    the mount table, root field included.
 2. **No credential ever reaches the image.** It is passed as an environment
-   variable to the sandbox process, and `bundle/install.ts` refuses to install a
-   bundle containing something that looks like a literal key.
-3. **`permission: {"*": "allow"}` and nothing else.** No deny rules, ever.
-   `bundle/render.ts` asserts this before a config can reach a boot, and the
-   plugin re-checks it inside the box.
+   variable to the sandbox process, and `installCodexFiles` (`bundle/codex.ts`)
+   refuses to write a config or a brief that looks like it carries a literal key.
+3. **The agent never asks for approval and never gets a second sandbox.**
+   `approval_policy = "never"` and `sandbox_mode = "danger-full-access"` are
+   rendered by moat on every boot, in one file the agent does not own. moat's box is
+   the boundary; a weaker one next to it is worse than none.
 4. **Copy-out is explicit.** `moat fetch` writes one ref; `moat apply` is a
    separate command. The host tree is provably unchanged until the user says so.
 5. **No host environment, SSH agent or dotfiles are forwarded.** `moat doctor`
    diffs the sandbox environment against the host's on every run.
 6. **The agent loop, its tools and the filesystem live inside the box.** The host
-   is an HTTP client of the server in the sandbox. Nothing is proxied.
+   is a terminal and a log reader: it hands the box a pty, or reads the CLI's own
+   event stream. There is no server in the box and nothing is proxied.
 7. **No container runtime.** `unshare` + `mount` + `chroot` directly. No Docker,
    no podman, no daemon. This is a constraint, not an accident.
 8. **One provider.** DeepSeek. No provider registry, no `--provider`, no
@@ -55,17 +57,15 @@ Breaking any of these breaks the product, not a feature.
 
 ```
 cmd/main.ts      the CLI; all UX lives here
-cmd/repl.ts      the interactive session
-cmd/client.ts    the HTTP client for the sandbox's server
-cmd/display.ts   markdown, tool rows, the turn footer — pure functions
 sandbox/         rootfs, namespaces, profiles, snapshots, isolation checks
 sync/            copy-in and copy-out, and the three-way apply
 secrets/         the credential broker and first-run onboarding
-bundle/          the rendered opencode config, the plugin, the agent brief
+bundle/          the rendered Codex config, the agent brief, the event parser
 lib/             provider, models.dev catalog, pricing, host probe, hashing
-test/            the model stub, the pty suites, and the evidence they write
+test/            the keyless model stubs, the pty suites, and the evidence they write
 docs/            SPEC (the contract), VERIFICATION (the evidence),
-                 UPSTREAM-CANDIDATES (opencode changes moat would like)
+                 RUNTIME-MIGRATION (what the opencode runtime was, and where its
+                 claims went)
 ```
 
 ## Running it
@@ -75,9 +75,8 @@ is wired with `npm link` and runs the source directly.
 
 ```bash
 npm run test:unit         # pure unit tests, no sandbox, so CI runs them
-bash test/e2e-codex.sh    # acceptance criteria on the DEFAULT runtime (Codex), keyless
-bash test/e2e.sh          # the same list for the opencode runtime, ~4 min, no API key
-bash test/e2e-extras.sh   # snapshots, apply, credential expiry, the pty suites
+bash test/e2e-codex.sh    # the acceptance list, against a keyless model stub
+bash test/e2e-extras.sh   # snapshots, apply, credential expiry, state and process traps
 bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced, default (no key)
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
 ```
@@ -128,8 +127,9 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   of discipline: `test/unit/git-hardening.test.ts` scans the source for that shape
   (`rawWorkTreeGitCalls`) and fails on it. A call that must be raw — `git init`
   before `.git` exists, which the hardened runner refuses to run — carries a
-  `raw-git-ok: <reason>` comment on its line or the line above. `repl-diff-hardening.py`
-  (extras section X) is the pty proof, and it fails with the raw call back.
+  `raw-git-ok: <reason>` comment on its line or the line above. There is no longer a pty
+  session to prove it through — the interactive surface is Codex's own TUI, which never runs
+  a host-side git command — so the source scan is the guard.
 * `extensions.worktreeConfig` is deliberately **not** preserved by the config swap, and
   that is load-bearing rather than tidiness: git reads `.git/config.worktree` only while
   that extension is set, so it is the second place the same keys can hide. Dropping the
@@ -193,18 +193,15 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   one) and then sleeps the remaining seconds; the TTL is only the fallback for state
   that predates the variable. Counting the TTL from the script's start let the box
   outlive its key by however long the boot took.
-* `--timeout` is **seconds** everywhere (`driveTask` and the checks runner take
-  `timeoutSeconds`; the turn default is 2700, the checks runner's is 600). The boot
-  readiness wait read it as *milliseconds*, so `moat up --timeout 600` capped the wait
-  at 600 ms and failed with "opencode serve did not come up ... after 600ms" — a
-  ten-minute budget turned into an instant failure. One flag, one unit: the readiness
-  default is 90 seconds.
+* `--timeout` is **seconds** everywhere (`runCodexTask` and the checks runner take
+  `timeoutSeconds`; the turn default is 2700, the checks runner's is 600). One caller read
+  it as *milliseconds*, so a ten-minute budget became an instant failure — measured as a
+  boot that gave up after 600 ms. One flag, one unit.
 * The checks runner *took* `timeoutSeconds` from the beginning and **no caller passed
   it**: `moat verify --timeout 1` was accepted and ignored, so a project whose test
   sleeps 3s ran to completion in 3.2s and reported pass. `verify` and `take` pass the
   flag now (measured after the fix: `TIMED OUT after 1s`, exit 124, `FAIL npm test
-  1.0s (timed out)`); extras section Y is the check. The REPL's `/verify` has no flag
-  and keeps the default.
+  1.0s (timed out)`); extras section Y is the check.
 * The flag layer is `lib/flags.ts`, and it has **two** tables: `SPEC` (every flag moat
   knows, so a typo is refused) and `COMMAND_FLAGS` (what each command actually reads).
   `main()` parses once before dispatch with the command's name, so a flag a command
@@ -217,17 +214,6 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   (handled in `main`/the logger) and need no entry. `test/unit/flags.test.ts` fails if
   the table names a flag that does not exist or drops one the suites pass; extras
   section Z covers the refusal, `--quiet` and `--help` end to end.
-* A port the host cannot bind is a boot that cannot start, and `--port` was checked for
-  *range* but not for availability: an occupied port cost the whole readiness budget
-  (90 seconds by default), after provisioning and a copy-in, and failed with
-  "opencode serve did not come up (GET /config -> TimeoutError)" — naming neither the
-  port nor the reason (the boot log has a bare `ServeError`). `hostPortFree`
-  (`lib/port.ts`) is asked up front, against the address the box will actually bind:
-  `0.0.0.0` when it has its own network namespace, `127.0.0.1` when it shares the
-  host's. `moat up` also says so when `--port` is ignored because the sandbox is
-  already running on another one — that used to be silence. Extras section AA is the
-  refusal plus the control that the same port boots once it is free;
-  `test/unit/port.test.ts` covers the address handling.
 * `moat up --fresh` deletes `/work`. It refuses while a sandbox is live and
   refuses without `--yes` when the box holds unfetched commits or uncommitted
   files.
@@ -313,24 +299,20 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   <name>` goes through `validateLogName` (`lib/paths.ts`) — measured, without it
   `moat logs ../../../../../tmp/x` printed `/tmp/x.log`, a host file outside the
   environment — `--tail` through `positiveIntFlag` (a bad value used to mean "the
-  whole file"), `--port` validated before provisioning (a typo used to survive the
-  copy-in and surface ninety seconds later as "opencode serve did not come up"),
-  and `moat models <provider>` checked against the one provider instead of silently
-  listing DeepSeek and exiting 0.
+  whole file"), every up/run flag validated before provisioning (a typo used to survive
+  the copy-in and surface as a boot failure), and `moat models <provider>` checked
+  against the one provider instead of silently listing DeepSeek and exiting 0.
 * Flags are validated **before provisioning**, because the ones validated at their
-  use site fail after the copy-in and read as a boot failure: `--tools` was checked
-  in the provider section (after provisioning), and `--log-level` was never checked
-  at all — an unknown level fell through `ALLOWED_LOG_LEVELS` in `serveEntryScript`
-  and silently became INFO, and a lowercase `--log-level debug` did too.
-  `--model ""` and `--base-url ""` booted a config with an empty model id or an empty
-  base URL and failed much later. All five now fail in under a second, and the level
-  is upper-cased on both sides.
+  use site fail after the copy-in and read as a boot failure: `--model ""` and
+  `--base-url ""` used to boot a config with an empty model id or an empty base URL
+  and fail much later, and a bad `--log-level` silently became INFO. A flag whose
+  value cannot work now fails in under a second, with the flag named.
 
 **The agent-controlled rootfs**
 
 * The rootfs is persistent and the agent is root inside it, so **it can replace any
   of its directories with a symlink to a host path**. The host process resolves
-  that path on the next boot: measured, with the old code, `installBundle` wrote an
+  that path on the next boot: measured, with the old code, the config write put an
   `AGENTS.md` of 3834 bytes into a directory outside the rootfs — on *every* boot.
   Every host-side write into the rootfs goes through `lib/rootfs-fs.ts`
   (`writeRootfsFile`, `ensureRootfsDir`, `chmodRootfsDir`), which refuses symlinked
@@ -339,8 +321,7 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   place. Do not `fs.writeFileSync(path.join(rootfs, …))` directly; add a helper
   call instead. `test/unit/rootfs-write.test.ts` guards it.
 * Reads of agent-controlled files go through `readRootfsFile`, same reason: a
-  symlinked `boot.log` or `tools.jsonl` would otherwise print a host file to your
-  terminal. Writes *outside* the rootfs (`runtime/boot-*.sh`, `logs/`) are not
+  symlinked `boot.log` would otherwise print a host file to your terminal. Writes *outside* the rootfs (`runtime/boot-*.sh`, `logs/`) are not
   reachable by the agent and stay on plain `writeAtomic`.
 * The boot log is opened **on the host** through the same guard and passed to
   the boot script as descriptor 3; the script dups it (`exec 1>&3 2>&3`) instead
@@ -356,15 +337,16 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   sequences in them: OSC 0 retitles the window, OSC 52 writes the clipboard where
   the terminal allows it, CSI 2J clears the screen, and a carriage return overwrites
   the row — enough to repaint the transcript the user is reading, which is exactly
-  what a prompt injection wants. Tool output and tool titles were already stripped
-  (`stripAnsi` in `cmd/display.ts`); the model's own words and most of the sandbox
-  metadata were not. Every such site now strips at the print boundary, and
-  `AnswerRenderer` strips per delta — safe against a sequence split across two
-  deltas, because `stripAnsi` removes every ESC byte (as a sequence *or* as a
-  control character), so nothing can be reassembled on screen. Do not print a string
+  what a prompt injection wants. Tool output was already stripped (`stripAnsi`);
+  the model's own words and most of the sandbox metadata were not. Every such site
+  now strips at the print boundary, and `stripAnsi` (`lib/terminal.ts`) removes
+  every ESC byte — as a sequence *or* as a control character — so a sequence split
+  across two writes cannot be reassembled on screen. Do not print a string
   that came out of the sandbox without it: paths, refs and subjects included.
-  `test/unit/terminal-text.test.ts`, `test/repl-escapes.py` and extras section V hold
-  it there (4 of the 7 pty checks fail with `stripAnsi` made a no-op).
+  `test/unit/terminal-text.test.ts` holds the stripper, and `test/e2e-codex.sh` section 10
+  holds the end-to-end half on bytes: a scripted answer carrying OSC 0, OSC 52 and CSI 2J
+  must leave zero ESC bytes in the captured output, with a control that the matcher does
+  find an ESC byte when one is there.
 * The project's own **check output** is the same untrusted text, and it was easy to miss:
   `moat verify` streamed it to stderr chunk by chunk, and `moat take` and the session's
   `/verify` printed the last lines of a failure — none of them stripped. A failing test
@@ -389,7 +371,7 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 **Downloads and caches**
 
 * Every network artefact is checked against a digest pinned in `lib/pins.ts`
-  (Alpine's release SHA-256, the opencode npm tarball's `dist.integrity`) through
+  (Alpine's release SHA-256, the Codex platform tarball's `sha256`) through
   `verifyFile` before anything unpacks it, and an already-cached file is
   re-checked. Do not add a download path that skips this.
 * Temp files are named with `partPath()`: pid **and** a random suffix. A pid
@@ -400,20 +382,12 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 
 **Egress and the datapath**
 
-* slirp4netns has no command-line port forwarding. Host-to-sandbox ports go
-  through its API socket (`-a/--api-socket`): connect and send
-  `{"execute":"add_hostfwd",...}`. Its replies are one JSON object with **no**
-  trailing newline, and the socket appears asynchronously after spawn, so the
-  RPC client waits for the path and parses the accumulated buffer instead of
-  reading lines. Getting any of that wrong looks like a hang or an ENOENT.
 * Always pass `--disable-host-loopback`. Without it slirp's 10.0.2.2 gateway
   forwards straight to the host's loopback: measured HTTP 200 for a host service
   from inside the "isolated" namespace. `moat doctor` probes **both**
   `127.0.0.1` and `10.0.2.2`, because testing only the namespace's own loopback
   is vacuous and passes while the hole is open.
-* In any own-namespace mode (both `isolated` and `filtered`) `opencode serve`
-  binds `0.0.0.0`; a loopback bind inside the namespace cannot be reached through
-  the forward. The predicate for "has its own namespace" lives in one place,
+* The predicate for "has its own namespace" lives in one place,
   `ownNetns()` in `lib/pins.ts`, because `filtered` was once spelled
   `opts.egress === "isolated"` at four call sites: the box then booted in the
   **host's** namespace and `nft -f` failed with `netlink: Error: cache
@@ -421,21 +395,6 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   the namespace's user namespace and an unprivileged user has none in the host's).
   `bootIsolation()` now refuses to boot a ruleset outside the sandbox's own
   namespace, and `test/unit/egress.test.ts` fails if either predicate regresses.
-* slirp's API socket has a **one-connection accept queue**. The readiness probe
-  opens a connection and destroys it, and the forward's own connect can then fail
-  with `EAGAIN` while the probe is still queued (measured on a real boot: "connect
-  EAGAIN" on a boot that succeeded on the next attempt). `addHostForward` retries
-  a connect that never reached slirp, and treats a *reply* that refuses the forward
-  as final. `pruneDeadSockets` is conservative for the same reason: only ENOENT or
-  ECONNREFUSED unlinks a socket file, because EAGAIN is what a live socket looks
-  like from here, and unlinking a live one makes it unreachable by path for the
-  rest of its life.
-* The API socket is **not** a fixed path. Every boot names its own
-  (`slirp-<pid>-<rand>.sock`) and readiness is a **connection**, not a `stat()`:
-  a socket file outlives the slirp that made it, so a restart that only checked
-  `existsSync` found the previous boot's corpse (`ECONNREFUSED` from the forward,
-  and slirp itself cannot bind over a stale file). `pruneDeadSockets` reaps the
-  ones nothing is listening on and never touches a live one.
 * The in-box connectivity probes are wrapped in `timeout`: a default-deny policy
   **drops** packets, and an unbounded `/dev/tcp` connect sits in the kernel's SYN
   retries for about two minutes before reporting the failure it already knows
@@ -469,13 +428,13 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 * The provider **configuration** and the credential are separate things, and the box needs
   the first without the second. `MOAT_PROVIDER_BASE_URL`/`MOAT_MODEL_ID`/`MOAT_MODEL` were
   set only inside `toSandboxEnv(minted)`, so `moat up --no-credential` (a documented mode,
-  SPEC §1.3) left the custom-endpoint provider block with an empty base URL: opencode
-  resolved `{env:MOAT_PROVIDER_BASE_URL}` to `""` and every call died *inside the box* with
-  `ERR_INVALID_URL: "/chat/completions" cannot be parsed as a URL`, while the host printed
+  SPEC §1.3) left the custom-endpoint provider block with an empty base URL: the runtime
+  resolved the base URL to `""` and every call died *inside the box*, while the host printed
   nothing but "0 tool calls". `sandboxProviderEnv()` (`secrets/broker.ts`) is now injected
   unconditionally into `managedEnv`, and the task guard refuses a task without a credential
-  only for the *native* provider, where the key is the model — a custom endpoint can run
-  with no credential at all (measured: 5 tool calls, 6 requests, `authorization: null`).
+  only for the *native* provider, where the key is the model. A custom endpoint can run with
+  no credential at all, and the rendered config then carries **no `env_key`** rather than
+  pointing at a name nothing sets (measured: the stub records `authorization: null`).
   Extras section AF is that run plus the native control; `test/unit/provider-env.test.ts`
   pins the split.
 * A project file name that is not valid UTF-8 is refused by `assertAddressableNames`
@@ -492,9 +451,8 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   reads like a moat bug rather than a missing package.
 * The long-running box records its slirp pid in `state.json` and `moat down`
   stops it after the box (its start time is checked, like the sandbox pid).
-  Ephemeral boots (doctor, exec, checks, shell) start their own slirp with a
-  unique API socket, so they run in the same kind of network as the box rather
-  than quietly measuring a different one. **A box that dies out of band leaves that
+  Ephemeral boots (doctor, exec, checks, shell) start their own slirp, so they run in
+  the same kind of network as the box rather than quietly measuring a different one. **A box that dies out of band leaves that
   datapath running**, and it is a *separate* process: only a command holding its pid on
   record can reap it, and every command that ends a box reaps before it lets go of that
   record. `forgetBox` (`cmd/main.ts`) is the single place the CLI clears it — four
@@ -512,34 +470,27 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   `test/unit/datapath-reap.test.ts` fails on a direct `slirpPid: null` write outside
   `forgetBox`, and extras section AG is the end-to-end reap.
 
-* **Two runtimes.** The default runtime is **Codex** (`--runtime codex`, and what an
-  environment gets when the flag is absent); `--runtime opencode` selects the older
-  server-based runtime, and `state.runtime` records which one an environment was made with. Codex is a CLI, not a server, so under that
-  runtime the box is a keepalive (`codexEntryScript`) and every task, TUI session and check
-  runs in its own ephemeral boot of the same rootfs. The two rules that matter: the config
-  moat renders (`bundle/codex.ts`, written through the rootfs guard on every boot) is what
-  keeps Codex from asking for approvals or adding its own sandbox — never let the agent own
-  that file — and the runtime is *pinned and digested* in `lib/pins.ts` like slirp4netns,
-  because it becomes the code the agent runs. The npm platform tarball ships a **musl** build,
-  so it runs on the Alpine image with no gcompat and no Node. Adding a binary to the image
-  means adding its version to `imageCachePath` or a cached image will silently lack it.
-  `bundle/codex.ts` also parses `codex exec --json`; `test/unit/codex-runtime.test.ts` pins
-  the parser against a real captured stream and the rendered config against the two
-  load-bearing lines. `docs/RUNTIME-SPIKE-codex.md` is the measurement behind it, and
-  `docs/RUNTIME-COST.md` is what each runtime costs per turn (Codex ≈ 2.8× on a trivial
-  task, mostly output and a larger prompt — know this before claiming the swap is free).
-* **Codex is the default runtime; a switch must never re-provision.** Turning
-  `--runtime` is not a config change, it is a different binary in the image, so the image
-  cache key includes the runtime set (`imageCachePath`); without that an image silently lacks
-  the binary and the box dies with "command not found". The switch itself goes through
-  `installRuntimeBinary` (guarded copy into the live rootfs), **not** provisioning:
-  `provisionEnv` starts with `fs.rmSync(rootfs)` and takes `/work` with it — measured, an
-  untracked file was lost when the switch was first written that way, and
-  `test/unit/runtime-install.test.ts` holds the symlink guard while extras section AJ holds
-  the /work half end to end. A switch is also a restart: the recorded box is stopped before
-  anything touches the rootfs. The existing suites pin `--runtime opencode` because they
-  verify the opencode adapter (server, attach, tools, REPL); extras section AJ and live
-  suite §7 cover Codex. When opencode is deleted, those pins and sections go with it.
+* **One runtime, and it is a CLI.** Codex is driven two ways — `codex exec --json` for a task
+  and its own TUI for a session — and neither is a server, so the long-running box is a
+  keepalive (`codexEntryScript`) and every task, TUI session and check runs in its own
+  ephemeral boot of the same rootfs. The config moat renders (`bundle/codex.ts`, written
+  through the rootfs guard on every boot) is what keeps Codex from asking for approvals or
+  adding its own sandbox: **never let the agent own that file.** The runtime is *pinned and
+  digested* in `lib/pins.ts` like slirp4netns, because it becomes the code the agent runs; the
+  npm platform tarball ships a **musl** build, so it runs on the Alpine image with no gcompat
+  and no Node. Adding a binary to the image means adding it to `imageCachePath`'s key or a
+  cached image will silently lack it. `bundle/codex.ts` also parses `codex exec --json`;
+  `test/unit/codex-runtime.test.ts` pins the parser against a real captured stream and the
+  rendered config against the two load-bearing lines. `docs/RUNTIME-SPIKE-codex.md` is the
+  measurement behind the runtime, and `docs/RUNTIME-COST.md` is what a turn costs.
+* **A missing runtime binary is repaired, never re-provisioned.** The agent is root in its own
+  rootfs, so it can `rm /usr/local/bin/codex`, and an environment made by an older moat never
+  had it. The next boot copies it into the live rootfs through `installRuntimeBinary` **instead
+  of** provisioning: `provisionEnv` starts with `fs.rmSync(rootfs)` and takes `/work` with it
+  — measured, an untracked file was lost that way. `test/unit/runtime-install.test.ts` holds
+  the symlink guard and extras section AJ holds the /work half end to end. The image cache key
+  names the binary and its pinned version (`imageCachePath`), so a cached image cannot silently
+  lack one.
 
 * **An interactive boot forwards TERM; nothing else does.** `sandboxEnv` fixes
   `TERM=dumb`, which is right for a boot nobody is watching and wrong for one attached to a
@@ -549,68 +500,19 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   way. `runInteractive` advertises the host's terminal type through `interactiveTerm`,
   sanitised — it is a capability name from the host environment, not host data, and no
   whitespace or punctuation reaches the box. `test/unit/interactive-term.test.ts` holds both
-  halves, including that a check, a server or a batch boot still gets `dumb`, so the
-  environment the other suites measure is unchanged; `test/codex-tui.py` (extras section AL)
-  is the pty proof that `moat` reaches a live TUI and that leaving it leaves the box running.
-* **`test/e2e-codex.sh` is the acceptance suite for the default runtime.** It drives
-  `moat run --runtime codex` through `test/mock-responses.mjs` and asserts the criteria that do
-  not depend on opencode's server: cold start on the codex runtime, the doctor's isolation
-  checks, a mocked turn that fixes the fixture and whose `moat verify` passes, host paths and
-  the canary unreachable, one ref from `moat fetch` with the host tree byte-identical, the
-  credential absent from the rootfs, and persistence across `moat down` + `moat up`. The two
-  opencode-only criteria (the in-box permission guard and the session/attach streaming) are
-  named as deliberately absent at the top of the file; the guard's replacement is asserted
-  there instead (the two rendered config lines), and the TUI is extras section AL. Run it
-  alongside `test/e2e.sh` while both runtimes exist.
-
-**opencode 1.18.31**
-
-* The model-facing argument for file tools is `filePath`, not `path`. opencode's
-  internal schemas say `path`; the schema it shows the model renames it. A guard
-  checking the wrong spelling matches nothing and confines nothing, silently.
-* Streamed text arrives as `message.part.delta`, **not** as a `delta` field on
-  `message.part.updated`. Reading the wrong one renders tool calls and no answers.
-* The SDK's event stream **reconnects forever and never ends**.
-  `event.subscribe` goes through the generated SSE client
-  (`@opencode-ai/sdk/dist/gen/core/serverSentEvents.gen.js`), whose loop is
-  `while (true)`: a failed connection calls `onSseError`, sleeps with backoff (up
-  to 30s) and tries again, indefinitely. It neither throws nor ends the
-  generator, so a box stopped mid-turn looks exactly like a quiet one. Measured
-  in a pty: `moat attach`, a turn in flight, `moat down` — and the REPL sat there
-  with its spinner up, answering every later line with "queued — the agent will
-  pick this up when the current step finishes" for a turn that was already over.
-  Both subscribe sites pass `sseMaxRetryAttempts: 1` (one attempt, no reconnect)
-  and an `onSseError` handler, which turns the failure into an *end* the consumer
-  can see: the REPL reports that the live view is gone and refuses to send, and
-  `moat run` records "the event stream ended mid-turn" instead of returning the
-  partial transcript as a finished turn. Do not remove those options: without
-  them a consumer waits for a `session.idle` that can never arrive. Not covered:
-  a stream that stays open and simply goes quiet — no FIN, no error — which
-  nothing observed produces (a box that dies closes its sockets), and for which
-  there is no silence watchdog.
-* An unknown reasoning variant is *ignored*, not rejected. Never hardcode the
-  levels: read them from `GET /config/providers` per model.
-* `GET /config/providers` returns a `default` field that is opencode's own notion
-  of the provider's preferred model and has nothing to do with moat's config. The
-  effective model is `model` in `GET /config`.
-* The `shell.env` hook is an overlay, so `delete`ing a key does nothing. Secret
-  names are overridden to `""` instead.
-* Plugin hook names are `permission.ask` (not `permission.asked`). Verified
-  against `packages/plugin/src/index.ts`, not from memory.
-* The bundle is reinstalled on **every** boot. A cached image serving a stale
-  plugin is a bug that already happened once.
-* opencode compiles `tools: {name: false}` into `permission: {name: "deny"}`
-  *before* the plugin's `config` hook runs (`config/config.ts`, "if
-  (result.tools)"), and a hook that throws is logged and **ignored** — the boot
-  carries on. So a throwing hook is a silent loss: the in-box invariant check
-  rejected every boot for several commits and the only symptom was an ERROR line
-  in a boot log nobody read, while its audit `config` record never appeared.
-  Write checks in that hook against the merged config, and treat "the hook threw"
-  as something the evidence has to show (`test/unit/plugin-guard.test.ts` asserts
-  the record is written when the check passes).
-* Requirement 4 — advertising exactly the curated tool set — is **not achievable**
-  in 1.18.31. The bundle refuses to *execute* anything outside the curated set
-  instead. `moat tools` prints the gap. Do not "fix" this by hiding the gap.
+  halves, including that a check or a batch boot still gets `dumb`, so the environment the
+  other suites measure is unchanged; `test/codex-tui.py` (extras section AL) is the pty proof
+  that `moat` reaches a live TUI and that leaving it leaves the box running.
+* **`test/e2e-codex.sh` is the acceptance suite.** It drives `moat run` through
+  `test/mock-responses.mjs` — the Responses wire API, whose event shapes were captured from a
+  real DeepSeek stream — and asserts the whole list with no key: cold start, the doctor's
+  isolation checks, a mocked turn that fixes the fixture and whose `moat verify` passes, host
+  paths and the canary unreachable, one ref from `moat fetch` with the host tree
+  byte-identical, the credential absent from the rootfs, persistence across `moat down` +
+  `moat up`, and (section 10) that an escape sequence in the model's answer never reaches the
+  terminal. The one criterion it names as deliberately absent is the opencode plugin's in-box
+  permission guard; under Codex the same guarantee is the rendered config, which section 4 and
+  extras section AJ assert instead.
 
 **Pipes and encodings**
 
@@ -630,9 +532,11 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 
 * models.dev prices are wrong for `deepseek-v4-pro`, and it has no notion of peak
   hours, which double every rate. `lib/pricing.ts` holds the published table.
-* In opencode's token accounting, `input` is the cache-**miss** count and
-  `cache.read` is the hit count. `reasoning` is billed at the output rate as a
-  field separate from `output`.
+* The Responses `input_tokens` field **includes** the cached tokens, so moat
+  subtracts `cached_input_tokens` before pricing the miss rate. Charging the raw field
+  double-counted a mostly-cached turn by about ten times; `parseCodexEvents` normalises it
+  and `test/unit/codex-runtime.test.ts` pins the arithmetic. `reasoning_output_tokens` is
+  billed at the output rate as a field separate from `output_tokens`.
 * `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are retired names served
   by the current Flash model. `deepseek-flash` is the current name.
 
@@ -647,10 +551,6 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 * Node's type stripping cannot desugar TypeScript parameter properties
   (`constructor(private readonly x: T)`). Use plain fields. `tsconfig` sets
   `erasableSyntaxOnly`, so this fails at typecheck.
-* The published SDK's generated types lag the server in several places
-  (`variant` on the prompt body, `variants` on a model). Return such objects from
-  a function rather than writing them as inline literals, and TypeScript stops
-  complaining — it only rejects unknown properties on fresh literals.
 
 ## What is verified, and what is not
 
@@ -660,9 +560,9 @@ anything works.
 
 Two rules the suite follows, worth preserving:
 
-* **Assert on the thing, not on moat's account of the thing.** `test/wire-effort.py`
-  reads the actual request body through a recording proxy rather than asking
-  opencode which variant it recorded.
+* **Assert on the thing, not on moat's account of the thing.** `test/mock-responses.mjs`
+  records the request it received — including whether an `Authorization` header was sent —
+  so a test reads what the provider would have seen rather than what moat says it sent.
 * **A check that cannot fail is not a check.** When adding a regression guard,
   reintroduce the bug and watch it fail before trusting it.
 
@@ -689,10 +589,14 @@ Not built, in rough order of how much they matter:
   exists; supporting them means Buffer paths through hashing, the untracked-file
   pass and apply's tree reads, plus a digest encoding that keeps today's hashes for
   UTF-8 names.
-* **Exact tool advertisement**, which needs an upstream change (see
-  `docs/UPSTREAM-CANDIDATES.md`).
+* **Tool-set curation.** Under Codex moat does not choose the tool list: the CLI ships its
+  own (`exec_command`, `write_stdin`, `view_image`, `web_search`, `multi_agent`) and moat's
+  box, not a tool filter, is what bounds them. The opencode-era plugin had a guard that
+  refused tools outside a curated set; there is no equivalent here, and the docs say so
+  instead of implying one.
 
 If you are picking this up: the sandbox, the copy-in/copy-out and the credential
-broker are the parts that matter and they are done. The agent runtime is
-opencode's, reached through thirteen HTTP calls. Treat that boundary as the seam
-to change things at.
+broker are the parts that matter and they are done. The agent runtime is Codex's CLI,
+reached through one pinned binary: `moat` renders its config, hands it a pty or reads
+its JSONL stream, and owns nothing else about it. Treat that boundary as the seam to
+change things at.

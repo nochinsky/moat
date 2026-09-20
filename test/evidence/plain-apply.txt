@@ -1,0 +1,8 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts apply
+--- exit 0
+--- stdout ---
+--- stderr ---
+
+  add     agent.txt
+
+✓ applied 1 change(s) to /home/user/moat-demo/plain

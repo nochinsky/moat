@@ -1,16 +1,15 @@
---- $ node /home/user/Projects/moat/cmd/main.ts run --runtime codex Make the failing test pass.
+--- $ node /home/user/Projects/moat/cmd/main.ts run Make the failing test pass.
 --- exit 0
 --- stdout ---
 --- stderr ---
-sandbox already running (pid 22018) on port 41693
-! restarting the idle codex box for this run (its tasks do not go through a server)
+sandbox already running (pid 78629); restarting it for this run
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-14-14
+agent branch: moat-session-2026-09-20-14-49
 checks: npm run test
-→ sandbox booted (pid 22144); the codex runtime has no server to wait for
+→ sandbox booted (pid 78724); the codex runtime has no server to wait for
   ✓ /bin/sh -lc "cd /work && sed -i 's/a - b/a + b/' src/sum.js && git add -A && git -c user.email=mock@example.com -c user.
 
 Fixed src/sum.js so the test passes, and committed it.

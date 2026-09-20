@@ -30,7 +30,8 @@ import { run, runRaw, type RawRunResult, type RunResult } from "./shell.ts"
  *
  * This is defence in depth around a seam that should eventually be removed
  * entirely: the host should read the sandbox's objects through a transport the
- * sandbox cannot configure (see docs/UPSTREAM-CANDIDATES.md).
+ * sandbox cannot configure. Every read of an agent-configurable repository is a
+ * surface, and sanitising the config is a mitigation rather than a boundary.
  */
 
 /** Deterministic git: ignore the user's global/system config for host-side work. */

@@ -1,22 +1,24 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --timeout 30
+--- $ node /home/user/Projects/moat/cmd/main.ts up --timeout 30
 --- exit 0
 --- stdout ---
 --- stderr ---
-no project manifest found; booting with the base image only (see `moat profiles`)
+detected: package.json -> node
+          adding profile(s) node; use --no-detect or --profile to override
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
-! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-14-08
-→ sandbox booted (pid 15183, port 36331); waiting for opencode serve
-✓ sandbox up, warm start 4.42s (image reused)
+! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s). The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-20-14-47
+checks: npm run test
+! the egress allowlist could not resolve: not, a, host; the box will not reach them
+→ sandbox booted (pid 70982); the codex runtime has no server to wait for
+✓ sandbox up, warm start 1.25s (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:36331  (basic auth user "opencode")
-  password   _otDPOUG5ENNVhYDlNyhJnDAMJ9TYnqk
+  runtime    codex (moat/mock-model) — `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:34c4e933b47c1fb3 expires 2026-09-20T18:08:55.248Z
+  credential moat sha256:34c4e933b47c1fb3 expires 2026-09-20T18:47:16.700Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

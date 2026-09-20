@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --egress bogus
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ unknown --egress "bogus". Use "open" (the host's network namespace), "isolated" (its own, through slirp4netns) or "filtered" (isolated, with a default-deny allowlist).

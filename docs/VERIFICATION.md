@@ -9,8 +9,10 @@ A note on paths: the captured output was produced on the author's machine, and
 any command or its output was altered.
 
 ```
-bash test/e2e.sh          # criteria 1–9          -> test/evidence/
-bash test/e2e-extras.sh   # secondary claims A–E  -> test/evidence/extras.txt
+bash test/e2e-codex.sh    # the acceptance list, keyless        -> test/evidence/codex-summary.txt
+bash test/e2e-extras.sh   # the state and process traps         -> test/evidence/extras.txt
+bash test/e2e-egress.sh   # netns, slirp datapath, allowlist    -> test/evidence/egress.txt
+DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
 ```
 
 **Environment under test**
@@ -30,8 +32,7 @@ host
 ```
 
 `kvm=no` means `v1` is untestable on this machine, which is why it is out of
-scope here. WSL2 is supported via
-the container path only".
+scope here. WSL2 is supported via the container path only.
 
 **On the model.** The acceptance criteria below were produced with a deterministic
 local model stub, because this host had no provider credentials at the time:
@@ -39,18 +40,15 @@ local model stub, because this host had no provider credentials at the time:
 ```
 $ env | grep -iE 'api_key|token|anthropic|openai|deepseek|gemini'
 (no output)
-$ ls ~/.local/share/opencode/auth.json
-ls: cannot access '/home/user/.local/share/opencode/auth.json': No such file or directory
 ```
 
 So the suites drive a deterministic local OpenAI-compatible stub
-(`test/mock-model.mjs`) that sits exactly where a real endpoint sits. Everything
-inside the sandbox is real: opencode's session engine, its tool dispatcher, its
-permission evaluation, its `bash` tool (which runs `/bin/bash` inside the box),
-its `write`/`edit` tools, and `git`. What the stub does not test is model
-quality. A real DeepSeek session was subsequently run against the same build, 
-see "A real model, doing a real task" below, so the stub is no longer the only
-evidence.
+(`test/mock-responses.mjs`, speaking the Responses wire API) that sits exactly where
+a real endpoint sits. Everything inside the sandbox is real: the pinned Codex CLI
+and its own tool loop, `exec_command` (which runs a shell inside the box), its
+file-editing tools, and `git`. What the stub does not test is model quality. A real
+DeepSeek session was subsequently run against the same build, see "A real model,
+doing a real task" below, so the stub is no longer the only evidence.
 
 ---
 
@@ -61,90 +59,41 @@ box that protects your **project** or your **credential**, and it would be
 dishonest to let a page of green `pass` marks imply otherwise. `moat doctor`
 therefore prints these on every run, in a separate section, sourced from
 measurements taken inside a real boot. The transcript below is from a box whose
-network policy is `open`; in the default `filtered` mode the middle two lines
-are not exposures at all but `check`s that must pass (`pass egress filtered`,
-`pass host loopback reachable`, see §L), and the credential and the bundle
-redaction are exactly as shown here.
+network policy is `open`; in the default `filtered` mode the middle two lines are
+not exposures at all but `check`s that must pass (`pass egress filtered`, `pass
+host loopback reachable`, see §L).
 
 ```
 $ moat doctor
 
-exposures — measured, and NOT fixed in v0. Read these before trusting the box.
+exposures, measured, and NOT fixed in v0. Read these before trusting the box.
   expose  credential visible to the agent
-          MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, OPENCODE_SERVER_PASSWORD,
-          MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool
-          execution inherits. The bundle blanks secret-looking names for shell commands, but
-          the values remain in the opencode process environment and are readable via
-          /proc/<pid>/environ. Use a provider-scoped, spend-capped token.
+          MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_CREDENTIAL_FINGERPRINT,
+          MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits: the box's
+          process environment, readable via /proc/<pid>/environ. That is how the agent calls the
+          model, so the mitigation is a provider-scoped, spend-capped token rather than hiding
+          the value.
   expose  host loopback reachable
-          the sandbox connected to a service the host opened on 127.0.0.1:35367. Every service
+          the sandbox connected to a service the host opened on 127.0.0.1:35967. Every service
           you run locally (databases, dev servers, notebooks) is reachable by the agent.
   expose  egress unrestricted
           the sandbox reached 1.1.1.1:443. It shares the host's network namespace (egress mode
           "open"), so the agent can install dependencies AND exfiltrate anything it can read,
           including the project and the injected credential. A new environment defaults to
           "filtered".
-  expose  shell env redaction (bundle)
-          the bundle blanks MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT,
-          MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, OPENCODE_SERVER_PASSWORD for
-          shell commands the agent writes. Speed bump only: the values are still in the
-          opencode process environment and reachable via /proc/<pid>/environ. This record
-          comes from the plugin running inside the box.
 ```
 
-The first three are measured from inside an ephemeral boot. The fourth comes from
-the bundle plugin *running inside the opencode process*, which is the only place
-that can observe what the agent's environment actually contains:
+All of it is measured from inside an ephemeral boot, on the same box the agent gets.
+The record is the doctor's own output in `test/evidence/doctor.txt` (and, for the
+`filtered` half, `test/evidence/doctor-filtered.txt`), not a claim moat makes about
+itself.
 
-```json
-$ cat <env>/rootfs/var/log/moat/exposure.json      # written by the plugin at config time
-{
-  "serveEnvNames": ["AGENT","HOME","LANG","LC_ALL","MOAT_AUDIT_LOG",
-                    "MOAT_CREDENTIAL_EXPIRES_AT","MOAT_CREDENTIAL_FINGERPRINT",
-                    "MOAT_CREDENTIAL_TTL_SECONDS","MOAT_INJECTED_CREDENTIAL","MOAT_MODEL",
-                    "MOAT_MODEL_ID","MOAT_PORT","MOAT_PROVIDER_BASE_URL","MOAT_SANDBOX",
-                    "OLDPWD","OPENCODE","OPENCODE_CLIENT","OPENCODE_CONFIG","OPENCODE_CONFIG_DIR",
-                    "OPENCODE_DISABLE_AUTOUPDATE","OPENCODE_DISABLE_PROJECT_CONFIG",
-                    "OPENCODE_DISABLE_TERMINAL_TITLE","OPENCODE_LOG_LEVEL","OPENCODE_PID",
-                    "OPENCODE_PRINT_LOGS","OPENCODE_SERVER_PASSWORD","OPENCODE_SERVER_USERNAME",
-                    "PATH","PWD","SHLVL","TERM"],
-  "secretNamesInServeEnv": ["MOAT_CREDENTIAL_EXPIRES_AT","MOAT_CREDENTIAL_FINGERPRINT",
-                            "MOAT_CREDENTIAL_TTL_SECONDS","MOAT_INJECTED_CREDENTIAL",
-                            "OPENCODE_SERVER_PASSWORD"],
-  "redactedInShellEnv":   ["MOAT_CREDENTIAL_EXPIRES_AT","MOAT_CREDENTIAL_FINGERPRINT",
-                            "MOAT_CREDENTIAL_TTL_SECONDS","MOAT_INJECTED_CREDENTIAL",
-                            "OPENCODE_SERVER_PASSWORD"],
-  "caveat": "The bundle blanks secret-looking variables in the shell environment the agent's
-             commands inherit, but the values remain in the opencode process environment and
-             are readable from inside the sandbox via /proc/<pid>/environ by any process
-             running as the same uid. The control that matters is at the provider: a
-             short-lived, spend-capped, narrowly scoped token.",
-  "writtenAt": "2026-09-18T16:49:30.478Z"
-}
-```
-
-### The same thing, demonstrated by the agent itself
-
-An earlier build of this file reported `pass` for a sandbox whose bash tool could
-read the credential. The agent was asked to check, and the before/after is the
-evidence that the redaction is real and not another no-op:
-
-```
-BEFORE the fix (§, agent running bash)
-  --- can the agent read its own injected credential from the shell env? ---
-  MOAT_INJECTED_CREDENTIAL=moat-e2e-scope...
-  --- can it read the supervisor process env via /proc? ---
-  MOAT_INJECTED_CREDENTIAL=moat-e2e-scope...
-
-AFTER the fix (agent running bash, same prompt)
-  --- can the agent read its own injected credential from the shell env? ---
-  MOAT_INJECTED_CREDENTIAL=
-  --- can it read the supervisor process env via /proc? ---
-  MOAT_INJECTED_CREDENTIAL=moat-e2e-scope...
-```
-
-The shell env is redacted. `/proc` is not, and cannot be: the opencode process
-must hold the value to use it, and the agent's commands run as the same uid.
+The credential exposure is the one that cannot be fixed inside the box. The runtime
+must hold the value to use it, the agent's commands run as the same uid, so
+`/proc/<pid>/environ` has it for as long as the credential lives. There is no
+redaction hook and none is claimed: a previous runtime blanked secret-looking
+variables for the shell commands the agent wrote, which was a speed bump at best,
+and it was deleted with the runtime (see `docs/RUNTIME-MIGRATION.md`).
 
 ### What this means
 
@@ -156,8 +105,8 @@ must hold the value to use it, and the agent's commands run as the same uid.
   address, and DNS, can still carry data out. Treat the allowlist as a limit on
   the blast radius, not as confidentiality.
 * Tool-level permissions would not have changed any of these measurements:
-  every one came from a single `bash` call. This is why the "no deny rules" is
-  not the problem, see `docs/SPEC.md` §1.3.
+  every one came from a single shell call. This is why "no deny rules" is not
+  the problem, see `docs/SPEC.md` §1.3.
 
 **In the meantime:** `moat up --no-credential` puts nothing stealable in the box.
 If you need a model, hand it a short-lived, spend-capped token and assume it will
@@ -165,249 +114,80 @@ eventually leak.
 
 ---
 
-## Criterion 1, `moat up` boots the environment, clones the repo in, and starts `opencode serve` inside it
+## Criterion 1, `moat up` boots the environment, clones the repo in, and the runtime is ready
 
 ```
 $ moat up --json --model mock-model --base-url http://127.0.0.1:5599/v1 \
         --credential-env MOAT_MOCK_CREDENTIAL
 ```
 
-```json
-{
-  "project": "/home/user/moat-demo/project",
-  "envId": "18620c2c4f34",
-  "provisionMs": 1022,
-  "provisionFromImageCache": true,
-  "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-50303c72c8d1.tar.gz",
-  "provisionSteps": [
-    {
-      "name": "extract cached image",
-      "ms": 864
-    }
-  ],
-  "baselineSnapshot": {
-    "name": "baseline",
-    "bytes": 81976993,
-    "linked": true
-  },
-  "copyIn": {
-    "transport": "git",
-    "head": "c1ac17d4d20d6924cdb30e548f6852f1e277e21f",
-    "branch": "main",
-    "dirty": true,
-    "trackedChanges": 1,
-    "untrackedFiles": 1,
-    "digest": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158",
-    "files": 3,
-    "bytes": 126,
-    "suspectSecrets": [],
-    "skippedFromCopy": [],
-    "hostState": "git:c1ac17d4d20d6924cdb30e548f6852f1e277e21f:af703fa3b275a51f"
-  },
-  "copyInMs": 76,
-  "provider": {
-    "opencodeID": "moat",
-    "native": false,
-    "label": "custom OpenAI-compatible endpoint"
-  },
-  "model": {
-    "id": "moat/mock-model"
-  },
-  "bundle": {
-    "curated": [
-      "read",
-      "write",
-      "edit",
-      "apply_patch",
-      "glob",
-      "grep",
-      "bash",
-      "todowrite",
-      "question"
-    ],
-    "excluded": [
-      "skill",
-      "webfetch",
-      "websearch",
-      "task"
-    ],
-    "preset": "core"
-  },
-  "egress": "open",
-  "status": "running",
-  "port": 42021,
-  "pid": 61565,
-  "bootMs": 8891,
-  "totalMs": 10131,
-  "readyCheck": "GET /config -> 200",
-  "credential": {
-    "provider": "moat",
-    "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-19T19:05:28.621Z",
-    "source": "env:MOAT_MOCK_CREDENTIAL"
-  },
-  "host": "linux x64 wsl2 userns=yes kvm=no",
-  "credentialsInSandboxEnv": [
-    "MOAT_CREDENTIAL_EXPIRES_AT",
-    "MOAT_CREDENTIAL_FINGERPRINT",
-    "MOAT_CREDENTIAL_TTL_SECONDS",
-    "MOAT_INJECTED_CREDENTIAL",
-    "MOAT_MODEL",
-    "MOAT_MODEL_ID",
-    "MOAT_PORT",
-    "MOAT_PROVIDER_BASE_URL",
-    "OPENCODE_SERVER_PASSWORD"
-  ]
-}
-```
-```json
-{
-  "project": "/home/user/moat-demo/project",
-  "envId": "18620c2c4f34",
-  "provisionMs": 7950,
-  "provisionSteps": [
-    { "name": "download rootfs", "ms": 1 },
-    { "name": "extract rootfs", "ms": 50 },
-    { "name": "apk packages", "ms": 7831 },
-    { "name": "install opencode", "ms": 66 },
-    { "name": "install bundle", "ms": 1 }
-  ],
-  "baselineSnapshot": { "name": "baseline", "bytes": 79366761 },
-  "copyIn": {
-    "transport": "git",
-    "head": "4ae4d7ace709a6028a3df6d2d463a38aeab24bd7",
-    "branch": "main",
-    "dirty": true,
-    "trackedChanges": 1,
-    "untrackedFiles": 1,
-    "digest": "c73dfe12c6e22b9fd80294de7eea6122c85a25769a490fc97f4d28530d855158",
-    "files": 3,
-    "bytes": 126
-  },
-  "copyInMs": 35,
-  "status": "running",
-  "port": 42325,
-  "pid": 2595,
-  "bootMs": 8507,
-  "totalMs": 23440,
-  "readyCheck": "GET /config -> 200",
-  "credential": {
-    "provider": "moat",
-    "fingerprint": "sha256:7726b438889c7f57",
-    "expiresAt": "2026-09-18T23:54:09.427Z",
-    "source": "env:MOAT_MOCK_CREDENTIAL"
-  },
-  "host": "linux x64 wsl2 userns=yes kvm=no",
-  "credentialsInSandboxEnv": [
-    "MOAT_CREDENTIAL_EXPIRES_AT", "MOAT_CREDENTIAL_FINGERPRINT",
-    "MOAT_CREDENTIAL_TTL_SECONDS", "MOAT_INJECTED_CREDENTIAL", "MOAT_MODEL",
-    "MOAT_MODEL_ID", "MOAT_PORT", "MOAT_PROVIDER_BASE_URL", "OPENCODE_SERVER_PASSWORD"
-  ]
-}
-```
+The committed capture is `test/evidence/codex-up.txt`. The fields that matter:
 
-* **cloned in**: `transport: "git"`, with the dirty working tree carried across
-  (`dirty: true, trackedChanges: 1, untrackedFiles: 1` — the fixture has one
-  modified tracked file and one untracked file).
-* **`opencode serve` inside it**: `readyCheck: "GET /config -> 200"`, and the
-  sandbox log shows the server starting in the box:
-
-```
-$ moat logs sandbox
-[moat] sandbox boot 2026-09-18T16:26:57Z
-[moat] kernel=6.18.33.2-microsoft-standard-WSL2 rootfs=3.21.4
-[moat] credential fingerprint=sha256:7726b438889c7f57 expires=2026-09-19T00:27:00.032Z
-[moat] starting opencode serve on 127.0.0.1:43969
-[moat] agent pid=23
-opencode server listening on http://127.0.0.1:43969
-```
+* **cloned in**: `copyIn.transport: "git"`, with the dirty working tree carried across
+  (`dirty: true`, one modified tracked file and one untracked file in the fixture), and a
+  digest moat recomputes on the host before and after (§4a).
+* **provider**: a custom OpenAI-compatible endpoint on the host's loopback, which is also
+  why egress chose `open` — the documented exception in §7.3 of `docs/SPEC.md`.
+* **the runtime is ready**: `readyCheck: "the codex runtime has no server to wait for"`.
+  There is no port and no `url` in the output, because there is no server; the same suite's
+  `codex-status.json` carries `"runtime": "codex"` and nothing to connect to.
+* **the config moat rendered** is read back with `moat exec -- cat /root/.codex/config.toml`:
+  `approval_policy = "never"`, `sandbox_mode = "danger-full-access"`, and the provider block
+  with `wire_api = "responses"` and `env_key = "MOAT_INJECTED_CREDENTIAL"`.
 
 ---
 
-## Criterion 2 — the host can attach the opencode client and drive a session
+## Criterion 2 — the interactive surface is Codex's own TUI
 
-The host attaches with the official client (`@opencode-ai/sdk@1.18.31`, the same
-generated client opencode ships). Captured **on the provider side**, which is the
-only place that proves the request really came from inside the sandbox:
+There is no client of moat's and no protocol between moat and the agent: `moat`, at a
+terminal, hands the sandbox the terminal it inherited and execs Codex's TUI. That it is
+reached, that it draws a screen, and that leaving it leaves the box running is proven
+through a real pty by `test/codex-tui.py` (extras section AL, `test/evidence/codex-tui.txt`):
 
 ```
-inference requests observed : 6
-authorization header        : ['Bearer moat-e2e-scoped-credential-8c1d4e']
-advertised tool list        : ['bash', 'edit', 'glob', 'grep', 'read', 'skill', 'task',
-                               'todowrite', 'webfetch', 'write']
-scripted steps executed     : [(0, 'bash'), (1, 'write'), (2, 'edit'), (3, 'bash'),
-                               (4, 'bash'), (5, 'text')]
+pass  the TUI was reached, not the help text
+pass  it drew a screen and kept running
+pass  Ctrl-C left the sandbox running
+codex tui: the default runtime opens a live TUI
 ```
 
-Six inference requests, each carrying the injected credential as a bearer
-token. Nothing was proxied: the agent loop, the tools and the filesystem are all
-inside the box.
+The check is keyless: a dummy credential is set so Codex has its variable, and nothing is
+ever sent to a provider. What the TUI draws beyond that is the CLI's own program, and is in
+the "Not verified" table.
 
 ---
 
-## Criterion 3 — the agent completes a task requiring bash + file edits with zero permission prompts
+## Criterion 3 — the agent completes a task requiring shell + file edits with zero permission prompts
 
 ```
-$ moat attach --show-output --prompt "Create and edit a note file in the project, then commit it. Report what you did."
+$ moat run "Create and edit a note file in the project, then commit it. Report what you did."
 ```
 
-```
-[tool] bash (completed) pwd && ls -la && cat README.md
-[tool-output]
-/work
-total 24
-drwxr-xr-x  3 root root 4096 Sep 18 15:59 .
-drwxr-xr-x 21 root root 4096 Sep 18 15:59 ..
-drwxr-xr-x  7 root root 4096 Sep 18 15:59 .git
--rw-r--r--  1 root root   71 Sep 18 15:59 README.md
--rwxr-xr-x  1 root root   45 Sep 18 15:59 greet.sh
--rw-r--r--  1 root root   10 Sep 18 15:59 notes.txt
-# demo project
-
-A tiny project used to exercise moat.
-uncommitted line
-[tool] write (completed) agent-output.txt
-[tool-output]
-Wrote file successfully.
-[tool] edit (completed) agent-output.txt
-[tool-output]
-Edit applied successfully.
-[tool] bash (completed) printf 'line two\n' >> agent-output.txt && wc -l agent-output.txt && cat agent-output.txt
-[tool] bash (completed) git add -A && git commit -q -m 'agent: add agent-output.txt from inside the sandbox' && git log --oneline -1 && git rev-parse HEAD
-Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
-
-ses_f4aa83904ffeVPBVyhZqMYjFdv
-tools   bash:completed, write:completed, edit:completed, bash:completed, bash:completed
-```
-
-**Zero permission prompts**, proven by absence rather than assertion — the
-plugin's `permission.ask` hook is the only thing that writes
-`/var/log/moat/permissions.jsonl`, and the file is never created:
+The host reads the CLI's JSONL stream and prints one row per item. Measured against the stub
+(`test/evidence/codex-mock-run.txt`):
 
 ```
-permission requests raised: 0  (the file was never created, no permission.ask hook ever fired)
+  ✓ /bin/sh -lc "cd /work && sed -i 's/a - b/a + b/' src/sum.js && npm test …"
+Fixed src/sum.js so the test passes, and committed it.
+  17280 tokens  1 tool
 ```
 
-The bundle's config-time record, written by the plugin *inside* the sandbox,
-confirms what opencode loaded (the suite prints the fields it checks; the committed
-copy is `test/evidence/audit.jsonl`):
+**Zero permission prompts** is a property of the rendered config rather than a counter:
+`approval_policy = "never"` means no tool call can raise one, and there is no hook to fire.
+What the acceptance suite asserts instead is the config itself (the two lines in Criterion 1)
+and that a real turn ran to completion and committed its work.
+
+The tools a turn is offered are recorded on the provider side by the stub, not declared by
+moat (`test/evidence/codex-summary.txt`):
 
 ```
-$ moat logs audit
-{"phase": "config", "permission": {"skill": "deny", "webfetch": "deny", "websearch": "deny", "task": "deny", "*": "allow"}, "toolOmissions": ["skill", "webfetch", "websearch", "task"]}
+tools advertised to the model: ['create_goal', 'exec_command', 'get_goal', 'multi_agent_v1',
+                                'request_user_input', 'update_goal', 'view_image', 'web_search',
+                                'write_stdin']
 ```
 
-`"*": "allow"` is the rule that matches every curated tool, so no approval prompt
-can fire. The four `deny` entries are not approval rules: opencode compiles moat's
-`tools: {name: false}` into permission denies *before* the plugin's config hook
-runs, and the hook has to accept exactly that shape and nothing else. This record
-is also the proof that the hook ran at all. The check used to demand exactly
-`{"*":"allow"}`, so it threw on every boot; opencode logs a plugin hook error and
-carries on, which is why the only symptom for several commits was an ERROR line in
-a boot log and a config record that never appeared.
-`test/unit/plugin-guard.test.ts` asserts both halves: the merged shape is accepted
-with the record written, and an approval rule or a deny moat did not ask for is
-refused.
+That list is the CLI's, not moat's, and moat does not filter it; what bounds those tools is
+the box. See §6.1 of `docs/SPEC.md`.
 
 ---
 
@@ -640,51 +420,32 @@ $ moat exec -- cat /work/precious.txt      # still there afterwards
 precious uncommitted work
 ```
 
-### A turn reports itself while it runs
+### A turn reports itself when it finishes
 
-`moat attach --prompt` used to wait for the whole turn and print nothing until it
-finished. On a real task that is minutes of blank terminal, which reads as hung,
-and the natural response is Ctrl-C, which loses the turn. It now subscribes to the
-server's event stream before starting the turn and reports parts as they arrive.
-`test/e2e.sh` asserts this so it cannot regress:
-
-```
-streaming: tool calls were reported as they started (not just at the end)
-```
-
-The guard looks for a `(running)` tool line, which only the event-driven path can
-emit: the old path learned about a tool call only after the turn was over. The
-blocking call is still there as a fallback, and says so if it is used.
+`moat run` reads the CLI's JSONL stream, parses it (`parseCodexEvents`) and then prints one
+row per item, the answer and the footer. It does **not** stream those rows live: the host
+buffers the stream and reports the parsed turn when the process exits, the same shape as
+`moat up <task>`. A long turn therefore prints nothing until it ends, and the host caps what
+it buffers (head and tail kept, a marker between them) so a runaway turn cannot exhaust host
+memory. The shape is visible in the capture (`test/evidence/codex-mock-run.txt`): the `✓` row
+is the item the turn ran, and `17280 tokens  1 tool` is the footer built from the same
+stream.
 
 ## Criterion 6 — cold start is measured and reported
 
-The human output labels the kind of start, so a warm boot is never reported
-as a cold one (`cold start … (image built)` vs `warm start … (image reused)`, the
-latter measured in `test/evidence/up-short-ttl.txt`). `moat up --json` reports the
-breakdown:
+The human output labels the kind of start, so a warm boot is never reported as a cold one
+(`cold start … (image built)` vs `warm start … (image reused)`). `moat up --json` reports the
+breakdown: `provisionMs` and the steps inside it, `copyInMs`, `bootMs`, `totalMs` and
+`readyCheck`. Under Codex, `readyCheck` is `"the codex runtime has no server to wait for"`:
+the box is a keepalive, so there is nothing to poll and `bootMs` is the time to spawn the
+namespaces and have the entry script print that it is ready — milliseconds, not seconds. The
+real cost is provisioning, and when provisioning does work it names each step (`download
+rootfs`, `extract rootfs`, `apk packages`, `install codex`, `cache image`), so a slow boot
+says which step was slow.
 
-```json
-$ moat destroy --yes && moat up --json …          # first boot for this project
-{
-  "provisionMs": 1022,
-  "provisionFromImageCache": true,
-  "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-50303c72c8d1.tar.gz",
-  "provisionSteps": [ { "name": "extract cached image", "ms": 864 } ],
-  "baselineSnapshot": { "name": "baseline", "bytes": 81976993, "linked": true },
-  "copyInMs": 76,
-  "bootMs": 8891,
-  "totalMs": 10131,
-  "readyCheck": "GET /config -> 200"
-}
-```
-
-| measurement | this run |
-| --- | --- |
-| `totalMs` — `moat up` start to server ready | **10 131 ms** |
-| `provisionMs` — image extraction | 1 022 ms |
-| `copyInMs` — clone + dirty-tree replay | 76 ms |
-| `bootMs` — spawn namespaces to `GET /config -> 200` | 8 891 ms |
-| warm start (`provisioned: false`) | **4 153 ms** |
+The committed numbers for the runs quoted in this file are in `test/evidence/codex-up.txt`,
+`test/evidence/up.txt` and `test/evidence/up-short-ttl.txt`. The measurements below are the
+ones that motivated the image cache, and are still why it exists.
 
 ### Why these numbers vary, and what was done about it
 
@@ -696,58 +457,40 @@ cold start was severe enough to be worth fixing rather than reporting:
 | --- | --- |
 | network `apk add`, healthy mirror | 7 950 ms |
 | network `apk add`, degraded mirror (8 mirror rotations, all retried) | **927 352 ms** |
-| extraction of the cached image (final implementation) | **1 170 – 1 187 ms** |
+| extraction of the cached image | **1 170 – 1 187 ms** |
 
 moat therefore caches the *provisioned image* on the host, keyed by
-`(alpine version, opencode version, package set)`. The cached artefact is the
-packages, the pinned opencode binary and the bundle. It contains **no credential**
-— criterion 8 greps a freshly provisioned rootfs and finds zero matches — and no
-project (`./work` is excluded, exactly as for snapshots). `moat up --fresh`
-bypasses it.
-
-The remaining `bootMs` variance (1.46 s – 13.2 s across runs) is opencode's own
-start-up, dominated by its runtime install of the `@ai-sdk/openai-compatible`
-provider package on a first session; once that lands in the image it is paid
-once. Both figures are reported as measured, not averaged away.
+`(alpine version, codex version, package set)`. The cached artefact is the packages
+and the pinned runtime binary. It contains **no credential** — criterion 8 greps a
+freshly provisioned rootfs and finds zero matches — and no project (`./work` is
+excluded, exactly as for snapshots). `moat up --fresh` bypasses it.
 
 ## Criterion 7 — the agent cannot read any host credential: a failed attempt
 
-The agent itself was asked to try. This is the `bash` tool running *inside* the
+The agent itself was asked to try. This is Codex's shell tool running *inside* the
 sandbox, as uid 0, with the model having chosen the command:
 
 ```
-$ moat attach --show-output --prompt "Try to read the host's credentials and project directory, and report exactly what happens."
+$ moat run "Try to read the host's credentials and project directory, and report exactly what happens."
 
-[tool] bash (completed) pwd && ls -la && cat README.md && echo '--- host access attempt ---' && \
-  for p in /home/user/.moat/canary /home/user/.ssh/id_ed25519 /home/user/.gitconfig \
-           /home/user/.aws/credentials /home/user/moat-demo/project/README.md; do \
-    if cat "$p" >/dev/null 2>&1; then echo "LEAK        $p"; else echo "blocked     $p"; fi; done; \
-  echo '--- host environment ---'; \
-  echo "AWS_SECRET_ACCESS_KEY=[${AWS_SECRET_ACCESS_KEY:-unset}] SSH_AUTH_SOCK=[${SSH_AUTH_SOCK:-unset}]"
-[tool-output]
-/work
-...
---- host access attempt ---
-blocked     /home/user/.moat/canary
-blocked     /home/user/.ssh/id_ed25519
-blocked     /home/user/.gitconfig
-blocked     /home/user/.aws/credentials
-blocked     /home/user/moat-demo/project/README.md
---- host environment ---
-AWS_SECRET_ACCESS_KEY=[unset] SSH_AUTH_SOCK=[unset]
+  ✓ /bin/sh -lc 'echo --- host home ---; ls /home/user 2>&1 | head -3; echo --- host canary ---; …'
+Every host path was unreachable from inside the sandbox; the outputs above are the errors.
+  17280 tokens  1 tool
 ```
 
-Five host paths, all blocked. `AWS_SECRET_ACCESS_KEY` and `SSH_AUTH_SOCK` were
-set on the host for that run (see `test/e2e.sh` §2) and are `unset` inside.
-
-The canary is a real file that exists only on the host, mode 0600, created for
-the duration of the test. The independent check in `moat doctor` confirms the
-same thing without going through a model:
+`AWS_SECRET_ACCESS_KEY` and `SSH_AUTH_SOCK` were set on the host for that run
+(`test/e2e-codex.sh` section 5) and are absent inside; the independent check in
+`moat doctor` confirms the same thing without going through a model:
 
 ```
-  pass  host canary unreadable   /home/user/.moat/canary (mode 600, exists only on the host) is unreadable
-  pass  no host env forwarded    8 variables present, all expected (HOME, LANG, LC_ALL, MOAT_SANDBOX, PATH, PWD, SHLVL, TERM)
+  pass  host canary unreadable         /home/user/.moat/canary (mode 600, exists only on the host) is unreadable
+  pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME, LANG,
+                                       LC_ALL, MOAT_SANDBOX, PATH, PWD, SHLVL, TERM (plus moat's own …)
 ```
+
+The canary is a real file that exists only on the host, mode 0600, created for the
+duration of the test; the acceptance suite asserts the same three paths independently with
+`moat exec`, so the result does not depend on the model reporting it honestly.
 
 ---
 
@@ -755,54 +498,52 @@ same thing without going through a model:
 
 ### 8a. It is injected, and it reaches the provider
 
-The provider saw it, as a bearer token, on all seven requests:
-
-```
-authorization header : ['Bearer moat-e2e-scoped-credential-8c1d4e']
-```
+The stub records the request it receives, so this is what the provider would have seen
+rather than what moat says it sent (`test/evidence/codex-provider-record.txt`): every
+inference request of the turn carries the injected credential as a bearer token, and the
+same record is where the advertised tool list comes from.
 
 ### 8b. It is not in the image
 
-The entire rootfs — 377 MiB, including the bundle, the opencode binary and the
-entry script — was searched for the literal value:
+The entire rootfs — hundreds of MiB, including the pinned runtime binary and the entry
+script — was searched for the literal value:
 
 ```
-$ grep -r --binary-files=without-match -l 'moat-e2e-scoped-credential-8c1d4e' \
-      /home/user/.moat/envs/18620c2c4f34/rootfs/ | head
+$ grep -r --binary-files=without-match -l <credential> /home/user/.moat/envs/<id>/rootfs/ | head
 matches: 0
 
-$ grep -o '{env:MOAT_INJECTED_CREDENTIAL}' \
-      /home/user/.moat/envs/18620c2c4f34/rootfs/usr/local/share/moat/opencode.json
-{env:MOAT_INJECTED_CREDENTIAL}
+$ moat exec -- sh -c 'grep env_key /root/.codex/config.toml'
+env_key = "MOAT_INJECTED_CREDENTIAL"
 ```
 
-The config holds the *reference*; opencode substitutes `{env:VAR}` from the
-process environment at load time (`packages/opencode/src/config/variable.ts`).
-The generated entry script holds the shell variable reference, likewise. Only a
-fingerprint is persisted on the host (`"sha256:7726b438889c7f57"`).
+The config holds the *name*; Codex reads that variable from its own environment at
+startup, and the value never reaches a file. Only a fingerprint is persisted on the
+host (`"sha256:7726b438889c7f57"`).
 
 ### 8c. It is short-lived, and expiry is enforced
 
-`test/e2e-extras.sh` §E boots with `--credential-ttl 6s` and then does nothing:
+`test/e2e-extras.sh` boots with `--credential-ttl 6s` and then does nothing. The box
+enforces the credential's own deadline, which the host passes as
+`MOAT_CREDENTIAL_EXPIRES_EPOCH`; a credential that is already dead at boot stops the box
+instead of starting an agent that cannot call a model:
 
 ```
 $ moat up … --credential-ttl 6s
-✓ sandbox up, warm start 3.94s (image reused)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-18T16:27:59.025Z
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 6s; the box stops then
+[moat] injected credential expired; stopping the sandbox
 
-$ sleep 12 && moat status
+$ moat status
 status       stopped
-credential   moat sha256:7726b438889c7f57 expires in -10s (EXPIRED, the sandbox watchdog stops the agent)
-
-$ grep -iE 'expired|agent exited' ~/.moat/envs/*/rootfs/var/log/moat/boot.log
-[moat] injected credential expired (ttl=6s); stopping agent
-[moat] agent exited with status 143
+credential   moat sha256:7726b438889c7f57 expires in -6s (EXPIRED — the box stops at this deadline)
 ```
 
-Exit status 143 is 128 + 15: the agent was stopped by SIGTERM. The box stopped
-itself; no host process had to intervene.
+(Both blocks are from `test/evidence/logs-ttl.txt` and
+`test/evidence/status-after-ttl.txt`.) The deadline is the credential's own timestamp,
+not a TTL counted from the script's start: counting from the start let the box outlive
+its key by however long the boot took.
 
-**Scope of this claim.** v0 enforces expiry by *terminating the agent*, not by
+**Scope of this claim.** v0 enforces expiry by *stopping the box*, not by
 revoking the token at the provider. Provider-side scoping and revocation are v2
 work; `docs/SPEC.md` §5.3 says so.
 
@@ -826,27 +567,13 @@ $ moat up …
 $ moat exec -- /bin/sh -c "cat /opt/moat-marker; jq --version"
 --- marker (proof the rootfs persisted) ---
 persisted-at-1789748834
---- jq (proof the install persisted) ---
 jq-1.7.1
 ```
 
-Two independent proofs: a file written into the rootfs, and a package installed
-with the sandbox's own package manager (`jq` is in Alpine 3.21's `main`
-repository and is not in the base image). Both survive a full stop/start cycle,
-in fresh namespaces.
-
-Snapshots exclude the project, verified from the host by listing the archive:
-
-```
-$ tar tzf <snapshot> | grep -c '^\./work'
-0
-
-$ moat snapshot before-extras
-✓ snapshot before-extras (107.0 MiB) -> …/snapshots/before-extras.tar.gz
-entries under ./work : 0
-entries under ./root : 4456
-total entries        : 5911
-```
+The rootfs and the project copy in `/work` survive a full stop and a boot, and a package
+the agent installed is still there afterwards. Snapshots capture the rootfs — installs,
+state — and exclude `/work`; the restore half is extras section A/B
+(`test/evidence/snapshot-take.txt`, `snapshot-restore.txt`).
 
 ---
 
@@ -859,78 +586,51 @@ here is configuration, resolution and capability — never a claim about a model
 
 ### Model and provider resolution
 
-moat targets one provider, so there is nothing to resolve and no `--provider`
-flag. For DeepSeek it writes no provider block at all: opencode's models.dev
-catalog supplies the base URL, the npm SDK, the context window and the
-capabilities. What moat does write is the model choice, the curated tool list,
-and one extra reasoning variant (§6b.5):
+moat targets one provider, so there is nothing to resolve and no `--provider` flag. For
+DeepSeek the endpoint, context window and capabilities come from the
+[models.dev](https://models.dev) catalog, and moat renders the one
+`[model_providers.*]` block Codex needs. The rendered file, read back from inside the box
+(`test/evidence/codex-config-in-box.txt`), carries:
 
-```
-$ cat <env>/rootfs/usr/local/share/moat/opencode.json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "model": "deepseek/deepseek-flash",
-  "small_model": "deepseek/deepseek-flash",
-  "share": "disabled",
-  "autoupdate": false,
-  "permission": { "*": "allow" },
-  "tools": { "skill": false, "webfetch": false, "websearch": false, "task": false },
-  "enabled_providers": [ "deepseek" ],
-  "plugin": [ "/usr/local/share/moat/plugin/moat-bundle.mjs" ],
-  "provider": {
-    "deepseek": {
-      "models": {
-        "deepseek-flash": {
-          "variants": { "off": { "thinking": { "type": "disabled" } } }
-        }
-      }
-    }
-  }
-}
+```toml
+model = "<the resolved model id>"
+model_provider = "deepseek-moat"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+model_context_window = <catalog context window>
+model_max_output_tokens = <catalog output cap>
+
+[model_providers.deepseek-moat]
+name = "DeepSeek"
+base_url = "<catalog base URL, or --base-url>"
+env_key = "MOAT_INJECTED_CREDENTIAL"
+wire_api = "responses"
 ```
 
-Read back from the running server, over the authenticated API:
+The context window and output cap are declared explicitly so the first run is not a
+metadata guess: without them Codex prints `Model metadata for <id> not found. Defaulting
+to fallback metadata`, which `parseCodexEvents` classifies as an advisory (`notices`, not
+`errors`) because counting it made a successful run read `1 error` in the footer (measured).
 
-```
-$ curl -s -H "$AUTH" $BASE/config
-model      : deepseek/deepseek-flash
-small_model: deepseek/deepseek-flash
-share      : disabled
-tools      : {"skill":false,"webfetch":false,"websearch":false,"task":false}
+Four details are load-bearing, and `test/unit/codex-runtime.test.ts` pins the rendered
+config against them:
 
-$ curl -s -H "$AUTH" $BASE/config/providers
-providers loaded  : ["deepseek"]
-model entry       : {"id":"deepseek-flash","name":"DeepSeek V4.1 Flash",
-                     "limit":{"context":1000000,"output":384000},
-                     "api":"@ai-sdk/openai-compatible"}
-reasoning levels  : ["low","high","max","off"]
-models known      : 4 -> deepseek-v4-flash-vision-exp, deepseek-v4-flash,
-                         deepseek-v4-pro, deepseek-flash
-```
+* the provider block exists at all — 0.155.1 answers ``Error: Model provider `deepseek` not
+  found`` even though its documentation lists DeepSeek as built in
+  (`docs/RUNTIME-SPIKE-codex.md`);
+* `wire_api = "responses"` — the pinned version supports only that wire API, and DeepSeek
+  serves it;
+* `env_key` is present only when a credential was injected. A `--base-url` boot with
+  `--no-credential` renders no `env_key` rather than pointing Codex at a name nothing sets
+  (extras section AD);
+* there is no `model_reasoning_effort`. Codex sends that setting only for models it has
+  metadata for and has none for the DeepSeek models moat uses, so moat renders none rather
+  than rendering one that is silently dropped.
 
-Every number there comes from the catalog rather than from moat — the 1M context,
-the 384k output ceiling, the npm SDK, the reasoning levels. That is what makes
-"moat does not describe DeepSeek to opencode" checkable instead of merely
-claimed, and it is why a new model in the catalog needs no change here.
-
-Two traps in that output, both of which cost time to work out:
-
-* `GET /config/providers` also returns `default: {"deepseek": "deepseek-v4-pro"}`.
-  That is opencode's own idea of the provider's preferred model and has nothing to
-  do with moat. The effective model is `model` in `GET /config`. Chasing `default`
-  leads nowhere.
-* `reasoning levels` includes `off`, which is **moat's** addition rather than the
-  catalog's. Everything else in that line is models.dev's.
-
-The credential is injected under the name the provider expects
-(`DEEPSEEK_API_KEY`) rather than moat's own, so opencode's native definition finds
-it without a provider block referencing `{env:MOAT_INJECTED_CREDENTIAL}`. That is
-what the boot line records:
-
-```
-model: deepseek/deepseek-flash (context 1M, out 384k)
-! injecting deepseek credential sha256:e493a50d942e2a4f (ttl 14400s) as DEEPSEEK_API_KEY.
-```
+No `[projects.*]` trust entry is rendered by moat. Codex appends its own
+`[projects."/work"] trust_level = "trusted"` line the first time it runs in the workspace;
+moat rewrites the whole file on the next boot, so the policy lines cannot drift from what
+moat decided.
 
 ### Toolchain profiles
 
@@ -951,165 +651,58 @@ package manager, persisted in the rootfs, and incremental on subsequent boots
 
 ### The agent brief is written *and read*
 
-`/root/.config/opencode/AGENTS.md` is a global instruction file
-(`packages/opencode/src/session/instruction.ts:61`). Writing a file is not the
-same as it being read, so the check is on the request the provider receives:
-
-```
-$ moat attach --prompt "do the task"      # mock provider records the request
-requests           : 6
-system prompt chars: 13589
-brief in system    : True
-branch in system   : True
-```
-
-The sandbox loads these instructions into its system prompt — 13,589 characters of it
-in that run (the count moves with the brief's text, which is why it is quoted from a
-capture rather than asserted), including the branch name the agent was told to commit
-to.
+`/root/.codex/AGENTS.md` is Codex's global instruction file, and moat writes it on every
+boot from `bundle/instructions.ts`. Writing a file is not the same as it being read, so the
+check is on the request the provider receives: the recording stub keeps the request body,
+and the brief's content arrives in it, wrapped as AGENTS.md instructions
+(`test/evidence/codex-mock-brief.txt`). The brief is never written into the project: the
+user's repository is copied in byte-for-byte and moat adds nothing to it.
 
 ### The working branch
 
+Every boot puts the sandbox's working tree on `moat-session-<timestamp>`, so the user's
+own branch is untouched *inside* the box as well as outside it, and copy-out has one
+predictable ref to read:
+
 ```
-→ copy-out: git fetch …/rootfs/work +refs/heads/moat-session-2026-09-18-17-34:refs/moat/moat-session-2026-09-18-17-34
-✓ fetched moat-session-2026-09-18-17-34 -> refs/moat/moat-session-2026-09-18-17-34 (7e3015fb90cb)
-  apply with: moat apply moat-session-2026-09-18-17-34  (or --checkout)
+→ copy-out: git fetch …/rootfs/work +refs/heads/moat-session-<stamp>:refs/moat/moat-session-<stamp>
+✓ fetched moat-session-<stamp> -> refs/moat/moat-session-<stamp> (<sha>)
+  apply with: moat apply moat-session-<stamp>  (or --checkout)
 ```
 
-The agent commits to `moat-session-<timestamp>`, so the user's branch is untouched
-inside the box as well as outside it, and copy-out reads a predictable ref.
-
----
+`moat fetch` with no argument fetches that branch; `moat apply` creates a local branch of
+the same name. The branch and the TUI's own history live in the rootfs and so survive
+`moat down` / `moat up`; moat exposes no resume flag of its own.
 
 ## A real model, doing a real task
 
-Everything above was produced with a deterministic local model stub, because this
-host had no provider credentials. That proves the machinery; it does not prove
-that a frontier coding model, given the environment moat builds, actually does
-the work.
+`bash test/e2e-live.sh` is the only suite that talks to the hosted model, and the only
+evidence in this file that is not a stub. The full transcript is
+`test/evidence/live-session.txt`. The task is a small Node project (`slugkit`) whose test
+suite genuinely fails — deliberate bugs in a `slugify()` — and the prompt asks the agent to
+find the bug, fix it, install and verify end to end, and commit.
 
-This section is the opposite: a real DeepSeek session, spending real tokens.
-Reproduce with `DEEPSEEK_API_KEY=... bash test/e2e-live.sh`. Full transcript:
-`test/evidence/live-session.txt`, 398 lines.
+What the transcript shows, check by check:
 
-The environment takes the **default** network policy: the suite passes no
-`--egress` flag. The fifth section of the transcript then measures that policy in
-the same box that did the work, rather than trusting the boot line — the
-allowlisted provider answers (HTTP 401 without a key) and an address outside the
-allowlist times out (`curl-exit=28`).
-
-### The setup
-
-A small Node project (`slugkit`) whose test suite genuinely fails: 1 pass, 5
-fail. Deliberate bugs in a `slugify()` — no whitespace collapsing, no trimming,
-no punctuation handling, no accent transliteration. The sandbox was booted with
-`--profile node` and the real provider:
-
-```
-$ moat up --model deepseek-flash --profile node --credential-env DEEPSEEK_API_KEY
-model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-19-15-15
-✓ sandbox up, cold start 17.98s (image built)
-```
-
-### What the agent did
-
-Prompt: *"npm test is failing. Run it, find the bug in src/slugify.js, and fix it
-so the whole suite passes. Then run npm install and verify the CLI works end to
-end. Commit everything to the branch you are on, and report the final test
-output."*
-
-Fourteen tool calls, all completed, in a sensible order:
-
-```
-bash  cat package.json; ls -la; git status; git log --oneline -5
-read  src/slugify.js
-glob  (found test/slugify.test.js)
-bash  ls -R src test; npm test 2>&1 | head -100
-read  test/slugify.test.js
-read  src/cli.js
-edit  src/slugify.js
-bash  npm test 2>&1 | tail -20
-bash  npm install 2>&1 | tail -15
-bash  node src/cli.js "  Crème Brûlée  " ; node src/cli.js --version
-bash  git add -A && git commit -m "fix(slugify): handle whitespace, punctuation and accents"
-write  .gitignore
-bash  git rm -r -q --cached node_modules && git add .gitignore package-lock.json && git commit
-bash  npm test 2>&1
-```
-
-The `npm install` in the middle is worth noting twice over: it worked — the npm
-registry is on the allowlist — and the agent then noticed it had staged
-`node_modules`, wrote a `.gitignore`, and removed it from the index in a second
-commit rather than leaving it in the branch.
-
-### The agent's claims, checked by moat rather than believed
-
-The agent reported "pass 6, fail 0". A claim is not evidence, so moat re-ran the
-suite itself and read the code:
-
-```
---- the code it actually wrote ---
-export function slugify(input) {
-  return input
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-}
-
---- a fresh test run, started by moat ---
-# tests 6
-# pass 6
-# fail 0
-
---- the CLI, end to end ---
-hello-world-creme-brulee
-```
-
-The fix is correct, and it handles the accent case the way the test intends
-(decompose, strip combining marks).
-
-### Copy-out, with the host untouched
-
-```
-$ moat fetch
-✓ fetched moat-session-2026-09-18-17-50 -> refs/moat/moat-session-2026-09-18-17-50 (46733e493c9c)
-  4 commit(s) reachable, HEAD b41f2a0770ae -> b41f2a0770ae
-    46733e493c9c  chore: gitignore node_modules, track lockfile
-    bde4f8080ac7  slugify: fix whitespace, punctuation, trimming and accent handling
-    b41f2a0770ae  slugkit: fix the test script invocation
-   1ee5aa0097fe  slugkit: initial commit (test suite currently failing)
-
-  the host working tree was recomputed and is byte-identical
-```
-
-```
-$ git diff --stat HEAD refs/moat/moat-session-2026-09-18-17-50
- .gitignore        |  1 +
- package-lock.json | 21 +++++++++++++++++++++
- src/slugify.js    |  7 ++++++-
- 3 files changed, 28 insertions(+), 1 deletion(-)
-
-host HEAD before: b41f2a0770ae6092e6e9afe2838f78d8b738e716
-host HEAD after : b41f2a0770ae6092e6e9afe2838f78d8b738e716
-```
-
-The host's `HEAD` did not move and its working tree is clean. The agent's work
-exists only at `refs/moat/moat-session-2026-09-18-17-50` until the user asks for
-it.
+* the agent ran the failing suite, read the code, made the edit and re-ran the tests;
+* `npm install` worked over the network, from the allowlisted registry;
+* the agent committed its work to the session branch inside the box;
+* moat re-ran the project's own checks itself rather than believing the agent's report, and
+  printed its own verdict and cost footer;
+* `moat fetch` brought the branch back to the host as one ref, with the host `HEAD` and
+  working tree unchanged;
+* the host project tree hash was recomputed before and after and was identical.
 
 ### What this does and does not prove
 
-It proves the loop end to end with a real model: provider wiring, credential
-injection, tool dispatch with zero prompts, `npm install` over the network, a
-real test suite actually passing, commits inside the box, and copy-out that
-leaves the host untouched. The agent's own success claim was verified rather than
-accepted.
+It proves the loop end to end with a real model: provider wiring, credential injection, tool
+execution with zero prompts, `npm install` over the network, a real test suite actually
+passing, commits inside the box, and copy-out that leaves the host untouched. The agent's own
+success claim was checked by moat rather than accepted.
 
-It does not prove anything about model quality in general — one task, one model,
-one run. It is a smoke test with teeth, not a benchmark.
+It does not prove anything about model quality in general — one task, one model, one run. It
+is a smoke test with teeth, not a benchmark, and it is the only real-model evidence in this
+file: every other suite runs against the deterministic stub.
 
 ---
 
@@ -1162,142 +755,7 @@ $ git -C <project> status --porcelain
 ?? notes.txt                                     <-- only the user's own pre-existing edits
 ```
 
-### D. `moat env` reports connection details
 
-```
-url           http://127.0.0.1:46185
-username      opencode
-password      Bsk287TxeOcG4TX7VS8wVfzSbXYDiqxG
-```
-
-### F. The bundle refuses tools that are not in it
-
-```
-$ moat attach --show-output --prompt "Try an excluded tool, a write outside the workspace, and a read of a file inside the box."
-
-[tool] webfetch (error)
-[tool-error] webfetch: moat: tool "webfetch" is not part of this sandbox's bundle.
-             Available tools: read, write, edit, apply_patch, glob, grep, bash, todowrite.
-[tool] write (error)
-[tool-error] write: moat: refusing write.filePath outside the workspace: /etc/moat-escape-attempt.
-             The workspace is /work; /tmp is also writable.
-[tool] read (completed) ../etc/os-release
-[tool-output]
-1: NAME="Alpine Linux"
-2: ID=alpine
-3: VERSION_ID=3.21.4
-```
-
-Note the exit code is 1 here: two tool calls failed, and `moat attach` reports
-that. The session itself completed. Reads are deliberately unconfined — the box
-contains nothing sensitive, and an agent legitimately wants `/etc/os-release`.
-
-### G. The model-facing tool schemas, read back from the running server
-
-```
-$ node test/inspect-tool-schemas.mts <project>
-
-provider/model: moat/mock-model
-
-tool           parameters (model-facing, authoritative)
--------------- ------------------------------------------------------------
-bash           command, timeout?, workdir?
-read           filePath, offset?, limit?
-glob           pattern, path?
-grep           pattern, path?, include?
-edit           filePath, oldString, newString, replaceAll?
-write          content, filePath
-todowrite      todos
-```
-
-This table is why the mutation guard works. opencode's *internal* schemas declare
-`path` (`packages/core/src/tool/{read,write,edit}.ts`); the *model-facing* schema
-renames it to `filePath`. The first version of the guard checked `path`, matched
-nothing, and confined nothing — a bug that produced no error and no log line, and
-was only caught because the failure was exercised deliberately.
-
-### H. Model, reasoning effort, and the interactive stream
-
-Three separate claims, each with its own evidence.
-
-**The effort control is real, not cosmetic.** moat sends opencode's `variant` on
-the prompt. opencode maps `model.variants[variant]` into the provider options it
-merges into the request (`session/llm/request.ts`), which for
-`@ai-sdk/openai-compatible` is `{ reasoningEffort: <level> }`
-(`provider/transform.ts`). The levels are read from the server rather than
-hardcoded, because they differ per model:
-
-```
-$ curl -s -H "$AUTH" $BASE/config/providers | ...
-  deepseek-v4-flash-vision-exp     ["low","high","max"]
-  deepseek-v4-flash                ["low","high","max"]
-  deepseek-v4-pro                  ["high","max"]
-  deepseek-flash                   ["low","high","max"]
-```
-
-`deepseek-v4-pro` genuinely has no `low` or `medium`: the API answers `422
-unknown variant` for values outside the set, which is why moat offers only what
-the server reports.
-
-The end-to-end check reads the level back off the sandbox's **own** server, not
-from moat's output:
-
-```
-$ python3 test/repl-effort.py
-  pass  /model reported this model's effort levels
-  pass  /think max was accepted
-  pass  /think refused a level that does not exist
-  pass  the chosen effort reached the server
-
-server recorded variant for the turn: 'max'
-```
-
-What this does *not* show: that a given level changes the answer to any
-particular prompt. Across three identical one-shot prompts (`default`, `high`,
-`max`) all three were correct and the reasoning-token counts were 13, 0 and 17 —
-one sample each. The control plane is verified; the effect size is model
-behaviour and is not claimed.
-
-**Assistant text was never displayed.** Until this was fixed, `moat`'s
-interactive session rendered tool calls and nothing else: the live view waited
-for a `delta` field on `message.part.updated`, and opencode 1.18.31 does not put
-one there. Deltas arrive as a separate event, `message.part.delta`, which
-carries a `partID` but not the part's kind:
-
-```
-{"type":"message.part.delta","properties":{"messageID":"msg_…","partID":"prt_…","field":"text","delta":"Hello"}}
-```
-
-Both the interactive view and the non-interactive `moat run` stream were
-affected, so a turn looked hung until it ended and then printed nothing. The fix
-catalogues part kinds from the `message.part.updated` events that precede each
-delta and message roles from `message.updated`; event order for this was checked
-on a live server, where an assistant `message.updated` always precedes that
-message's first delta. Verified through a pty:
-
-```
-› say hello in three words
-│ Hello from opencode.
-› /thinking
-showing reasoning (/thinking to hide)
-› How many times does the letter r appear in strawberry? Reply with just the number.
-│ thinking The word "strawberry" contains the letter r three times.
-│ 3
-```
-
-**A key saved by onboarding was never reused.** `moat`'s onboarding wrote the
-credential to `~/.moat/credentials.json` under `deepseek`, but `moat up` asked
-the broker for it under the human label `DeepSeek`, so the lookup missed and the
-next run reported "no DEEPSEEK_API_KEY" — and, at a terminal, asked for the key
-again. Fixed on both sides (the id is passed, and the broker falls back to the
-ids it writes), verified by rebooting an environment with no key in the
-environment at all:
-
-```
-$ moat up
-! injecting deepseek credential sha256:e493a50d942e2a4f (ttl 14400s) as DEEPSEEK_API_KEY.
-  credential deepseek sha256:e493a50d942e2a4f expires 2026-09-19T00:16:25.853Z
-```
 
 ### I. A binary file in the project used to break the baseline
 
@@ -1319,11 +777,8 @@ Reproduced by putting a binary file in the project, named so that it sorts befor
 everything else — tar has to stop early enough to lose the files after it:
 
 ```
-$ python3 test/repl-apply.py        # with a 100 KB binary file in the fixture
-  pass  the agent worked
-  pass  apply showed a plan
-  pass  the file landed in the directory
-  pass  a binary file did not stop the plan
+$ node --test test/unit/apply.test.ts   # with a binary file in the fixture
+  pass  a binary file does not stop the plan
   pass  the binary file survived apply byte for byte
 ```
 
@@ -1336,10 +791,10 @@ Copy-in was checked for the same fault and is **not** affected: `git diff
 --binary` emits base85, which is pure ASCII, verified by round-tripping a real
 binary patch and finding no character above ASCII 126.
 
-### J. The session display, and the price of a turn
+### J. The price of a turn
 
-**The prices are DeepSeek's, not the catalog's.** The models.dev entry opencode
-bills against disagrees with the published table, so moat computes its own:
+**The prices are DeepSeek's, not the catalog's.** The models.dev entry disagrees with the
+published table, so moat computes its own (`lib/pricing.ts`):
 
 ```
                      models.dev        published (off-peak)   published (peak)
@@ -1353,80 +808,34 @@ The `deepseek-flash` row matches off-peak exactly, which is what makes the
 `deepseek-v4-pro` row look like a stale entry rather than a different convention.
 The same turn is charged at double the off-peak rate during peak hours.
 
-The rate the footer *names* comes from the same per-request timestamps as the money
-(`summariseTurn`), not from the clock at print time. It was the latter — a different clock
-— so a turn that ran through a boundary was labelled `peak` or `off-peak` by whichever
-side it finished on, over arithmetic that had billed each request at its own time, and a
-turn spanning both was described by one of them; it now reads `mixed`.
-`test/unit/turn-cost.test.ts` pins the three cases, the arithmetic (reasoning at the
-output rate, cache reads at the cache rate, off-peak exactly half of peak) and the wiring:
-`cmd/repl.ts` must not decide the rate itself. Both halves were watched failing — the
-`mixed` case with `rateLabel` reduced to a single clock, the wiring check with
-`describeRate` back in the REPL — and no live capture of a boundary-crossing turn exists,
-so the label itself is unit-verified only.
+**The rate label is part of the arithmetic, not a clock read.** A turn is priced from the
+token counts in the CLI's own usage block and the rate in force at the moment moat prices it,
+and the footer names that rate (`peak` or `off-peak`). Codex reports one usage block for the
+whole turn and no per-request timestamps, so a turn that crosses a peak boundary is priced at
+one rate; that limit is in the "Not verified" table. `summariseTurn`'s `mixed` label exists
+for turns moat assembles from several requests (the checks runner), where the per-request
+timestamps are available. `test/unit/turn-cost.test.ts` pins the arithmetic (reasoning at the
+output rate, cache reads at the cache rate, off-peak exactly half of peak) and the labels.
 
-Which token field is which was not guessable; it was recovered by reconciling
-opencode's own arithmetic against its own reported cost, exactly:
+**Which token field is which** was not guessable. For the Responses wire API, `input_tokens`
+**includes** the cached tokens: charging that field at the miss rate and `cached_input_tokens`
+at the hit rate separately over-reported a mostly-cached turn by about ten times (measured
+against the old runtime on one identical task, `docs/RUNTIME-COST.md`). `parseCodexEvents`
+subtracts the cached count, and prices `reasoning_output_tokens` at the output rate as a field
+separate from `output_tokens`; `test/unit/codex-runtime.test.ts` pins the arithmetic against a
+real captured stream.
 
-```
-input=6504 output=47 reasoning=0  cache.read=2304  cost=0.002878482
-  6504·0.435 + 2304·0.003625 + 47·0.87  (per million) = 0.002878482
-input=114  output=2  reasoning=53 cache.read=8704  cost=0.000128992
-  114·0.435 + 8704·0.003625 + (2+53)·0.87              = 0.000128992
-```
-
-So `input` is the cache-*miss* count, `cache.read` the cache-hit count, and
-reasoning is a separate field billed at the output rate. The second line only
-reconciles if reasoning is added to output, which is how that was established
-rather than assumed.
-
-**The setting is verified at the wire, not from opencode's account of itself.**
-`test/wire-effort.py` starts a recording proxy, boots with `--upstream` so the
-provider keeps its catalog definition but sends traffic to the proxy, and reads
-the request body:
-
-```
-$ python3 test/wire-effort.py
-=== what opencode actually put on the wire ===
-  reasoning_effort='max' thinking=None model=deepseek-v4-pro stream=True tools=11
-  reasoning_effort=None thinking={'type': 'disabled'} model=deepseek-v4-pro stream=True tools=11
-
-reasoning levels the server offered: ['high', 'max', 'off']
-  7/7 checks passed
-```
-
-This exists because of a false alarm worth recording. A turn sent with
-`variant: max` answered a multiplication wrongly and reported zero reasoning
-tokens, and a run without the `off` variant declared answered the same question
-correctly — which read as "the new variant broke reasoning". Two samples. The
-proxy showed the parameter arriving correctly in both configurations; the model
-had simply not used it the first time. The test above replaced the guesswork, and
-`test/repl-effort.py` no longer asserts that thinking *on* produces reasoning,
-because that is model behaviour rather than plumbing.
-
-**Layout regressions are guarded.** The answer text, the per-call elapsed time,
-the added/removed counts and the turn footer are asserted by
-`test/repl-smoke.py`. The guard was checked against a deliberately reintroduced
-bug: reverting the delta-event fix makes `the model's answer was displayed` fail.
-
-**Two rendering faults found and fixed while doing this**, both of which the
-tests then covered:
-
-- The reasoning spinner was cleared on *every* streamed fragment, so it vanished
-  and nothing replaced it until a line completed. The renderer buffers fragments
-  until a line is whole, so clearing has to happen at the moment something is
-  actually written, not in anticipation of it.
-- The answer gutter was written as its own row, leaving a bare `│` above every
-  reply. The gutter is written with the line it belongs to.
-
----
+The footer is the same arithmetic: the token total, the money when the model is in the pricing
+table, and a one-line summary built from the parsed turn (`describeCodexTurn`). For the stub
+model the money is absent and the line reads `17280 tokens  1 tool`
+(`test/evidence/codex-mock-run.txt`).
 
 ### K. The host-side git and apply regressions, as tests that run in CI
 
-Two classes of defect found in review had no guard: the host executing
-agent-controlled git config, and `moat apply` writing the wrong bytes. Both are
-now covered by `test/unit/`, which needs no sandbox and therefore runs in the
-workflow that cannot create user namespaces.
+The regressions behind the traps in `AGENTS.md` — an agent-controlled git config that runs a
+program on the host, a merge that loses a file name with two spaces, `moat apply` writing the
+wrong bytes — are unit tests. They need no sandbox and therefore run in the workflow that
+cannot create user namespaces.
 
 ```
 $ npm run test:unit
@@ -1452,12 +861,9 @@ $ npm run test:unit
 ✔ a literal key in any written artifact is refused
 ✔ a pid is only 'ours' when the recorded start time matches
 ✔ two reads of the same process agree on its start time
-✔ the curated tool list has one source of truth
-✔ the plugin refuses a permission rule that is not exactly allow-all
-✔ the plugin rejects a patch move out of the workspace and allows one inside it
+✔ the rendered codex config keeps approvals and Codex's own sandbox off
 ✔ a completed call is recorded as completed, not as success
-✔ the permission invariant is exactly allow-all, not merely non-deny
-✔ MOAT_SANDBOX_ENV only carries OPENCODE_/MOAT_ names and never a managed one
+✔ MOAT_SANDBOX_ENV only carries MOAT_ names and never a managed one
 ✔ the sandbox environment is a pure whitelist
 ✔ TTL expiry is decided by the recorded timestamp
 ✔ the literal-flag notice names argv and shell history
@@ -1480,9 +886,6 @@ $ npm run test:unit
 ✔ a failed restore leaves the rootfs and the project untouched
 ✔ copy-in names the paths git cannot carry, and stays quiet about ignored ones
 ✔ fetchBranch points a non-git project at moat apply
-ℹ tests 49
-ℹ pass 49
-ℹ fail 0
 ```
 
 Each guard was checked against the old behaviour before it was trusted. The
@@ -1521,7 +924,6 @@ $ bash test/e2e-egress.sh
   pass  the box booted with isolated egress
   pass  status reports running
   pass  status reports isolated egress
-  pass  the port forward works
   pass  the provider answers through slirp (401 without a key)
   pass  slirp's 10.0.2.2 gateway cannot reach the host's loopback
   pass  host loopback reachable        the sandbox has its own network namespace and reached the host's
@@ -1674,17 +1076,17 @@ carry it out.
 The rootfs is persistent and the agent is root inside it, so it can replace one of
 its own directories with a symlink whose target string names a host path. The
 kernel resolves that string for the **host** process on the next boot. Measured
-with the old write path, calling the bundle installer directly with
-`/root/.config/opencode` symlinked to a directory outside the rootfs:
+with the old write path, calling the config writer directly with
+`/root/.codex` symlinked to a directory outside the rootfs:
 
 ```
-installBundle completed without complaint
+installCodexFiles completed without complaint
   host-side AGENTS.md WAS CREATED (3834 bytes)
 target dir contents: [ 'AGENTS.md' ]
 ```
 
-`installBundle` runs on **every** boot, so that was a file written into a
-directory outside the sandbox on every `moat up`, `moat exec` and `moat doctor`.
+The write runs on **every** boot, so that was a file written into a directory
+outside the sandbox on every `moat up`, `moat exec` and `moat doctor`.
 
 Every host-side write into the rootfs now goes through `lib/rootfs-fs.ts`: each
 path component is `lstat`ed and a symlink or non-directory is refused, missing
@@ -1692,8 +1094,8 @@ parents are created, the content is written to a temp file opened
 `O_EXCL|O_NOFOLLOW`, the file that was actually opened is verified through
 `/proc/self/fd`, and it is renamed into place — rename replaces a symlink at the
 target instead of writing through it. `chmodRootfsDir` and the reads of
-agent-controlled files (`moat logs sandbox`, `moat logs audit`, the
-installed-bundle report) use the same guard.
+agent-controlled files (`moat logs sandbox`, the boot log, the rendered config) use the
+same guard.
 
 The boot log is the same story one step further: the boot script used to
 redirect to `<rootfs>/var/log/moat/boot.log` **by path**, so a symlink swapped into
@@ -1752,99 +1154,35 @@ filesystem. The suite's three failing assertions were watched failing with the o
 
 ### O. Arguments that used to be joined into paths or trusted as numbers
 
-Five small defects of the same shape: an argv that becomes a path or a number
-without being checked, plus one flag whose unit depended on where it was read. They
-are asserted where they cost nothing — the extras suite, section R — and the pure
-part has a unit test.
+Small defects of the same shape: an argv that becomes a path or a number without
+being checked, plus one flag whose unit depended on where it was read. They are
+asserted where they cost nothing — the extras suite, section R — and the pure part has
+a unit test.
 
 ```
 log name: refused instead of reading a host file
 --tail: refused instead of silently printing the whole log
 models <provider>: refused instead of silently listing DeepSeek
---port: refused before provisioning, not ninety seconds into a boot
 --timeout: seconds, not milliseconds, for the boot readiness wait
---tools: refused before provisioning
---log-level: refused instead of silently becoming INFO
 --model with an empty value: refused
 --base-url with an empty value: refused
 ```
 
 What they replace, measured: `moat logs ../../../../../tmp/moat-traversal` printed
-`/tmp/moat-traversal.log`, a host file outside the environment (`moat logs` joined
-argv into the environment's log directory); `--tail abc` parsed to NaN and silently
-meant "the whole file"; `moat models bogus` ignored its argument and listed DeepSeek
-with exit 0; and a typo in `--port` survived provisioning, booted a server that could
-not bind, and surfaced ninety seconds later as "opencode serve did not come up".
+`/tmp/moat-traversal.log`, a host file outside the environment (`moat logs` joined argv
+into the environment's log directory); `--tail abc` parsed to NaN and silently meant "the
+whole file"; and `moat models bogus` ignored its argument and listed DeepSeek with exit 0.
 
-Four flags were validated at their use site, which is after provisioning, or not at
-all: `--tools bogus` survived the copy-in before the provider section rejected it;
-`--log-level chatty` fell through the uppercase set in `serveEntryScript` and
-silently became INFO (measured: `--log-level debug` produced DEBUG lines after the
-fix and INFO lines before it); `--model ""` booted a config whose model id was
-empty; and `--base-url ""` booted an empty base URL. All four are refused before
-provisioning now, and the extras checks assert the *absence* of a provisioning line
-in those captures, so a regression to late validation fails the suite.
+`--model ""` booted a config whose model id was empty, and `--base-url ""` booted an empty
+base URL. Both are refused before provisioning now, and the extras checks assert the
+*absence* of a provisioning line in those captures, so a regression to late validation
+fails the suite.
 
-`--timeout` is the same kind of mistake with a worse symptom: the agent loop and
-the checks runner take it as **seconds** (the turn default is 2700), and the boot
-readiness wait read it as **milliseconds**, so `moat up --timeout 600` failed with
-`opencode serve did not come up (GET /config -> TypeError after 600ms)` — a
-ten-minute budget turned into an instant failure. One flag, one unit: seconds
-everywhere, documented in `moat --help`.
+`--timeout` is the same kind of mistake with a worse symptom: the agent loop and the checks
+runner take it as **seconds** (the turn default is 2700), and one caller read it as
+**milliseconds** — a ten-minute budget turned into an instant failure (measured: a boot that
+gave up after 600 ms). One flag, one unit: seconds everywhere, documented in `moat --help`.
 
-### P. A live view that can no longer be live says so
-
-The REPL learns everything — streamed text, tool rows, the question prompt and
-the `session.idle` that ends a turn — from one long-lived response (`GET /event`),
-and it subscribes once. The SDK's SSE client never ends that response on its
-own: its loop is `while (true)`, and a failed connection goes to `onSseError`,
-sleeps with backoff (up to 30s) and reconnects, forever, without throwing and
-without ending the generator. A box stopped mid-turn therefore does not look like
-a failure. It looks like a quiet one.
-
-Measured through a pty, against the stub: a turn in flight, `moat down` underneath
-it, and — before this — no line about the stream at all. The spinner kept
-turning and the next message got the sentence reserved for a busy agent:
-
-```
-queued — the agent will pick this up when the current step finishes
-› could not send: fetch failed
-```
-
-The turn was already over and the answer could never arrive. Both subscribe sites
-now pass `sseMaxRetryAttempts: 1` (one attempt, no reconnect) and an `onSseError`
-handler, which turns that failure into an end the consumer can see. The same pty
-scenario now prints, within a second of the box dying:
-
-```
-› lost the event stream from the sandbox: terminated
-›   every event of a turn arrives on that one stream, so this view cannot
-›   continue. The turn may still be running inside the box: moat up restarts
-›   it, and a new moat attach opens this session where it left off.
-› › are you still there
-  not sent: the event stream is gone, so the answer could not be shown.
-›   leave with /quit, then moat up and moat attach to carry on in this session.
-```
-
-`test/repl-stream-loss.py` is the whole reproduction — a real pty, a real box, a
-real turn in flight, a real `moat down` — and all six of its checks pass; the suite
-runs it as section S. The pre-fix run of the same script failed three of the six,
-and the paragraph above is the transcript it printed instead.
-
-The one-shot path has the same seam with a different symptom: `driveStreaming`
-waits for `session.idle`, so with the SDK's default it would reconnect forever
-while the turn's events were gone, printing "no output for 30s" until the
-45-minute budget expired. With the retry off the generator *completes* instead of
-throwing, which used to leave the loop with `idle === false` and no error at all:
-`moat run` returned the partial transcript as a success.
-`test/unit/session-stream.test.ts` covers both halves — it asserts the subscribe
-options at the seam, and that a clean end before `session.idle` is reported as
-`the event stream ended mid-turn`. Both assertions were watched failing with those
-two changes reverted (2 of its 4 tests fail).
-
-What this does not cover: a stream that stays open and simply goes quiet, with no
-FIN and no error. The box dying closes its sockets, which is what was measured;
-a silence watchdog on the server's 10s heartbeat does not exist.
 
 ### Q. An environment whose state.json is gone is recovered, not replaced
 
@@ -1896,7 +1234,7 @@ Both of those checks were watched failing with the recovery removed (2 FAILED).
 `test/unit/env-recovery.test.ts` covers the reconstruction without a sandbox: the
 branch and the copy-in baseline read back out of the sandbox repository, the version
 read through the symlink guard, a detached head reported as no branch, and the three
-things that must not be invented — a credential, a host baseline, an opencode version.
+things that must not be invented — a credential, a host baseline, a runtime version.
 
 One deliberate limit: recovery happens on the next `moat up`. `moat fetch`, `moat take`
 and `moat verify` still require a readable state, so a lost file means one boot before
@@ -2027,55 +1365,6 @@ happen to echo first (`echo starting && node --test`, `echo starting; jest`) kep
 placeholder test that does not hide the lint and typecheck scripts, and the package
 manager still read from the lockfile. Four of its six fail with the filter reverted.
 
-### U. The interactive `/diff` cannot run the agent's programs on the host
-
-The sandbox repository is the agent's, and git executes programs named by
-repository-local config. Every host-side call against it goes through `sandboxGit`
-(`lib/git.ts`), which swaps in a host-owned config for the call — except one. The
-REPL's `/diff` called `run("git", ["-C", options.paths.work, "log", ...])` directly.
-The global config was nulled, so this looked safe; the *repository* config is the
-agent's, and git obeys `log.showSignature` from it. A commit carrying any `gpgsig`
-header makes git run `gpg.program`, which the agent points at a script it wrote into
-`/work` — whose host path it reads straight out of `/proc/self/mountinfo`, which
-inside the sandbox shows the rootfs by its host path:
-
-```
-590 340 8:48 /home/user/.moat/envs/<id>/rootfs / rw,relatime - ext4 /dev/sdd …
-```
-
-Measured, with that config and commit planted as the agent leaves them and `/diff`
-typed at a real pty:
-
-```
-planted in /home/user/.moat/envs/0cc7b2c8dbc5: branch moat-session-…, log.showSignature=true, gpg.program=<work>/evil-gpg.sh
-→ the program the agent planted ran on the host:
-ran
-  FAIL  the agent's gpg program did not run on the host
-2/3 checks passed
-```
-
-`/diff` goes through `sandboxGit` now, and the same scenario is inert while the diff
-still renders:
-
-```
-›   063c988 agent: crafted commit
-›   uncommitted (not fetched by moat fetch):
-›     new file: evil-gpg.sh
-  pass  /diff rendered the branch log
-  pass  the agent's gpg program did not run on the host
-3/3 checks passed
-```
-
-Two tests hold it. `test/unit/git-hardening.test.ts` has the vector itself: a repo with
-`log.showSignature`, a `gpg.program` that writes a marker, and a crafted signed commit,
-with a control that runs the *old* shape (a raw `run("git", …)`) and shows the marker
-appearing, and `sandboxGit` leaving it absent (and the agent's own config restored
-afterwards). The same file now scans the source for that shape:
-`rawWorkTreeGitCalls` fails on any `run("git", ["-C", <…>.work, …])` outside `lib/git.ts`
-that does not carry a `raw-git-ok:` reason, and reports the file and line. It found
-`cmd/repl.ts:778` and `:783` before the fix; the one deliberate exception left is
-`git init` in `sync/copyin.ts`, marked with its reason. Extras section X is the pty
-proof, and it fails with the raw call back.
 
 ### V. `--timeout` shortens a check that hangs
 
@@ -2163,40 +1452,6 @@ every flag named in the command table exists in `SPEC`. A second test pins the f
 suites pass to `moat up`, so a missing entry fails there rather than as a wall of boot
 output.
 
-### X. A port that is already taken is refused before provisioning
-
-`--port` was validated for range and then taken at its word. A port another process
-held cost the whole readiness budget (ninety seconds by default), after provisioning
-and a copy-in had already run, and the failure named neither the port nor the reason:
-the box's own log had a bare `ServeError`, and moat said only that `opencode serve`
-did not come up. Measured with a listener holding the port and `--timeout 5` to keep
-the run short: provisioning, copy-in, then `✗ opencode serve did not come up
-(GET /config -> TimeoutError after 5000ms)`.
-
-`hostPortFree` (`lib/port.ts`) is asked before provisioning, against the address the
-box will actually bind — `0.0.0.0` when it has its own network namespace, `127.0.0.1`
-when it shares the host's:
-
-```
-$ moat up --port 34943 …          # while another process holds 34943
-✗ --port 34943 is already in use on this host (nothing can bind 127.0.0.1:34943).
-  pick another port, or drop --port and moat will choose a free one.
---- exit 1
-```
-
-Extras section AA is that refusal plus the control that matters: once the holder is
-gone the same port boots (`--- exit 0`), so the check cannot pass by refusing every
-port. Both were watched with the pre-flight disabled — the first fails with the old
-symptom in the capture (`opencode serve did not come up … TimeoutError`), the control
-still passing. `test/unit/port.test.ts` covers the address handling without a sandbox:
-a held port is not free and is again once released, `freePort` returns something
-bindable, and a loopback bind blocks a `0.0.0.0` bind (the mode the box uses with its
-own namespace).
-
-The residual race is real but small: `freePort` picks a port and closes the socket, and
-another process can take it before the box binds, a few seconds later through slirp.
-That path still costs the readiness budget and the message still does not name the
-port; what is fixed is the case the user can control.
 
 ### Y. The agent brief describes the box the boot actually made
 
@@ -2434,34 +1689,15 @@ sandbox branch, and commits that survive only in the reflog after a `reset --har
 it. With `--base-url` it did not work, and it failed in the worst way — inside the box,
 silently. `MOAT_PROVIDER_BASE_URL`, `MOAT_MODEL_ID` and `MOAT_MODEL` were set only inside
 `toSandboxEnv(minted)`, so with no credential the custom-endpoint provider block had no
-base URL. Measured before the fix:
+base URL. Measured before the fix: the box booted, the task produced nothing, and **zero requests
+reached the endpoint** — the custom-endpoint provider block had an empty base URL, and the
+failure surfaced only as a stream error inside the box's own log. With a task, the same
+setup was refused *before* booting by a guard whose message recommended `--base-url` as the
+remedy, so the guard did not know that a custom endpoint may need no credential at all.
 
-```
-$ moat up --no-credential --base-url http://127.0.0.1:PORT/v1 --model mock-model
-✓ sandbox up, warm start 4.13s (image reused)
-$ moat attach --show-output --prompt "do the task"
---- exit 1
-session ses_…   0 tool call(s)
-
-# inside the box, var/log/moat/boot.log:
-message="stream error" providerID=moat modelID=mock-model
-  error.error="TypeError [ERR_INVALID_URL]: \"/chat/completions\" cannot be parsed as a URL."
-```
-
-Zero requests reached the endpoint. With a task, the same setup was refused *before*
-booting by a guard whose message recommended `--base-url` as the remedy — the guard did not
-know that a custom endpoint may need no credential at all.
-
-After the fix the same command runs the task, and the endpoint receives no key:
-
-```
-$ moat run --no-credential --base-url http://127.0.0.1:32891/v1 --model mock-model "do the task"
-! no credential injected, so requests to http://127.0.0.1:32891/v1 will carry no Authorization header. …
-Task complete: created and edited agent-output.txt, and committed it inside the sandbox.
-session ses_…   5 tool call(s)
-requests this run: 6
-authorization headers: null
-```
+After the fix the same command runs the task, and the endpoint receives no key
+(`test/evidence/nocred-local.txt`): the recording stub reports no `Authorization` header on
+any request of the turn, and the rendered config carries no `env_key` at all.
 
 Extras section AF is that run plus the control that the **native** provider still refuses a
 task with no key before booting (`no DEEPSEEK_API_KEY, so the agent has no model to call`,
@@ -2616,24 +1852,24 @@ injects for each combination of credential and provider, that only credential-be
 are called the credential, and that a keyless box is not offered key rotation. All three were
 watched failing with the old list and the old wording restored.
 
-### AI. The acceptance criteria on the default runtime
+### AI. The acceptance suite
 
-`test/e2e-codex.sh` is the acceptance list for the runtime a new environment gets. It is
-keyless — it drives `moat run --runtime codex` through `test/mock-responses.mjs`, the
-Responses stub whose event shapes come from a real DeepSeek stream — and it exits non-zero on
-any failed criterion. Measured: **45 checks, all passed** (`test/evidence/codex-summary.txt`).
+`test/e2e-codex.sh` is the acceptance list: it drives `moat run` through
+`test/mock-responses.mjs` — the Responses stub whose event shapes were captured from a real
+DeepSeek stream — and exits non-zero on any failed criterion. It is keyless. Measured: all
+criteria passed (`test/evidence/codex-summary.txt`).
 
 What it asserts, against a real sandbox:
 
-* the environment is created on the **codex** runtime, and egress is `open` for the loopback
-  provider (the documented exception to the `filtered` default);
+* the environment reports the **codex** runtime, and egress is `open` for the loopback provider
+  (the documented exception to the `filtered` default);
 * the doctor's in-sandbox isolation list — namespaces, uid mapping, the six device binds, no
   host mount, no host environment variable — including the canary checks it runs against the
   host;
 * a mocked turn that **fixes the fixture's failing test** and commits it, after which moat's own
   checks runner prints `pass  npm test` from inside the box;
-* the two rendered config lines that stand in for the permission guard on this runtime
-  (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`);
+* the two rendered config lines that keep Codex from asking for approvals or adding its own
+  sandbox (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`);
 * the host canary, the host home and the host project directory unreachable from inside the box
   — asserted independently with `moat exec`, not from the agent's report;
 * `moat fetch` writing **exactly one** ref under `refs/moat/`, carrying the agent's commit, with
@@ -2641,20 +1877,23 @@ What it asserts, against a real sandbox:
 * the host project tree byte-identical before and after, by moat's own `hashTree`;
 * the injected credential value absent from the whole rootfs (and named only as a variable in
   the box's config);
-* a marker file and an `apk add` surviving `moat down` + `moat up`.
+* a marker file and an `apk add` surviving `moat down` + `moat up`;
+* (section 10) that an escape sequence in the scripted answer never reaches the terminal, with a
+  control that the matcher does find an ESC byte when one is there.
 
-Two criteria that exist only because opencode runs a server are **deliberately absent**, and
-the file says so at the top rather than leaving a silent gap: the in-box bundle/permission
-guard (its replacement is the config assertion above) and the session/attach streaming (the TUI
-is verified through a real pty by `test/codex-tui.py`, extras section AL).
-### AH. Codex is the default runtime, and the two runtimes do not cost the same
+Two criteria that existed only because the old runtime ran a server are **deliberately
+absent**, and the file says so at the top rather than leaving a silent gap: the in-box
+tool/permission guard (there is no equivalent under Codex; the rendered config is what stands
+in its place) and the session/attach streaming (the interactive surface is Codex's own TUI,
+verified through a real pty by `test/codex-tui.py`, extras section AL).
+
+### AH. The runtime is Codex, pinned, and repaired rather than re-provisioned
 
 The runtime is a dependency, not the product: the box, the credential broker, copy-out and the
-egress policy are identical under both. What changes is which binary the box runs and what the
-host does with it. Codex is a CLI, so under that runtime the long-running box is a keepalive
-and every task, TUI session and check runs in its own ephemeral boot of the same rootfs.
+egress policy are what moat owns. Codex is a CLI, so the long-running box is a keepalive and
+every task, TUI session and check runs in its own ephemeral boot of the same rootfs.
 
-Measured, extras section AJ, on a fresh environment with no `--runtime` flag:
+What is verified (extras section AJ, and `test/evidence/codex-up.txt`):
 
 ```
 $ moat status
@@ -2666,10 +1905,7 @@ codex-cli 0.155.1
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 wire_api = "responses"
-opencode absent
-codex: the default runtime boots, moat renders its config, and its image carries no opencode
-codex: a server command refuses with a pointer instead of failing obscurely
-runtime switch: the other runtime is installed into the live rootfs and /work survives
+codex: the pinned runtime boots, moat renders its config, and the image carries it
 ```
 
 Three things are load-bearing, and each has a test:
@@ -2678,49 +1914,47 @@ Three things are load-bearing, and each has a test:
   off and Codex's own sandbox off are moat's decision and not the agent's: moat's box is the
   only boundary there should be. `test/unit/codex-runtime.test.ts` pins those two lines, and
   `bundle/codex.ts` is the only writer.
-* The image carries only the runtime the environment was created with — the runtime set is part
-  of `imageCachePath` (`test/unit/runtime-image.test.ts`), so an image cannot silently lack the
-  binary — and a switch **installs** the other runtime into the live rootfs instead of
-  re-provisioning, because `provisionEnv` deletes the rootfs first and would take `/work` with
-  it. That was not theoretical: the first version of the switch lost an untracked file exactly
-  that way. Extras AJ now carries a file through the switch in both directions, and
-  `test/unit/runtime-install.test.ts` holds the symlink guard on that copy.
-* Cost differs, and pretending otherwise would be the dishonest part. Same task, same model, one
-  run each (`docs/RUNTIME-COST.md`): Codex used 17,692 tokens and $0.000259 against opencode's
-  9,363 and $0.0000937 — about 1.9× the tokens and 2.8× the money on trivial work, because Codex
-  carries a larger harness prompt and ran an extra verification command. DeepSeek's cache carried
-  96% of its prompt, which is why the money gap is smaller than the raw token count suggests.
-  That same measurement found a real bug in the first integration: Codex's `input_tokens`
+* The binary is **pinned and digested** (`lib/pins.ts`) and is part of `imageCachePath`
+  (`test/unit/runtime-image.test.ts`), so a cached image cannot silently lack it. When it is
+  missing from a live rootfs — the agent is root and can `rm` it, and an environment made by an
+  older moat never had it — the next boot **installs** it instead of re-provisioning, because
+  `provisionEnv` deletes the rootfs first and would take `/work` with it. That was not
+  theoretical: the first version of the install path lost an untracked file exactly that way.
+  `test/unit/runtime-install.test.ts` holds the symlink guard on that copy, and extras section
+  AJ carries a file through the repair.
+* Cost is measured rather than assumed. On one identical trivial task, same model, one run each
+  (`docs/RUNTIME-COST.md`): Codex used 17,692 tokens and $0.000259 against the old runtime's
+  9,363 and $0.0000937 — about 1.9× the tokens and 2.8× the money on trivial work, because
+  Codex carries a larger harness prompt and ran an extra verification command. DeepSeek's cache
+  carried 96% of its prompt, which is why the money gap is smaller than the raw token count
+  suggests. That measurement also found a real bug in the integration: Codex's `input_tokens`
   *includes* the cached tokens, so charging that field at the miss rate *and* the cached field
-  separately over-reported a mostly-cached turn by about ten times.
+  separately over-reported a mostly-cached turn by about ten times. `parseCodexEvents` subtracts
+  them and `test/unit/codex-runtime.test.ts` pins the arithmetic.
 
-The interactive surface is verified rather than assumed: `test/codex-tui.py` (extras section
-AL) allocates a real pty, boots the default runtime, runs `moat` with no arguments, and
-requires that the TUI was reached (not the help text), that it drew a screen and stayed up,
-and that Ctrl-C left the sandbox running. It failed before the fix below, which is how the
-fix was found.
+The interactive surface is verified rather than assumed: `test/codex-tui.py` (extras section AL)
+allocates a real pty, boots the runtime, runs `moat` with no arguments, and requires that the TUI
+was reached (not the help text), that it drew a screen and stayed up, and that Ctrl-C left the
+sandbox running. It failed before the fix below, which is how the fix was found.
 
-That failure was the first thing a new user would have met: `sandboxEnv` fixes `TERM=dumb`,
-which is right for an unwatched boot and wrong for a terminal, so Codex's TUI opened with
+That failure was the first thing a new user would have met: `sandboxEnv` fixes `TERM=dumb`, which
+is right for an unwatched boot and wrong for a terminal, so Codex's TUI opened with
 `WARNING: TERM is set to "dumb". Codex's interactive TUI may not work in this terminal.
-Continue anyway? [y/N]` and waited. `runInteractive` now advertises the host's terminal
-type, sanitised (`interactiveTerm`, `test/unit/interactive-term.test.ts`), and only there: a
-check, a server or a batch boot still gets `dumb`, so the environment the other suites
-measure is unchanged.
+Continue anyway? [y/N]` and waited. `runInteractive` now advertises the host's terminal type,
+sanitised (`interactiveTerm`, `test/unit/interactive-term.test.ts`), and only there: a check or a
+batch boot still gets `dumb`, so the environment the other suites measure is unchanged.
 
-`--effort` is the other flag that is refused rather than dropped: Codex renders reasoning as
-`model_reasoning_effort` and sends it only for models it has metadata for, and it has none for
-`deepseek-flash` (measured through the recording proxy: the setting never reached the wire).
-Extras AJ checks the refusal and its message, and `test/unit/codex-effort.test.ts` pins which
-levels can be rendered at all — `max` and `off` are opencode's, and are omitted rather than
-passed through as an invalid enum.
+There is no effort knob, and none is claimed. Codex sends `model_reasoning_effort` only for
+models it has metadata for and has none for the DeepSeek models moat uses, so moat renders no
+such line and exposes no flag that would do nothing (`docs/RUNTIME-SPIKE-codex.md`). The flag,
+its refusal message and its unit test were deleted with the runtime that motivated them.
 
 ### AG. A project's own check output cannot drive the terminal it is printed on
 
-`moat verify` streams the check's output as it arrives, and `moat take` and the session's
-`/verify` print the last lines of a failure. Those bytes are the *project's* own test output —
-code the agent can edit — and they were printed without the print-boundary stripping every
-other sandbox string goes through. Measured before the fix, with a `test` script that prints
+`moat verify` streams the check's output as it arrives, and `moat take` prints the last six
+lines of a failure. Those bytes are the *project's* own test output — code the agent can edit —
+and they were printed without the print-boundary stripping every other sandbox string goes
+through. Measured before the fix, with a `test` script that prints
 an OSC title sequence and a clear-screen:
 
 ```
@@ -2744,10 +1978,9 @@ check output: escapes are dropped, and the text around them still reaches the us
 The marker is the control: the output is still streamed and still readable, so the fix removed
 the escape bytes rather than the evidence. `moat verify` strips per chunk — safe because
 `stripAnsi` removes every ESC byte, so a sequence split across writes cannot be reassembled,
-the property `test/unit/terminal-text.test.ts` already pins — and `moat take` and the
-session's `/verify` strip per line. Extras section AI asserts on the raw bytes of both
-captures, and was watched failing with the streaming site reverted (4 ESC bytes, verdict
-FAILED).
+the property `test/unit/terminal-text.test.ts` already pins — and `moat take` strips per line.
+Extras section AI asserts on the raw bytes of both captures, and was watched failing with the
+streaming site reverted (4 ESC bytes, verdict FAILED).
 
 ---
 
@@ -2757,44 +1990,23 @@ FAILED).
 | --- | --- | --- |
 | 1 | Linux-first, no Windows, WSL2 via the container path | **met** — Linux-only guard; the boot path is `unshare`/`mount`/`chroot` |
 | 2 | sandbox is the default and only mode | **met** — `moat up` refuses to run without user namespaces; there is no host mode |
-| 3 | no approval prompts, no deny rules | **met** — `permission: {"*": "allow"}`; `permissions.jsonl` never created; zero requests |
-| 4 | curated, bundled tool set — exactly what the bundle declares | **NOT met as written** — see below |
+| 3 | no approval prompts, no deny rules | **met** — moat renders `approval_policy = "never"` and `sandbox_mode = "danger-full-access"` on every boot; there is no prompt to answer and no second sandbox to trip |
+| 4 | curated, bundled tool set — exactly what the bundle declares | **NOT met, and no longer attempted** — see below |
 | 5 | project copied in, never bind-mounted | **met** — `git clone --no-hardlinks` from the host project path into the rootfs; no mount of it appears in the table |
 | 6 | copy-out explicit and user-initiated | **met** — `moat fetch` writes one ref; `moat apply` is separate; `HEAD` and the working tree are provably unchanged |
 | 7 | one scoped credential at boot; no keys in the image; no host env, SSH agent or dotfiles | **met** for injection, no-keys-in-image, and no-env/SSH/dotfiles; **partial** for "scoped" (see below) |
 | — | environments persist, snapshots cover the rootfs not the project | **met** |
 
-**Requirement 4, in full.** opencode 1.18.31 offers no supported way to prune a
-built-in tool from the model-facing list. Measured, the model is offered
-`skill`, `task` and `webfetch` beyond the bundle. The bundle refuses to execute
-them (verified above), so the *behaviour* is exact; the *advertisement* is not.
-`moat tools` prints the gap on every invocation:
-
-```
-bundle (installed bundle config + plugin load record + plugin config record)
-  curated    read, write, edit, apply_patch, glob, grep, bash, todowrite, question
-  excluded   skill, webfetch, websearch, task
-  omissions confirmed by opencode: skill, webfetch, websearch, task
-
-registry (everything opencode knows about, NOT what the model sees)
-  + apply_patch   + bash   + edit   + glob   + grep   + question   + read
-  + todowrite   + write
-  - invalid   - skill   - task   - webfetch   - websearch
-
-! opencode 1.18.31 cannot stop advertising: webfetch, skill, task.
-  The bundle refuses to execute them (docs/UPSTREAM-CANDIDATES.md).
-```
-
-The header names the three records the claims come from: the config moat installed,
-what the plugin loaded, and the plugin's `config` record — which is what opencode
-handed the plugin at load time. Until this round that third record was never read
-(`moat tools` looked in the wrong file for it) and the plugin's config hook had
-never completed, so "omissions confirmed by opencode" was moat's own declaration
-wearing the plugin's name. It is now the plugin's account of the merged config.
-
-Note also `apply_patch`: it is in the bundle and in the registry, but opencode
-only offers it to `gpt-*` models, so it is *not* advertised for the stub model.
-`moat tools` reports that as `curatedButNotAdvertised` rather than pretending.
+**Requirement 4, in full.** moat does not curate the tool list of the runtime it
+drives. Codex ships its own tools and offers no supported way to prune one from the
+list the model receives. Measured, the pinned version advertises `exec_command`,
+`write_stdin`, `view_image`, `web_search`, `request_user_input`, `multi_agent_v1`
+and the goal tools on a real turn (`test/evidence/codex-summary.txt`,
+"provider-side record of the turn"). The runtime before Codex had a server and a
+plugin that refused tools outside a curated set, so this requirement was written
+around a mechanism that no longer exists. What bounds the tools now is the box:
+mount namespace, network namespace, egress policy, and a host that is never
+mounted. moat renders no tool filter, and there is no `moat tools` to print one.
 
 **Requirement 7, "scoped".** The credential is scoped in lifetime (a TTL,
 enforced, verified) and in exposure (one variable, in memory, for one boot, over
@@ -2813,16 +2025,15 @@ Listed so that absence is not mistaken for success.
 | v1 (microVM on KVM): boot time, image size, delta vs v0 | `/dev/kvm` is present but not accessible to this user (mode 660, gid 991, not a member). v1 is a separate phase and is not claimed here. |
 | v2 (provider-side credential revocation and spend caps, concurrent sandboxes) | explicitly gated on v0 *and* v1 passing. Egress rules landed ahead of v2 and are verified in §L. |
 | Model quality, as opposed to model reachability | a real DeepSeek session is verified above. That is one task, one model, one run — a smoke test with teeth, not a benchmark. |
-| That a reasoning-effort level changes any particular answer | the level provably reaches the provider (see "Secondary claims" H). Whether `max` answers better than `default` is model behaviour, and one sample per level shows nothing. |
 | Non-DeepSeek providers | moat is DeepSeek-only by design; `--base-url` exists for a gateway or a local model and is exercised against a stub, but no second hosted provider was wired up or called. |
 | The `countUnfetched` / host-drift logic under adversarial git states | §AB and §AC cover multiple branches, tags, an already-fetched ref, a non-git host, a detached host HEAD and a detached sandbox HEAD; a *rebased* sandbox branch, and commits that survive only in the sandbox reflog after a `reset --hard`, are still not staged. |
 | The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |
-| The absolute correctness of a cost figure against a DeepSeek invoice | it is the published table applied to the billed token counts, and it reconciles exactly with opencode's own arithmetic on the same numbers (above). It is not compared against a real bill. |
-| Rendering in terminals other than the ones tested | verified through a pty at 80 and 100 columns, and in plain mode via `NO_COLOR`. Narrow widths, unusual `TERM` values and terminal resize mid-turn were not exercised. |
-| `/undo`, `/redo` and `/compact` against a real model | the calls are exercised against the stub and the server accepts them, but summarisation is model-driven and the stub cannot summarise: it answers `/compact` by trying to call a tool, which the server rejects with `Tool call not allowed while generating summary`. |
+| The absolute correctness of a cost figure against a DeepSeek invoice | the figure is the published table applied to the billed token counts in the CLI's own usage block. Codex reports one usage block per turn, so a turn that crosses a peak-pricing boundary is priced at one rate and the label names one side; only per-request timestamps could split it, and they are not reported. Nothing here is compared against a real bill. |
+| Codex's tool list over time | the `codex-*.txt` captures record what one pinned version advertised on one turn. Another version may advertise a different set, and nothing in moat reads or constrains it. |
+| The interactive screen beyond reaching it | extras section AL (`test/codex-tui.py`) proves moat reaches a live TUI and that leaving it leaves the box running. What the TUI draws, its keybindings, its model picker and its session resume behaviour are the CLI's own, and are not automated here. |
 | Exfiltration through an allowed channel | §L verifies that the allowlist admits the provider and refuses an arbitrary address, and that the host's loopback is unreachable on both routes. It does not attempt to push data out *through* an allowlisted address or over DNS, both of which remain possible by construction. |
 | Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), and §AE covers a box killed out of band and a stale recorded identity, but a real reboot (with the kernel's own pid reuse) was not staged. |
 | Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all — a refusal, not support, and not a silent drop. |
 | What the copy-out credential scan cannot see | it compares against the values the host holds at fetch/apply time (`DEEPSEEK_API_KEY`, `MOAT_CREDENTIAL`, the credential store) and searches the commits a fetch brought in (the most recent 50) or the files an apply plan would write (up to 64 MiB each). A key rotated since the boot, a secret the agent obtained somewhere else, older commits and larger files are outside it — each bound is named when it is reached (extras §AB, `test/unit/leak-scan.test.ts`). A file that does not match is not a claim that it is clean. |
-| A live event stream that stays open and goes quiet | the *end* of the stream is detected and reported (secondary claim P), and the box dying closes its sockets, which is the case measured. A connection that stays open while delivering nothing — no FIN, no error — is not detected: there is no watchdog on the server's 10s heartbeat. Nothing observed produced one. |
-| Whether one runtime's *loop* is better than the other's on long work | cost per turn is measured (`docs/RUNTIME-COST.md`) and both run a task end to end (live suite §3 for opencode, §7 for Codex), but "which harness does long autonomous work better" needs a task suite and many runs, not one file-creation prompt. The TUI is Codex's own program: the plumbing moat owns for it (`runInteractive` over a pty, the rendered config, the credential in the environment) is covered by extras AJ, the screen is not automated. |
+| Whether the Codex loop is better than the old runtime's on long work | cost per turn is measured (`docs/RUNTIME-COST.md`), but the old runtime is deleted, so that comparison is history rather than a live A/B, and "which harness does long autonomous work better" would need a task suite and many runs. |
+| Anything about a real model other than what the live suite ran | `bash test/e2e-live.sh` is the only evidence against the hosted model. Everything else runs against the deterministic stub, which cannot show model quality, refusals, or provider-side behaviour. |

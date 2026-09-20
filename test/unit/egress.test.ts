@@ -1,25 +1,17 @@
 import assert from "node:assert/strict"
-import fs from "node:fs"
-import net from "node:net"
-import os from "node:os"
-import path from "node:path"
 import { test } from "node:test"
 
 import {
   SLIRP_DNS,
   SLIRP_NAMESERVER_LINE,
-  addHostForward,
   defaultAllowHosts,
   allowHostProblem,
   parseAllowlist,
-  pruneDeadSockets,
   renderNftRules,
   resolveAllowlist,
   resolveAllowlistDetailed,
   runtimeForEgress,
   slirpArgs,
-  socketState,
-  waitForSocket,
 } from "../../sandbox/egress.ts"
 import { bootIsolation, unshareArgs } from "../../sandbox/launcher.ts"
 import { defaultEgress, isLoopbackHost, ownNetns } from "../../lib/pins.ts"
@@ -77,145 +69,14 @@ test("the ruleset drops by default and allows only DNS and the allowlist", () =>
   assert.equal(empty.includes("elements"), false)
 })
 
-test("slirp closes the host-loopback gateway and takes an API socket", () => {
-  const args = slirpArgs(4242, { apiSocket: "/tmp/slirp.sock" })
-  assert.deepEqual(args, [
-    "--configure",
-    "--mtu=65520",
-    "--disable-host-loopback",
-    "--api-socket",
-    "/tmp/slirp.sock",
-    "4242",
-    "tap0",
-  ])
-  // Without this flag slirp forwards 10.0.2.2 to the host's loopback, which was
-  // measured to answer HTTP 200 from inside the isolated namespace.
-  assert.ok(args.includes("--disable-host-loopback"))
-})
-
-test("an ephemeral boot takes the datapath without an API socket", () => {
-  assert.deepEqual(slirpArgs(4242), ["--configure", "--mtu=65520", "--disable-host-loopback", "4242", "tap0"])
-})
-
-test("addHostForward asks slirp for exactly one loopback mapping", async (t) => {
-  const socketPath = path.join(os.tmpdir(), "moat-slirp-rpc-" + process.pid + ".sock")
-  fs.rmSync(socketPath, { force: true })
-  let received = ""
-  const server = net.createServer((socket) => {
-    socket.on("data", (chunk) => {
-      received += chunk.toString()
-      socket.write('{"return":{"id":1}}\n')
-    })
-  })
-  await new Promise<void>((resolve) => server.listen(socketPath, resolve))
-  t.after(() => {
-    server.close()
-    fs.rmSync(socketPath, { force: true })
-  })
-  await addHostForward(socketPath, 12345)
-  assert.match(received, /"execute":"add_hostfwd"/)
-  assert.match(received, /"host_addr":"127.0.0.1"/)
-  assert.match(received, /"host_port":12345/)
-  assert.match(received, /"guest_port":12345/)
-})
-
-test("an error reply from slirp rejects instead of pretending to forward", async (t) => {
-  const socketPath = path.join(os.tmpdir(), "moat-slirp-rpc-err-" + process.pid + ".sock")
-  fs.rmSync(socketPath, { force: true })
-  const server = net.createServer((socket) => {
-    socket.on("data", () => socket.write('{"error":{"code":1,"desc":"port in use"}}\n'))
-  })
-  await new Promise<void>((resolve) => server.listen(socketPath, resolve))
-  t.after(() => {
-    server.close()
-    fs.rmSync(socketPath, { force: true })
-  })
-  const started = Date.now()
-  await assert.rejects(() => addHostForward(socketPath, 12345), /refused the port forward/)
-  // A refusal is final. Retrying it would turn a clear error into a five-second
-  // hang, which is the whole reason the retry loop distinguishes the two.
-  assert.ok(Date.now() - started < 1000, "a refusal must not be retried")
-})
-
-test("the host forward retries a socket that is not listening yet", async (t) => {
-  // Measured on a real boot: connect EAGAIN on slirp's API socket, because its
-  // accept queue holds one connection and the readiness probe may still be sitting
-  // in it. A connect that never reached slirp is worth another attempt; a late
-  // listener is the same shape and is what this test can create deterministically.
-  const socketPath = path.join(os.tmpdir(), "moat-slirp-late-" + process.pid + ".sock")
-  fs.rmSync(socketPath, { force: true })
-  const seen: string[] = []
-  const server = net.createServer((socket) => {
-    socket.on("data", (chunk: Buffer) => {
-      seen.push(chunk.toString("utf8"))
-      socket.write(JSON.stringify({ error: null }))
-    })
-  })
-  t.after(() => {
-    server.close()
-    fs.rmSync(socketPath, { force: true })
-  })
-  const late = setTimeout(() => server.listen(socketPath), 150)
-  t.after(() => clearTimeout(late))
-
-  await addHostForward(socketPath, 12345, 3000)
-  assert.equal(seen.length, 1)
-  assert.match(seen[0]!, /"execute":"add_hostfwd"/)
-})
-
-test("a live socket is live and a leftover file is dead", async (t) => {
-  // The distinction pruning depends on: only a definitive "nothing is listening"
-  // may unlink a socket, because EAGAIN means the accept queue is full, which is
-  // what a live socket looks like from here.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "moat-sockstate-"))
-  const live = path.join(dir, "slirp-1-live.sock")
-  const dead = path.join(dir, "slirp-2-dead.sock")
-  fs.writeFileSync(dead, "")
-  const server = net.createServer(() => {})
-  await new Promise<void>((resolve) => server.listen(live, resolve))
-  t.after(() => {
-    server.close()
-    fs.rmSync(dir, { recursive: true, force: true })
-  })
-  assert.equal(await socketState(live), "live")
-  assert.equal(await socketState(dead), "dead")
-})
-
-test("a socket file with no listener is not ready", async (t) => {
-  // The bug this guards, measured: every boot used the same API socket path, so
-  // a restart found the previous slirp's socket file, `existsSync` said "ready",
-  // and the port forward failed with ECONNREFUSED (slirp itself could not bind
-  // over the corpse). Readiness has to be a connection, not a stat().
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "moat-dead-socket-"))
-  const dead = path.join(dir, "slirp-1-dead.sock")
-  fs.writeFileSync(dead, "")
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
-  assert.equal(await waitForSocket(dead, 150, { exitCode: null }), false)
-})
-
-test("a listening API socket is ready, and only dead ones are reaped", async (t) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "moat-live-socket-"))
-  const live = path.join(dir, "slirp-2-live.sock")
-  const dead = path.join(dir, "slirp-3-dead.sock")
-  fs.writeFileSync(dead, "")
-  const server = net.createServer(() => {})
-  await new Promise<void>((resolve) => server.listen(live, resolve))
-  t.after(() => {
-    server.close()
-    fs.rmSync(dir, { recursive: true, force: true })
-  })
-  assert.equal(await waitForSocket(live, 500, { exitCode: null }), true)
-  await pruneDeadSockets(dir)
-  assert.equal(fs.existsSync(dead), false)
-  assert.equal(fs.existsSync(live), true)
-})
-
-test("waiting stops as soon as the process that owns the socket dies", async () => {
-  const missing = path.join(os.tmpdir(), "moat-no-such-socket-" + process.pid + ".sock")
-  fs.rmSync(missing, { force: true })
-  const started = Date.now()
-  assert.equal(await waitForSocket(missing, 5000, { exitCode: 1 }), false)
-  assert.ok(Date.now() - started < 4000, "a dead process must not be waited out")
+test("slirp closes the host-loopback gateway and is given no API socket", () => {
+  // --disable-host-loopback: without it slirp forwards 10.0.2.2 to the host loopback, which
+  // was measured answering HTTP 200 from inside the "isolated" namespace. There is no
+  // --api-socket either: that socket exists to add host forwards, and the host has nothing in
+  // the box to forward to.
+  const args = slirpArgs(4242)
+  assert.deepEqual(args, ["--configure", "--mtu=65520", "--disable-host-loopback", "4242", "tap0"])
+  assert.equal(args.includes("--api-socket"), false)
 })
 
 test("only an isolated sandbox gets its own network namespace", () => {

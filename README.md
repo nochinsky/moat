@@ -7,9 +7,8 @@ never touched, and the agent never asks for permission.
 
 `moat` copies your project into a fresh rootfs, runs
 [Codex CLI](https://github.com/openai/codex) inside it, and copies the work back out
-only when you ask. `--runtime opencode` selects the older server-based runtime instead.
-The sandbox is built from `unshare` and `chroot` directly: no Docker, no podman, no
-daemon, nothing to install.
+only when you ask. The sandbox is built from `unshare` and `chroot` directly: no Docker,
+no podman, no daemon, nothing to install.
 
 ## Install
 
@@ -31,8 +30,8 @@ cd ~/code/my-project
 moat
 ```
 
-That opens the agent's own TUI (Codex's, on a pty inside the box). Type what you want and
-watch it happen. When you are happy:
+That opens Codex's own TUI, on the terminal moat inherited, inside the box. Type what
+you want and watch it happen. When you are happy:
 
 ```bash
 moat take     # fetch the work, run the project's own tests, apply it if you accept
@@ -40,9 +39,8 @@ moat down
 ```
 
 Nothing reaches your directory until you accept it. `moat run "<task>"` does the same
-thing non-interactively: it drives one turn and prints what happened — the tools it ran,
-the answer, and the tokens and cost that turn used — then exits. At a terminal it opens
-the TUI with the task as its first message instead.
+thing non-interactively: one turn, then the tool rows, the answer, and the tokens and
+cost that turn used.
 
 The first time you run it, moat asks for a DeepSeek key, checks it against the
 API before saving it to `~/.moat/credentials.json` (mode 600), and reuses it
@@ -50,10 +48,12 @@ after that. `export DEEPSEEK_API_KEY=...` skips the prompt.
 
 ## Read this before using it
 
-The sandbox contains your **host**. It does not keep secrets from the agent.
+The sandbox protects your **host**. It does not keep secrets from the agent.
 
 - The agent can read the credential, because it has to in order to call the model.
-- Egress is open, so anything it can read it can also send.
+- The default egress policy is an allowlist, not a wall: the provider and the package
+  registries are reachable, everything else is dropped, and the host's loopback is closed —
+  but an allowlisted address, or DNS, can still carry data out.
 
 Use a short-lived, spend-capped, project-scoped key rather than a general-purpose
 one. `moat doctor` measures all of this and prints it whenever a sandbox is up.
@@ -64,7 +64,7 @@ Four are the loop:
 
 ```
 moat              open a session here, booting the box if needed
-moat run "<task>" boot, do the task, stream the work
+moat run "<task>" one non-interactive turn, then the rows, the answer and the cost
 moat take         fetch the work, run the project's checks, apply on request
 moat down         stop the box; nothing is lost
 ```
@@ -73,7 +73,7 @@ Inside a session you are in Codex's TUI, which has its own commands (`/model`, `
 `/new`, `/init`, `/help`; approvals are already off). moat's own verbs stay outside it —
 `moat fetch`, `moat apply`, `moat verify`, `moat take`, `moat exec`, `moat shell`.
 
-Non-interactively, a turn looks like this (real capture, live suite section 7):
+Non-interactively, a turn looks like this (real capture, live suite):
 
 ```
 $ moat run "Create a file named CODEX-LIVE.txt in the working tree whose contents are
@@ -85,12 +85,11 @@ Created `CODEX-LIVE.txt` in `/work` containing exactly `codex live` (no trailing
   27360 tokens  $0.0006 off-peak  2 tools
 ```
 
-With `--runtime opencode` you get moat's own session instead, with `/diff`, `/take`,
-`/verify`, `/model`, `/think`, `/undo` and the rest (see `docs/SPEC.md` §6b.5).
+The rows and the footer are printed when the turn finishes, not streamed row by row:
+the host reads the CLI's JSONL stream, parses it, and reports it.
 
-`moat --help` lists the rest: `attach`, `shell`, `exec`, `fetch`, `apply`,
-`snapshot`, `restore`, `profiles`, `models`, `tools`, `env`, `logs`, `destroy`.
-`attach`, `tools` and `env` need the opencode runtime: they ask its server.
+`moat --help` lists the rest: `shell`, `exec`, `fetch`, `apply`, `verify`, `snapshot`,
+`restore`, `profiles`, `models`, `logs`, `doctor`, `destroy`.
 
 ## DeepSeek
 
@@ -109,19 +108,14 @@ DeepSeek  env=DEEPSEEK_API_KEY  https://api.deepseek.com
   * = default. Override with: moat run --model <id> "..."
 ```
 
-`deepseek-flash` at `high` reasoning is the default, and the environment
-remembers whatever you change it to. Two of those four are retired names:
-DeepSeek still accepts them, but serves them with the current Flash model at the
-Flash price, which is what `deepseek-flash` names directly — so that is the one
-moat uses.
+`deepseek-flash` is the default. Two of those four are retired names: DeepSeek still
+accepts them, but serves them with the current Flash model at the Flash price, which is
+what `deepseek-flash` names directly — so that is the one moat uses.
 
-`--model <id>` picks a model. `--effort <level>` sets reasoning effort under the
-opencode runtime (`--runtime opencode`, where `/model` and `/think` do the same inside a
-session). Under the codex runtime it is **refused rather than ignored**: Codex renders
-reasoning as `model_reasoning_effort`, but drops it for models it has no metadata for, and
-that is every DeepSeek model today — measured, `model_reasoning_effort = "high"` never
-reaches the wire for `deepseek-flash`. A flag that silently does nothing is the bug this
-project keeps finding; it fails instead.
+`--model <id>` picks a model. There is **no effort flag**: Codex renders reasoning as
+`model_reasoning_effort`, drops it for models it has no metadata for, and that is every
+DeepSeek model today (measured: the setting never reaches the wire). A flag that silently
+does nothing is the bug this project keeps finding, so the flag does not exist.
 
 `--upstream URL` keeps DeepSeek's definition and sends the traffic somewhere else,
 for a gateway or a proxy you want to watch. `--base-url URL` instead points at any
@@ -159,17 +153,15 @@ unshare --user --map-root-user --mount --pid --fork --uts --ipc [--net] --kill-c
      bind device nodes (read-write)   # interfaces, not host data
      nft -f /.moat/egress.nft         # default drop: provider + registries only
      chroot <mnt> && exec /.moat/entry.sh
-        ├─ codex runtime (default)  # a CLI: the long-running box is a keepalive, and
-        │                           # every task, check and TUI boots its own ephemeral box
-        └─ opencode runtime         # opencode serve --port N --hostname 0.0.0.0
-              ↑ the host reaches it through slirp4netns (API socket, add_hostfwd)
+        └─ the keepalive             # nothing listens: a task, a check or the TUI
+                                     # runs codex in its own ephemeral boot of
+                                     # the same rootfs
 ```
 
-Under the opencode runtime the host talks to the agent over HTTP, through an explicit port
-forward when the box has its own network namespace; under the codex runtime the host attaches
-a terminal to the TUI or reads the JSONL of `codex exec`. Either way the agent loop, its tools
-and the filesystem live inside the box, and nothing is proxied. Copy-in is a `git
-clone --no-hardlinks`, so the project arrives as data rather than as a mount.
+Codex is a CLI, not a server: the host attaches the terminal to the TUI or reads the
+JSONL of `codex exec`, and the agent loop, its tools and the filesystem live inside the
+box. Nothing is proxied and nothing is forwarded. Copy-in is a
+`git clone --no-hardlinks`, so the project arrives as data rather than as a mount.
 
 The default network policy is `filtered`: the sandbox is in its own namespace
 (`--net`), slirp4netns is its only datapath, the host's loopback is closed on
@@ -194,12 +186,16 @@ the result before showing it to you. No model is involved in that verdict.
   ruleset; `--egress open` restores the host's network namespace, and moat
   chooses that automatically for a provider on the host's loopback, which the
   sandbox's own namespace cannot reach. v1 is planned as a microVM.
-- Under the opencode runtime the tool list cannot be pruned exactly (opencode 1.18.31), so
-  the bundle refuses to execute anything outside the curated set instead and `moat tools`
-  prints the gap. Under the codex runtime the tool set is Codex's own — `exec_command`,
-  `write_stdin`, `view_image`, its planning tools and a server-side `web_search` — and moat
-  renders the config that governs it (`approval_policy = "never"`,
-  `sandbox_mode = "danger-full-access"`) rather than claiming a curated list it does not own.
+- **moat does not curate the tool list.** Codex ships its own tools —
+  `exec_command`, `write_stdin`, `view_image`, `web_search`, `request_user_input`,
+  `multi_agent_v1` — and there is no supported hook that removes one. What moat renders
+  is the config that governs them (`approval_policy = "never"`,
+  `sandbox_mode = "danger-full-access"`), and what bounds them is the box. The docs say
+  so rather than implying a curated list moat does not own.
+- A turn that crosses a peak-pricing boundary is priced at one rate: Codex reports one usage
+  block per turn, with no per-request timestamps to split it.
+- `bash test/e2e-live.sh` is the only evidence against the real model; everything else
+  runs against a deterministic stub.
 - Gitignored paths are not copied in. No `node_modules`, no `.venv`.
 - Linux only. No Windows.
 
@@ -209,30 +205,29 @@ the result before showing it to you. No model is involved in that verdict.
   the credential rule, the isolation model, and what v0 does not do.
 - [`docs/VERIFICATION.md`](docs/VERIFICATION.md) — each claim with the command
   that produced it and its real output.
-- [`docs/UPSTREAM-CANDIDATES.md`](docs/UPSTREAM-CANDIDATES.md) — the opencode
-  changes moat would like. Not applied.
-- [`docs/RUNTIME-COST.md`](docs/RUNTIME-COST.md) — what a turn costs on each runtime,
-  measured on the same task (Codex ≈ 2.8× on trivial work).
-- [`docs/RUNTIME-MIGRATION.md`](docs/RUNTIME-MIGRATION.md) — what removing opencode will
-  remove, and the order that keeps the suites green.
-- [`docs/RUNTIME-SPIKE-codex.md`](docs/RUNTIME-SPIKE-codex.md) — the measurements behind the
-  codex runtime: the musl binary, the Responses wire, the two gotchas.
+- [`docs/RUNTIME-COST.md`](docs/RUNTIME-COST.md) — what a turn costs on a real task
+  (Codex is about 2.8x the old server-based runtime on trivial work).
+- [`docs/RUNTIME-MIGRATION.md`](docs/RUNTIME-MIGRATION.md) — what the opencode runtime
+  was, why it was deleted, and where its claims went.
+- [`docs/RUNTIME-SPIKE-codex.md`](docs/RUNTIME-SPIKE-codex.md) — the measurements
+  behind the runtime: the musl binary, the Responses wire, the two gotchas.
 - [`AGENTS.md`](AGENTS.md) — for anyone working on moat itself: the invariants, the
   layout, the traps, and what is deliberately not built yet.
 
 ## Development
 
 ```bash
-bash test/e2e-codex.sh                        # acceptance on the default runtime, keyless
-bash test/e2e.sh                              # the same list for the opencode runtime, ~4 minutes
-bash test/e2e-extras.sh                       # snapshots, apply, credential expiry
+npm run test:unit                             # pure unit tests, no sandbox
+bash test/e2e-codex.sh                        # the acceptance list, keyless
+bash test/e2e-extras.sh                       # snapshots, apply, credential expiry, state traps
+bash test/e2e-egress.sh                       # netns, slirp datapath, allowlist, default
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh    # a real model doing a real task
 ```
 
-The first two drive real sandboxes against deterministic local model stubs — chat
-completions for opencode, and (`test/mock-responses.mjs`) the Responses wire API for Codex,
-whose event shapes were captured from a real DeepSeek stream — so they need no key and give
-the same result every time. Raw output lands in `test/evidence/`.
+The sandbox suites drive real sandboxes against a deterministic local model stub — the
+Responses wire API (`test/mock-responses.mjs`), whose event shapes were captured from a
+real DeepSeek stream — so they need no key and give the same result every time. Raw output
+lands in `test/evidence/`.
 
 Run them locally. GitHub's hosted runners cannot create unprivileged user
 namespaces, so the sandbox suite does not run in CI; the workflow reports that as

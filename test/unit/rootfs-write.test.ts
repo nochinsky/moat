@@ -5,7 +5,7 @@ import path from "node:path"
 import { test } from "node:test"
 
 import type { EnvPaths } from "../../lib/paths.ts"
-import { installBundle } from "../../bundle/install.ts"
+import { installCodexFiles } from "../../bundle/codex.ts"
 import { outerScript } from "../../sandbox/launcher.ts"
 import {
   chmodRootfsDir,
@@ -31,51 +31,24 @@ function withDirs(t: { after: (fn: () => void) => void }): { rootfs: string; out
   return { rootfs, outside }
 }
 
-function installOptions() {
-  return {
-    render: {
-      provider: { opencodeID: "deepseek", npm: "", native: true },
-      modelID: "deepseek-flash",
-      baseUrl: "",
-      preset: "core" as const,
-    },
-    brief: {
-      provider: "DeepSeek",
-      model: "deepseek/deepseek-flash",
-      branch: "moat-session",
-      profiles: [] as string[],
-      installedPackages: [] as string[],
-      hasCredential: true,
-      canAsk: false,
-      egress: "open" as const,
-      checks: [],
-    },
-    installedPackages: [] as string[],
-  }
-}
+const CODEX_FILES = { config: 'model = "deepseek-flash"\n', brief: "the brief\n" }
 
-test("the bundle install refuses to write through a symlink the agent planted", (t) => {
-  // Measured before the guard: the agent replaces /root/.config/opencode with a
-  // symlink to a host directory, and every boot writes AGENTS.md (3834 bytes)
-  // into it — outside the sandbox, on every boot, with no error anywhere.
+test("the per-boot write refuses to go through a symlink the agent planted", (t) => {
+  // Measured before the guard: the agent replaces a directory in its own rootfs with a
+  // symlink to a host path, and every boot writes into it — outside the sandbox, on every
+  // boot, with no error anywhere.
   const { rootfs, outside } = withDirs(t)
-  fs.mkdirSync(path.join(rootfs, "root", ".config"), { recursive: true })
-  fs.symlinkSync(outside, path.join(rootfs, "root", ".config", "opencode"))
+  fs.mkdirSync(path.join(rootfs, "root"), { recursive: true })
+  fs.symlinkSync(outside, path.join(rootfs, "root", ".codex"))
 
-  assert.throws(() => installBundle(rootfs, installOptions()), /symlink/)
+  assert.throws(() => installCodexFiles(rootfs, CODEX_FILES), /symlink/)
   assert.deepEqual(fs.readdirSync(outside), [])
 })
 
-test("a normal bundle install still writes every file, inside the rootfs", (t) => {
+test("a normal boot writes both files, inside the rootfs", (t) => {
   const { rootfs } = withDirs(t)
-  installBundle(rootfs, installOptions())
-  for (const target of [
-    "usr/local/share/moat/opencode.json",
-    "usr/local/share/moat/tools.json",
-    "usr/local/share/moat/environment.json",
-    "usr/local/share/moat/plugin/moat-bundle.mjs",
-    "root/.config/opencode/AGENTS.md",
-  ]) {
+  installCodexFiles(rootfs, CODEX_FILES)
+  for (const target of ["root/.codex/config.toml", "root/.codex/AGENTS.md"]) {
     assert.equal(fs.existsSync(path.join(rootfs, target)), true, target)
   }
 })
@@ -201,7 +174,7 @@ test("opening the boot log for append refuses a symlink and writes nothing outsi
 
 test("ensureRootfsDir creates directories and refuses symlinked components", (t) => {
   const { rootfs, outside } = withDirs(t)
-  const created = ensureRootfsDir(rootfs, "/usr/local/share/moat/plugin")
+  const created = ensureRootfsDir(rootfs, "/usr/local/lib/moat/plugin")
   assert.equal(fs.statSync(created).isDirectory(), true)
   fs.symlinkSync(outside, path.join(rootfs, "escape"))
   assert.throws(() => ensureRootfsDir(rootfs, "/escape/deeper"), /symlink/)

@@ -11,14 +11,9 @@ import { probeHost, assertHostUsable, describeHost } from "../lib/host.ts"
 import { ensureMoatHome, envPaths, validateLogName, type EnvPaths } from "../lib/paths.ts"
 import {
   ALPINE_VERSION,
-  CURATED_TOOLS,
-  EXCLUDED_TOOLS,
-  OPENCODE_VERSION,
-  RUNTIMES,
+  CODEX_VERSION,
   RUNTIME_BINARY,
   SANDBOX_WORKDIR,
-  UNADVERTISED_GAPS,
-  type Runtime,
   defaultEgress,
   ownNetns,
   type EgressMode,
@@ -40,16 +35,14 @@ import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import { recoverStateFromDisk } from "../sandbox/recover.ts"
 import { beginBoot, bootAgeSeconds, bootInFlight, endBoot, waitForBoot } from "../sandbox/boot.ts"
-import { stripAnsi } from "./display.ts"
+import { stripAnsi } from "../lib/terminal.ts"
 import { readRootfsFile, readRootfsFileHead, readRootfsFileTail, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import {
   credentialExpired,
   envExists,
   initialState,
   listEnvs,
-  readPassword,
   readState,
-  writePassword,
   writeState,
   type EnvState,
 } from "../sandbox/state.ts"
@@ -77,12 +70,9 @@ import {
   writeInnerScript,
   writeOuterScript,
 } from "../sandbox/launcher.ts"
-import { serveEntryScript } from "../sandbox/serve.ts"
-import { installBundle } from "../bundle/install.ts"
 import { renderInstructions } from "../bundle/instructions.ts"
-import { describeCodexTurn, parseCodexEvents, renderCodexConfig } from "../bundle/codex.ts"
+import { describeCodexTurn, installCodexFiles, parseCodexEvents, renderCodexConfig } from "../bundle/codex.ts"
 import { computeCost, formatUSD } from "../lib/pricing.ts"
-import { TOOL_PRESETS, type ToolPreset } from "../bundle/render.ts"
 import { runIsolationChecks, type IsolationReport } from "../sandbox/isolation.ts"
 import { onboard } from "../secrets/onboard.ts"
 import {
@@ -108,19 +98,7 @@ import {
   suggestBranch,
 } from "../sync/copyout.ts"
 import { applyPlan, describePlan, planApply } from "../sync/apply.ts"
-import {
-  connect,
-  driveSession,
-  listSessions,
-  modelVariants,
-  toolIds,
-  waitForServer,
-  authHeaders,
-  baseUrl,
-} from "./client.ts"
-import { runRepl } from "./repl.ts"
 import { COMMAND_FLAGS, SPEC, flag, parse, type Parsed } from "../lib/flags.ts"
-import { freePort, hostPortFree } from "../lib/port.ts"
 
 // ---------------------------------------------------------------------------
 // argument parsing
@@ -133,10 +111,10 @@ import { freePort, hostPortFree } from "../lib/port.ts"
 /**
  * A numeric flag that has to be a positive integer.
  *
- * The parser stores `Number(value)` for anything numeric, so `--tail abc` became
- * NaN (which silently means "the whole file") and `--port 99999` sailed through
- * provisioning to fail ninety seconds later as "opencode serve did not come up".
- * A typo should be a message, not a slow failure.
+ * The parser stores `Number(value)` for anything numeric, so `--tail abc` became NaN (which
+ * silently means "the whole file") and a boot flag with a typo sailed through provisioning to
+ * fail much later, naming something other than the flag. A typo should be a message, not a
+ * slow failure.
  */
 function optionalPositiveIntFlag(p: Parsed, key: string, max?: number): number | undefined {
   const value = flag<number>(p, key)
@@ -355,31 +333,6 @@ async function egressRuntime(state: EnvState, paths: EnvPaths): Promise<EgressRu
   return runtime
 }
 
-function requireRunning(p: EnvPaths): { state: EnvState; password: string } {
-  const state = requireState(p)
-  if (!sandboxAlive(state, p)) {
-    writeState(p, { ...state, status: "stopped", pid: null, pidStart: null })
-    log.fail(`the sandbox for ${p.projectDir} is not running. Run \`moat up\` first.`)
-  }
-  // The in-sandbox watchdog kills the agent at the TTL; the host must not keep
-  // driving afterwards and produce a provider error instead of the real reason.
-  if (credentialExpired(state)) {
-    log.fail(
-      `the injected credential expired at ${state.credential!.expiresAt}, and the sandbox watchdog has stopped the agent.\n` +
-        "  run \`moat up\` to boot again with a fresh credential.",
-    )
-  }
-  const password = readPassword(p)
-  if (!password) log.fail("no server password on disk; run `moat up` again")
-  return { state, password }
-}
-
-
-
-function randomPassword(): string {
-  return crypto.randomBytes(24).toString("base64url")
-}
-
 function human(bytes: number): string {
   if (bytes > 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GiB`
   if (bytes > 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`
@@ -409,23 +362,23 @@ type ResolvedModel = {
 
 async function resolveModel(provider: ResolvedProvider, catalog: Catalog | null): Promise<ResolvedModel> {
   const modelID = provider.modelID
-  const known = catalogModel(catalog, provider.opencodeID, modelID)
+  const known = catalogModel(catalog, provider.id, modelID)
 
   // A native model id that the catalog does not describe would leave opencode
   // unable to resolve it, so say so and describe it here instead.
-  const catalogProvider = catalog?.get(provider.opencodeID)
+  const catalogProvider = catalog?.get(provider.id)
   if (catalog && provider.native && catalogProvider && !known) {
     log.warn(
-      `${provider.opencodeID} does not define "${modelID}" in the models.dev catalog; declaring it as a custom ` +
+      `${provider.id} does not define "${modelID}" in the models.dev catalog; declaring it as a custom ` +
         `model instead. Known ids: ${catalogProvider.models.map((m) => m.id).join(", ")}   (moat models)`,
     )
   }
   if (known && known.toolCall === false) {
-    log.warn(`${provider.opencodeID}/${modelID} does not advertise tool calling; the agent will not be able to act.`)
+    log.warn(`${provider.id}/${modelID} does not advertise tool calling; the agent will not be able to act.`)
   }
 
   const useNative = provider.native && (known !== null || !catalog)
-  const providerID = useNative ? provider.opencodeID : CUSTOM_ENDPOINT.opencodeID
+  const providerID = useNative ? provider.id : CUSTOM_ENDPOINT.id
   return {
     providerID,
     modelID,
@@ -452,14 +405,6 @@ async function resolveModel(provider: ResolvedProvider, catalog: Catalog | null)
         }
       : undefined,
   }
-}
-
-function resolveToolPreset(p: Parsed): ToolPreset {
-  const requested = (flag<string>(p, "tools") ?? "core").toLowerCase()
-  if (requested !== "core" && requested !== "extended") {
-    log.fail(`unknown --tools "${requested}". Use one of: ${Object.keys(TOOL_PRESETS).join(", ")}`)
-  }
-  return requested as ToolPreset
 }
 
 /** The branch the agent works on, so the user's own branch is untouched even inside the box. */
@@ -493,42 +438,6 @@ async function cmdUp(argv: string[]): Promise<number> {
   // running sandbox used to be dropped on the floor by the reuse path below.
   const task = p._.join(" ").trim()
 
-  // Which agent runtime this environment uses. Codex is a CLI, not a server, so it changes
-  // what the box runs and how a task or a session is driven; it does not change the sandbox.
-  const runtimeFlag = flag<string>(p, "runtime")
-  if (runtimeFlag !== undefined && runtimeFlag !== "codex" && runtimeFlag !== "opencode") {
-    log.fail(`unknown --runtime "${runtimeFlag}". Use "codex" (Codex CLI) or "opencode".`)
-  }
-  const runtime: Runtime = runtimeFlag ?? state?.runtime ?? "codex"
-
-  // --effort under the codex runtime: refused, not ignored. Codex renders reasoning as
-  // model_reasoning_effort and drops it for models it has no metadata for, which is every
-  // DeepSeek model today (measured through the recording proxy: model_reasoning_effort =
-  // "high" never reached the wire). A flag that silently does nothing is the bug class this
-  // project keeps finding, so it fails with the way out instead.
-  if (runtime === "codex" && flag<string>(p, "effort") !== undefined) {
-    log.fail(
-      "the codex runtime does not take --effort: Codex sends reasoning effort only for models it " +
-        "has metadata for, and it has none for the DeepSeek models moat uses.\n" +
-        "  use --runtime opencode for effort levels, or drop the flag.",
-    )
-  }
-
-  // A runtime change is a restart, and it has to happen before anything else touches the
-  // rootfs: provisioning extracts the new runtime's image over the rootfs, which must not
-  // race a live box. Stopping here is also what makes the flag meaningful on a running
-  // environment instead of silently ignored.
-  if (state?.pid && sandboxAlive(state, paths) && (state.runtime ?? "opencode") !== runtime) {
-    log.warn(`runtime changed (${state.runtime ?? "opencode"} -> ${runtime}); restarting the sandbox`)
-    await stopSandbox(state.pid, {
-      startTime: state.pidStart,
-      envId: paths.id,
-      slirpPid: state.slirpPid,
-      slirpStart: state.slirpStart,
-    })
-    state = await forgetBox(paths, state)
-  }
-
   // Whether a human is actually attached. This decides two things that must
   // agree: whether the agent may ask a question, and what its instructions say
   // about asking. Getting them out of step is how you get a hang.
@@ -536,23 +445,15 @@ async function cmdUp(argv: string[]): Promise<number> {
 
   const fresh = flag<boolean>(p, "fresh") ?? false
   const sync = flag<boolean>(p, "sync") ?? false
-  // Validate the port here, before provisioning: a typo used to survive the copy-in,
-  // boot a server that cannot bind, and surface ninety seconds later as "opencode
-  // serve did not come up". The port itself is still chosen as late as possible,
-  // which keeps the window between "free" and "bound" small.
-  const portFlag = flag<number>(p, "port")
-  if (portFlag !== undefined && (!Number.isInteger(portFlag) || portFlag < 1 || portFlag > 65535)) {
-    log.fail("--port must be an integer between 1 and 65535")
-  }
   // --timeout is seconds everywhere. Validating it here means a typo fails before
   // provisioning rather than after the boot.
   optionalPositiveIntFlag(p, "timeout")
-  // Flags whose bad value used to survive provisioning and surface as a boot
-  // failure, or never surface at all: a bad --log-level silently became INFO.
-  resolveToolPreset(p)
-  const logLevelFlag = flag<string>(p, "log-level")
-  if (logLevelFlag !== undefined && !LOG_LEVELS.includes(logLevelFlag.toUpperCase())) {
-    log.fail(`unknown --log-level "${logLevelFlag}". Use one of: ${LOG_LEVELS.join(", ")}`)
+  // --credential-ttl is parsed with the same function that will parse it at mint time, for the
+  // same reason: measured before this, a typo ran the whole copy-in and then failed.
+  try {
+    ttlToSeconds(flag<string>(p, "credential-ttl") ?? process.env.MOAT_CREDENTIAL_TTL ?? `${DEFAULT_TTL_SECONDS}s`)
+  } catch (error) {
+    log.fail(`--credential-ttl: ${(error as Error).message}`)
   }
   const modelFlag = flag<string>(p, "model")
   if (modelFlag !== undefined && modelFlag.trim().length === 0) log.fail("--model needs a model id")
@@ -595,10 +496,10 @@ async function cmdUp(argv: string[]): Promise<number> {
         "  to discard the sandbox's copy instead: moat up --fresh --yes",
     )
   }
-  // The image carries only the runtime this environment was created with, so a switch shows
-  // up as a missing binary. It is installed into the live rootfs below, not by re-provisioning:
-  // provisioning deletes the rootfs first, and that would take the agent's work with it.
-  const runtimePresent = fs.existsSync(path.join(paths.rootfs, RUNTIME_BINARY[runtime]))
+  // The binary can be missing: the agent can delete it, and an environment provisioned by an
+  // older moat never had it. It is put back into the live rootfs below, not by re-provisioning
+  // — provisioning deletes the rootfs first and would take the agent's work with it.
+  const runtimePresent = fs.existsSync(path.join(paths.rootfs, RUNTIME_BINARY))
   const needsProvision = fresh || !envExists(paths) || !state
 
   // Where the provider lives decides the default network policy, so resolve it
@@ -644,23 +545,6 @@ async function cmdUp(argv: string[]): Promise<number> {
       `egress: ${egressAllow.length} allowlist host(s) are recorded, but they only apply to filtered egress; ` +
         `this environment is ${egress}.`,
     )
-  }
-
-  // `--port` is validated for range above; this is the other half, and for the same
-  // reason. A port another process already holds used to cost the whole readiness
-  // budget (90 seconds by default) and fail with "opencode serve did not come up
-  // (GET /config -> TimeoutError)", naming neither the port nor the reason — after
-  // provisioning and a copy-in had already run. A box of ours already listening on it
-  // is not "in use" for this purpose: that is the reuse path below.
-  const ours = state !== null && sandboxAlive(state, paths) && state.port === portFlag
-  if (portFlag !== undefined && !ours) {
-    const address = ownNetns(egress) ? "0.0.0.0" : "127.0.0.1"
-    if (!(await hostPortFree(portFlag, address))) {
-      log.fail(
-        `--port ${portFlag} is already in use on this host (nothing can bind ${address}:${portFlag}).\n` +
-          "  pick another port, or drop --port and moat will choose a free one.",
-      )
-    }
   }
 
   // `moat` on its own is typed anywhere, so the obvious wrong directories are
@@ -723,10 +607,10 @@ async function cmdUp(argv: string[]): Promise<number> {
 
   if (needsProvision) {
     log.step(
-      `provisioning sandbox image (alpine ${ALPINE_VERSION} + opencode ${OPENCODE_VERSION}` +
+      `provisioning sandbox image (alpine ${ALPINE_VERSION} + codex ${CODEX_VERSION}` +
         `${resolvedProfiles.profiles.length > 0 ? ` + ${resolvedProfiles.profiles.join(", ")}` : ""})`,
     )
-    const provision = await provisionEnv(paths, { useImageCache: !fresh, packages: resolvedProfiles.packages, runtimes: [runtime] })
+    const provision = await provisionEnv(paths, { useImageCache: !fresh, packages: resolvedProfiles.packages })
     report.provisionMs = provision.totalMs
     report.provisionFromImageCache = provision.fromImageCache
     report.imageCache = provision.imageCache
@@ -735,17 +619,17 @@ async function cmdUp(argv: string[]): Promise<number> {
     // second 107 MiB copy is worth several seconds on every cold start.
     const baseline = baselineSnapshot(paths, provision)
     report.baselineSnapshot = { name: "baseline", bytes: baseline.bytes, linked: baseline.linked }
-    state = initialState(paths, { opencode: OPENCODE_VERSION, alpine: ALPINE_VERSION })
+    state = initialState(paths, { alpine: ALPINE_VERSION })
     writeState(paths, state)
     log.success(`image provisioned in ${ms(provision.totalMs)} (${provision.steps.map((s) => `${s.name} ${ms(s.ms)}`).join(", ")})`)
   }
 
-  // A runtime the image does not carry — a switch, or a binary the agent deleted — is
-  // installed into the live rootfs here. The runtime-change restart above has already
-  // stopped any box that was running, and /work is untouched by a copy into /usr/local/bin.
+  // A binary the agent deleted, or a rootfs provisioned before moat installed one, is put
+  // back here rather than by re-provisioning: provisioning deletes the rootfs first and would
+  // take /work with it, and a copy into /usr/local/bin touches nothing the agent owns.
   if (!needsProvision && !runtimePresent) {
-    log.step(`installing the ${runtime} runtime into this environment`)
-    await installRuntimeBinary(paths, runtime)
+    log.step("installing the codex runtime into this environment")
+    await installRuntimeBinary(paths)
   }
 
   // The recorded pid is only meaningful if it is still the process moat started.
@@ -788,56 +672,24 @@ async function cmdUp(argv: string[]): Promise<number> {
     state = await forgetBox(paths, state!)
   }
 
-  // A stopped sandbox may still be draining; make sure the recorded pid is gone.
+  // A keepalive box that is still alive *is* the environment being up: `moat up` with nothing
+  // else to do is finished. Work is different. A task and the TUI each run in their own
+  // ephemeral boot of this rootfs, and both need the credential resolved at boot time, which
+  // this box may have outlived — so they stop it and take the boot path below.
   if (state!.pid && sandboxAlive(state!, paths)) {
-    log.info(`sandbox already running (pid ${state!.pid}) on port ${state!.port}`)
-    if (portFlag !== undefined && portFlag !== state!.port) {
-      // Saying nothing here is how a flag becomes a rumour: the box is already up, so
-      // the port it is on wins, and the one that was asked for is not used at all.
-      log.warn(`--port ${portFlag} was not applied: this sandbox is already listening on ${state!.port}`)
-    }
-    const password = readPassword(paths)!
-    // A codex box has no server. Its tasks and sessions run in their own ephemeral boots
-    // of the same rootfs, so the flow below stops this idle box and takes the boot path —
-    // which is where the model, egress and credential are resolved for the runtime.
-    const ready =
-      runtime === "codex"
-        ? { ok: false, detail: "the codex runtime has no server" }
-        : await waitForServer(state!, password, { timeoutMs: 15000 })
-    if (ready.ok) {
-      if (task.length > 0) {
-        const result = await driveTask(state!, password, task, {
-          continueLast: flag<boolean>(p, "continue") ?? false,
-          agent: flag<string>(p, "agent"),
-          effort: flag<string>(p, "effort"),
-          showOutput: flag<boolean>(p, "show-output") ?? false,
-          timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
-        })
-        if (json) log.emit(result)
-        else {
-          printTaskResult(result)
-          printNextStep(paths, result.errors.length > 0 ? "the task reported errors" : null)
-        }
-        return result.errors.length > 0 ? 1 : 0
-      }
-      if (process.stdin.isTTY === true && !json && !flag<boolean>(p, "no-follow")) {
-        return await runRepl({ paths, state: state!, password, showOutput: flag<boolean>(p, "show-output") ?? false })
-      }
+    if (task.length === 0 && !interactive) {
       if (json) log.emit({ ...report, status: "already-running", ...state })
-      else printUpSummary(paths, state!, password, { coldStart: 0, reused: true, provisioned: false })
+      else printUpSummary(paths, state!, { coldStart: 0, reused: true, provisioned: false })
       return 0
     }
-    log.warn(
-      runtime === "codex"
-        ? "restarting the idle codex box for this run (its tasks do not go through a server)"
-        : "recorded sandbox pid is alive but the server is not answering; restarting it",
-    )
+    log.info(`sandbox already running (pid ${state!.pid}); restarting it for this run`)
     await stopSandbox(state!.pid, {
       startTime: state!.pidStart,
       envId: paths.id,
       slirpPid: state!.slirpPid,
       slirpStart: state!.slirpStart,
     })
+    state = await forgetBox(paths, state!)
   }
 
   // Profiles are additive: adding one to an existing environment installs only
@@ -972,8 +824,7 @@ ${command}
   const catalog = flag<boolean>(p, "refresh") ? await loadCatalog({ refresh: true }) : await loadCatalog()
   const baseUrl = provider.baseUrl
   const resolvedModel = await resolveModel(provider, catalog)
-  const toolPreset = resolveToolPreset(p)
-  report.provider = { opencodeID: resolvedModel.providerID, native: resolvedModel.native, label: provider.label }
+  report.provider = { id: resolvedModel.providerID, native: resolvedModel.native, label: provider.label }
   report.model = {
     id: resolvedModel.model,
     context: resolvedModel.meta?.context,
@@ -1010,11 +861,11 @@ ${command}
       envName: flag<string>(p, "credential-env"),
       // The provider *id*, not its label: this is the key the credential store
       // is indexed by, and what `onboard` writes.
-      provider: provider.opencodeID,
+      provider: provider.id,
       baseUrl,
       model: resolvedModel.modelID,
       ttlSeconds,
-      // DeepSeek gets the key under the name opencode looks for. A custom
+      // DeepSeek gets the key under the name its API and Codex's env_key use. A custom
       // endpoint gets it under moat's own name, which the rendered provider
       // block references as {env:MOAT_INJECTED_CREDENTIAL}.
       targetEnvVars: resolvedModel.native ? [DEEPSEEK.envVar] : [],
@@ -1026,7 +877,7 @@ ${command}
       const key = await onboard()
       if (key) {
         credential = mint({
-          provider: provider.opencodeID,
+          provider: provider.id,
           baseUrl,
           model: resolvedModel.modelID,
           ttlSeconds,
@@ -1071,9 +922,9 @@ ${command}
     log.info(`checks: ${projectChecks.map((c) => c.command).join(", ")}`)
   }
 
-  // One brief input, two consumers: the opencode bundle (legacy) and Codex's own global
-  // AGENTS.md, so the agent is told about the boot that was actually made under either
-  // runtime, from the same source of truth.
+  // The boot the agent is told about is rendered from this, and it is the same object the
+  // config and the brief below are written from: an input that is declared but never read is
+  // how the brief came to describe a boot that was not the one being made.
   const briefInput = {
     provider: provider.label,
     model: resolvedModel.model,
@@ -1085,21 +936,6 @@ ${command}
     egress,
     checks: projectChecks.map((c) => ({ label: c.label, command: c.command })),
   }
-  const bundleManifest = installBundle(paths.rootfs, {
-    render: {
-      provider,
-      modelID: resolvedModel.modelID,
-      modelIDs: resolvedModel.modelIDs,
-      baseUrl,
-      upstream: provider.upstream,
-      preset: toolPreset,
-      modelMeta: resolvedModel.meta,
-    },
-    brief: briefInput,
-    installedPackages: resolvedProfiles.profiles.length > 0 ? resolvedProfiles.packages : BASE_PACKAGES,
-  })
-  report.bundle = { curated: bundleManifest.curated, excluded: bundleManifest.excluded, preset: bundleManifest.preset }
-
   // Fail before booting, not after. Asking for a task with no model means the
   // box starts, the turn errors immediately, and the user is left reading a
   // session id. Cheaper to say so now — but only for the native provider, where the
@@ -1116,59 +952,31 @@ ${command}
   }
 
   // --- boot -----------------------------------------------------------------
-  const port = portFlag ?? (await freePort())
-  const password = randomPassword()
-  writePassword(paths, password)
+  const entry = codexEntryScript()
 
-  const entry = runtime === "codex" ? codexEntryScript() : serveEntryScript({
-    port,
-    // Normalised here and again in serveEntryScript: "--log-level debug" used to
-    // fall through the uppercase set and silently become INFO.
-    logLevel: logLevelFlag?.toUpperCase() as "INFO" | undefined,
-    credentialTtlSeconds: credential ? credential.ttlSeconds : null,
-    // In the sandbox's own namespace a loopback bind is unreachable through
-    // slirp's forward, so the server has to listen on the tap address. That
-    // covers `filtered` too: it is the same namespace with a ruleset on top.
-    hostname: ownNetns(egress) ? "0.0.0.0" : "127.0.0.1",
-  })
-
-  if (runtime === "codex") {
-    // Rendered on every boot, like the opencode bundle, and written through the rootfs
-    // guard: the agent's home is inside the box, and this file is what decides that Codex
-    // asks for no approvals and adds no second sandbox next to moat's.
-    writeRootfsFile(
-      paths.rootfs,
-      "/root/.codex/config.toml",
-      renderCodexConfig({
-        model: resolvedModel.modelID,
-        providerID: "deepseek-moat",
-        baseURL: baseUrl,
-        envKey: resolvedModel.native ? DEEPSEEK.envVar : "MOAT_INJECTED_CREDENTIAL",
-        contextWindow: resolvedModel.meta?.context,
-        maxOutputTokens: resolvedModel.meta?.output,
-        // A stored effort (recorded when the environment was created under opencode) is
-        // rendered when Codex accepts the level, and left out otherwise.
-        reasoningEffort: state?.effort ?? undefined,
-      }),
-      0o600,
-    )
-
+  // Both files are rendered on every boot and written through the rootfs guard: the agent's
+  // home is inside the box, the config is what decides that Codex asks for no approvals and
+  // adds no second sandbox next to moat's, and the brief is what tells the agent where it is.
+  // A stale one from a cached image or an environment created days ago is a bug that already
+  // happened once, so neither is left to provisioning.
+  installCodexFiles(paths.rootfs, {
+    config: renderCodexConfig({
+      model: resolvedModel.modelID,
+      providerID: "deepseek-moat",
+      baseURL: baseUrl,
+      // The native provider's key is read from its own variable; a custom endpoint reads moat's.
+      // With --no-credential there is nothing to read, so no env_key is written at all.
+      envKey: resolvedModel.native ? DEEPSEEK.envVar : credential ? "MOAT_INJECTED_CREDENTIAL" : undefined,
+      contextWindow: resolvedModel.meta?.context,
+      maxOutputTokens: resolvedModel.meta?.output,
+    }),
     // Codex reads a global brief from its home directory (default ~/.codex, or CODEX_HOME if
     // that is set). Measured through the recording proxy: the content arrives in the request
     // body wrapped as AGENTS.md instructions, not in the top-level instructions field.
-    // Rendering the brief here — not only inside the opencode bundle — is what keeps the
-    // agent knowing where it is once opencode is gone.
-    writeRootfsFile(
-      paths.rootfs,
-      "/root/.codex/AGENTS.md",
-      renderInstructions({ ...briefInput, workspace: SANDBOX_WORKDIR }),
-      0o600,
-    )
-  }
+    brief: renderInstructions({ ...briefInput, workspace: SANDBOX_WORKDIR }),
+  })
 
   const managedEnv: Record<string, string> = {
-    OPENCODE_SERVER_PASSWORD: password,
-    MOAT_PORT: String(port),
     // Configuration, not a secret: the custom-endpoint provider block needs the base
     // URL and the model whether or not a credential was injected. They used to arrive
     // only with the credential, so a --no-credential boot had a provider with no URL
@@ -1178,7 +986,7 @@ ${command}
   }
   // The escape hatch is spread first and the managed values last, and it may not
   // claim a managed name: MOAT_SANDBOX_ENV must not be able to replace the
-  // credential or the server password inside the box.
+  // credential or the provider configuration inside the box.
   const sandboxEnvVars: Record<string, string> = {
     ...extraSandboxEnv(process.env.MOAT_SANDBOX_ENV, Object.keys(managedEnv)),
     ...managedEnv,
@@ -1203,7 +1011,6 @@ ${command}
 
   const sandbox = await startSandbox(paths, entry, sandboxEnvVars, {
     egress,
-    port,
     slirpBinary: egressConfig.slirpBinary,
     egressRules: egressConfig.egressRules,
   })
@@ -1216,13 +1023,11 @@ ${command}
     egressAllow,
     slirpPid: sandbox.slirp?.pid ?? null,
     slirpStart: sandbox.slirp?.startTime ?? null,
-    port,
     model: resolvedModel.model,
     providerBaseUrl: baseUrl,
-    provider: provider.opencodeID,
+    provider: provider.id,
     branch,
     baseBranch,
-    runtime,
     profiles: resolvedProfiles.profiles,
     lastUpAt: new Date().toISOString(),
     credential: credential
@@ -1235,34 +1040,12 @@ ${command}
       : null,
   }
   writeState(paths, state)
-  log.step(
-    runtime === "codex"
-      ? `sandbox booted (pid ${sandbox.pid}); the codex runtime has no server to wait for`
-      : `sandbox booted (pid ${sandbox.pid}, port ${port}); waiting for opencode serve`,
-  )
-
-  // --timeout is SECONDS (driveTask and the checks runner take it as timeoutSeconds).
-  // Reading it as milliseconds here capped the boot readiness wait at the value the
-  // user meant for the whole turn: measured, `moat up --timeout 600` failed with
-  // "opencode serve did not come up ... after 600ms".
-  // The codex runtime has no server: the box is up when unshare is, and every task, TUI
-  // and check runs in its own ephemeral boot of the same rootfs.
-  const ready =
-    runtime === "codex"
-      ? { ok: true, detail: "the codex runtime has no server to wait for" }
-      : await waitForServer(state, password, { timeoutMs: (optionalPositiveIntFlag(p, "timeout") ?? 90) * 1000 })
+  // There is no server to wait for: the box is up when unshare is, and every task, TUI session
+  // and check runs in its own ephemeral boot of this rootfs. --timeout is SECONDS and is the
+  // budget for one of those turns, not for this readiness.
+  log.step(`sandbox booted (pid ${sandbox.pid}); the codex runtime has no server to wait for`)
+  const ready = { ok: true, detail: "the codex runtime has no server to wait for" }
   const bootMs = Date.now() - bootStart
-  if (!ready.ok) {
-    const tail = sandboxLogTail(paths, 40)
-    await stopSandbox(sandbox.pid, {
-      startTime: sandbox.startTime,
-      envId: paths.id,
-      slirpPid: sandbox.slirp?.pid ?? null,
-      slirpStart: sandbox.slirp?.startTime ?? null,
-    })
-    await forgetBox(paths, state)
-    log.fail(`opencode serve did not come up (${ready.detail}).\n--- sandbox log ---\n${tail}`)
-  }
 
   // The value is only ever meant to exist in the sandbox process environment.
   // If it reached a file inside the rootfs, "no credential in the image" is
@@ -1290,49 +1073,18 @@ ${command}
   // and the environment is not "being booted" any more.
   endBoot(paths)
 
-  // `moat up "fix the tests"` and `moat run "fix the tests"` are the same thing:
-  // bringing up a box you are not going to use is not a step worth having.
-  // At a terminal, a task is the first line of a conversation rather than the
-  // whole of one: start it, then stay so it can be steered while it runs.
-  if (runtime === "codex") {
-    const showOutput = flag<boolean>(p, "show-output") ?? false
-    const timeoutSeconds = optionalPositiveIntFlag(p, "timeout")
-    const runOptions = { env: sandboxEnvVars, egress, slirpBinary: egressConfig.slirpBinary, egressRules: egressConfig.egressRules }
-    // A task at a terminal is the first line of a conversation, exactly as it is for the
-    // opencode path: open Codex's own TUI with the task as its first message.
-    if (task.length > 0 && interactive) return await runInteractive(paths, codexTuiBody(task), runOptions)
-    if (task.length > 0) return await runCodexTask(paths, codexExecBody(task), { ...runOptions, timeoutSeconds, showOutput, json })
-    if (interactive) return await runInteractive(paths, codexTuiBody(), runOptions)
-  }
-
-  if (task.length > 0 && interactive) {
-    return await runRepl({
-      paths,
-      state,
-      password,
-      firstMessage: task,
-      showOutput: flag<boolean>(p, "show-output") ?? false,
-    })
-  }
-
-  if (task.length > 0) {
-    const result = await driveTask(state, password, task, {
-      continueLast: flag<boolean>(p, "continue") ?? false,
-      agent: flag<string>(p, "agent"),
-      effort: flag<string>(p, "effort"),
-      showOutput: flag<boolean>(p, "show-output") ?? false,
-      timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
-    })
-    if (json) log.emit(result)
-    else {
-      printTaskResult(result)
-      printNextStep(paths, result.errors.length > 0 ? "the task reported errors" : null)
-    }
-    return result.errors.length > 0 ? 1 : 0
-  }
+  // `moat up "fix the tests"` and `moat run "fix the tests"` are the same thing: bringing up a
+  // box you are not going to use is not a step worth having. At a terminal, a task opens
+  // Codex's own TUI with the task as its first message, so it can be steered while it runs;
+  // a batch run drives one turn and reports it.
+  const showOutput = flag<boolean>(p, "show-output") ?? false
+  const timeoutSeconds = optionalPositiveIntFlag(p, "timeout")
+  const runOptions = { env: sandboxEnvVars, egress, slirpBinary: egressConfig.slirpBinary, egressRules: egressConfig.egressRules }
+  if (task.length > 0 && interactive) return await runInteractive(paths, codexTuiBody(task), runOptions)
+  if (task.length > 0) return await runCodexTask(paths, codexExecBody(task), { ...runOptions, timeoutSeconds, showOutput, json })
+  if (interactive) return await runInteractive(paths, codexTuiBody(), runOptions)
 
   report.status = "running"
-  report.port = port
   report.pid = sandbox.pid
   report.bootMs = bootMs
   report.totalMs = Date.now() - started
@@ -1345,7 +1097,7 @@ ${command}
 
   if (json) log.emit(report)
   else
-    printUpSummary(paths, state, password, {
+    printUpSummary(paths, state, {
       coldStart: Date.now() - started,
       reused: false,
       provisioned: needsProvision,
@@ -1355,25 +1107,9 @@ ${command}
   return 0
 }
 
-/**
- * What to do next, said once, at the end of whatever just happened.
- *
- * Every command that changes state ends here, so the user never has to hold the
- * lifecycle in their head to know their next move.
- */
-function printNextStep(paths: EnvPaths, problem: string | null): void {
-  log.info("")
-  if (problem) log.info(`${log.yellow("!")} ${problem}`)
-  log.info(`  ${log.bold("moat take")}    ${log.dim("review and apply what the agent did")}`)
-  log.info(`  ${log.bold("moat run")}     ${log.dim('give it another task, e.g. moat run "add tests"')}`)
-  log.info(`  ${log.bold("moat down")}    ${log.dim("stop the box; nothing is lost")}`)
-  log.info(`  ${log.dim(`(project ${paths.projectDir})`)}`)
-}
-
 function printUpSummary(
   paths: EnvPaths,
   state: EnvState,
-  password: string,
   timing: { coldStart: number; reused: boolean; provisioned: boolean; bootMs?: number },
 ): void {
   // Be precise about what was measured: a first boot builds the image (cold), a
@@ -1387,16 +1123,10 @@ function printUpSummary(
   log.info("")
   log.info(`  project    ${paths.projectDir}`)
   log.info(`  env        ${paths.dir}`)
-  if (state.runtime === "codex") {
-    // No server, so no endpoint and no password to report: the TUI and the tasks run in
-    // the box's own rootfs, and the credential is what the box talks to the provider with.
-    log.info(`  runtime    codex (${state.model ?? "default model"}) — \`moat\` opens its TUI`)
-    log.info(`  workspace  ${SANDBOX_WORKDIR} (inside the sandbox)`)
-  } else {
-    log.info(`  opencode   http://127.0.0.1:${state.port}  (basic auth user "opencode")`)
-    log.info(`  password   ${password}`)
-    log.info(`  workspace  ${SANDBOX_WORKDIR} (inside the sandbox)`)
-  }
+  // No server, so no endpoint and no password to report: the TUI and the tasks run in the
+  // box's own rootfs, and the credential is what the box talks to the provider with.
+  log.info(`  runtime    codex (${state.model ?? "default model"}) — \`moat\` opens its TUI`)
+  log.info(`  workspace  ${SANDBOX_WORKDIR} (inside the sandbox)`)
   if (state.credential) {
     log.info(`  credential ${state.credential.provider} ${state.credential.fingerprint} expires ${state.credential.expiresAt}`)
   }
@@ -1404,167 +1134,6 @@ function printUpSummary(
   log.info(`  next: ${log.bold("moat")}         ${log.dim("open a session here and tell it what to do")}`)
   log.info(`        ${log.bold("moat apply")}   ${log.dim("merge what it did into this directory")}`)
   log.info(`        ${log.bold("moat down")}    ${log.dim("stop the sandbox (state and snapshots are kept)")}`)
-}
-
-// ---------------------------------------------------------------------------
-// moat attach
-// ---------------------------------------------------------------------------
-
-async function cmdAttach(argv: string[]): Promise<number> {
-  const p = parse(argv, SPEC)
-  const paths = resolveEnv()
-  const { state, password } = requireRunning(paths)
-  // Attach is the opencode session client. A codex environment has no server to attach to;
-  // its interactive surface is Codex's own TUI, which `moat` opens.
-  if (state.runtime === "codex") {
-    log.fail("this environment uses the codex runtime, which has no server to attach to.\n  Run \`moat\` for its TUI, or \`moat run --runtime codex \"task\"\`.")
-  }
-  const prompt = flag<string>(p, "prompt")
-
-  if (!prompt) {
-    // moat's own interactive session. This used to exec opencode's TUI, which
-    // meant an interactive session was impossible unless opencode was also
-    // installed on the host. The sandbox already runs the server; the CLI is a
-    // client of it, so the dependency was never necessary.
-    return await runRepl({
-      paths,
-      state,
-      password,
-      showOutput: flag<boolean>(p, "show-output") ?? false,
-      sessionID: flag<string>(p, "session"),
-    })
-  }
-
-  const result = await driveTask(state, password, prompt, {
-    sessionID: flag<string>(p, "session"),
-    continueLast: flag<boolean>(p, "continue") ?? false,
-    agent: flag<string>(p, "agent"),
-    modelID: flag<string>(p, "model-id"),
-    effort: flag<string>(p, "effort"),
-    showOutput: flag<boolean>(p, "show-output") ?? false,
-    timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
-  })
-
-  if (flag<boolean>(p, "json")) log.emit(result)
-  else printTaskResult(result)
-  return result.errors.length > 0 ? 1 : 0
-}
-
-/**
- * Run one prompt inside a running sandbox and report it as it happens.
- *
- * Shared by `moat attach --prompt` and `moat run`, which is the whole point:
- * "start the box" and "do this task" are the same operation with one step
- * skipped, so they should not be two commands the user has to discover.
- */
-async function driveTask(
-  state: EnvState,
-  password: string,
-  prompt: string,
-  opts: {
-    sessionID?: string
-    continueLast?: boolean
-    agent?: string
-    modelID?: string
-    /** Reasoning effort; falls back to the environment's stored choice. */
-    effort?: string
-    showOutput?: boolean
-    timeoutSeconds?: number
-  },
-): Promise<Awaited<ReturnType<typeof driveSession>>> {
-  const client = await connect(state, password, SANDBOX_WORKDIR)
-
-  // Sessions live in the rootfs, so they survive `moat down` / `moat up`.
-  let sessionID = opts.sessionID
-  if (!sessionID && opts.continueLast) {
-    const sessions = await listSessions(client)
-    if (sessions.length > 0) {
-      sessionID = sessions[0]!.id
-      log.info(`continuing session ${sessionID}${sessions[0]!.title ? ` (${sessions[0]!.title})` : ""}`)
-    } else {
-      log.warn("--continue given but this environment has no sessions yet; starting a new one")
-    }
-  }
-
-  const modelRef = state.model ?? `${DEEPSEEK.opencodeID}/${DEEPSEEK.defaultModel}`
-  const slash = modelRef.indexOf("/")
-  const providerID = slash === -1 ? DEEPSEEK.opencodeID : modelRef.slice(0, slash)
-  const modelID = slash === -1 ? modelRef : modelRef.slice(slash + 1)
-
-  // The effort chosen in the REPL is a property of the environment, so a
-  // one-shot `moat run` in the same project uses it too.
-  const effectiveModelID = opts.modelID ?? modelID
-  let effort: string | undefined = opts.effort ?? state.effort ?? DEEPSEEK.defaultEffort
-  if (effort) {
-    // opencode ignores an unknown variant rather than rejecting it, so a level
-    // this model does not take would do nothing at all and look like it worked.
-    // It is dropped rather than sent-and-ignored: sending it also records it on
-    // the message, which reads as though the run happened at that level.
-    // A server that cannot answer is not worth failing over, hence the catch.
-    const available = await modelVariants(client, providerID, effectiveModelID).catch((): string[] => [])
-    // A model with no declared levels takes none — every custom endpoint reached
-    // with --base-url, for instance. Sent anyway it would be ignored, so it is
-    // dropped without complaint unless the user asked for it by name.
-    const asked = opts.effort !== undefined
-    if (available.length === 0) {
-      if (asked) {
-        log.warn(`${providerID}/${effectiveModelID} declares no reasoning levels; ignoring --effort ${effort}`)
-      }
-      effort = undefined
-    } else if (!available.includes(effort)) {
-      const subject = asked ? `--effort ${effort}` : `the default effort "${effort}"`
-      log.warn(
-        `${subject} is not one of ${available.join(", ")} for ${providerID}/${effectiveModelID}; ` +
-          `running with the model's own default instead.`,
-      )
-      effort = undefined
-    }
-  }
-
-  let wrote = false
-  const result = await driveSession(client, {
-    sessionID,
-    prompt,
-    providerID,
-    modelID: effectiveModelID,
-    agent: opts.agent ?? state.agent ?? undefined,
-    variant: effort,
-    onEvent: (line) => process.stderr.write(`${line}\n`),
-    onDelta: (chunk) => {
-      wrote = true
-      process.stderr.write(chunk)
-    },
-    showOutput: opts.showOutput,
-    timeoutMs: (opts.timeoutSeconds ?? 2700) * 1000,
-    // Nobody is attached on this path, so a question has no answer. Rejecting it
-    // is what the API offers, but it does not actually unblock the tool (the
-    // server returns success and never logs the request), so the turn is ended
-    // instead of left to stall. Honest and quick beats silent and stuck.
-    onQuestion: async () => {
-      log.warn(
-        "the agent stopped to ask a question, and this run is unattended so there is nobody to answer it.\n" +
-          "  Re-run it at a terminal (`moat run \"...\"`) to answer questions, or phrase the task so it does not need one.",
-      )
-    },
-  })
-  if (wrote) process.stderr.write("\n")
-  return result
-}
-
-function printTaskResult(result: { sessionID: string; toolCalls: { tool: string; status: string }[] }): void {
-  const failed = result.toolCalls.filter((t) => t.status === "error").length
-  log.info("")
-  log.info(
-    `${log.dim("session")} ${result.sessionID}   ` +
-      `${result.toolCalls.length} tool call(s)${failed > 0 ? log.red(`, ${failed} failed`) : ""}`,
-  )
-}
-
-async function ensureHostOpencode(): Promise<string | null> {
-  if (process.env.MOAT_HOST_OPENCODE) return process.env.MOAT_HOST_OPENCODE
-  const onPath = await which("opencode")
-  if (onPath) return onPath
-  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -1576,7 +1145,12 @@ async function cmdFetch(argv: string[]): Promise<number> {
   const paths = resolveEnv()
   requireState(paths)
   if (!(await isGitRepo(paths.projectDir))) {
-    log.fail(`${paths.projectDir} is not a git repository; there is nowhere to fetch into`)
+    // Name the way out: `moat apply` merges the sandbox's tree without a host repository, and a
+    // refusal that does not say so sends the user looking for a repository they do not have.
+    log.fail(
+      `${paths.projectDir} is not a git repository; there is nowhere to fetch into.\n` +
+        "  moat apply merges the sandbox's work into this directory without one.",
+    )
   }
   if (!(await isGitRepo(paths.work))) {
     log.fail("there is no repository in the sandbox yet. Run `moat up` first.")
@@ -1713,7 +1287,9 @@ async function cmdTake(argv: string[]): Promise<number> {
   const paths = resolveEnv()
   const state = requireState(paths)
   const runtime = await egressRuntime(state, paths)
-  if (!(await isGitRepo(paths.projectDir))) log.fail(`${paths.projectDir} is not a git repository; nothing to take into`)
+  if (!(await isGitRepo(paths.projectDir))) {
+    log.fail(`${paths.projectDir} is not a git repository; nothing to take into.\n  moat apply merges the sandbox's work into this directory without one.`)
+  }
 
   const branches = await listSandboxBranches(paths)
   if (branches.length === 0) log.fail("the agent has not committed anything yet")
@@ -2030,7 +1606,6 @@ async function cmdStatus(argv: string[]): Promise<number> {
         id: state?.id ?? env.id,
         project: state?.projectDir ?? env.projectDir,
         status: orphaned ? "orphaned" : sandboxAlive(state, env) ? "running" : "stopped",
-        port: state?.port ?? null,
         pid: state?.pid ?? null,
         credential: state?.credential?.expiresAt ?? null,
         bytes: await rootfsSizeBytes(env),
@@ -2084,7 +1659,6 @@ async function cmdStatus(argv: string[]): Promise<number> {
     rootfsDir: paths.rootfs,
     running,
     booting: booting ? { pid: booting.pid, startedAt: booting.startedAt, command: booting.command } : null,
-    url: running ? baseUrl(state!) : null,
     snapshots: snapshots.map((s) => s.name),
     rootfsBytes: await rootfsSizeBytes(paths),
     sandboxBranches: fs.existsSync(path.join(paths.work, ".git")) ? await listSandboxBranches(paths) : [],
@@ -2096,13 +1670,8 @@ async function cmdStatus(argv: string[]): Promise<number> {
     log.info(
       `status       ${booting ? log.cyan(`booting (pid ${booting.pid}, ${bootAgeSeconds(booting)}s in)`) : running ? log.green("running") : log.yellow("stopped")}`,
     )
-    if (state!.runtime === "codex") {
-      // No server and no opencode in this one: say what is actually there.
-      log.info(`runtime      codex (${state!.model ?? "default model"})`)
-    } else {
-      if (running) log.info(`endpoint     ${baseUrl(state!)}`)
-      log.info(`opencode     ${state!.opencodeVersion} / alpine ${state!.alpineVersion}`)
-    }
+    // No server, no endpoint and no password: the version that matters is the runtime's.
+    log.info(`codex        ${CODEX_VERSION} / alpine ${state!.alpineVersion}`)
     if (state!.pid) log.info(`pid          ${state!.pid}`)
     if (state!.model) log.info(`model        ${state!.model}${state!.provider ? ` (${state!.provider})` : ""}`)
     if (state!.branch) log.info(`branch       ${state!.branch}`)
@@ -2248,10 +1817,6 @@ async function cmdLogs(argv: string[]): Promise<number> {
     log.info(sandboxLogTail(paths, lines))
     return 0
   }
-  if (which_ === "audit") {
-    log.info(rootfsLogTail(paths, "/var/log/moat/tools.jsonl", lines))
-    return 0
-  }
   try {
     validateLogName(which_)
   } catch (error) {
@@ -2323,7 +1888,7 @@ async function cmdDoctor(argv: string[]): Promise<number> {
       // gets the value under moat's name, never as DEEPSEEK_API_KEY).
       injectedVarNames: doctorInjectedVarNames({
         credential: Boolean(state.credential),
-        native: state.provider === undefined || state.provider === DEEPSEEK.opencodeID,
+        native: state.provider === undefined || state.provider === DEEPSEEK.id,
       }),
       // In filtered mode the doctor proves both sides: an arbitrary address is
       // refused and the provider the environment actually uses is reachable.
@@ -2413,35 +1978,6 @@ exec /bin/bash -l
   return await runInteractive(paths, body, runtime)
 }
 
-async function cmdEnv(argv: string[]): Promise<number> {
-  const p = parse(argv, SPEC)
-  const paths = resolveEnv()
-  const { state, password } = requireRunning(paths)
-  // The codex runtime has no server, so there is no url or password to report.
-  if (state.runtime === "codex") {
-    log.fail("this environment uses the codex runtime, which has no server to connect to.\n  Run \`moat\` for its TUI, or \`moat run --runtime codex \"task\"\`.")
-  }
-  const payload = {
-    url: baseUrl(state),
-    username: "opencode",
-    password,
-    directory: SANDBOX_WORKDIR,
-    authorization: authHeaders(password).Authorization,
-    pid: state.pid,
-    envDir: paths.dir,
-    opencode: state.opencodeVersion,
-  }
-  if (flag<boolean>(p, "json")) log.emit(payload)
-  else {
-    log.info(`url           ${payload.url}`)
-    log.info(`username      ${payload.username}`)
-    log.info(`password      ${payload.password}`)
-    log.info(`directory     ${payload.directory}`)
-    log.info(`authorization ${payload.authorization}`)
-  }
-  return 0
-}
-
 /** `moat models`, what DeepSeek actually offers, straight from the catalog. */
 async function cmdModels(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
@@ -2449,19 +1985,19 @@ async function cmdModels(argv: string[]): Promise<number> {
   // argument entirely: `moat models bogus` listed DeepSeek and exited 0, which
   // reads as "bogus is a provider moat knows".
   const requested = p._[0]
-  if (requested !== undefined && requested.toLowerCase() !== DEEPSEEK.opencodeID) {
-    log.fail(`moat has one provider (${DEEPSEEK.opencodeID}); there is no "${requested}" to list`)
+  if (requested !== undefined && requested.toLowerCase() !== DEEPSEEK.id) {
+    log.fail(`moat has one provider (${DEEPSEEK.id}); there is no "${requested}" to list`)
   }
   const catalog = await loadCatalog({ refresh: flag<boolean>(p, "refresh") ?? false })
 
-  const entry = catalog?.get(DEEPSEEK.opencodeID)
+  const entry = catalog?.get(DEEPSEEK.id)
   const models = entry
     ? [...entry.models].sort((a, b) => (b.context ?? 0) - (a.context ?? 0))
     : FALLBACK_MODELS.map((id) => ({ id, toolCall: true, context: undefined, output: undefined }))
 
   if (flag<boolean>(p, "json")) {
     log.emit({
-      provider: DEEPSEEK.opencodeID,
+      provider: DEEPSEEK.id,
       endpoint: entry?.api ?? DEEPSEEK.baseUrl,
       env: DEEPSEEK.envVar,
       default: DEEPSEEK.defaultModel,
@@ -2506,158 +2042,9 @@ async function cmdProfiles(argv: string[]): Promise<number> {
   return 0
 }
 
-async function cmdTools(argv: string[]): Promise<number> {
-  const p = parse(argv, SPEC)
-  const paths = resolveEnv()
-  const { state, password } = requireRunning(paths)
-  // The registry comes from the opencode server, which the codex runtime does not run. The
-  // curated list still exists — it is what the rendered Codex config allows — but this
-  // command's answer would be a fiction without the server, so it refuses instead.
-  if (state.runtime === "codex") {
-    log.fail("this environment uses the codex runtime, which has no tool registry to read.\n  Its tools are Codex's own; see the rendered config in the box.")
-  }
-  const client = await connect(state, password, SANDBOX_WORKDIR)
-
-  // Two different lists, and the difference between them is the whole point:
-  //
-  //  - `registry` is what the server's tool registry holds. It is NOT what the
-  //    model sees; it is everything opencode knows about.
-  //  - `bundle` is what the moat plugin loaded and recorded at config time.
-  //  - the authoritative model-facing list is captured from the provider side
-  //    (see docs/VERIFICATION.md): opencode sends its tool definitions in the
-  //    inference request, so the mock provider records them verbatim.
-  const registry = (await toolIds(client)).sort()
-  const bundleReport = readBundleReport(paths)
-
-  // The bundle the box is actually running is the authority, not the constants
-  // in lib/pins.ts. Those are only the fallback for an env whose plugin record
-  // has not been written yet. Printing the constants over a live report is how
-  // this command contradicted itself: it listed 'question' as excluded while
-  // the rendered bundle curated it and the plugin's own record said so.
-  const curated = bundleReport?.curated?.length ? bundleReport.curated : [...CURATED_TOOLS]
-  const excluded = bundleReport?.excludedFromBuiltins?.length ? bundleReport.excludedFromBuiltins : [...EXCLUDED_TOOLS]
-  const curatedPresent = registry.filter((id) => curated.includes(id))
-
-  const payload = {
-    registry,
-    bundle: bundleReport,
-    curated,
-    curatedPresent,
-    excluded,
-    curatedButNotAdvertised: curated.filter((id) => !registry.includes(id)),
-    /** Known, documented opencode limitation: these cannot be pruned from the list. */
-    unprunableByOpencode: UNADVERTISED_GAPS.filter((id) => registry.includes(id as never)),
-    advisory: "registry is pre-materialization; the model-facing list is what the provider receives and is measured in docs/VERIFICATION.md",
-  }
-
-  if (flag<boolean>(p, "json")) {
-    log.emit(payload)
-    return 0
-  }
-
-  log.info(`${log.bold("bundle")} (${bundleReport?.source ?? "not found"})`)
-  log.info(`  curated    ${payload.curated.join(", ")}`)
-  log.info(`  excluded   ${payload.excluded.join(", ")}`)
-  log.info(`  omissions confirmed by opencode: ${(bundleReport?.toolOmissions ?? []).join(", ") || "(plugin record missing)"}`)
-  if ((bundleReport?.curationGaps ?? []).length > 0) {
-    log.warn(`  curation gaps reported by the plugin: ${bundleReport!.curationGaps!.join(", ")}`)
-  }
-  log.info("")
-  log.info(`${log.bold("registry")} (everything opencode knows about, NOT what the model sees)`)
-  for (const id of registry) {
-    const inBundle = payload.curated.includes(id)
-    log.info(`  ${inBundle ? log.green("+") : log.dim("-")} ${id}`)
-  }
-  if (payload.curatedButNotAdvertised.length > 0) {
-    log.info("")
-    log.info(
-      `  ${log.dim("declared in the bundle but gated by opencode for this model:")} ${payload.curatedButNotAdvertised.join(", ")}`,
-    )
-    log.info(
-      `  ${log.dim("(apply_patch is only offered for gpt-* models; see packages/opencode/src/tool/registry.ts)")}`,
-    )
-  }
-  if (payload.unprunableByOpencode.length > 0) {
-    log.info("")
-    log.warn(
-      `opencode 1.18.31 cannot stop advertising: ${payload.unprunableByOpencode.join(", ")}. ` +
-        `The bundle refuses to execute them (docs/UPSTREAM-CANDIDATES.md).`,
-    )
-  }
-  return 0
-}
-
-/**
- * The bundle as installed in the rootfs, plus the plugin's config-time record if
- * a session has already caused the plugin to load. The installed config is the
- * authoritative declaration; the plugin record proves opencode agreed with it.
- */
-function readBundleReport(paths: EnvPaths): {
-  curated?: string[]
-  excludedFromBuiltins?: string[]
-  toolOmissions?: string[]
-  curationGaps?: string[]
-  permission?: Record<string, string>
-  source?: string
-} | null {
-  const installed = readRootfsFile(paths.rootfs, "/usr/local/share/moat/opencode.json", { maxBytes: 1024 * 1024 })
-  if (installed === null) return null
-  let declared: Record<string, boolean> = {}
-  try {
-    declared = (JSON.parse(installed) as { tools?: Record<string, boolean> }).tools ?? {}
-  } catch {
-    return null
-  }
-  const omissions = Object.entries(declared)
-    .filter(([, enabled]) => enabled === false)
-    .map(([name]) => name)
-  const report: NonNullable<ReturnType<typeof readBundleReport>> = {
-    excludedFromBuiltins: omissions,
-    toolOmissions: omissions,
-    source: "installed bundle config",
-  }
-
-  // What the plugin loaded. Read through the guard: this file is inside the
-  // agent-writable rootfs like every other record here.
-  const bundleJson = readRootfsFile(paths.rootfs, "/var/log/moat/bundle.json", { maxBytes: 1024 * 1024 })
-  if (bundleJson !== null) {
-    try {
-      Object.assign(report, JSON.parse(bundleJson) as Record<string, unknown>)
-      report.source = "installed bundle config + plugin load record"
-    } catch {
-      /* keep the installed config */
-    }
-  }
-
-  // What opencode actually handed the plugin. This is the only record that shows
-  // the effective config agreed with moat's declaration, and it is the first line
-  // of an audit log that grows with every tool call, so read the head.
-  const audit = readRootfsFileHead(paths.rootfs, "/var/log/moat/tools.jsonl", 64 * 1024)
-  const config =
-    audit
-      ?.split("\n")
-      .map((line) => {
-        try {
-          return JSON.parse(line) as Record<string, unknown>
-        } catch {
-          return null
-        }
-      })
-      .find((row) => row?.phase === "config") ?? null
-  if (config) {
-    report.toolOmissions = (config.toolOmissions as string[] | undefined) ?? report.toolOmissions
-    report.curationGaps = (config.curationGaps as string[] | undefined) ?? []
-    report.permission = (config.permission as Record<string, string> | undefined) ?? undefined
-    report.source = `${report.source ?? "installed bundle config"} + plugin config record`
-  }
-  return report
-}
-
 // ---------------------------------------------------------------------------
 // dispatch
 // ---------------------------------------------------------------------------
-
-const LOG_LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"]
 
 const HELP = `moat — run an AI coding agent in a disposable sandbox. Your machine is never touched.
 
@@ -2671,9 +2058,8 @@ Usage: moat <command> [options]
 
 That is the whole loop. Everything below exists but you should not need it.
 
-Attaching to a running box
+Working inside a running box
   moat run "<task>"      give it another task
-  moat attach            open a session against the running box (no boot)
   moat shell             a plain shell inside the sandbox
   moat exec -- <cmd>     run one command inside the sandbox
 
@@ -2694,23 +2080,14 @@ The environment
 
 Diagnostics
   moat doctor            host support, the in-sandbox isolation checks, the measured exposures
-  moat tools             the declared tools, and what opencode actually offers
-  moat env               connection details (url, password, auth header)
-  moat logs [sandbox|audit]
+  moat logs [sandbox]
   moat version
 
 Options that apply to up/run
   --model ID             DeepSeek model id; see: moat models
-  --effort LEVEL         reasoning effort: low, medium, high or max.
-                         Not every model takes every level; inside a session
-                         /model and /think show what the current one accepts.
   --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project
-  --tools core|extended  core = 8 coding tools (default); extended adds webfetch + subagents
-  --runtime NAME         codex (default) or opencode. Codex is a CLI: "moat" opens
-                         its TUI, and every task runs in the box. opencode is the
-                         older server-based runtime, kept while it is migrated away.
   --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek.
                          Must be an http:// or https:// URL with a host: a
                          scheme-less localhost:11434/v1 has no host to allow.
@@ -2725,9 +2102,8 @@ Options that apply to up/run
                          the host's loopback defaults to open instead, because the
                          box cannot reach it there.
   --egress-allow HOSTS   extra hosts the filtered allowlist permits, comma-separated
-  --timeout SECONDS      how long one turn may take (default 2700) and how long a
-                         boot waits for opencode serve (default 90). Seconds, always.
-  --continue             continue the last session instead of starting a new one
+  --timeout SECONDS      how long one turn may take (default 2700). Seconds, always.
+  --no-follow            run the task headless instead of opening Codex's TUI
   --show-output          print each tool's output as it runs
   --json                 machine-readable output on stdout
 
@@ -2812,11 +2188,11 @@ type CodexRunOptions = {
 }
 
 /**
- * Drive one Codex turn and report it the way `moat run` reports an opencode turn.
+ * Drive one Codex turn and report it.
  *
- * Everything the host sees is the JSONL stream, parsed by `parseCodexEvents`; the token
- * counts in it are the same fields `lib/pricing.ts` prices for opencode, so the footer
- * stays comparable between the two runtimes.
+ * Everything the host sees is the JSONL stream, parsed by `parseCodexEvents`; its usage
+ * fields are normalised into the shape `lib/pricing.ts` prices, so the footer is the same
+ * arithmetic as every other cost moat reports.
  */
 async function runCodexTask(paths: EnvPaths, body: string, opts: CodexRunOptions): Promise<number> {
   const result = await runInSandbox(paths, body, {
@@ -2879,7 +2255,7 @@ async function main(): Promise<number> {
     return 0
   }
   if (command === "--version" || command === "version") {
-    process.stdout.write(`moat 0.0.1 (opencode ${OPENCODE_VERSION}, alpine ${ALPINE_VERSION})\n`)
+    process.stdout.write(`moat 0.0.1 (codex ${CODEX_VERSION}, alpine ${ALPINE_VERSION})\n`)
     return 0
   }
   // Parse once before dispatch: this is where a flag the command does not read is
@@ -2904,8 +2280,6 @@ async function main(): Promise<number> {
     switch (command) {
       case "up":
         return await cmdUp(rest)
-      case "attach":
-        return await cmdAttach(rest)
       case "fetch":
         return await cmdFetch(rest)
       case "apply":
@@ -2935,10 +2309,6 @@ async function main(): Promise<number> {
         return await cmdShell(rest)
       case "exec":
         return await cmdExec(rest)
-      case "env":
-        return await cmdEnv(rest)
-      case "tools":
-        return await cmdTools(rest)
       case "models":
         return await cmdModels(rest)
       case "profiles":

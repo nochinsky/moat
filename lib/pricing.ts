@@ -106,10 +106,9 @@ export type Cost = {
 /**
  * The cost of one request.
  *
- * `input` is the cache-*miss* count and `cacheRead` the cache-hit count —
- * opencode adds the cached tokens into a separate field rather than into
- * `input`, which is not the obvious reading and was pinned down by reconciling
- * its own arithmetic.
+ * `input` is the cache-*miss* count and `cacheRead` the cache-hit count. That split is not
+ * the obvious reading of a provider's `input_tokens` field — which includes the cached ones —
+ * and it was pinned down by reconciling a real bill (see the header of this file).
  */
 export function computeCost(modelID: string, usage: TokenUsage, at: Date = new Date()): Cost {
   const entry = TABLE[modelID]
@@ -123,7 +122,7 @@ export function computeCost(modelID: string, usage: TokenUsage, at: Date = new D
   return { usd, known: true, peak }
 }
 
-/** Pull the usage fields out of an opencode message's `tokens` object. */
+/** Pull the usage fields out of a token-usage object, whatever produced it. */
 export function usageOf(tokens: unknown): TokenUsage {
   const t = (tokens ?? {}) as Record<string, unknown>
   const cache = (t.cache ?? {}) as Record<string, unknown>

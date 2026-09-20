@@ -1,14 +1,14 @@
---- $ node /home/user/Projects/moat/cmd/main.ts run --runtime opencode --no-credential --no-detect --model deepseek-flash do the task
+--- $ node /home/user/Projects/moat/cmd/main.ts run --no-credential --no-detect --model deepseek-flash do the task
 --- exit 1
 --- stdout ---
 --- stderr ---
-→ provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
-→ provisioning from the cached image alpine-3.21.4-db69c015961d.tar.gz
-✓ image provisioned in 1.03s (extract cached image 880ms)
+→ provisioning sandbox image (alpine 3.21.4 + codex 0.155.1)
+→ provisioning from the cached image alpine-3.21.4-5fcd2d224a5c.tar.gz
+✓ image provisioned in 1.48s (extract cached image 1.27s)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 3b51b9bbd854d89f
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-20-14-12
+agent branch: moat-session-2026-09-20-14-47
 ✗ no DEEPSEEK_API_KEY, so the agent has no model to call.
   export DEEPSEEK_API_KEY=sk-...   then run it again
   or run `moat` with no arguments at a terminal and it will ask for the key

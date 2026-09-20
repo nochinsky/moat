@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { CODEX_VERSION, OPENCODE_VERSION, SLIRP4NETNS_VERSION } from "./pins.ts"
+import { CODEX_VERSION, SLIRP4NETNS_VERSION } from "./pins.ts"
 
 /** Root of all moat state. Overridable for tests so they never touch the real store. */
 export function moatHome(): string {
@@ -138,11 +138,6 @@ export function rootfsCachePath(): string {
 /** Host-side cache of the static slirp4netns used for an isolated sandbox netns. */
 export function slirpCachePath(): string {
   return path.join(cacheDir(), "net", `slirp4netns-${SLIRP4NETNS_VERSION}`)
-}
-
-/** Host-side cache of an opencode binary, keyed by version + triple. */
-export function opencodeCachePath(triple: string): string {
-  return path.join(cacheDir(), "opencode", OPENCODE_VERSION, triple, "opencode")
 }
 
 /** Host-side cache of a Codex CLI binary, keyed by version + platform package. */

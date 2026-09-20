@@ -5,7 +5,6 @@ model = "mock-model"
 model_provider = "deepseek-moat"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
-model_reasoning_effort = "high"
 
 [model_providers.deepseek-moat]
 name = "DeepSeek"

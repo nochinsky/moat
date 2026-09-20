@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c rm -f /usr/local/bin/codex; command -v codex || echo "codex gone"; echo keep > /work/KEEP.txt; mkdir -p /work/sub && echo deep > /work/sub/DEEP.txt
+--- exit 0
+--- stdout ---
+codex gone
+--- stderr ---

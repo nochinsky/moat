@@ -92,8 +92,6 @@ export const EXPECTED_SANDBOX_ENV = new Set([
   "OPTIND",
   "IFS",
   "MOAT_SANDBOX",
-  "OPENCODE_SERVER_PASSWORD",
-  "MOAT_PORT",
   "MOAT_INJECTED_CREDENTIAL",
   "MOAT_PROVIDER_BASE_URL",
   "MOAT_MODEL_ID",
@@ -101,9 +99,9 @@ export const EXPECTED_SANDBOX_ENV = new Set([
   "MOAT_CREDENTIAL_EXPIRES_AT",
   "MOAT_CREDENTIAL_TTL_SECONDS",
   "MOAT_CREDENTIAL_FINGERPRINT",
-  // The name opencode actually reads. It is present in the real box, so the
-  // environment check must be run with it present or it measures a cleaner box
-  // than the agent gets.
+  // The name the native provider's key is injected under, and the name Codex is told to read
+  // (env_key in the rendered config). It is present in the real box, so the environment check
+  // must be run with it present or it measures a cleaner box than the agent gets.
   "DEEPSEEK_API_KEY",
 ])
 
@@ -148,7 +146,7 @@ export function forbiddenHostEnvNames(): string[] {
   const interesting = /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|SSH|AWS|GPG|KUBE)/i
   return Object.keys(process.env)
     .filter((name) => interesting.test(name))
-    .filter((name) => !EXPECTED_SANDBOX_ENV.has(name) && name !== "OPENCODE_SERVER_PASSWORD")
+    .filter((name) => !EXPECTED_SANDBOX_ENV.has(name))
     .sort()
 }
 
@@ -239,13 +237,13 @@ export function credentialExposureDetail(secretNames: string[], credentialInject
     return (
       `secret-looking names in the environment tool execution inherits: ${secretNames.join(", ")}. ` +
       "None of them is a provider credential — this box was booted with no key, so there is nothing " +
-      "here to leak. The server password only opens this sandbox's own server."
+      "here to leak. What is present is provider configuration, not a secret."
     )
   }
   return (
-    `${secretNames.join(", ")} are in the environment tool execution inherits. The bundle blanks ` +
-    `secret-looking names for shell commands, but the values remain in the opencode process ` +
-    `environment and are readable via /proc/<pid>/environ. Use a provider-scoped, spend-capped token.`
+    `${secretNames.join(", ")} are in the environment tool execution inherits: the box's process ` +
+    `environment, readable via /proc/<pid>/environ. That is how the agent calls the model, so the ` +
+    `mitigation is a provider-scoped, spend-capped token rather than hiding the value.`
   )
 }
 
@@ -253,7 +251,7 @@ type Parsed = Record<string, string>
 
 /** A host env name we did not expect means real leakage; everything else is accounted for. */
 function index0(name: string): boolean {
-  return !EXPECTED_SANDBOX_ENV.has(name) && !name.startsWith("MOAT_") && name !== "OPENCODE_SERVER_PASSWORD"
+  return !EXPECTED_SANDBOX_ENV.has(name) && !name.startsWith("MOAT_")
 }
 
 type LoopbackProbe = { port: number; close: () => Promise<void> }
@@ -280,24 +278,6 @@ function parseLines(output: string): Parsed {
     if (match) result[match[1]!] = match[2]!
   }
   return result
-}
-
-export type BundleExposure = {
-  serveEnvNames?: string[]
-  secretNamesInServeEnv?: string[]
-  redactedInShellEnv?: string[]
-  caveat?: string
-}
-
-/** Read the exposure record the bundle plugin writes at config time, if a session has run. */
-export function readBundleExposure(p: EnvPaths): BundleExposure | null {
-  const file = path.join(p.auditDir, "exposure.json")
-  if (!fs.existsSync(file)) return null
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as BundleExposure
-  } catch {
-    return null
-  }
 }
 
 function decode(value: string | undefined): string {
@@ -586,25 +566,6 @@ export async function runIsolationChecks(
     ok: deviceBinds.length === 6,
     detail: `${deviceBinds.length}/6 device node bind(s), rw like every rootless runtime: ${deviceBinds.map((m) => m.split("||")[0]).join(", ") || "none found"}`,
   })
-
-  // The bundle runs inside the opencode process, so its own record of the agent
-  // environment is authoritative in a way this ephemeral boot cannot be: the
-  // ephemeral boot does not load the plugin, so it cannot observe the redaction.
-  const bundleExposure = readBundleExposure(p)
-  if (bundleExposure) {
-    const redacted = bundleExposure.redactedInShellEnv ?? []
-    checks.push({
-      kind: "exposure",
-      name: "shell env redaction (bundle)",
-      ok: true,
-      detail:
-        redacted.length === 0
-          ? "the bundle reports no secret-looking variables in the agent environment"
-          : `the bundle blanks ${redacted.join(", ")} for shell commands the agent writes. ` +
-            `Speed bump only: the values are still in the opencode process environment and reachable ` +
-            `via /proc/<pid>/environ. This record comes from the plugin running inside the box.`,
-    })
-  }
 
   if (!opts.keepCanary) fs.rmSync(canary.path, { force: true })
 

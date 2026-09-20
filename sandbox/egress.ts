@@ -26,9 +26,9 @@ export { SLIRP_DNS }
  * A rootless process can create a network namespace it owns, but it cannot NAT
  * inside it without help. slirp4netns is that help: it attaches a tap to the
  * sandbox's namespace and carries packets through a userspace TCP/IP stack, so
- * the sandbox keeps an outbound network while losing the host's network
- * position. The host reaches opencode serve through an explicit port forward
- * rather than the shared loopback.
+ * the sandbox keeps an outbound network while losing the host's network position and the
+ * host's loopback. Nothing is forwarded in: the host never talks to a port inside the box,
+ * because there is no server in there to talk to.
  *
  * The binary is fetched once, verified against the published SHA-256, and
  * cached beside the other host artefacts.
@@ -45,19 +45,17 @@ export async function ensureSlirp4netns(): Promise<string> {
 /**
  * slirp4netns arguments for one sandbox.
  *
- * --configure makes slirp set the tap up and hand back its fd; -p forwards the
- * host's loopback port to the same port inside the namespace, which is how the
- * host still talks to opencode. The guest must listen on its tap address rather
- * than 127.0.0.1 for the forward to reach it.
+ * --configure makes slirp set the tap up inside the sandbox's namespace and hand back its fd.
+ * There is no --api-socket and no forward: that socket exists to add host forwards, and the
+ * host has nothing in the box to forward to.
  */
-export function slirpArgs(sandboxPid: number, opts: { apiSocket?: string } = {}): string[] {
+export function slirpArgs(sandboxPid: number): string[] {
   const args = ["--configure", "--mtu=65520"]
   // Without this, slirp's 10.0.2.2 gateway forwards straight to the host's
   // loopback: a sandbox in its own namespace could still reach every service the
   // host runs. Measured: default slirp answers HTTP 200 on 10.0.2.2:<host port>,
   // and this flag makes it a refusal.
   args.push("--disable-host-loopback")
-  if (opts.apiSocket) args.push("--api-socket", opts.apiSocket)
   args.push(String(sandboxPid), "tap0")
   return args
 }
@@ -65,7 +63,6 @@ export function slirpArgs(sandboxPid: number, opts: { apiSocket?: string } = {})
 export type SlirpHandle = {
   child: ChildProcess
   pid: number
-  apiSocket: string
   stop: () => void
 }
 
@@ -226,180 +223,20 @@ export async function runtimeForEgress(
   return { egress, slirpBinary, egressRules: policy.path, unresolved: policy.unresolved }
 }
 
-/**
- * Ask slirp4netns to forward a host loopback port into the sandbox.
- *
- * slirp has no command-line port forwarding; the documented path is its API
- * socket, which is what rootlesskit uses too. The request never leaves the Unix
- * socket, and the reply is the RPC result.
- */
-export async function addHostForward(apiSocket: string, port: number, timeoutMs = 5000): Promise<void> {
-  // Connecting can fail transiently even when slirp is healthy: its API socket
-  // has a one-connection accept queue, and the readiness probe above may still be
-  // sitting in it when this connect arrives (measured: "connect EAGAIN" on a boot
-  // that then succeeded on the next attempt). A reply that refuses the forward is
-  // final; a connect that never reached slirp is worth another attempt.
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    const result = await forwardOnce(apiSocket, port, Math.max(200, deadline - Date.now()))
-    if (result === "done") return
-    if (Date.now() >= deadline) throw new Error("slirp4netns did not accept the add_hostfwd request")
-    await new Promise((resolve) => setTimeout(resolve, 25))
-  }
-}
-
-/** One attempt. Resolves "retry" when the connection never reached slirp. */
-function forwardOnce(apiSocket: string, port: number, timeoutMs: number): Promise<"done" | "retry"> {
-  return new Promise((resolve, reject) => {
-    const socket = net.connect(apiSocket)
-    let buffer = ""
-    let sawReply = false
-    let settled = false
-    const settle = (result: "done" | "retry", error?: Error) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      socket.end()
-      if (error) reject(error)
-      else resolve(result)
-    }
-    const timer = setTimeout(() => {
-      socket.destroy()
-      reject(new Error("slirp4netns did not answer the add_hostfwd request"))
-    }, timeoutMs)
-    socket.on("connect", () => {
-      socket.write(
-        JSON.stringify({
-          execute: "add_hostfwd",
-          arguments: { proto: "tcp", host_addr: "127.0.0.1", host_port: port, guest_port: port },
-        }) + "\n",
-      )
-    })
-    socket.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString("utf8")
-      // slirp answers with one JSON object and no trailing newline; a partial
-      // read simply fails to parse and the next chunk is appended.
-      let reply: { error?: unknown }
-      try {
-        reply = JSON.parse(buffer) as { error?: unknown }
-      } catch {
-        return
-      }
-      sawReply = true
-      if (reply.error) settle("done", new Error(`slirp4netns refused the port forward: ${buffer.trim()}`))
-      else settle("done")
-    })
-    socket.on("error", (error) => {
-      if (sawReply) settle("done", error)
-      else settle("retry")
-    })
-  })
-}
-
-/**
- * What is behind this Unix socket: a listener, a corpse, or something we cannot
- * tell?
- *
- * "unknown" matters for pruning. EAGAIN means the accept queue is full, which is
- * what a *live* socket looks like from here, so treating it as dead would unlink
- * a running slirp's socket and make it unreachable for the rest of its life.
- */
-export async function socketState(socketPath: string, timeoutMs = 250): Promise<"live" | "dead" | "unknown"> {
-  return new Promise((resolve) => {
-    const socket = net.connect(socketPath)
-    let settled = false
-    const finish = (state: "live" | "dead" | "unknown") => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      socket.destroy()
-      resolve(state)
-    }
-    const timer = setTimeout(() => finish("unknown"), timeoutMs)
-    socket.on("connect", () => finish("live"))
-    socket.on("error", (error: NodeJS.ErrnoException) => {
-      finish(error.code === "ENOENT" || error.code === "ECONNREFUSED" ? "dead" : "unknown")
-    })
-  })
-}
-
-/** Can a client connect to this Unix socket right now? */
-export async function socketAccepts(socketPath: string, timeoutMs = 250): Promise<boolean> {
-  return (await socketState(socketPath, timeoutMs)) === "live"
-}
-
-/**
- * Wait until the API socket accepts connections, or the process that should
- * create it dies.
- *
- * Existence is not readiness. A socket file outlives the slirp that created it
- * (SIGTERM does not unlink it), so a restart that only stat()ed the path
- * connected to the previous boot's corpse and failed with ECONNREFUSED — while
- * slirp itself could not bind over the stale file at all.
- */
-export async function waitForSocket(
-  socketPath: string,
-  timeoutMs: number,
-  child: { exitCode: number | null },
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    if (await socketAccepts(socketPath)) return true
-    if (child.exitCode !== null) return false
-    await new Promise((resolve) => setTimeout(resolve, 20))
-  }
-  return socketAccepts(socketPath)
-}
-
-/**
- * Reap API sockets in this directory that nothing is listening on.
- *
- * Each boot gets its own socket name, so a dead one is never reused; this is
- * only housekeeping. A live socket is never removed, so a concurrent boot of
- * another environment cannot have its datapath yanked out from under it.
- */
-export async function pruneDeadSockets(dir: string): Promise<void> {
-  let names: string[] = []
-  try {
-    names = fs.readdirSync(dir)
-  } catch {
-    return
-  }
-  for (const name of names) {
-    if (!/^slirp-.*\.sock$/.test(name)) continue
-    const full = path.join(dir, name)
-    // Only a definitive "nothing is listening" justifies unlinking: an ambiguous
-    // failure (a full accept queue, a transient EMFILE) must keep the file, or a
-    // live box loses the socket its next forward would need.
-    if ((await socketState(full)) !== "dead") continue
-    fs.rmSync(full, { force: true })
-  }
-}
-
 export type StartSlirpOptions = {
-  apiSocket: string
-  /** Host loopback port to forward to the same port inside the namespace. */
-  port?: number
   /** Collect slirp's stderr here; when the tap never appears, that is where the reason is. */
   logFile?: string
 }
 
 /**
- * Start slirp4netns against a live sandbox process and wait until the datapath
- * is usable (and, when asked, the server port is forwarded).
+ * Start slirp4netns against a live sandbox process.
+ *
+ * Readiness is measured *inside* the box rather than here: the boot probes the network it
+ * actually got, and a datapath that never came up fails there with a reason.
  */
-export async function startSlirp(
-  binary: string,
-  sandboxPid: number,
-  opts: StartSlirpOptions,
-): Promise<SlirpHandle> {
-  // slirp cannot bind over a socket file a previous boot left behind, and the
-  // readiness check below must never mistake that corpse for this boot's socket.
-  await pruneDeadSockets(path.dirname(opts.apiSocket))
+export async function startSlirp(binary: string, sandboxPid: number, opts: StartSlirpOptions = {}): Promise<SlirpHandle> {
   const err: "ignore" | number = opts.logFile ? fs.openSync(opts.logFile, "a") : "ignore"
-  const child = spawn(binary, slirpArgs(sandboxPid, { apiSocket: opts.apiSocket }), {
-    stdio: ["ignore", "ignore", err],
-  })
+  const child = spawn(binary, slirpArgs(sandboxPid), { stdio: ["ignore", "ignore", err] })
   if (typeof err === "number") fs.closeSync(err)
   child.on("error", () => {
     /* the readiness check inside the box reports a missing tap */
@@ -411,26 +248,8 @@ export async function startSlirp(
     } catch {
       /* already gone */
     }
-    try {
-      fs.rmSync(opts.apiSocket, { force: true })
-    } catch {
-      /* already gone */
-    }
   }
-  if (opts.port !== undefined) {
-    try {
-      // The socket appears asynchronously, and slirp can also exit first (a
-      // stale socket path, a bad target). Waiting here turns both into a clear
-      // error instead of an ENOENT from the first connect.
-      const ready = await waitForSocket(opts.apiSocket, 5000, child)
-      if (!ready) throw new Error(`slirp4netns did not create ${opts.apiSocket}${opts.logFile ? `; see ${opts.logFile}` : ""}`)
-      await addHostForward(opts.apiSocket, opts.port)
-    } catch (error) {
-      stop()
-      throw error
-    }
-  }
-  return { child, pid: child.pid ?? -1, apiSocket: opts.apiSocket, stop }
+  return { child, pid: child.pid ?? -1, stop }
 }
 
 /**

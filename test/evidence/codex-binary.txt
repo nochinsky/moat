@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- codex --version
+--- exit 0
+--- stdout ---
+codex-cli 0.155.1
+--- stderr ---

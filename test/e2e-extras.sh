@@ -5,9 +5,10 @@
 # treatment, a command, its real output, and no adjectives.
 #
 # Covers: rootfs snapshots and restore, `moat apply` (the explicit second step of
-# copy-out), `moat env`, and credential expiry enforcement.
+# copy-out), credential expiry enforcement, the state-file traps, and the process and
+# datapath lifecycle.
 #
-# Usage: bash test/e2e-extras.sh   (run after test/e2e.sh, in the same fixture)
+# Usage: bash test/e2e-extras.sh   (stands on its own: it makes its own fixture and stub)
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,7 +17,9 @@ WORK="${MOAT_E2E_DIR:-$HOME/moat-demo}"
 PROJECT="$WORK/project"
 EVIDENCE="$REPO/test/evidence"
 MOCK_PORT="${MOCK_PORT:-5599}"
-MOCK_PIDFILE="$WORK/mock.pid"
+MOCK_PIDFILE="$WORK/responses-mock.pid"
+MOCK_RECORD="$WORK/responses-record.jsonl"
+MOCK_SCRIPT="${MOCK_SCRIPT:-$REPO/test/scripts/responses-basic.json}"
 CREDENTIAL="moat-e2e-scoped-credential-8c1d4e"
 
 mkdir -p "$EVIDENCE"
@@ -63,12 +66,43 @@ capture() {
   cat "$EVIDENCE/$name.txt" | tee -a "$EVIDENCE/extras.txt"
 }
 
+# The keyless model: Codex speaks the Responses wire API, so the stub replays the event shapes
+# captured from a real DeepSeek stream. It serves the last scripted turn for any further
+# request, so one start covers every section that needs a model.
+start_mock() {
+  if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; sleep 0.4; fi
+  : > "$MOCK_RECORD"
+  setsid node "$REPO/test/mock-responses.mjs" --port "$MOCK_PORT" --script "$MOCK_SCRIPT" \
+    --record "$MOCK_RECORD" > "$WORK/responses-mock.log" 2>&1 < /dev/null &
+  echo $! > "$MOCK_PIDFILE"
+  sleep 1.2
+}
+
 : > "$EVIDENCE/extras.txt"
-cd "$PROJECT"
 export MOAT_MOCK_CREDENTIAL="$CREDENTIAL"
 
+section "0. fixture: a small node project, and the keyless Responses stub"
+# This suite used to run after test/e2e.sh and inherit its fixture and its stub. It stands on
+# its own now, which is also what lets it be the acceptance list's second half rather than a
+# rider on it.
+rm -rf "$PROJECT"; mkdir -p "$PROJECT/src" "$PROJECT/test"
+cat > "$PROJECT/package.json" <<'JSON'
+{ "name": "extras-fixture", "type": "module", "scripts": { "test": "node --test" } }
+JSON
+printf 'export const sum = (a, b) => a + b\n' > "$PROJECT/src/sum.js"
+cat > "$PROJECT/test/sum.test.js" <<'JS'
+import test from "node:test"
+import assert from "node:assert/strict"
+import { sum } from "../src/sum.js"
+test("adds", () => assert.equal(sum(1, 2), 3))
+JS
+cd "$PROJECT"
+git init -q -b main && git config user.email demo@example.com && git config user.name "Demo User"
+git add -A && git commit -qm "initial project"
+start_mock
+
 section "boot the fixture environment"
-capture extras-up $MOAT up --runtime opencode --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+capture extras-up $MOAT up --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 
 section "A. snapshots capture the rootfs and never the project"
 # The box is running here; --yes acknowledges that a live rootfs can be torn.
@@ -90,7 +124,7 @@ capture snapshot-restore $MOAT restore before-extras --yes
 capture exec-after-restore $MOAT exec -- /bin/sh -c "echo 'in-sandbox /opt after restore:'; ls /opt; echo '--- /work preserved? ---'; ls /work; echo '--- agent commit still present? ---'; git -C /work log --oneline -1"
 
 section "C. moat apply is a separate, explicit step from moat fetch"
-capture extras-up-again $MOAT up --runtime opencode --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+capture extras-up-again $MOAT up --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 capture extras-fetch $MOAT fetch
 capture apply-branch $MOAT apply main --name e2e-checkout
 {
@@ -106,9 +140,6 @@ capture apply-branch $MOAT apply main --name e2e-checkout
   echo "\$ git -C $PROJECT status --porcelain   # only the user's own pre-existing dirt"
   git -C "$PROJECT" status --porcelain
 } | scrub | tee -a "$EVIDENCE/extras.txt"
-
-section "D. moat env reports the connection details"
-capture env-details $MOAT env
 
 section "E. the injected credential is short-lived, and expiry is enforced"
 # The deadline is the credential's own expiry timestamp, not a TTL counted from the entry
@@ -134,33 +165,32 @@ else
   echo "credential ttl: FAILED — the box outlived its credential" | tee -a "$EVIDENCE/extras.txt"
 fi
 
-section "F. the interactive CLI, driven through a real pty"
-echo "an interactive session cannot be checked by piping stdin, so this allocates a pty," | tee -a "$EVIDENCE/extras.txt"
-echo "types at it, and reads what comes back. It starts its own stub and its own sandbox." | tee -a "$EVIDENCE/extras.txt"
-python3 "$REPO/test/repl-smoke.py" 2>&1 | scrub > "$EVIDENCE/repl-smoke.txt"
-REPL_RC=$?
-tail -12 "$EVIDENCE/repl-smoke.txt" | tee -a "$EVIDENCE/extras.txt"
-echo "repl smoke exit: $REPL_RC" | tee -a "$EVIDENCE/extras.txt"
-
-section "G. the agent can ask a question when someone is there to answer"
-echo "only in interactive mode: an unattended question has no answer, so batch runs end the" | tee -a "$EVIDENCE/extras.txt"
-echo "turn and say so rather than stalling until the timeout." | tee -a "$EVIDENCE/extras.txt"
-python3 "$REPO/test/repl-questions.py" 2>&1 | scrub > "$EVIDENCE/repl-questions.txt"
-QUESTION_RC=$?
-tail -8 "$EVIDENCE/repl-questions.txt" | tee -a "$EVIDENCE/extras.txt"
-echo "question flow exit: $QUESTION_RC" | tee -a "$EVIDENCE/extras.txt"
-
 section "H. the project's own checks, run by moat against the agent's work"
 capture verify $MOAT verify
 echo "the exit code above is the project's own verdict on whatever is in the sandbox." | tee -a "$EVIDENCE/extras.txt"
 
-section "I. bare moat in an empty, non-git directory: work, then apply, without leaving"
-echo "the flow the tool exists for. A plain directory with nothing in it had no copy-out" | tee -a "$EVIDENCE/extras.txt"
-echo "path at all before this: there is no host repository for git fetch to write into." | tee -a "$EVIDENCE/extras.txt"
-python3 "$REPO/test/repl-apply.py" 2>&1 | scrub > "$EVIDENCE/repl-apply.txt"
-APPLY_RC=$?
-tail -10 "$EVIDENCE/repl-apply.txt" | tee -a "$EVIDENCE/extras.txt"
-echo "apply flow exit: $APPLY_RC" | tee -a "$EVIDENCE/extras.txt"
+section "I. bare moat in a directory with no repository: the work still comes back"
+echo "the flow the tool exists for. A plain directory has no repository for git fetch to write" | tee -a "$EVIDENCE/extras.txt"
+echo "into, so moat fetch says so and points at moat apply, which merges the sandbox tree through" | tee -a "$EVIDENCE/extras.txt"
+echo "the recorded baseline instead. Five commands, no session, nothing to type at a prompt." | tee -a "$EVIDENCE/extras.txt"
+PLAIN="$WORK/plain"
+rm -rf "$PLAIN"; mkdir -p "$PLAIN"
+printf 'a plain directory, no repository\n' > "$PLAIN/README.md"
+( cd "$PLAIN" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$PLAIN" && capture plain-up $MOAT up --quiet --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
+# Work happens inside the box, where a repository does exist; the host directory is untouched.
+( cd "$PLAIN" && capture plain-agent $MOAT exec -- sh -c 'cd /work && echo "made inside the box" > agent.txt && git add -A && git -c user.email=a@b -c user.name=a commit -qm "agent: add agent.txt" && git log --oneline -1' )
+( cd "$PLAIN" && capture plain-fetch $MOAT fetch )
+( cd "$PLAIN" && capture plain-apply $MOAT apply )
+if grep -q "is not a git repository; there is nowhere to fetch into" "$EVIDENCE/plain-fetch.txt" \
+   && grep -q "moat apply" "$EVIDENCE/plain-fetch.txt" \
+   && grep -q "agent.txt" "$EVIDENCE/plain-apply.txt" \
+   && [ "$(cat "$PLAIN/agent.txt" 2>/dev/null)" = "made inside the box" ]; then
+  echo "a plain directory: fetch refuses and names the way out; apply merges the work into it" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "plain directory copy-out: FAILED — the work did not come back, or fetch pretended to work" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$PLAIN" && $MOAT destroy --yes >/dev/null 2>&1 )
 
 section "J. first run with no key: it asks, checks, and saves"
 if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
@@ -170,42 +200,6 @@ if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
   echo "onboarding exit: $ONBOARD_RC" | tee -a "$EVIDENCE/extras.txt"
 else
   echo "skipped: needs DEEPSEEK_API_KEY to prove the accepted path (it refuses a fake key first)" | tee -a "$EVIDENCE/extras.txt"
-fi
-
-section "K. model, reasoning effort and the other session controls"
-echo "the choices opencode exposes that moat surfaces: pick a model, pick a reasoning" | tee -a "$EVIDENCE/extras.txt"
-echo "level, pick an agent, compact, undo. Driven through a pty against the stub, so it" | tee -a "$EVIDENCE/extras.txt"
-echo "checks moat's plumbing rather than any model's behaviour." | tee -a "$EVIDENCE/extras.txt"
-python3 "$REPO/test/repl-controls.py" 2>&1 | scrub > "$EVIDENCE/repl-controls.txt"
-CONTROLS_RC=$?
-tail -16 "$EVIDENCE/repl-controls.txt" | tee -a "$EVIDENCE/extras.txt"
-echo "controls exit: $CONTROLS_RC" | tee -a "$EVIDENCE/extras.txt"
-
-section "L. the reasoning level chosen in the CLI reaches the provider"
-if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
-  echo "needs a real model: a stub reached through --base-url has no catalog metadata, so" | tee -a "$EVIDENCE/extras.txt"
-  echo "it honestly has no effort levels to offer. The check reads the level the sandbox's" | tee -a "$EVIDENCE/extras.txt"
-  echo "own server recorded on the assistant message, not moat's claim about itself." | tee -a "$EVIDENCE/extras.txt"
-  python3 "$REPO/test/repl-effort.py" 2>&1 | scrub > "$EVIDENCE/repl-effort.txt"
-  EFFORT_RC=$?
-  tail -12 "$EVIDENCE/repl-effort.txt" | tee -a "$EVIDENCE/extras.txt"
-  echo "effort exit: $EFFORT_RC" | tee -a "$EVIDENCE/extras.txt"
-else
-  echo "skipped: needs DEEPSEEK_API_KEY (it spends a few tokens on a real turn)" | tee -a "$EVIDENCE/extras.txt"
-fi
-
-section "M. the request body DeepSeek actually receives"
-echo "every other check of the reasoning setting asks opencode what it thinks it did." | tee -a "$EVIDENCE/extras.txt"
-echo "This one puts a recording proxy in front of the provider and reads the request:" | tee -a "$EVIDENCE/extras.txt"
-echo "reasoning_effort for an effort, thinking.type=disabled for off. It uses --upstream," | tee -a "$EVIDENCE/extras.txt"
-echo "which keeps DeepSeek's catalog definition and only moves the address." | tee -a "$EVIDENCE/extras.txt"
-if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
-  python3 "$REPO/test/wire-effort.py" 2>&1 | scrub > "$EVIDENCE/wire-effort.txt"
-  WIRE_RC=$?
-  tail -14 "$EVIDENCE/wire-effort.txt" | tee -a "$EVIDENCE/extras.txt"
-  echo "wire check exit: $WIRE_RC" | tee -a "$EVIDENCE/extras.txt"
-else
-  echo "skipped: needs DEEPSEEK_API_KEY (it spends two short turns)" | tee -a "$EVIDENCE/extras.txt"
 fi
 
 section "N. an environment whose project directory is gone stays visible and reclaimable"
@@ -249,7 +243,7 @@ section "P. the boot log is readable through the guard that refuses symlinks"
 # (the script dups fd 3 instead of redirecting to a path inside the
 # agent-writable rootfs), and the host reads it back through the same guard.
 capture logs-sandbox $MOAT logs sandbox
-if grep -q "sandbox boot" "$EVIDENCE/logs-sandbox.txt"; then
+if grep -q "codex runtime ready" "$EVIDENCE/logs-sandbox.txt"; then
   echo "boot log: the banner the box wrote is readable back on the host" | tee -a "$EVIDENCE/extras.txt"
 else
   echo "boot log: FAILED, no boot banner in the captured output" | tee -a "$EVIDENCE/extras.txt"
@@ -304,14 +298,14 @@ else
   echo "models <provider>: FAILED, no refusal in the output" | tee -a "$EVIDENCE/extras.txt"
 fi
 
-capture up-bad-port $MOAT up --runtime opencode --port 99999
-if grep -q "must be an integer between 1 and 65535" "$EVIDENCE/up-bad-port.txt"; then
-  echo "--port: refused before provisioning, not ninety seconds into a boot" | tee -a "$EVIDENCE/extras.txt"
+capture up-bad-egress $MOAT up --egress bogus
+if grep -q "unknown --egress" "$EVIDENCE/up-bad-egress.txt" && ! grep -q "provisioning" "$EVIDENCE/up-bad-egress.txt"; then
+  echo "--egress: refused before provisioning, with the mode named" | tee -a "$EVIDENCE/extras.txt"
 else
-  echo "--port: FAILED, no refusal in the output" | tee -a "$EVIDENCE/extras.txt"
+  echo "--egress: FAILED, no refusal before provisioning" | tee -a "$EVIDENCE/extras.txt"
 fi
 
-capture up-timeout $MOAT up --runtime opencode --timeout 30
+capture up-timeout $MOAT up --timeout 30
 if grep -q "sandbox up" "$EVIDENCE/up-timeout.txt"; then
   echo "--timeout: seconds, not milliseconds, for the boot readiness wait" | tee -a "$EVIDENCE/extras.txt"
 else
@@ -319,46 +313,34 @@ else
 fi
 capture down-timeout $MOAT down
 
-capture up-bad-tools $MOAT up --runtime opencode --tools bogus
-if grep -q "unknown --tools" "$EVIDENCE/up-bad-tools.txt" && ! grep -q "provisioning" "$EVIDENCE/up-bad-tools.txt"; then
-  echo "--tools: refused before provisioning" | tee -a "$EVIDENCE/extras.txt"
+capture up-bad-ttl $MOAT up --credential-ttl nonsense
+if grep -q "invalid duration" "$EVIDENCE/up-bad-ttl.txt" && ! grep -q "copy-in" "$EVIDENCE/up-bad-ttl.txt"; then
+  echo "--credential-ttl: refused before the copy-in, not after it" | tee -a "$EVIDENCE/extras.txt"
 else
-  echo "--tools: FAILED, the refusal came too late (or not at all)" | tee -a "$EVIDENCE/extras.txt"
+  echo "--credential-ttl: FAILED, the refusal came too late (or not at all)" | tee -a "$EVIDENCE/extras.txt"
 fi
 
-capture up-bad-log-level $MOAT up --runtime opencode --log-level chatty
-if grep -q "unknown --log-level" "$EVIDENCE/up-bad-log-level.txt" && ! grep -q "provisioning" "$EVIDENCE/up-bad-log-level.txt"; then
-  echo "--log-level: refused instead of silently becoming INFO" | tee -a "$EVIDENCE/extras.txt"
+# One entry, not three words: --egress-allow is a list, so a value with spaces is three hosts.
+capture up-bad-allow $MOAT up --egress-allow "https://internal.example" --egress filtered
+if grep -q "URL" "$EVIDENCE/up-bad-allow.txt" && ! grep -q "copy-in" "$EVIDENCE/up-bad-allow.txt"; then
+  echo "--egress-allow: an entry that cannot work is refused before the copy-in" | tee -a "$EVIDENCE/extras.txt"
 else
-  echo "--log-level: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
+  echo "--egress-allow: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
 fi
 
-capture up-empty-model $MOAT up --runtime opencode --model ""
+capture up-empty-model $MOAT up --model ""
 if grep -q "needs a model id" "$EVIDENCE/up-empty-model.txt" && ! grep -q "provisioning" "$EVIDENCE/up-empty-model.txt"; then
   echo "--model with an empty value: refused" | tee -a "$EVIDENCE/extras.txt"
 else
   echo "--model with an empty value: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
 fi
 
-capture up-empty-base-url $MOAT up --runtime opencode --base-url ""
+capture up-empty-base-url $MOAT up --base-url ""
 if grep -q "needs a URL" "$EVIDENCE/up-empty-base-url.txt" && ! grep -q "provisioning" "$EVIDENCE/up-empty-base-url.txt"; then
   echo "--base-url with an empty value: refused" | tee -a "$EVIDENCE/extras.txt"
 else
   echo "--base-url with an empty value: FAILED, no early refusal" | tee -a "$EVIDENCE/extras.txt"
 fi
-
-section "S. the live view of a turn ends honestly when the event stream does"
-# The REPL learns everything -- streamed text, tool rows, the question prompt and
-# the session.idle that ends a turn -- from one long-lived response. Stop the box
-# mid-turn and that response ends. The loop that read it used to catch the failure
-# and say nothing: the spinner kept turning and every later line was answered with
-# "queued" for a turn that was already over. This stops a real box underneath a
-# real pty mid-turn, which is the reproduction, not a simulation of one.
-echo "a pty session, a real box, a turn in flight, and then moat down underneath it." | tee -a "$EVIDENCE/extras.txt"
-python3 "$REPO/test/repl-stream-loss.py" 2>&1 | scrub > "$EVIDENCE/repl-stream-loss.txt"
-STREAM_RC=$?
-tail -10 "$EVIDENCE/repl-stream-loss.txt" | tee -a "$EVIDENCE/extras.txt"
-echo "stream loss exit: $STREAM_RC" | tee -a "$EVIDENCE/extras.txt"
 
 section "T. an environment whose state.json is gone is recovered, not replaced"
 # state.json is metadata; the environment is the rootfs. Reading a missing state as
@@ -370,7 +352,7 @@ STATELESS="$WORK/stateless"
 rm -rf "$STATELESS"; mkdir -p "$STATELESS"
 ( cd "$STATELESS" && git init -q -b main . && printf '{"name":"stateless"}\n' > package.json \
   && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
-( cd "$STATELESS" && capture stateless-up $MOAT up --runtime opencode --quiet --no-detect --model mock-model \
+( cd "$STATELESS" && capture stateless-up $MOAT up --quiet --no-detect --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 STATELESS_ENV=$(cd "$STATELESS" && $MOAT status 2>&1 | sed -n "s/^env *//p")
 ( cd "$STATELESS" && capture stateless-down $MOAT down )
@@ -378,7 +360,7 @@ STATELESS_ENV=$(cd "$STATELESS" && $MOAT status 2>&1 | sed -n "s/^env *//p")
 ( cd "$STATELESS" && capture stateless-work $MOAT exec -- /bin/sh -c "cd /work && printf 'agent work\n' > precious.txt && git add -A && git -c user.email=agent@moat.invalid -c user.name=agent commit -qm 'agent: work the host has never seen' && git rev-parse HEAD" )
 STATELESS_HEAD=$(sed -n "s/^\([0-9a-f]\{40\}\)$/\1/p" "$EVIDENCE/stateless-work.out" | tail -1)
 rm -f "$STATELESS_ENV/state.json"
-( cd "$STATELESS" && capture stateless-recover $MOAT up --runtime opencode --quiet --no-detect --model mock-model \
+( cd "$STATELESS" && capture stateless-recover $MOAT up --quiet --no-detect --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 if grep -q "recovered from disk" "$EVIDENCE/stateless-recover.err" \
    && grep -q "reusing the sandbox working tree" "$EVIDENCE/stateless-recover.err" \
@@ -411,7 +393,7 @@ rm -rf "$RACE"; mkdir -p "$RACE"
 ( cd "$RACE" && $MOAT destroy --yes >/dev/null 2>&1 )
 RACE_ID=$( cd "$RACE" && node --input-type=module -e "import { envPaths } from '$REPO/lib/paths.ts'; console.log(envPaths(process.cwd()).id)" )
 RACE_MARKER="$HOME/.moat/envs/$RACE_ID/runtime/boot.json"
-( cd "$RACE" && $MOAT up --runtime opencode --quiet --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL > "$EVIDENCE/race-up.out" 2> "$EVIDENCE/race-up.err" ) &
+( cd "$RACE" && $MOAT up --quiet --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL > "$EVIDENCE/race-up.out" 2> "$EVIDENCE/race-up.err" ) &
 RACE_UP=$!
 RACE_WAIT=0
 while [ ! -f "$RACE_MARKER" ] && [ "$RACE_WAIT" -lt 300 ]; do sleep 0.1; RACE_WAIT=$((RACE_WAIT + 1)); done
@@ -444,26 +426,6 @@ else
   echo "after down: FAILED, status=$RACE_STATE processes=$RACE_PROCS marker=$([ -f "$RACE_MARKER" ] && echo present || echo gone)" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$RACE" && $MOAT destroy --yes >/dev/null 2>&1 )
-section "V. agent text cannot drive the terminal it is printed on"
-# The answer, the reasoning, commit subjects, change paths and the sandbox log all come
-# from inside the box, and a terminal reads escape sequences in them: OSC 0 retitles the
-# window, OSC 52 writes the clipboard where the terminal allows it, CSI 2J clears the
-# screen, and a carriage return overwrites the row. Tool output was already stripped; the
-# model's own words were not. The pty test drives a real session with a distinct sequence
-# in the answer, in a commit subject and in a file name; the check below writes one into
-# the sandbox's own log, which the agent can write to at will, and reads it back.
-python3 "$REPO/test/repl-escapes.py" 2>&1 | scrub > "$EVIDENCE/repl-escapes.txt"
-ESCAPES_RC=$?
-tail -10 "$EVIDENCE/repl-escapes.txt" | tee -a "$EVIDENCE/extras.txt"
-echo "terminal escapes exit: $ESCAPES_RC" | tee -a "$EVIDENCE/extras.txt"
-
-capture logs-inject $MOAT exec -- /bin/sh -c "printf 'LOG-INJECT \033]0;pwned-log\007 end\n' >> /var/log/moat/boot.log"
-capture logs-escape $MOAT logs sandbox --tail 3
-if grep -q "LOG-INJECT" "$EVIDENCE/logs-escape.txt" && ! grep -q "$(printf '\033]0;pwned-log')" "$EVIDENCE/logs-escape.txt"; then
-  echo "sandbox log: the agent's own escape bytes are stripped, its text is not" | tee -a "$EVIDENCE/extras.txt"
-else
-  echo "sandbox log: FAILED, an escape sequence in the log reached the terminal" | tee -a "$EVIDENCE/extras.txt"
-fi
 section "W. a project with no tests is not reported as failing its tests"
 # `npm init` writes `test: echo "Error: no test specified" && exit 1`. moat offered that
 # as the project's own check: the agent was told to run it, and `moat verify` ran it and
@@ -479,7 +441,7 @@ cat > "$NOTESTS/package.json" <<'EOF'
 EOF
 ( cd "$NOTESTS" && git init -q -b main . && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
 ( cd "$NOTESTS" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$NOTESTS" && capture notests-up $MOAT up --runtime opencode --quiet --no-detect --profile node --model mock-model \
+( cd "$NOTESTS" && capture notests-up $MOAT up --quiet --no-detect --profile node --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 ( cd "$NOTESTS" && capture notests-verify $MOAT verify )
 if ! grep -q "checks:" "$EVIDENCE/notests-up.err" \
@@ -490,18 +452,6 @@ else
   echo "no-tests project: FAILED, npm's placeholder was still treated as a test suite" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$NOTESTS" && $MOAT destroy --yes >/dev/null 2>&1 )
-section "X. the interactive /diff cannot run the agent's programs on the host"
-# The sandbox repository is agent-controlled and git executes programs named by its
-# config. `/diff` was the one host-side git call left outside the hardened runner, so
-# the repository config was live for it: with log.showSignature=true and gpg.program
-# pointed at a script inside /work (whose host path the agent reads from
-# /proc/self/mountinfo), a commit carrying any gpgsig header made git run that script
-# as the user the moment /diff was typed. The pty test plants exactly that and checks
-# the script did not run while the diff still rendered.
-python3 "$REPO/test/repl-diff-hardening.py" 2>&1 | scrub > "$EVIDENCE/repl-diff-hardening.txt"
-DIFF_RC=$?
-tail -8 "$EVIDENCE/repl-diff-hardening.txt" | tee -a "$EVIDENCE/extras.txt"
-echo "diff hardening exit: $DIFF_RC" | tee -a "$EVIDENCE/extras.txt"
 section "Y. --timeout shortens a check that hangs"
 # `--timeout` is seconds everywhere and the checks runner takes it as timeoutSeconds,
 # but neither `moat verify` nor `moat take` passed it: a suite that hangs ran to the
@@ -518,7 +468,7 @@ cat > "$SLOW/package.json" <<'EOF'
 EOF
 ( cd "$SLOW" && git init -q -b main . && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
 ( cd "$SLOW" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$SLOW" && capture slow-up $MOAT up --runtime opencode --quiet --no-detect --profile node --model mock-model \
+( cd "$SLOW" && capture slow-up $MOAT up --quiet --no-detect --profile node --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 ( cd "$SLOW" && capture slow-verify-default $MOAT verify )
 ( cd "$SLOW" && capture slow-verify-timeout $MOAT verify --timeout 1 )
@@ -550,9 +500,9 @@ else
 fi
 
 capture down-before-z $MOAT down
-capture loud-up $MOAT up --runtime opencode --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+capture loud-up $MOAT up --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 capture down-mid-z $MOAT down
-capture quiet-up $MOAT up --runtime opencode --quiet --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
+capture quiet-up $MOAT up --quiet --no-detect --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 if grep -q "^--- exit 0$" "$EVIDENCE/quiet-up.txt" && ! grep -q "→" "$EVIDENCE/quiet-up.txt"; then
   echo "--quiet: the boot printed no progress lines, and still succeeded" | tee -a "$EVIDENCE/extras.txt"
 else
@@ -570,44 +520,6 @@ if grep -q "Usage: moat <command>" "$EVIDENCE/help-flag.txt" && ! grep -q "Node.
 else
   echo "--help: FAILED, the command ran instead of printing help" | tee -a "$EVIDENCE/extras.txt"
 fi
-section "AA. a port that is already taken is refused before provisioning"
-# `--port` was checked for range but not for availability, so a port another process
-# held cost the whole readiness budget (90 seconds by default) and failed with
-# "opencode serve did not come up (GET /config -> TimeoutError)" — after provisioning
-# and a copy-in had already run, and without naming the port. It is validated before
-# provisioning now, like every other flag. The second half is the control: once the
-# holder is gone the same port must work, so the check cannot pass by refusing all
-# ports.
-PORTBUSY="$WORK/portbusy"
-rm -rf "$PORTBUSY"; mkdir -p "$PORTBUSY"
-( cd "$PORTBUSY" && git init -q -b main . && printf '{"name":"portbusy"}\n' > package.json \
-  && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
-( cd "$PORTBUSY" && $MOAT destroy --yes >/dev/null 2>&1 )
-HELD_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()")
-echo "holding port $HELD_PORT while moat is asked to use it" | tee -a "$EVIDENCE/extras.txt"
-python3 -c "import socket,time; s=socket.socket(); s.bind(('127.0.0.1',$HELD_PORT)); s.listen(1); time.sleep(120)" &
-PORT_HOLDER=$!
-sleep 1
-( cd "$PORTBUSY" && capture port-busy $MOAT up --runtime opencode --quiet --no-detect --port "$HELD_PORT" --timeout 5 \
-  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
-kill "$PORT_HOLDER" 2>/dev/null
-wait "$PORT_HOLDER" 2>/dev/null
-if grep -q "already in use" "$EVIDENCE/port-busy.txt" \
-   && grep -q "$HELD_PORT" "$EVIDENCE/port-busy.txt" \
-   && grep -q "^--- exit 1$" "$EVIDENCE/port-busy.txt" \
-   && ! grep -q "provisioning" "$EVIDENCE/port-busy.txt"; then
-  echo "--port: a taken port is refused up front, naming the port and the address" | tee -a "$EVIDENCE/extras.txt"
-else
-  echo "--port: FAILED, the boot ran and failed later instead of refusing" | tee -a "$EVIDENCE/extras.txt"
-fi
-( cd "$PORTBUSY" && capture port-released $MOAT up --runtime opencode --quiet --no-detect --port "$HELD_PORT" --timeout 30 \
-  --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
-if grep -q "^--- exit 0$" "$EVIDENCE/port-released.txt" && ! grep -q "already in use" "$EVIDENCE/port-released.txt"; then
-  echo "the control: the same port boots once nothing holds it" | tee -a "$EVIDENCE/extras.txt"
-else
-  echo "the control FAILED: a free port was refused, so the check above proves nothing" | tee -a "$EVIDENCE/extras.txt"
-fi
-( cd "$PORTBUSY" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AB. copy-out names a credential the agent could have committed"
 # The agent has to read the injected credential to call the model, and the brief tells it
 # not to commit it. Nothing checked: `moat fetch` copied every object the agent committed
@@ -621,7 +533,7 @@ rm -rf "$LEAK"; mkdir -p "$LEAK"
 ( cd "$LEAK" && git init -q -b main . && printf '{"name":"leakscan"}\n' > package.json \
   && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
 ( cd "$LEAK" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$LEAK" && capture leak-up $MOAT up --runtime opencode --quiet --no-detect --model mock-model \
+( cd "$LEAK" && capture leak-up $MOAT up --quiet --no-detect --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 # Control first: an ordinary commit, no credential anywhere in it.
 ( cd "$LEAK" && $MOAT exec -- /bin/sh -c 'printf "export const x = 1\n" > /work/feature.ts \
@@ -676,7 +588,7 @@ rm -rf "$NB"; mkdir -p "$NB"
 ( cd "$NB" && git init -q -b main . && printf '{"name":"nobase"}\n' > package.json \
   && git add -A && git -c user.email=e2e@example.com -c user.name=e2e commit -qm init )
 ( cd "$NB" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$NB" && capture base-url-schemeless $MOAT up --runtime opencode --quiet --no-detect --model mock-model \
+( cd "$NB" && capture base-url-schemeless $MOAT up --quiet --no-detect --model mock-model \
   --base-url "localhost:$MOCK_PORT/v1" )
 # "image provisioned" and "copy-in via" are success lines, so --quiet cannot hide them:
 # their absence is what proves the refusal happened before any work was done.
@@ -690,7 +602,7 @@ else
 fi
 # The control: the same host and port with the scheme boots, so the check above cannot
 # pass by refusing every --base-url.
-( cd "$NB" && capture base-url-schemed $MOAT up --runtime opencode --quiet --no-detect --model mock-model \
+( cd "$NB" && capture base-url-schemed $MOAT up --quiet --no-detect --model mock-model \
   --base-url "http://localhost:$MOCK_PORT/v1" )
 if grep -q "^--- exit 0$" "$EVIDENCE/base-url-schemed.txt" && grep -q "sandbox up" "$EVIDENCE/base-url-schemed.txt"; then
   echo "the control: the same endpoint with a scheme boots" | tee -a "$EVIDENCE/extras.txt"
@@ -710,7 +622,7 @@ rm -rf "$BL"; mkdir -p "$BL"
 ( cd "$BL" && git init -q -b main . && printf 'base\n' > base.txt && git add -A \
   && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
 ( cd "$BL" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$BL" && capture branchloss-up $MOAT up --runtime opencode --quiet --no-detect --model mock-model \
+( cd "$BL" && capture branchloss-up $MOAT up --quiet --no-detect --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 # The agent leaves work on a branch it is not standing on: the case HEAD-only counting missed.
 ( cd "$BL" && $MOAT exec -- /bin/sh -c 'BASE=$(git -C /work rev-parse --abbrev-ref HEAD); \
@@ -719,7 +631,7 @@ rm -rf "$BL"; mkdir -p "$BL"
   git -C /work checkout -q "$BASE"' >/dev/null 2>&1 )
 ( cd "$BL" && $MOAT down >/dev/null 2>&1 )
 ( cd "$BL" && echo changed-on-the-host >> base.txt )
-( cd "$BL" && capture branchloss-up-again $MOAT up --runtime opencode --quiet --no-detect --model mock-model \
+( cd "$BL" && capture branchloss-up-again $MOAT up --quiet --no-detect --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 ( cd "$BL" && capture branchloss-branches $MOAT exec -- /bin/sh -c \
   'git -C /work branch; echo "--- all commits ---"; git -C /work log --oneline --all | head -4' )
@@ -736,7 +648,7 @@ fi
 ( cd "$BL" && $MOAT fetch --all >/dev/null 2>&1 )
 ( cd "$BL" && $MOAT down >/dev/null 2>&1 )
 ( cd "$BL" && echo changed-again >> base.txt )
-( cd "$BL" && capture branchloss-fetched $MOAT up --runtime opencode --quiet --no-detect --model mock-model \
+( cd "$BL" && capture branchloss-fetched $MOAT up --quiet --no-detect --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 if grep -q "holds nothing that is not already on the host" "$EVIDENCE/branchloss-fetched.txt" \
    && grep -q "copy-in via git" "$EVIDENCE/branchloss-fetched.txt"; then
@@ -755,14 +667,14 @@ rm -rf "$DET"; mkdir -p "$DET"
 ( cd "$DET" && git init -q -b main . && printf 'base\n' > base.txt && git add -A \
   && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
 ( cd "$DET" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$DET" && capture detached-up $MOAT up --runtime opencode --quiet --no-detect --model mock-model \
+( cd "$DET" && capture detached-up $MOAT up --quiet --no-detect --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 ( cd "$DET" && $MOAT exec -- /bin/sh -c 'git -C /work checkout -q --detach HEAD; \
   echo important > /work/detached.txt; git -C /work add -A; \
   git -C /work -c user.email=a@b -c user.name=agent commit -qm "work on a detached HEAD"' >/dev/null 2>&1 )
 ( cd "$DET" && $MOAT down >/dev/null 2>&1 )
 ( cd "$DET" && echo changed-on-the-host >> base.txt )
-( cd "$DET" && capture detached-up-again $MOAT up --runtime opencode --quiet --no-detect --model mock-model \
+( cd "$DET" && capture detached-up-again $MOAT up --quiet --no-detect --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 ( cd "$DET" && capture detached-log $MOAT exec -- /bin/sh -c \
   'git -C /work log --oneline --all | head -4; echo "--- detached.txt ---"; ls /work/detached.txt' )
@@ -789,9 +701,9 @@ section "AF. a local endpoint runs with no credential in the box"
 # path its own message recommended. The native provider must still refuse a task with no
 # key: there the key *is* the model.
 AF_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()")
-rm -f "$WORK/af-mock.jsonl"
-setsid node "$REPO/test/mock-model.mjs" --port "$AF_PORT" --script "$REPO/test/scripts/basic.json" \
-  --record "$WORK/af-mock.jsonl" > "$WORK/af-mock.log" 2>&1 < /dev/null &
+rm -f "$WORK/af-requests.jsonl"
+setsid node "$REPO/test/mock-responses.mjs" --port "$AF_PORT" --script "$REPO/test/scripts/responses-basic.json" \
+  --record "$WORK/af-requests.jsonl" > "$WORK/af-mock.log" 2>&1 < /dev/null &
 AF_MOCK=$!
 sleep 1.2
 NC="$WORK/nocred"
@@ -799,9 +711,9 @@ rm -rf "$NC"; mkdir -p "$NC"
 ( cd "$NC" && git init -q -b main . && printf 'readme\n' > README.md && git add -A \
   && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
 ( cd "$NC" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$NC" && capture nocred-local $MOAT run --runtime opencode --no-credential --no-detect --model mock-model \
+( cd "$NC" && capture nocred-local $MOAT run --no-credential --no-detect --model mock-model \
   --base-url "http://127.0.0.1:$AF_PORT/v1" "do the task" )
-python3 - "$WORK/af-mock.jsonl" > "$WORK/nocred-auth.txt" <<'PYEOF'
+python3 - "$WORK/af-requests.jsonl" > "$WORK/nocred-auth.txt" <<'PYEOF'
 import json, sys
 rows = [json.loads(line) for line in open(sys.argv[1])]
 auth = sorted({json.dumps(row.get("authorization")) for row in rows})
@@ -811,9 +723,9 @@ PYEOF
 echo "--- what the local endpoint received ---" | tee -a "$EVIDENCE/extras.txt"
 cat "$WORK/nocred-auth.txt" | tee -a "$EVIDENCE/extras.txt"
 if grep -q "^--- exit 0$" "$EVIDENCE/nocred-local.txt" \
-   && grep -q "Task complete" "$EVIDENCE/nocred-local.txt" \
+   && grep -q "Fixed src/sum.js" "$EVIDENCE/nocred-local.txt" \
    && grep -q "no credential injected" "$EVIDENCE/nocred-local.txt" \
-   && grep -q "requests this run: 6" "$WORK/nocred-auth.txt" \
+   && grep -qE "requests this run: [2-9][0-9]*" "$WORK/nocred-auth.txt" \
    && grep -q "authorization headers: null" "$WORK/nocred-auth.txt"; then
   echo "no credential: the local endpoint runs the task, and no key is sent to it" | tee -a "$EVIDENCE/extras.txt"
 else
@@ -826,7 +738,7 @@ rm -rf "$NATIVE"; mkdir -p "$NATIVE"
 ( cd "$NATIVE" && git init -q -b main . && printf 'readme\n' > README.md && git add -A \
   && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
 ( cd "$NATIVE" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$NATIVE" && capture nocred-native $MOAT run --runtime opencode --no-credential --no-detect --model deepseek-flash "do the task" )
+( cd "$NATIVE" && capture nocred-native $MOAT run --no-credential --no-detect --model deepseek-flash "do the task" )
 if grep -q "no DEEPSEEK_API_KEY, so the agent has no model to call" "$EVIDENCE/nocred-native.txt" \
    && grep -q "^--- exit 1$" "$EVIDENCE/nocred-native.txt" \
    && ! grep -q "sandbox up" "$EVIDENCE/nocred-native.txt"; then
@@ -847,7 +759,7 @@ rm -rf "$KD"; mkdir -p "$KD"
 ( cd "$KD" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
   && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
 ( cd "$KD" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$KD" && capture killed-up $MOAT up --runtime opencode --quiet --no-detect --no-credential --egress isolated \
+( cd "$KD" && capture killed-up $MOAT up --quiet --no-detect --no-credential --egress isolated \
   --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
 ( cd "$KD" && capture killed-status $MOAT status --json )
 KSTATE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['envDir'])" "$EVIDENCE/killed-status.out")/state.json
@@ -860,7 +772,7 @@ kill -9 "$OLD_BOX" 2>/dev/null
 sleep 1
 ORPHAN_BEFORE=$(count_datapath "$OLD_BOX")
 echo "datapath for that box still up one second after the kill: $ORPHAN_BEFORE" | tee -a "$EVIDENCE/extras.txt"
-( cd "$KD" && capture killed-up-again $MOAT up --runtime opencode --quiet --no-detect --no-credential --egress isolated \
+( cd "$KD" && capture killed-up-again $MOAT up --quiet --no-detect --no-credential --egress isolated \
   --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
 NEW_BOX=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['pid'])" "$KSTATE")
 OLD_LEFT=$(count_datapath "$OLD_BOX")
@@ -879,7 +791,7 @@ fi
 # the tap going away), which would leave the reap itself untested. So keep the box alive and
 # make its recorded identity stale instead — the state a reboot with pid reuse leaves — and
 # the datapath is certainly running when the next boot decides.
-( cd "$KD" && capture reaped-up $MOAT up --runtime opencode --quiet --no-detect --no-credential --egress isolated \
+( cd "$KD" && capture reaped-up $MOAT up --quiet --no-detect --no-credential --egress isolated \
   --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
 python3 - "$KSTATE" <<'PYEOF'
 import json, sys
@@ -892,7 +804,7 @@ PYEOF
 LIVE_BOX=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['pid'])" "$KSTATE")
 LIVE_SLIRP=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['slirpPid'])" "$KSTATE")
 echo "datapath up while its box is still alive: $(count_datapath "$LIVE_BOX")" | tee -a "$EVIDENCE/extras.txt"
-( cd "$KD" && capture reaped-up-again $MOAT up --runtime opencode --quiet --no-detect --no-credential --egress isolated \
+( cd "$KD" && capture reaped-up-again $MOAT up --quiet --no-detect --no-credential --egress isolated \
   --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
 REAPED_LEFT=$(count_datapath "$LIVE_BOX")
 if grep -q "reaped the datapath of a sandbox that is no longer running (pid $LIVE_SLIRP)" "$EVIDENCE/reaped-up-again.txt" \
@@ -924,7 +836,7 @@ rm -rf "$REAP_ENV"; mkdir -p "$REAP_ENV"
 ( cd "$REAP_ENV" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
   && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
 ( cd "$REAP_ENV" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$REAP_ENV" && capture reap-down-up $MOAT up --runtime opencode --quiet --no-detect --no-credential --egress isolated \
+( cd "$REAP_ENV" && capture reap-down-up $MOAT up --quiet --no-detect --no-credential --egress isolated \
   --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
 ( cd "$REAP_ENV" && capture reap-down-status $MOAT status --json )
 DSTATE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['envDir'])" "$EVIDENCE/reap-down-status.out")/state.json
@@ -945,7 +857,7 @@ kill -9 -- "-$DBOX" 2>/dev/null
 ( cd "$REAP_ENV" && $MOAT destroy --yes >/dev/null 2>&1 )
 
 # Half four: `destroy` deletes the environment, so the record goes with the directory.
-( cd "$REAP_ENV" && capture reap-destroy-up $MOAT up --runtime opencode --quiet --no-detect --no-credential --egress isolated \
+( cd "$REAP_ENV" && capture reap-destroy-up $MOAT up --quiet --no-detect --no-credential --egress isolated \
   --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
 ( cd "$REAP_ENV" && capture reap-destroy-status $MOAT status --json )
 DSTATE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['envDir'])" "$EVIDENCE/reap-destroy-status.out")/state.json
@@ -964,7 +876,7 @@ fi
 kill -9 -- "-$XBOX" 2>/dev/null
 
 # Half five: `restore` clears the datapath fields for a box it will not signal.
-( cd "$REAP_ENV" && capture reap-restore-up $MOAT up --runtime opencode --quiet --no-detect --no-credential --egress isolated \
+( cd "$REAP_ENV" && capture reap-restore-up $MOAT up --quiet --no-detect --no-credential --egress isolated \
   --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
 ( cd "$REAP_ENV" && capture reap-restore-status $MOAT status --json )
 DSTATE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['envDir'])" "$EVIDENCE/reap-restore-status.out")/state.json
@@ -994,12 +906,12 @@ rm -rf "$NL"; mkdir -p "$NL"
 ( cd "$NL" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
   && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
 ( cd "$NL" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$NL" && capture nocred-doctor-up $MOAT up --runtime opencode --quiet --no-detect --no-credential --egress isolated --model deepseek-flash )
+( cd "$NL" && capture nocred-doctor-up $MOAT up --quiet --no-detect --no-credential --egress isolated --model deepseek-flash )
 ( cd "$NL" && capture nocred-doctor $MOAT doctor )
 if grep -q "no variable from the host environment reached the sandbox" "$EVIDENCE/nocred-doctor.txt" \
    && ! grep -E "reached the sandbox.*DEEPSEEK_API_KEY" "$EVIDENCE/nocred-doctor.txt" \
    && ! grep -q "which is the credential" "$EVIDENCE/nocred-doctor.txt" \
-   && grep -q "None of them is a provider credential" "$EVIDENCE/nocred-doctor.txt" \
+   && grep -q "no secret-looking variable reaches tool execution" "$EVIDENCE/nocred-doctor.txt" \
    && ! grep -q "spend-capped" "$EVIDENCE/nocred-doctor.txt"; then
   echo "no-credential box: the doctor reports no key in the box, and does not invent one" | tee -a "$EVIDENCE/extras.txt"
 else
@@ -1013,7 +925,7 @@ rm -rf "$CL"; mkdir -p "$CL"
 ( cd "$CL" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
   && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
 ( cd "$CL" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$CL" && capture cred-doctor-up $MOAT up --runtime opencode --quiet --no-detect --egress isolated --model mock-model \
+( cd "$CL" && capture cred-doctor-up $MOAT up --quiet --no-detect --egress isolated --model mock-model \
   --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 ( cd "$CL" && capture cred-doctor $MOAT doctor )
 grep "are in the environment tool execution inherits" "$EVIDENCE/cred-doctor.txt" > "$WORK/cred-doctor-detail.txt" || true
@@ -1043,7 +955,7 @@ printf '{"name":"escape-check","version":"1.0.0","scripts":{"test":"node escape.
 ( cd "$ESC_PROJECT" && git init -q -b main . && git config user.email e2e@example.com && git config user.name e2e \
   && git add -A && git commit -qm base )
 ( cd "$ESC_PROJECT" && $MOAT destroy --yes >/dev/null 2>&1 )
-( cd "$ESC_PROJECT" && capture escape-up $MOAT up --runtime opencode --quiet --no-credential --egress isolated --profile node --model deepseek-flash )
+( cd "$ESC_PROJECT" && capture escape-up $MOAT up --quiet --no-credential --egress isolated --profile node --model deepseek-flash )
 ( cd "$ESC_PROJECT" && capture escape-verify $MOAT verify )
 ( cd "$ESC_PROJECT" && capture escape-take $MOAT take )
 python3 - "$EVIDENCE" <<'PYEOF' > "$WORK/escape-bytes.txt"
@@ -1061,12 +973,12 @@ else
   echo "check output: FAILED — an escape byte reached the terminal, or the output was dropped" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$ESC_PROJECT" && $MOAT destroy --yes >/dev/null 2>&1 )
-section "AJ. the codex runtime is the default, and a switch keeps /work"
+section "AJ. the runtime boots, and a deleted runtime binary is repaired without touching /work"
 # Codex ships a musl binary in its npm platform tarball, so it runs on the Alpine image with no
-# gcompat and no Node runtime. The default runtime is codex; the image carries only the runtime
-# an environment was created with, so switching installs the other one into the live rootfs.
-# Re-provisioning is not an option: it deletes the rootfs first, which takes /work with it
-# (measured: an untracked file was lost that way before this was written).
+# gcompat and no Node runtime. The agent is root inside its own rootfs, so it can delete that
+# binary; the next boot has to put it back by copying into the live rootfs, because
+# re-provisioning deletes the rootfs first and takes /work with it (measured: an untracked file
+# was lost that way before the installer was written).
 CDX="$WORK/codex-runtime"
 rm -rf "$CDX"; mkdir -p "$CDX"
 ( cd "$CDX" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
@@ -1075,42 +987,29 @@ rm -rf "$CDX"; mkdir -p "$CDX"
 CODEX_VERSION=$(node -e "import('$REPO/lib/pins.ts').then((m) => console.log(m.CODEX_VERSION))")
 ( cd "$CDX" && capture codex-up $MOAT up --quiet --no-detect --no-credential )
 ( cd "$CDX" && capture codex-status $MOAT status )
-( cd "$CDX" && capture codex-config $MOAT exec -- sh -c 'codex --version; cat /root/.codex/config.toml; command -v opencode >/dev/null && echo "opencode PRESENT" || echo "opencode absent"' )
-if grep -q "runtime      codex" "$EVIDENCE/codex-status.txt" \
+( cd "$CDX" && capture codex-config $MOAT exec -- sh -c 'codex --version; cat /root/.codex/config.toml; head -1 /root/.codex/AGENTS.md; command -v opencode >/dev/null && echo "opencode PRESENT" || echo "opencode absent"' )
+if grep -q "codex        0.155.1 / alpine" "$EVIDENCE/codex-status.txt" \
    && grep -q "codex-cli $CODEX_VERSION" "$EVIDENCE/codex-config.txt" \
    && grep -q '^approval_policy = "never"$' "$EVIDENCE/codex-config.txt" \
    && grep -q '^sandbox_mode = "danger-full-access"$' "$EVIDENCE/codex-config.txt" \
    && grep -q '^wire_api = "responses"$' "$EVIDENCE/codex-config.txt" \
    && grep -q "^opencode absent$" "$EVIDENCE/codex-config.txt"; then
-  echo "codex: the default runtime boots, moat renders its config, and its image carries no opencode" | tee -a "$EVIDENCE/extras.txt"
+  echo "codex: the default runtime boots, moat renders its config and its brief, and no opencode is in the image" | tee -a "$EVIDENCE/extras.txt"
 else
   echo "codex: FAILED — the default runtime or its rendered config is not what moat claims" | tee -a "$EVIDENCE/extras.txt"
 fi
-# The commands that need opencode's server refuse with a pointer rather than a confusing error.
-( cd "$CDX" && capture codex-env-refusal $MOAT env )
-if grep -q "codex runtime" "$EVIDENCE/codex-env-refusal.txt"; then
-  echo "codex: a server command refuses with a pointer instead of failing obscurely" | tee -a "$EVIDENCE/extras.txt"
+( cd "$CDX" && capture codex-rm $MOAT exec -- sh -c 'rm -f /usr/local/bin/codex; command -v codex || echo "codex gone"; echo keep > /work/KEEP.txt; mkdir -p /work/sub && echo deep > /work/sub/DEEP.txt' )
+( cd "$CDX" && capture codex-down $MOAT down )
+# No --quiet here: the install step is a progress line, and this check reads it.
+( cd "$CDX" && capture codex-repair $MOAT up --no-detect --no-credential )
+( cd "$CDX" && capture codex-repair-check $MOAT exec -- sh -c 'codex --version; cat /work/KEEP.txt /work/sub/DEEP.txt' )
+if grep -q "codex-cli $CODEX_VERSION" "$EVIDENCE/codex-repair-check.txt" \
+   && grep -q "^keep$" "$EVIDENCE/codex-repair-check.txt" \
+   && grep -q "^deep$" "$EVIDENCE/codex-repair-check.txt" \
+   && grep -q "installing the codex runtime into this environment" "$EVIDENCE/codex-repair.txt"; then
+  echo "a deleted runtime binary: reinstalled into the live rootfs on the next boot, and /work survived" | tee -a "$EVIDENCE/extras.txt"
 else
-  echo "codex: FAILED — moat env did not explain that the runtime has no server" | tee -a "$EVIDENCE/extras.txt"
-fi
-# --effort is refused under this runtime rather than accepted and dropped: Codex renders
-# reasoning as model_reasoning_effort and sends it only for models it has metadata for, and it
-# has none for the DeepSeek models moat uses (measured through a recording proxy).
-( cd "$CDX" && capture codex-effort-refusal $MOAT up --runtime codex --effort high --no-detect --no-credential )
-if grep -q "does not take --effort" "$EVIDENCE/codex-effort-refusal.txt"; then
-  echo "codex: --effort is refused with the reason, instead of silently doing nothing" | tee -a "$EVIDENCE/extras.txt"
-else
-  echo "codex: FAILED — --effort was accepted under the codex runtime" | tee -a "$EVIDENCE/extras.txt"
-fi
-( cd "$CDX" && $MOAT exec -- sh -c 'echo keep > /work/KEEP.txt; mkdir -p /work/sub && echo deep > /work/sub/DEEP.txt' ) >/dev/null 2>&1
-( cd "$CDX" && capture codex-switch $MOAT up --quiet --runtime opencode --no-detect --no-credential )
-( cd "$CDX" && capture codex-switch-check $MOAT exec -- sh -c 'cat /work/KEEP.txt /work/sub/DEEP.txt; opencode --version' )
-if grep -q "^1.18.31$" "$EVIDENCE/codex-switch-check.txt" \
-   && grep -q "^keep$" "$EVIDENCE/codex-switch-check.txt" \
-   && grep -q "^deep$" "$EVIDENCE/codex-switch-check.txt"; then
-  echo "runtime switch: the other runtime is installed into the live rootfs and /work survives" | tee -a "$EVIDENCE/extras.txt"
-else
-  echo "runtime switch: FAILED — /work was lost, or the runtime was not installed" | tee -a "$EVIDENCE/extras.txt"
+  echo "runtime repair: FAILED — the binary was not reinstalled, or /work was lost" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$CDX" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AK. the codex runtime drives a keyless model stub end to end"
@@ -1144,7 +1043,7 @@ sleep 1
 export MOAT_MOCK_CREDENTIAL="moat-e2e-responses-stub"
 ( cd "$CK" && capture codex-mock-up $MOAT up --quiet --profile node --model mock-model \
   --base-url "http://127.0.0.1:$RESP_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
-( cd "$CK" && capture codex-mock-run $MOAT run --runtime codex "Make the failing test pass." )
+( cd "$CK" && capture codex-mock-run $MOAT run "Make the failing test pass." )
 ( cd "$CK" && capture codex-mock-fix $MOAT exec -- sh -c 'cat /work/src/sum.js; git -C /work log --oneline -1' )
 # The project's own checks are the verdict the user reads, and they run inside the box with
 # no model involved. This is the half that says the runtime swap did not cost moat its loop.
@@ -1195,6 +1094,8 @@ else
   echo "codex tui: FAILED — moat did not reach a live TUI (exit $TUI_RC)" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$WORK/codex-tui" && $MOAT destroy --yes >/dev/null 2>&1 )
+# The stub belongs to this suite: e2e.sh used to start it and extras used to inherit it.
+if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; rm -f "$MOCK_PIDFILE"; fi
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

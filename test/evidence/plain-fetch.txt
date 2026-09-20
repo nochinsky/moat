@@ -1,0 +1,6 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts fetch
+--- exit 1
+--- stdout ---
+--- stderr ---
+✗ /home/user/moat-demo/plain is not a git repository; there is nowhere to fetch into.
+  moat apply merges the sandbox's work into this directory without one.

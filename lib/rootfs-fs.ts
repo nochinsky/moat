@@ -8,7 +8,7 @@ import path from "node:path"
  *
  * The rootfs is persistent and the agent is root inside it, so any directory in a
  * path moat writes to may have been replaced with a symlink. The agent cannot see
- * the host filesystem, but it can write the *string* `/home/you/.config/opencode`
+ * the host filesystem, but it can write the *string* `/home/you/.codex`
  * into a symlink, and the kernel resolves that for the host process doing the
  * write: moat then clobbers a host file while believing it is writing inside the
  * box. Measured before this guard existed: an `AGENTS.md` of 3834 bytes landed in

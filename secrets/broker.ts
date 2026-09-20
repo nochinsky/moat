@@ -40,7 +40,7 @@ export type Store = Record<string, StoredCredential>
 export type MintedCredential = {
   provider: string
   value: string
-  /** Names opencode will find the credential under inside the sandbox. */
+  /** Names the credential is injected under inside the sandbox. */
   targetEnvVars: string[]
   fingerprint: string
   mintedAt: Date
@@ -66,7 +66,7 @@ export type MintOptions = {
   /**
    * Environment variable names the provider expects, in priority order
    * (e.g. `["ZHIPU_API_KEY"]` for Z.AI). When given, the credential is injected
-   * under each of these instead of moat's own name, which is what lets opencode
+   * under each of these instead of moat's own name, which is what lets the provider client
    * use its native models.dev definition for the provider rather than a provider
    * block moat has to describe itself.
    */
@@ -147,7 +147,7 @@ export function findCredential(opts: MintOptions): { provider: string; credentia
     // key here, so it must be the one". Without this a key saved by `moat`'s own
     // onboarding is never found again, because the boot path asks for the
     // provider by a different name than the one it was stored under.
-    const candidates = [opts.provider, DEEPSEEK.opencodeID, "moat"].filter((k): k is string => Boolean(k))
+    const candidates = [opts.provider, DEEPSEEK.id, "moat"].filter((k): k is string => Boolean(k))
     const hit = candidates.find((k) => store[k]) ?? (keys.length === 1 ? keys[0]! : undefined)
     if (hit) {
       return { provider: opts.provider ?? hit, credential: store[hit]!, source: `${credentialsFile()}#${hit}` }
@@ -206,7 +206,7 @@ export function credentialRiskNotice(
  * Look for the credential value on disk inside the rootfs.
  *
  * The value is only ever meant to exist in the sandbox process environment. If
- * opencode or the agent persists it anywhere (auth state, a log, a session
+ * the runtime or the agent persists it anywhere (auth state, a log, a session
  * file), "no credential in the image" is already false, so a boot that finds it
  * must not be reported as healthy. The pattern is fed to grep on stdin, so the
  * value never appears in a host process's argv.
@@ -214,10 +214,11 @@ export function credentialRiskNotice(
 export function scanRootfsForCredential(rootfs: string, value: string): string[] {
   if (!value) return []
   const candidates = [
-    "root/.local/share/opencode",
+    // Where Codex would keep an auth file if it ever wrote one; moat tells it to read the key
+    // from the environment, so finding anything here is already unexpected.
+    "root/.codex",
     "root/.config",
     "root/.cache",
-    "usr/local/share/moat",
     "var/log/moat",
     ".moat",
     "tmp",
@@ -275,7 +276,7 @@ export function mint(opts: MintOptions): MintedCredential | null {
  *
  * These three used to be set only inside toSandboxEnv(minted), so a boot with
  * --no-credential — a documented mode — left the custom-endpoint provider block with
- * an empty base URL. opencode then resolved {env:MOAT_PROVIDER_BASE_URL} to an empty
+ * an empty base URL. The runtime then resolved {env:MOAT_PROVIDER_BASE_URL} to an empty
  * string and every model call died *inside the box* with
  * `TypeError [ERR_INVALID_URL]: "/chat/completions" cannot be parsed as a URL`, while
  * the host printed nothing but "0 tool calls". A base URL and a model id are
@@ -301,7 +302,7 @@ export function sandboxProviderEnv(input: { baseUrl: string; model: string; mode
  * value under moat's name and never as `DEEPSEEK_API_KEY`.
  */
 export function doctorInjectedVarNames(opts: { credential: boolean; native: boolean }): string[] {
-  const names = ["MOAT_PROVIDER_BASE_URL", "MOAT_MODEL_ID", "MOAT_MODEL", "OPENCODE_SERVER_PASSWORD"]
+  const names = ["MOAT_PROVIDER_BASE_URL", "MOAT_MODEL_ID", "MOAT_MODEL"]
   if (!opts.credential) return names
   names.push(...INJECTED_ENV_NAMES)
   if (opts.native) names.push(DEEPSEEK.envVar)
@@ -311,9 +312,9 @@ export function doctorInjectedVarNames(opts: { credential: boolean; native: bool
 /**
  * The environment the sandbox process receives.
  *
- * The credential is placed under BOTH moat's own name and the provider's expected
- * name. The provider name is what opencode actually uses; moat's own name is what
- * the plugin redacts and what the custom-endpoint config references.
+ * The credential is placed under BOTH moat's own name and the provider's expected name. The
+ * provider name is what the native provider's API expects and what Codex is told to read
+ * (`env_key`); moat's own name is what the custom-endpoint config references.
  */
 export function toSandboxEnv(minted: MintedCredential): Record<string, string> {
   const env: Record<string, string> = {

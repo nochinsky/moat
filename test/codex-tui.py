@@ -61,8 +61,10 @@ def main() -> int:
     except ValueError:
         print("status --json did not produce JSON:\n" + probe.stdout[-2000:] + probe.stderr[-2000:])
         return 1
-    if state.get("runtime") != "codex":
-        print("this fixture is not on the codex runtime: %r" % state.get("runtime"))
+    # There is one runtime, so an environment with a resolved model is on it: the state file no
+    # longer records which one (the field existed to choose between two).
+    if not state.get("model"):
+        print("this fixture has no runtime model recorded: %r" % state.get("model"))
         return 1
 
     pid, fd = pty.fork()

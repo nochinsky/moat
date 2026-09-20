@@ -1,21 +1,22 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --no-detect --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- $ node /home/user/Projects/moat/cmd/main.ts up --no-detect --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
 --- stderr ---
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
-! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-14-10
-→ sandbox booted (pid 16951, port 37229); waiting for opencode serve
-✓ sandbox up, warm start 4.16s (image reused)
+! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-20-14-47
+checks: npm run test
+! the egress allowlist could not resolve: not, a, host; the box will not reach them
+→ sandbox booted (pid 72799); the codex runtime has no server to wait for
+✓ sandbox up, warm start 933ms (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  opencode   http://127.0.0.1:37229  (basic auth user "opencode")
-  password   5CVlLTeu28buQ-9ZSNwhqICqeDAJ0umi
+  runtime    codex (moat/mock-model) — `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-20T18:10:27.007Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-20T18:47:34.744Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

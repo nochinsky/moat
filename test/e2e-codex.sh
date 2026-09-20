@@ -1,20 +1,16 @@
 #!/usr/bin/env bash
 #
-# moat acceptance criteria, on the DEFAULT runtime (Codex), against a keyless stub.
+# moat acceptance criteria, against a keyless model stub.
 #
-# test/e2e.sh drives opencode, which is the fallback runtime now: it runs a server and moat's
-# own session client, and its checks are written around that. This suite is the same
-# acceptance list for the runtime a new environment actually gets, driven through
-# `moat run --runtime codex` and test/mock-responses.mjs (the Responses wire API, whose event
-# shapes were captured from a real DeepSeek stream).
+# There is one runtime (Codex), and it is a CLI rather than a server: moat drives it with
+# `codex exec --json` for a task and hands the terminal to its TUI for a session. Everything
+# here is measured through test/mock-responses.mjs, which speaks the Responses wire API and
+# replays event shapes captured from a real DeepSeek stream, so the whole list runs with no key.
 #
-# Two criteria from the opencode list are deliberately absent, and their absence is the
-# honest part:
-#   * the in-box bundle/plugin guard (permission allow, curated tool refusals) is an
-#     opencode mechanism; under Codex the same guarantee is the moat-rendered config, and
-#     section 4 asserts those two lines instead;
-#   * the session/attach streaming checks need a server; Codex's TUI is checked by
-#     test/codex-tui.py (extras section AL).
+# One acceptance criterion from the list this replaced is deliberately absent, and its absence
+# is the honest part: the in-box permission/curation guard was an opencode plugin mechanism.
+# Under Codex the same guarantee is the moat-rendered config (section 4 asserts the two
+# load-bearing lines) and extras section AJ reads the whole file back out of the box.
 #
 # Usage: bash test/e2e-codex.sh
 set -uo pipefail
@@ -122,10 +118,16 @@ EOF
 node "$WORK/codex-hashtree.mjs" write "$PROJECT" > "$WORK/codex-hash-before.json"
 capture codex-up $MOAT up --json --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL
 capture codex-status $MOAT status --json
-RUNTIME=$(json_field "$EVIDENCE/codex-status.out" "['runtime']" 2>/dev/null || echo "?")
+MODEL=$(json_field "$EVIDENCE/codex-status.out" "['model']" 2>/dev/null || echo "?")
 EGRESS=$(json_field "$EVIDENCE/codex-status.out" "['egress']" 2>/dev/null || echo "?")
-say "runtime: $RUNTIME   egress: $EGRESS"
-[ "$RUNTIME" = "codex" ] && verdict 0 "the environment was created on the codex runtime" || verdict 1 "runtime is not codex"
+say "model: $MODEL   egress: $EGRESS"
+[ "$MODEL" = "moat/mock-model" ] && verdict 0 "the environment was created with the model that was asked for" || verdict 1 "status does not record the requested model"
+# There is one runtime, so the claim to assert is that the box actually has it: the binary, in
+# the box, reporting its own version. The state file no longer records which runtime it is.
+capture codex-binary $MOAT exec -- codex --version
+grep -qE "^codex-cli [0-9]" "$EVIDENCE/codex-binary.txt" \
+  && verdict 0 "the box carries the pinned Codex CLI, and it runs there" \
+  || verdict 1 "no Codex CLI in the box"
 [ "$EGRESS" = "open" ] && verdict 0 "egress is open for a provider on the host loopback (the documented exception)" || verdict 1 "egress is not open for a loopback provider"
 
 section "3. isolation self-test from inside the sandbox"
@@ -137,7 +139,7 @@ grep -q "no variable from the host environment reached the sandbox" "$EVIDENCE/c
 
 section "4. the agent completes a task needing bash + file edits, and the project checks pass"
 start_mock "$REPO/test/scripts/responses-acceptance-task.json" | tee -a "$EVIDENCE/codex-summary.txt"
-capture codex-run-task $MOAT run --runtime codex "Make the failing test pass, then commit it."
+capture codex-run-task $MOAT run "Make the failing test pass, then commit it."
 capture codex-config-in-box $MOAT exec -- sh -c 'cat /root/.codex/config.toml'
 capture codex-verify $MOAT verify
 grep -qE "pass +npm test" "$EVIDENCE/codex-verify.txt" && ! grep -qE "FAIL +npm test" "$EVIDENCE/codex-verify.txt" \
@@ -169,7 +171,7 @@ section "5. the agent cannot read a host credential or the host project"
 sed -e "s|@HOSTHOME@|$HOME|g" -e "s|@HOSTPROJECT@|$PROJECT|g" \
   "$REPO/test/scripts/responses-host-access.json.tmpl" > "$WORK/responses-host-access.json"
 start_mock "$WORK/responses-host-access.json" >/dev/null
-capture codex-run-host-access $MOAT run --runtime codex "Try to read the host credentials and project directory, and report what happens."
+capture codex-run-host-access $MOAT run "Try to read the host credentials and project directory, and report what happens."
 capture codex-exec-host-paths $MOAT exec -- sh -c "ls /home 2>&1; cat /root/.ssh/id_rsa 2>&1 | head -1; echo canary:; ls $CANARY 2>&1"
 grep -q "No such file or directory" "$EVIDENCE/codex-exec-host-paths.txt" \
   && ! grep -q "HOST-ONLY-SECRET" "$EVIDENCE/codex-exec-host-paths.txt" \
@@ -230,7 +232,27 @@ grep -q "persisted-at-" "$EVIDENCE/codex-exec-after-restart.txt" && grep -qE "^j
   && verdict 0 "the marker file and the installed package both survived a full stop and boot" \
   || verdict 1 "the marker or the package did not survive"
 
-section "10. teardown"
+section "10. text from inside the box cannot drive the terminal it is printed on"
+# The answer, the reasoning, tool output, commit subjects, branch names and the boot log all
+# come from inside the box, and a terminal acts on the escape sequences in them: OSC 0 retitles
+# the window, OSC 52 writes the clipboard where the terminal allows it, CSI 2J clears the
+# screen. Every one of those print sites strips the ESC byte. The stub's scripted answer carries
+# the three sequences, so this is measured on the bytes rather than argued.
+start_mock "$REPO/test/scripts/responses-escape.json"
+capture codex-escape-run $MOAT run "Print the text you were given, exactly as it is."
+ESC_BYTES=$(grep -c $'\x1b' "$EVIDENCE/codex-escape-run.txt" 2>/dev/null || true)
+[ "${ESC_BYTES:-0}" = "0" ] \
+  && grep -q "clearing" "$EVIDENCE/codex-escape-run.txt" \
+  && grep -q "and done" "$EVIDENCE/codex-escape-run.txt" \
+  && verdict 0 "the answer's escape sequences were stripped and its text still arrived" \
+  || verdict 1 "an escape byte from the box reached the terminal (${ESC_BYTES:-?} lines)"
+# The control: the matcher detects an ESC byte when one is there, so the check above can fail.
+printf 'control\x1b[2J' | grep -q $'\x1b' \
+  && verdict 0 "control: the same matcher finds an ESC byte in a string that has one" \
+  || verdict 1 "control: the matcher does not detect ESC bytes, so the check above proves nothing"
+start_mock "$REPO/test/scripts/responses-acceptance-task.json"
+
+section "11. teardown"
 capture codex-down-final $MOAT down
 capture codex-status-final $MOAT status
 rm -f "$CANARY"

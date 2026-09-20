@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { AnswerRenderer, makeTheme, stripAnsi } from "../../cmd/display.ts"
+import { stripAnsi } from "../../lib/terminal.ts"
 
 const ESC = "\u001b"
 
@@ -33,33 +33,7 @@ test("a sequence split across two deltas cannot be reassembled", () => {
   }
 })
 
-test("an escape sequence in the model's answer never reaches the terminal", () => {
-  // The bug, end to end at the renderer: the answer and the reasoning are the
-  // model's words and were written to the terminal verbatim, while tool output was
-  // already stripped. An answer could clear the screen, retitle the window or (where
-  // the terminal allows it) write the clipboard. The theme is built with colour off,
-  // so every escape byte in this output would have come from the model.
-  const written: string[] = []
-  const renderer = new AnswerRenderer(makeTheme(false), (text) => written.push(text))
-  renderer.push(`careful ${ESC}]0;pwned\u0007 now\n`)
-  renderer.push(`${ESC}[2Jall done`)
-  renderer.flush()
-
-  const out = written.join("")
-  assert.equal(out.includes(ESC), false, `no escape byte may reach the terminal, got ${JSON.stringify(out)}`)
-  assert.match(out, /careful/)
-  assert.match(out, /all done/)
-})
-
-test("a sequence split across deltas is dropped, not reassembled", () => {
-  const written: string[] = []
-  const renderer = new AnswerRenderer(makeTheme(false), (text) => written.push(text))
-  renderer.push("hello \u001b[")
-  renderer.push("2Jworld")
-  renderer.flush()
-
-  const out = written.join("")
-  assert.equal(out.includes(ESC), false)
-  assert.match(out, /hello/)
-  assert.match(out, /world/)
-})
+// The end-to-end half — an escape sequence in the model's answer never reaching the terminal —
+// is asserted on bytes in test/e2e-codex.sh, where a scripted answer carries the sequences and
+// the captured output must contain no ESC at all. This file pins the stripper every print site
+// uses, including the property that makes a split sequence safe.

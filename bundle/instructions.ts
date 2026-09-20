@@ -3,10 +3,10 @@ import { SANDBOX_WORKDIR, type EgressMode } from "../lib/pins.ts"
 /**
  * The agent's environment brief.
  *
- * Written to `/root/.config/opencode/AGENTS.md` inside the sandbox, verified in
- * `packages/opencode/src/session/instruction.ts:61` as a global instruction file
- *, and never to the project. The user's repository is copied in byte-for-byte
- * and moat does not add files to it.
+ * Written to `/root/.codex/AGENTS.md` inside the sandbox, the global instruction file of the
+ * runtime in the box, and never to the project. The user's repository is copied in
+ * byte-for-byte and moat does not add files to it. Measured through the recording proxy: Codex
+ * sends the file's content in the request body, wrapped as AGENTS.md instructions.
  *
  * Why this exists: an agent that does not know it is in a disposable box wastes
  * turns being cautious, and an agent that does not know the network is open will

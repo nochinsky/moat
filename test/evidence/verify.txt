@@ -2,5 +2,30 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-! no test, lint or typecheck command found for this project
-  moat looks at package.json scripts, Makefile targets, pyproject.toml, Cargo.toml and go.mod
+! the egress allowlist could not resolve: not, a, host; the box will not reach them
+→ running npm run test inside the sandbox
+$ npm run test
+
+> test
+> node --test
+
+TAP version 13
+# Subtest: adds
+ok 1 - adds
+  ---
+  duration_ms: 1.01885
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 78.052287
+[moat] exit 0
+
+  pass  npm test                 0.3s
+

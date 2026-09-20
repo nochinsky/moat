@@ -1,0 +1,20 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --no-detect --no-credential
+--- exit 0
+--- stdout ---
+--- stderr ---
+→ installing the codex runtime into this environment
+profiles: everything requested is already installed
+copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
+model: deepseek/deepseek-flash (context 1M, out 384k)
+agent branch: moat-session-2026-09-20-14-49
+→ sandbox booted (pid 78440); the codex runtime has no server to wait for
+✓ sandbox up, warm start 765ms (image reused)
+
+  project    /home/user/moat-demo/codex-runtime
+  env        /home/user/.moat/envs/a3e8fefc7c25
+  runtime    codex (deepseek/deepseek-flash) — `moat` opens its TUI
+  workspace  /work (inside the sandbox)
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)

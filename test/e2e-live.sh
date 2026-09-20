@@ -111,14 +111,14 @@ say ""
 say "== 2. boot with the real provider"
 # ---------------------------------------------------------------------------
 run $MOAT destroy --yes
-run $MOAT up --runtime opencode --model "$MODEL" --profile "$PROFILE" --credential-env "$KEYVAR"
+run $MOAT up --model "$MODEL" --profile "$PROFILE" --credential-env "$KEYVAR"
 
 # ---------------------------------------------------------------------------
 say ""
 say "== 3. the agent does the work"
 # ---------------------------------------------------------------------------
-say "note: no output appears until the turn completes; watch the sandbox log for progress"
-run timeout "$TIMEOUT" $MOAT attach --show-output --prompt \
+say "the turn streams Codex's own events; --show-output adds each tool's output as it runs"
+run timeout "$TIMEOUT" $MOAT run --show-output \
   "npm test is failing. Run it, find the bug in src/slugify.js, and fix it so the whole suite passes. Then run npm install and verify the CLI works end to end. Commit everything to the branch you are on, and report the final test output."
 
 # ---------------------------------------------------------------------------
@@ -168,13 +168,12 @@ git diff --stat "$BEFORE_HEAD" "$(git for-each-ref --format='%(objectname)' 'ref
 
 # ---------------------------------------------------------------------------
 say ""
-say "== 7. the default runtime (codex) does a turn in the same environment"
+say "== 7. a second turn in the same environment, without booting it again"
 # ---------------------------------------------------------------------------
-say "the opencode turn above ran the session client; this one is the runtime a new"
-say "environment gets by default, driving the same sandbox and the same /work."
+say "one runtime, so this is the same box and the same /work: a second task must not"
+say "need another boot, and the file it writes must be there to read afterwards."
 say ""
-run $MOAT up --runtime codex --model "$MODEL" --credential-env "$KEYVAR"
-run timeout "$TIMEOUT" $MOAT run --runtime codex "Create a file named CODEX-LIVE.txt in the working tree whose contents are exactly: codex live. Do not modify any other file. Then finish."
+run timeout "$TIMEOUT" $MOAT run "Create a file named CODEX-LIVE.txt in the working tree whose contents are exactly: codex live. Do not modify any other file. Then finish."
 say ""
 say "--- the file, read by moat, and what the work tree looks like now ---"
 $MOAT exec -- /bin/sh -c 'cat /work/CODEX-LIVE.txt; echo; git -C /work status --short | head -4' 2>&1 | tee -a "$LOG"

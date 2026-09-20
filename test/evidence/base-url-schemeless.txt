@@ -1,4 +1,4 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --quiet --no-detect --model mock-model --base-url localhost:5599/v1
+--- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --model mock-model --base-url localhost:5599/v1
 --- exit 1
 --- stdout ---
 --- stderr ---

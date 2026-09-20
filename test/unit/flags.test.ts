@@ -44,8 +44,8 @@ test("everything after -- is a positional, never a flag", () => {
 })
 
 test("numbers are numbers, booleans take =false, and a value is required", () => {
-  const parsed = parse(["--port", "8080", "--yes=false", "--model", "m", "--tools=core"], SPEC, "up")
-  assert.deepEqual(parsed.flags, { port: 8080, yes: false, model: "m", tools: "core" })
+  const parsed = parse(["--timeout", "600", "--yes=false", "--model", "m", "--profile=node"], SPEC, "up")
+  assert.deepEqual(parsed.flags, { timeout: 600, yes: false, model: "m", profile: "node" })
   assert.throws(() => parse(["--model"], SPEC, "up"), /flag --model needs a value/)
 })
 
@@ -71,14 +71,17 @@ test("the flags the test suites pass to up stay declared", () => {
   // --quiet/--verbose/--help are global and covered by the test above.
   const used = [
     "no-detect", "profile", "model", "base-url", "credential-env", "credential-ttl",
-    "credential", "no-credential", "json", "timeout", "port", "tools", "upstream", "log-level",
-    "no-follow", "effort", "agent", "continue", "fresh", "sync", "yes", "force", "egress",
+    "credential", "no-credential", "json", "timeout", "upstream",
+    "no-follow", "fresh", "sync", "yes", "force", "egress",
     "egress-allow", "show-output", "refresh",
   ]
   const missing = used.filter((key) => !COMMAND_FLAGS.up!.includes(key))
   assert.deepEqual(missing, [])
-  // --model-id belongs to the one-shot attach path, not to a boot.
-  assert.ok(COMMAND_FLAGS.attach!.includes("model-id"))
+  // Every command in the table is a command moat has, and there is no attach/env/tools left:
+  // those were the opencode server's surfaces.
+  for (const command of ["attach", "env", "tools"]) {
+    assert.equal(Object.prototype.hasOwnProperty.call(COMMAND_FLAGS, command), false, command)
+  }
 })
 
 test("flag() reads what parse() parsed", () => {
