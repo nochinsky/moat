@@ -449,6 +449,18 @@ async function cmdUp(argv: string[]): Promise<number> {
   } catch (error) {
     log.fail((error as Error).message)
   }
+  // Every `log.fail` below exits this process, and the claim above belongs to this
+  // process: without this, a boot that fails on a bad flag leaves a marker whose
+  // owner is still alive, and the next `moat up` waits five minutes for a boot that
+  // is never going to start. `endBoot` only clears a marker whose pid is this one,
+  // and the boot path calls it again on the way out, which is a no-op by then.
+  process.once("exit", () => {
+    try {
+      endBoot(paths)
+    } catch {
+      /* the environment directory may already be gone */
+    }
+  })
 
   const json = flag<boolean>(p, "json") ?? false
   const report: Record<string, unknown> = { project: paths.projectDir, envId: paths.id }
@@ -715,6 +727,12 @@ async function cmdUp(argv: string[]): Promise<number> {
   // this box may have outlived — so they stop it and take the boot path below.
   if (state!.pid && sandboxAlive(state!, paths)) {
     if (task.length === 0 && !interactive) {
+      // The marker was claimed at the top of this command, as one atomic step with
+      // waiting for another boot. This path does not boot anything, so it must not
+      // leave the claim behind: a live process holding the marker would make the next
+      // `moat up` wait for a boot that is never going to start. `endBoot` only clears
+      // a marker whose pid is this process, so it cannot take someone else's.
+      endBoot(paths)
       if (json) log.emit({ ...report, status: "already-running", ...state })
       else printUpSummary(paths, state!, { coldStart: 0, reused: true, provisioned: false })
       return 0

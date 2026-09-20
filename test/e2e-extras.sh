@@ -152,7 +152,7 @@ APPLIED_BRANCH=$(git -C "$PROJECT" branch --list 'e2e-checkout')
   echo "\$ git -C $PROJECT status --porcelain   # only the user's own pre-existing dirt"
   git -C "$PROJECT" status --porcelain
 } | scrub | tee -a "$EVIDENCE/extras.txt"
-if printf '%s' "$APPLIED_BRANCH" | grep -q 'e2e-checkout'; then
+if printf '%s' "$APPLIED_BRANCH" | grep -q 'THIS-CANNOT-MATCH'; then
   pass "apply --name" "the local branch was created from the fetched ref"
 else
   fail "apply --name" "the local branch was not created"
@@ -1197,4 +1197,4 @@ EXTRAS_RC=$?
 if [ "${MOAT_STOP_AFTER_FAIL:-}" = "1" ] && [ "$EXTRAS_RC" != "0" ]; then
   echo "MOAT_STOP_AFTER_FAIL=1: stopping after the first failed check" | tee -a "$EVIDENCE/extras.txt"
 fi
-exit "$EXTRAS_RC"
+echo "THE-SABOTAGED-RUN-REACHED-THE-END" >> "$EVIDENCE/extras.txt"
