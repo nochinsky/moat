@@ -2481,10 +2481,10 @@ the new box, and says so only when there was something to reap — the datapath 
 exit on its own when the tap goes away. Extras section AG:
 
 ```
-box 395713, datapath 395735
+box 468466, datapath 468487
 datapath for that box still up one second after the kill: 1
-! reaped the datapath of a sandbox that is no longer running (pid 395735)
-after the second boot: old datapath 0, new datapath 1 (new box 395893)
+! reaped the datapath of a sandbox that is no longer running (pid 468487)
+after the second boot: old datapath 0, new datapath 1 (new box 468645)
 out-of-band kill: no orphaned datapath survives the next boot, and destroy takes the rest
 ```
 
@@ -2494,14 +2494,58 @@ the state a reboot with pid reuse leaves — so the datapath is certainly runnin
 next boot decides:
 
 ```
-recorded identity replaced; box 396027 datapath 396049
+recorded identity replaced; box 468772 datapath 468794
 datapath up while its box is still alive: 1
 stale identity: the datapath of a box that is not ours is reaped, and named
 ```
 
+The same record is the only hold `down`, `restore` and `destroy` have, and they clear or
+delete it. Reaping the datapath was the fix for `up` only, so a box that was already gone,
+or whose recorded identity was no longer ours, took its datapath with it into
+unattributability: `moat down` printed the stale-identity warning, wrote `slirpPid: null`
+and left the process running; `moat destroy --yes` deleted the environment (`state.json`
+with it) and left the process behind; `moat restore` cleared the datapath fields for a box
+it refused to signal. Measured before the fix, with the same stale-identity state:
+
+```
+$ moat down
+! the recorded sandbox is gone: pid 450750 now belongs to another process, so moat did not signal it.
+  the environment and its snapshots are kept
+after down: box_alive=yes slirp_alive=yes datapath=1        # state now: pid None, slirpPid None
+$ moat destroy --yes
+env dir exists: no
+after destroy: box_alive=yes slirp_alive=yes datapath=1     # record deleted, process not stopped
+```
+
+The reap is one function now (`forgetBox`), and every branch that ends a box goes through
+it, so the record cannot be cleared before the process is stopped. Extras section AG has a
+half per command, on the same deterministic stale identity:
+
+```
+down half: box 469093, datapath 469115, up before: 1
+! reaped the datapath of a sandbox that is no longer running (pid 469115)
+down: a datapath the recorded box cannot be signalled for is reaped, named, then forgotten
+! reaped the datapath of a sandbox that is no longer running (pid 469308)
+destroy: the environment is removed and its datapath with it
+! reaped the datapath of a sandbox that is no longer running (pid 469458)
+restore: the datapath is reaped before the record that names it is cleared
+```
+
+What this does not stop is the box itself: its recorded identity is stale, so `moat down`,
+`restore` and `destroy` refuse to signal that pid — that is the pid-reuse guard above — and
+`destroy` removes the environment while that process keeps running. Only the datapath, which
+moat can attribute by pid and start time, is reaped.
+
 `test/unit/stop-slirp.test.ts` holds the safety half without a sandbox: a recorded pid
 whose start time does not match is never signalled, one that matches is, and no record at
 all is a no-op. The mismatch case was watched failing with the start-time comparison removed.
+`test/unit/datapath-reap.test.ts` holds the shape: only `forgetBox` may write
+`slirpPid: null`, and it reaps before it writes (watched failing with a direct write back in
+`moat down`, naming the line), and a command that removes the environment has to call a
+reaper somewhere — a coarse rule that cannot see one branch of `destroy` losing its call
+while another branch keeps one, which is why the `destroy` half above is the per-branch
+proof (watched failing with that call removed: `destroy: FAILED — datapath left=1
+envdir=gone`).
 
 ### AF. The doctor reports the credential state the box has, not the one its probe invented
 

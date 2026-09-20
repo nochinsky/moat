@@ -1,5 +1,5 @@
 --- moat down said ---
-✓ sandbox stopped (pid 441125); the environment and its snapshots are kept
+✓ sandbox stopped (pid 463904); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 

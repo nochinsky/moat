@@ -1,0 +1,7 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts down
+--- exit 0
+--- stdout ---
+--- stderr ---
+! reaped the datapath of a sandbox that is no longer running (pid 469115)
+! the recorded sandbox is gone: pid 469093 now belongs to another process, so moat did not signal it.
+  the environment and its snapshots are kept

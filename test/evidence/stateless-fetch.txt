@@ -3,14 +3,14 @@
 --- stdout ---
 --- stderr ---
 → copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/main:refs/moat/main
-→ copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/moat-session-2026-09-20-00-03:refs/moat/moat-session-2026-09-20-00-03
-✓ fetched main -> refs/moat/main (a9824ecb98ba)
-  1 commit(s) reachable, HEAD a9824ecb98ba -> a9824ecb98ba
-    a9824ecb98ba  init
-✓ fetched moat-session-2026-09-20-00-03 -> refs/moat/moat-session-2026-09-20-00-03 (183d8ca1ac47)
-  2 commit(s) reachable, HEAD a9824ecb98ba -> a9824ecb98ba
-    183d8ca1ac47  agent: work the host has never seen
-    a9824ecb98ba  init
+→ copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/moat-session-2026-09-20-00-28:refs/moat/moat-session-2026-09-20-00-28
+✓ fetched main -> refs/moat/main (be4c0e44194a)
+  1 commit(s) reachable, HEAD be4c0e44194a -> be4c0e44194a
+    be4c0e44194a  init
+✓ fetched moat-session-2026-09-20-00-28 -> refs/moat/moat-session-2026-09-20-00-28 (67b5ad5a9ff4)
+  2 commit(s) reachable, HEAD be4c0e44194a -> be4c0e44194a
+    67b5ad5a9ff4  agent: work the host has never seen
+    be4c0e44194a  init
 
   the host working tree was recomputed and is byte-identical
   inspect with:  git log refs/moat/main

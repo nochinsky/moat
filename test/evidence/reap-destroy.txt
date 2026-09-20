@@ -1,0 +1,6 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts destroy --yes
+--- exit 0
+--- stdout ---
+--- stderr ---
+! reaped the datapath of a sandbox that is no longer running (pid 469308)
+✓ destroyed /home/user/.moat/envs/f7355b303b3e

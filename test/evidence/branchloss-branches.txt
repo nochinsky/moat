@@ -3,9 +3,9 @@
 --- stdout ---
   experiment
   main
-* moat-session-2026-09-20-00-06
+* moat-session-2026-09-20-00-31
 --- all commits ---
-bb2a974 important work on a side branch
-c82df24 moat: state copied from the host
-62ea1f8 base
+5f0c311 important work on a side branch
+43cb6c0 moat: state copied from the host
+c4eb713 base
 --- stderr ---

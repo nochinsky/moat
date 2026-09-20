@@ -1,11 +1,11 @@
-planted in /home/user/.moat/envs/0cc7b2c8dbc5: branch moat-session-2026-09-20-00-04, log.showSignature=true, gpg.program=<work>/evil-gpg.sh
+planted in /home/user/.moat/envs/0cc7b2c8dbc5: branch moat-session-2026-09-20-00-29, log.showSignature=true, gpg.program=<work>/evil-gpg.sh
 
 › moat · moat/mock-model · /home/user/moat-demo/diff-hardening
 › type a task and press enter. /help for commands, ctrl-c to interrupt.
 › 
 › › /diff
 
-›   0e8c393 agent: crafted commit
+›   c420c5f agent: crafted commit
 › 
 ›   uncommitted (not fetched by moat fetch):
 ›     new file: evil-gpg.sh

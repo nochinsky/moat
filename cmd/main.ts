@@ -202,6 +202,55 @@ function sandboxAlive(state: EnvState, paths: EnvPaths): boolean {
   return sandboxPidStatus(state.pid, { startTime: state.pidStart, envId: paths.id }) === "ours"
 }
 
+/**
+ * Stop the datapath recorded for an environment whose box is not running.
+ *
+ * slirp4netns is its own process, so a box that dies out of band — killed, OOM, host
+ * reboot — leaves it running, and only a command that still holds its pid on record can
+ * stop it. `moat up` reaps one before it overwrites state.json; `down`, `restore` and
+ * `destroy` are about to forget or delete that record, so they reap first. Otherwise the
+ * process outlives every command that could attribute it, and `moat destroy --all` — the
+ * documented way to reclaim what moat holds — cannot see it.
+ *
+ * `stopSlirp` matches the recorded start time, so a pid the host handed to something else
+ * is left alone, and it returns true only when there was a live datapath to signal: the
+ * warning is printed on that answer, never on the attempt.
+ */
+async function reapRecordedDatapath(state: Pick<EnvState, "slirpPid" | "slirpStart"> | null): Promise<boolean> {
+  if (!state?.slirpPid) return false
+  const reaped = await stopSlirp(state.slirpPid, state.slirpStart ?? null)
+  if (reaped) log.warn(`reaped the datapath of a sandbox that is no longer running (pid ${state.slirpPid})`)
+  return reaped
+}
+
+/**
+ * Mark an environment stopped: reap its datapath, then clear the record.
+ *
+ * This is the only place `cmd/main.ts` clears the *datapath* record from state.json.
+ * Every branch that ends a box goes through it — the ones that stopped the box, and the
+ * ones that found it already gone, whose only remaining hold on the datapath is the
+ * record itself. (A branch that drops the box pid but keeps the datapath record, like
+ * `requireRunning`, is the other safe shape: the process is still attributable.) Both
+ * parts here are easy to do in the wrong order and impossible to notice afterwards: the
+ * process keeps running and nothing on disk names it any more.
+ *
+ * `test/unit/datapath-reap.test.ts` holds the shape: a direct `slirpPid: null` write
+ * outside this function is the bug coming back.
+ */
+async function forgetBox(paths: EnvPaths, state: EnvState): Promise<EnvState> {
+  await reapRecordedDatapath(state)
+  const stopped: EnvState = {
+    ...state,
+    status: "stopped",
+    pid: null,
+    pidStart: null,
+    slirpPid: null,
+    slirpStart: null,
+  }
+  writeState(paths, stopped)
+  return stopped
+}
+
 /** Where to prove an allowlisted endpoint is still reachable, for the doctor. */
 function providerProbe(baseUrl: string): { host: string; port: number } | undefined {
   try {
@@ -711,8 +760,7 @@ async function cmdUp(argv: string[]): Promise<number> {
       slirpPid: state!.slirpPid,
       slirpStart: state!.slirpStart,
     })
-    state = { ...state!, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null }
-    writeState(paths, state)
+    state = await forgetBox(paths, state!)
   }
 
   // Changing egress mode changes the namespaces the sandbox runs in, so the box
@@ -731,8 +779,7 @@ async function cmdUp(argv: string[]): Promise<number> {
       slirpPid: state!.slirpPid,
       slirpStart: state!.slirpStart,
     })
-    state = { ...state!, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null }
-    writeState(paths, state)
+    state = await forgetBox(paths, state!)
   }
 
   // A stopped sandbox may still be draining; make sure the recorded pid is gone.
@@ -1098,12 +1145,7 @@ ${command}
   // this the old datapath becomes unattributable and outlives even `moat destroy`.
   // Measured before the fix: one `kill -9` of the box, then `moat up` left two
   // slirp4netns processes, and `moat destroy` removed only the new one.
-  if (state?.slirpPid && !sandboxAlive(state, paths)) {
-    // The datapath may have exited on its own when the box died, so only say "reaped"
-    // when there was something to reap.
-    const reaped = await stopSlirp(state.slirpPid, state.slirpStart)
-    if (reaped) log.warn(`reaped the datapath of a sandbox that is no longer running (pid ${state.slirpPid})`)
-  }
+  if (state?.slirpPid && !sandboxAlive(state, paths)) await reapRecordedDatapath(state)
 
   const sandbox = await startSandbox(paths, entry, sandboxEnvVars, {
     egress,
@@ -1154,7 +1196,7 @@ ${command}
       slirpPid: sandbox.slirp?.pid ?? null,
       slirpStart: sandbox.slirp?.startTime ?? null,
     })
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
+    await forgetBox(paths, state)
     log.fail(`opencode serve did not come up (${ready.detail}).\n--- sandbox log ---\n${tail}`)
   }
 
@@ -1170,7 +1212,7 @@ ${command}
         slirpPid: sandbox.slirp?.pid ?? null,
         slirpStart: sandbox.slirp?.startTime ?? null,
       })
-      writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
+      await forgetBox(paths, state)
       log.fail(
         `the credential was found on disk inside the sandbox:\n  ${leaks.slice(0, 5).join("\n  ")}\n` +
           "  moat refuses to continue: the value is only meant to exist in the sandbox process environment.",
@@ -1770,12 +1812,16 @@ async function cmdDown(argv: string[]): Promise<number> {
   const state = requireState(paths)
   const status = sandboxPidStatus(state.pid, { startTime: state.pidStart, envId: paths.id })
   if (status === "gone") {
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
+    // The box is gone, but its datapath is a separate process and may not be, and this
+    // branch is about to drop the only record of it.
+    await forgetBox(paths, state)
     log.info("sandbox is not running")
     return 0
   }
   if (status === "stale") {
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
+    // Same as the gone branch: the recorded datapath is still ours by pid and start
+    // time even though the recorded box is not.
+    await forgetBox(paths, state)
     log.warn(
       `the recorded sandbox is gone: pid ${state.pid} now belongs to another process, so moat did not signal it.`,
     )
@@ -1790,7 +1836,7 @@ async function cmdDown(argv: string[]): Promise<number> {
       slirpStart: state.slirpStart,
     })
   ) {
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
+    await forgetBox(paths, state)
     log.success(`sandbox stopped (pid ${state.pid}); the environment and its snapshots are kept`)
     log.info(`  resume with: moat up`)
     log.info(`  remove with: moat destroy`)
@@ -1828,12 +1874,17 @@ async function cmdDestroy(argv: string[]): Promise<number> {
       const envState = readState(env)
       const size = await rootfsSizeBytes(env)
       if (envState?.pid) {
+        // stopSandbox reaps the recorded datapath too, whether or not the box answered.
         await stopSandbox(envState.pid, {
           startTime: envState.pidStart,
           envId: envState.id,
           slirpPid: envState.slirpPid,
           slirpStart: envState.slirpStart,
         })
+      } else {
+        // A state that recorded a datapath but no box pid still names a process moat
+        // started, and deleting the environment deletes the record with it.
+        await reapRecordedDatapath(envState)
       }
       if (destroyEnv(env)) {
         freed += size
@@ -1859,6 +1910,12 @@ async function cmdDestroy(argv: string[]): Promise<number> {
       slirpPid: state.slirpPid,
       slirpStart: state.slirpStart,
     })
+  } else {
+    // The recorded box is gone or is no longer ours, so nothing above touched the
+    // datapath — and destroyEnv is about to delete the only record of it. Measured
+    // before this: the box was killed out of band, destroy removed the environment and
+    // left the slirp4netns process running with nothing naming it.
+    await reapRecordedDatapath(state)
   }
   const removed = destroyEnv(paths)
   if (removed) log.success(`destroyed ${paths.dir}`)
@@ -2033,10 +2090,12 @@ async function cmdRestore(argv: string[]): Promise<number> {
       slirpPid: state.slirpPid,
       slirpStart: state.slirpStart,
     })
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
+    await forgetBox(paths, state)
     log.info(`stopped sandbox pid ${state.pid} before restoring`)
   } else if (state.pid) {
-    writeState(paths, { ...state, status: "stopped", pid: null, pidStart: null, slirpPid: null, slirpStart: null })
+    // Not our box (stale pid, or nothing listening), but the datapath is matched by pid
+    // and start time.
+    await forgetBox(paths, state)
   }
   await restoreEnv(paths, name!)
   log.success(`restored rootfs snapshot ${name} (the project copy in /work was preserved)`)

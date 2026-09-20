@@ -153,13 +153,17 @@ the long-running boot takes it: ephemeral boots (`moat exec`, `moat doctor`,
 
 A sandbox in an own-namespace mode also has a **datapath process** (`slirp4netns`), and
 that process outlives the box if the box dies out of band — a `kill -9`, an OOM kill, a
-host reboot. `moat down`, `moat destroy`, `moat restore` and the restart inside
-`moat up` stop it after the box, and a boot that is about to start a **new** box reaps a
-recorded datapath whose box is no longer alive: booting overwrites `state.json`, and a
-process nobody records can never be attributed again. Measured before that: one
-`kill -9`, then `moat up` left two `slirp4netns` processes, and `moat destroy`
-reclaimed only the new one. A recorded pid is signalled only while its `/proc` start time
-still matches the record.
+host reboot. Every command that ends a box reaps it, in one place
+(`forgetBox` in `cmd/main.ts`): the record in `state.json` is the only hold anything
+has on that process, so `moat down`, `moat restore` and `moat destroy` stop the
+recorded datapath *before* they clear or delete the record, and the restart inside
+`moat up` reaps one before it overwrites the record with a new box's. Booting is what
+used to make an old datapath unattributable — measured: one `kill -9`, then `moat up`
+left two `slirp4netns` processes, and `moat destroy` reclaimed only the new one — and the
+same record is what `down`, `restore` and `destroy` had already cleared for a box that
+was gone or no longer theirs, leaving the process running with nothing on disk naming it.
+A recorded pid is signalled only while its `/proc` start time still matches the record, so
+a pid the host has handed to another process is left alone.
 
 ### 2.3 Boot sequence, the exact commands
 

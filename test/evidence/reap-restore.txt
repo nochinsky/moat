@@ -1,0 +1,6 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts restore reap-base --yes
+--- exit 0
+--- stdout ---
+--- stderr ---
+! reaped the datapath of a sandbox that is no longer running (pid 469458)
+✓ restored rootfs snapshot reap-base (the project copy in /work was preserved)

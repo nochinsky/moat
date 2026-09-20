@@ -897,6 +897,83 @@ fi
 # here; its datapath is already gone.
 kill -9 -- "-$LIVE_BOX" 2>/dev/null
 ( cd "$KD" && $MOAT destroy --yes >/dev/null 2>&1 )
+# Half three: `down` and `destroy` hold the only record of a datapath too. A box whose
+# recorded identity is stale — what a reboot with pid reuse leaves — is one they refuse to
+# signal, and both used to clear or delete the record without stopping the process.
+# Measured before the fix: `moat down` printed "the recorded sandbox is gone", set slirpPid
+# to null, and left the slirp4netns process running with nothing on disk naming it.
+stale_identity() {
+  python3 - "$1" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+state = json.load(open(path))
+state["pidStart"] = "not-the-process-that-is-running"
+json.dump(state, open(path, "w"), indent=2)
+PYEOF
+}
+REAP_ENV="$WORK/datapath-reap"
+rm -rf "$REAP_ENV"; mkdir -p "$REAP_ENV"
+( cd "$REAP_ENV" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
+  && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
+( cd "$REAP_ENV" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$REAP_ENV" && capture reap-down-up $MOAT up --quiet --no-detect --no-credential --egress isolated \
+  --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
+( cd "$REAP_ENV" && capture reap-down-status $MOAT status --json )
+DSTATE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['envDir'])" "$EVIDENCE/reap-down-status.out")/state.json
+DBOX=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['pid'])" "$DSTATE")
+DSLIRP=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['slirpPid'])" "$DSTATE")
+echo "down half: box $DBOX, datapath $DSLIRP, up before: $(count_datapath "$DBOX")" | tee -a "$EVIDENCE/extras.txt"
+stale_identity "$DSTATE"
+( cd "$REAP_ENV" && capture reap-down $MOAT down )
+DOWN_LEFT=$(count_datapath "$DBOX")
+DOWN_RECORD=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['slirpPid'])" "$DSTATE")
+if [ "$DOWN_LEFT" = "0" ] && [ "$DOWN_RECORD" = "None" ] \
+   && grep -q "reaped the datapath of a sandbox that is no longer running (pid $DSLIRP)" "$EVIDENCE/reap-down.txt"; then
+  echo "down: a datapath the recorded box cannot be signalled for is reaped, named, then forgotten" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "down: FAILED — datapath left=$DOWN_LEFT recorded=$DOWN_RECORD" | tee -a "$EVIDENCE/extras.txt"
+fi
+kill -9 -- "-$DBOX" 2>/dev/null
+( cd "$REAP_ENV" && $MOAT destroy --yes >/dev/null 2>&1 )
+
+# Half four: `destroy` deletes the environment, so the record goes with the directory.
+( cd "$REAP_ENV" && capture reap-destroy-up $MOAT up --quiet --no-detect --no-credential --egress isolated \
+  --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
+( cd "$REAP_ENV" && capture reap-destroy-status $MOAT status --json )
+DSTATE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['envDir'])" "$EVIDENCE/reap-destroy-status.out")/state.json
+DENVDIR=$(dirname "$DSTATE")
+XBOX=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['pid'])" "$DSTATE")
+XSLIRP=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['slirpPid'])" "$DSTATE")
+stale_identity "$DSTATE"
+( cd "$REAP_ENV" && capture reap-destroy $MOAT destroy --yes )
+DEST_LEFT=$(count_datapath "$XBOX")
+if [ "$DEST_LEFT" = "0" ] && [ ! -e "$DENVDIR" ] \
+   && grep -q "reaped the datapath of a sandbox that is no longer running (pid $XSLIRP)" "$EVIDENCE/reap-destroy.txt"; then
+  echo "destroy: the environment is removed and its datapath with it" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "destroy: FAILED — datapath left=$DEST_LEFT envdir=$([ -e "$DENVDIR" ] && echo present || echo gone)" | tee -a "$EVIDENCE/extras.txt"
+fi
+kill -9 -- "-$XBOX" 2>/dev/null
+
+# Half five: `restore` clears the datapath fields for a box it will not signal.
+( cd "$REAP_ENV" && capture reap-restore-up $MOAT up --quiet --no-detect --no-credential --egress isolated \
+  --model mock-model --base-url "http://127.0.0.1:$MOCK_PORT/v1" )
+( cd "$REAP_ENV" && capture reap-restore-status $MOAT status --json )
+DSTATE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['envDir'])" "$EVIDENCE/reap-restore-status.out")/state.json
+RBOX=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['pid'])" "$DSTATE")
+RSLIRP=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['slirpPid'])" "$DSTATE")
+( cd "$REAP_ENV" && capture reap-restore-snapshot $MOAT snapshot reap-base --yes )
+stale_identity "$DSTATE"
+( cd "$REAP_ENV" && capture reap-restore $MOAT restore reap-base --yes )
+REST_LEFT=$(count_datapath "$RBOX")
+if [ "$REST_LEFT" = "0" ] \
+   && grep -q "reaped the datapath of a sandbox that is no longer running (pid $RSLIRP)" "$EVIDENCE/reap-restore.txt"; then
+  echo "restore: the datapath is reaped before the record that names it is cleared" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "restore: FAILED — datapath left=$REST_LEFT" | tee -a "$EVIDENCE/extras.txt"
+fi
+kill -9 -- "-$RBOX" 2>/dev/null
+( cd "$REAP_ENV" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AH. the doctor reports the credential state the box actually has"
 # The probe injects the credential *names* so the environment check models the real box, but
 # it injected all of them unconditionally: a box booted with --no-credential — the "nothing

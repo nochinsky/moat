@@ -4,24 +4,24 @@
 › 
 › › write a file and commit it
 
-  ⠏ bash  ⠋ bash  ⠙ bash  ✓ bash       printf 'agent file\n' > escaped.txt && printf x > $'esc-file-\033]0;pwned-fi…  162ms
+  ⠧ bash  ⠇ bash  ⠏ bash  ✓ bash       printf 'agent file\n' > escaped.txt && printf x > $'esc-file-\033]0;pwned-fi…  125ms
 
-  ⠹ thinking 1s  ⠸ thinking 1s  ⠼ thinking 1s│   before  mid  after
+  ⠋ thinking 1s  ⠙ thinking 1s  ⠹ thinking 1s│   before  mid  after
 
-  ─ 2.0k in · 25 out · 8 reasoning · 1 tool · 1.4s  2% of context  cost unknown
+  ─ 2.0k in · 25 out · 8 reasoning · 1 tool · 1.2s  2% of context  cost unknown
 › › /take
-→ copy-out: git fetch /home/user/.moat/envs/63d1295bd261/rootfs/work +refs/heads/moat-session-2026-09-20-00-03:refs/moat/moat-session-2026-09-20-00-03
+→ copy-out: git fetch /home/user/.moat/envs/63d1295bd261/rootfs/work +refs/heads/moat-session-2026-09-20-00-28:refs/moat/moat-session-2026-09-20-00-28
 
-›   moat-session-2026-09-20-00-03  2 commit(s), ad8247294251
-›     ad82472942  agent: subject  here
-›     2b40a260ce  escapes: initial commit
+›   moat-session-2026-09-20-00-28  2 commit(s), 7998b5835d50
+›     7998b5835d  agent: subject  here
+›     74166142e4  escapes: initial commit
 › 
 ›   working tree untouched
-›   accept:  moat apply moat-session-2026-09-20-00-03 --checkout
-›   reject:  git update-ref -d refs/moat/moat-session-2026-09-20-00-03
+›   accept:  moat apply moat-session-2026-09-20-00-28 --checkout
+›   reject:  git update-ref -d refs/moat/moat-session-2026-09-20-00-28
 › › /diff
 
-›   ad82472 agent: subject  here
+›   7998b58 agent: subject  here
 › 
 ›    escaped.txt | 1 +
 ›    1 file changed, 1 insertion(+)
