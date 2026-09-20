@@ -3,6 +3,7 @@
 create a file and commit it
 /apply
 yes
+/quit
 
 
 --- on disk ---
@@ -13,8 +14,8 @@ yes
   FAIL  apply showed a plan
   FAIL  apply asked before writing
   FAIL  the file landed in the directory
-  FAIL  the session stayed open
+  pass  the session stayed open
   pass  a binary file did not stop the plan
   pass  the binary file survived apply byte for byte
 
-2/7 checks passed
+3/7 checks passed

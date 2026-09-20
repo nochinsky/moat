@@ -3,7 +3,6 @@
 make the migration
 2
 /verify
-/quit
 
 
 --- checks ---

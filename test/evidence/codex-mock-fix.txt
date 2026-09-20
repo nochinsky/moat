@@ -1,0 +1,6 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c cat /work/src/sum.js; git -C /work log --oneline -1
+--- exit 0
+--- stdout ---
+export const sum = (a, b) => a + b
+903c1ea fix: sum adds
+--- stderr ---

@@ -2,8 +2,6 @@
   Run `moat` for its TUI, or `moat run --runtime codex "task"`.
 write a file and commit it
 /take
-/diff
-/quit
 
 
 --- checks ---

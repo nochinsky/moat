@@ -4,7 +4,6 @@
 fix the failing tests and commit it
 /diff
 /help
-/quit
 
 
 --- checks ---

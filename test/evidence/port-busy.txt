@@ -1,7 +1,7 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --quiet --no-detect --port 33409 --timeout 5 --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
+--- $ node /home/user/Projects/moat/cmd/main.ts up --runtime opencode --quiet --no-detect --port 39129 --timeout 5 --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 1
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✗ --port 33409 is already in use on this host (nothing can bind 127.0.0.1:33409).
+✗ --port 39129 is already in use on this host (nothing can bind 127.0.0.1:39129).
   pick another port, or drop --port and moat will choose a free one.

@@ -6,21 +6,21 @@
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + opencode 1.18.31)
 → provisioning from the cached image alpine-3.21.4-db69c015961d.tar.gz
-✓ image provisioned in 1.01s (extract cached image 862ms)
+✓ image provisioned in 1.01s (extract cached image 863ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 5ea85862e8d72055
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist — and DNS — can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-03-08
-→ sandbox booted (pid 586424, port 40739); waiting for opencode serve
-✓ sandbox up, cold start 12.48s (image built)
+agent branch: moat-session-2026-09-20-03-21
+→ sandbox booted (pid 600743, port 34361); waiting for opencode serve
+✓ sandbox up, cold start 12.40s (image built)
 
   project    /home/user/moat-demo/egress-default
   env        /home/user/.moat/envs/2a1bb9cb2696
-  opencode   http://127.0.0.1:40739  (basic auth user "opencode")
-  password   2r91fwfBmKpr816yuEUGkrj9JNIcqU-G
+  opencode   http://127.0.0.1:34361  (basic auth user "opencode")
+  password   gic_GPDgG7FfmJ74HkObZz9tOavWh_9b
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T07:08:09.077Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T07:21:26.383Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

@@ -6,10 +6,10 @@ project      /home/user/moat-demo/codex-runtime
 env          /home/user/.moat/envs/a3e8fefc7c25
 status       running
 runtime      codex (deepseek/deepseek-flash)
-pid          583809
+pid          598088
 model        deepseek/deepseek-flash (deepseek)
-branch       moat-session-2026-09-20-03-06
+branch       moat-session-2026-09-20-03-19
 egress       filtered (own network namespace, default-deny allowlist)
 rootfs       298.7 MiB
 snapshots    baseline
-branches     main, moat-session-2026-09-20-03-06*
+branches     main, moat-session-2026-09-20-03-19*

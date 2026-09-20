@@ -7,16 +7,16 @@ egress: open, because the provider is on the host's loopback (http://127.0.0.1:5
 ✓ copy-in via git: 1 files, 0.1 KiB, digest 4c6dd1a629071812
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-03-02
+agent branch: moat-session-2026-09-20-03-15
 checks: npm run test
-✓ sandbox up, cold start 13.36s (image built)
+✓ sandbox up, cold start 13.00s (image built)
 
   project    /home/user/moat-demo/slowchecks
   env        /home/user/.moat/envs/cb5aa1a212b5
-  opencode   http://127.0.0.1:37061  (basic auth user "opencode")
-  password   iaarPdRY2StCAWUv6ca3j8izh2t3jSRI
+  opencode   http://127.0.0.1:34279  (basic auth user "opencode")
+  password   yLPDxflTUmVIh-js2sUEPDX45vvZFpeV
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-20T07:02:03.869Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-20T07:15:32.853Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

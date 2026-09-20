@@ -1,0 +1,30 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts verify
+--- exit 0
+--- stdout ---
+--- stderr ---
+→ running npm run test inside the sandbox
+$ npm run test
+
+> test
+> node --test
+
+TAP version 13
+# Subtest: adds
+ok 1 - adds
+  ---
+  duration_ms: 0.846156
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 71.962428
+[moat] exit 0
+
+  pass  npm test                 0.3s
+
