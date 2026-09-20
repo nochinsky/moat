@@ -1546,7 +1546,13 @@ async function cmdVerify(argv: string[]): Promise<number> {
   // accepted and ignored, so a suite that hangs ran to the ten-minute default with
   // no way to shorten it from the CLI.
   const results = await runChecks(paths, checks, {
-    onOutput: (chunk) => process.stderr.write(chunk),
+    // The project's own test output is written by code the agent can edit, and a
+    // terminal acts on what it is given: OSC 0 retitles the window, OSC 52 writes the
+    // clipboard, CSI 2J clears the screen, a carriage return repaints the row. This is
+    // the command the user runs *instead of* trusting the agent, so the bytes go through
+    // the same print boundary as every other string out of the sandbox. Stripping
+    // per chunk is safe: stripAnsi removes every ESC byte, so nothing can be reassembled.
+    onOutput: (chunk) => process.stderr.write(stripAnsi(chunk)),
     timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
     ...runtime,
   })
@@ -1621,7 +1627,7 @@ async function cmdTake(argv: string[]): Promise<number> {
         const mark = check.ok ? log.green("pass") : log.red("FAIL")
         log.info(`  ${mark}  ${check.label.padEnd(24)} ${log.dim(`${(check.ms / 1000).toFixed(1)}s`)}`)
         if (!check.ok) {
-          for (const line of check.output.split("\n").slice(-6)) log.info(`      ${log.dim(line)}`)
+          for (const line of check.output.split("\n").slice(-6)) log.info(`      ${log.dim(stripAnsi(line))}`)
         }
       }
     }

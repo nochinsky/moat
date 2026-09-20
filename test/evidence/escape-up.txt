@@ -1,0 +1,20 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-credential --egress isolated --profile node --model deepseek-flash
+--- exit 0
+--- stdout ---
+--- stderr ---
+✓ image provisioned in 1.56s (extract cached image 1.33s)
+✓ copy-in via git: 2 files, 0.2 KiB, digest b27d5e7ef3c1a586
+model: deepseek/deepseek-flash (context 1M, out 384k)
+agent branch: moat-session-2026-09-20-00-08
+checks: npm run test
+✓ sandbox up, cold start 10.16s (image built)
+
+  project    /home/user/moat-demo/escape-check
+  env        /home/user/.moat/envs/376d0bba6c50
+  opencode   http://127.0.0.1:41089  (basic auth user "opencode")
+  password   ogWJ8U0Bo_qzaPY0htZwOCzWgKsYg4ct
+  workspace  /work (inside the sandbox)
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)

@@ -794,12 +794,20 @@ host. The sandbox already runs the server, so that dependency was never
 necessary.
 
 Nothing the sandbox prints is trusted as terminal input. The answer, the
-reasoning, tool output, commit subjects, branch names, change paths and the boot
-log all arrive as bytes, and a terminal acts on the escape sequences in them: a
-window title, a clipboard write, an erased screen. They are stripped at the print
-boundary (`stripAnsi`, `cmd/display.ts`) — per delta for the streamed answer, so a
-sequence split across two deltas cannot be reassembled on screen. What remains is
-text.
+reasoning, tool output, commit subjects, branch names, change paths, the boot log
+**and the output of the project's own checks** all arrive as bytes, and a terminal
+acts on the escape sequences in them: a window title, a clipboard write, an erased
+screen. They are stripped at the print boundary (`stripAnsi`, now in
+`lib/terminal.ts`) — per delta for the streamed answer and per chunk for check
+output, so a sequence split across two writes cannot be reassembled on screen. What
+remains is text.
+
+The checks matter twice over. A check is the project's own command, and the agent
+can edit it: a failing test that prints OSC 0 or CSI 2J would retitle the window or
+clear the screen while the user reads the output of the very command they ran
+*instead of* trusting the agent. `moat verify` streams that output live, and
+`moat take` and the session's `/verify` print the last lines of a failure, so all
+three strip before printing.
 
 The pty suites drive the CLI through a real terminal and assert on what comes
 back: `repl-smoke.py` (the session, the layout, the turn footer),
@@ -956,6 +964,12 @@ with no tests is reported as having no checks rather than as failing them.
 through; the default is 600 seconds per check, after which the command is killed
 (`--kill-after` escalates, so a check that traps SIGTERM still dies) and reported as
 timed out rather than as a failure of the project.
+
+The check's output is sandbox text and is stripped at every print boundary — the
+live stream in `moat verify`, the last six lines of a failure in `moat take`, the
+last eight in the session's `/verify` (§6b.5). It is also the *project's* code: a
+test the agent wrote can print anything, and the user is reading this output to
+decide whether to keep that agent's work.
 
 No model is involved in the verdict: moat runs the declared command in the sandbox
 and reports the exit code. A check that times out is reported as timed out rather

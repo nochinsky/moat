@@ -2560,6 +2560,40 @@ injects for each combination of credential and provider, that only credential-be
 are called the credential, and that a keyless box is not offered key rotation. All three were
 watched failing with the old list and the old wording restored.
 
+### AG. A project's own check output cannot drive the terminal it is printed on
+
+`moat verify` streams the check's output as it arrives, and `moat take` and the session's
+`/verify` print the last lines of a failure. Those bytes are the *project's* own test output —
+code the agent can edit — and they were printed without the print-boundary stripping every
+other sandbox string goes through. Measured before the fix, with a `test` script that prints
+an OSC title sequence and a clear-screen:
+
+```
+$ moat verify            # stderr captured
+stderr bytes: 223, ESC bytes: 4, marker present: True
+first bytes: …> node escape.js\n\n\x1b]0;PWNED-TITLE\x07\x1b[2JMOAT-CHECK-MARKER\n
+```
+
+`moat take`'s failure listing carried the same four bytes. A failing test the agent wrote
+could retitle the window or clear the screen while the user read the output of the command
+they ran *instead of* trusting it.
+
+After the fix, the same project:
+
+```
+escape-verify: 194 stderr bytes, 0 ESC byte(s), marker present: True
+escape-take: 787 stderr bytes, 0 ESC byte(s), marker present: True
+check output: escapes are dropped, and the text around them still reaches the user
+```
+
+The marker is the control: the output is still streamed and still readable, so the fix removed
+the escape bytes rather than the evidence. `moat verify` strips per chunk — safe because
+`stripAnsi` removes every ESC byte, so a sequence split across writes cannot be reassembled,
+the property `test/unit/terminal-text.test.ts` already pins — and `moat take` and the
+session's `/verify` strip per line. Extras section AI asserts on the raw bytes of both
+captures, and was watched failing with the streaming site reverted (4 ESC bytes, verdict
+FAILED).
+
 ---
 
 ## Requirement-by-requirement

@@ -3,19 +3,19 @@
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.07s (extract cached image 885ms)
+✓ image provisioned in 1.08s (extract cached image 894ms)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 223d6a805fbb38e3
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-19-23-45
-✓ sandbox up, cold start 9.89s (image built)
+agent branch: moat-session-2026-09-20-00-03
+✓ sandbox up, cold start 12.60s (image built)
 
   project    /home/user/moat-demo/stateless
   env        /home/user/.moat/envs/47af90427aba
-  opencode   http://127.0.0.1:34749  (basic auth user "opencode")
-  password   syKAKcfcApZeEv3C4tJbHD1Jm1IHLgZB
+  opencode   http://127.0.0.1:38865  (basic auth user "opencode")
+  password   z-qaj8gDovLKHPdH_gEuPAKsb--ajsKI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-20T03:45:56.231Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-20T04:03:13.200Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

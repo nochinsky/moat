@@ -364,6 +364,16 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   that came out of the sandbox without it: paths, refs and subjects included.
   `test/unit/terminal-text.test.ts`, `test/repl-escapes.py` and extras section V hold
   it there (4 of the 7 pty checks fail with `stripAnsi` made a no-op).
+* The project's own **check output** is the same untrusted text, and it was easy to miss:
+  `moat verify` streamed it to stderr chunk by chunk, and `moat take` and the session's
+  `/verify` printed the last lines of a failure — none of them stripped. A failing test
+  the agent wrote could retitle the window or clear the screen while the user read the
+  output of the command they ran *instead of* trusting it (measured: four raw ESC bytes
+  on the terminal from a `test` script). All three strip now (`stripAnsi(chunk)` for the
+  stream, per line for the listings); per chunk is safe because `stripAnsi` removes every
+  ESC byte, so a sequence split across writes cannot be reassembled. Extras section AI
+  asserts on the bytes: zero ESC in the verify and take captures, marker text still
+  present in both.
 * Snapshot extraction needs no guard of its own, and that was measured rather than
   assumed: GNU tar refuses to write through a symlink its own archive created
   (`Cannot open: Not a directory`, target untouched), and `restoreEnv` treats a

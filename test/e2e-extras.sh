@@ -941,6 +941,41 @@ else
   echo "the control FAILED: a credentialed box's exposure was lost or misnamed" | tee -a "$EVIDENCE/extras.txt"
 fi
 ( cd "$CL" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "AI. the project's own check output cannot drive the terminal it is printed on"
+# A check is the project's own command and the agent can edit it, so its output is sandbox
+# text like any other: OSC 0 retitles the window, OSC 52 writes the clipboard, CSI 2J clears
+# the screen. `moat verify` streamed the bytes straight to stderr and `moat take` printed them
+# in its failure listing — in the two commands the user runs *instead of* trusting the agent.
+# Measured before the fix: a failing test script put four raw ESC bytes on the terminal.
+ESC_PROJECT="$WORK/escape-check"
+rm -rf "$ESC_PROJECT"; mkdir -p "$ESC_PROJECT"
+cat > "$ESC_PROJECT/escape.js" <<'EOF'
+process.stdout.write("\u001b]0;PWNED-TITLE\u0007\u001b[2JMOAT-CHECK-MARKER\n");
+process.stderr.write("\u001b[31mred-text\u001b[0m\n");
+process.exit(1);
+EOF
+printf '{"name":"escape-check","version":"1.0.0","scripts":{"test":"node escape.js"}}\n' > "$ESC_PROJECT/package.json"
+( cd "$ESC_PROJECT" && git init -q -b main . && git config user.email e2e@example.com && git config user.name e2e \
+  && git add -A && git commit -qm base )
+( cd "$ESC_PROJECT" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$ESC_PROJECT" && capture escape-up $MOAT up --quiet --no-credential --egress isolated --profile node --model deepseek-flash )
+( cd "$ESC_PROJECT" && capture escape-verify $MOAT verify )
+( cd "$ESC_PROJECT" && capture escape-take $MOAT take )
+python3 - "$EVIDENCE" <<'PYEOF' > "$WORK/escape-bytes.txt"
+import pathlib, sys
+evidence = pathlib.Path(sys.argv[1])
+for name in ("escape-verify", "escape-take"):
+    data = (evidence / f"{name}.err").read_bytes()
+    print(f"{name}: {len(data)} stderr bytes, {data.count(chr(27).encode())} ESC byte(s), marker present: {b'MOAT-CHECK-MARKER' in data}")
+PYEOF
+cat "$WORK/escape-bytes.txt" | tee -a "$EVIDENCE/extras.txt"
+if grep -q "escape-verify: .* 0 ESC byte(s), marker present: True" "$WORK/escape-bytes.txt" \
+   && grep -q "escape-take: .* 0 ESC byte(s), marker present: True" "$WORK/escape-bytes.txt"; then
+  echo "check output: escapes are dropped, and the text around them still reaches the user" | tee -a "$EVIDENCE/extras.txt"
+else
+  echo "check output: FAILED — an escape byte reached the terminal, or the output was dropped" | tee -a "$EVIDENCE/extras.txt"
+fi
+( cd "$ESC_PROJECT" && $MOAT destroy --yes >/dev/null 2>&1 )
 echo "" | tee -a "$EVIDENCE/extras.txt"
 # After the last write, not before it: this closing line names $EVIDENCE, so
 # scrubbing first would leave exactly one unscrubbed path behind.

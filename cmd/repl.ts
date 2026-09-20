@@ -1111,7 +1111,7 @@ exec /bin/bash -l
           const mark = result.ok ? `${GREEN}pass${RESET}` : `${RED}FAIL${RESET}`
           say(`  ${mark}  ${result.label}  ${DIM}(${(result.ms / 1000).toFixed(1)}s)${RESET}`)
           if (!result.ok) {
-            for (const line of result.output.split("\n").slice(-8)) say(`        ${DIM}${line}${RESET}`)
+            for (const line of result.output.split("\n").slice(-8)) say(`        ${DIM}${stripAnsi(line)}${RESET}`)
           }
         }
         say("")

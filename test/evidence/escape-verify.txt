@@ -1,0 +1,16 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts verify
+--- exit 1
+--- stdout ---
+--- stderr ---
+→ running npm run test inside the sandbox
+$ npm run test
+
+> escape-check@1.0.0 test
+> node escape.js
+
+MOAT-CHECK-MARKER
+red-text
+[moat] exit 1
+
+  FAIL  npm test                 0.2s (exit 1)
+
