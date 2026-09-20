@@ -7,21 +7,21 @@ detected: package.json -> node
           adding profile(s) node; use --no-detect or --profile to override
 → provisioning sandbox image (alpine 3.21.4 + codex 0.155.1 + node)
 → provisioning from the cached image alpine-3.21.4-2c1b310cad94.tar.gz
-✓ image provisioned in 2.10s (extract cached image 1.81s)
+✓ image provisioned in 2.06s (extract cached image 1.72s)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 3 files, 0.3 KiB, digest ed2e86797199e208
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-18-03
+agent branch: moat-session-2026-09-20-18-32
 checks: npm run test
-→ sandbox booted (pid 149860); the codex runtime has no server to wait for
-✓ sandbox up, cold start 2.26s (image built)
+→ sandbox booted (pid 170882); the codex runtime has no server to wait for
+✓ sandbox up, cold start 2.21s (image built)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
-  runtime    codex (moat/mock-model) — `moat` opens its TUI
+  runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-20T22:03:24.833Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-20T22:32:25.018Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

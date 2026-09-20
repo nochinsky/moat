@@ -448,14 +448,13 @@ seconds.
 One limitation: v0 enforces the TTL by *terminating the agent*, not by revoking the token
 at the provider; provider-side scoping and revocation are v2 work ("credential brokering
 with expiry"). v0 does make the credential exist for one boot, in memory only, with a
-recorded expiry, over a name (`OPENCODE_SERVER_PASSWORD`, `MOAT_*`) allowlist.
+recorded expiry, over a name (`MOAT_*`) allowlist.
 
 ### 5.4 What is never forwarded
 
 `sandbox/launcher.ts:sandboxEnv()` builds the sandbox environment from an explicit
 literal. There is no spread of `process.env`. The only names that cross are `PATH`,
-`HOME`, `LANG`, `LC_ALL`, `TERM`, `MOAT_SANDBOX`, the injected credential variables, and
-`OPENCODE_SERVER_PASSWORD`.
+`HOME`, `LANG`, `LC_ALL`, `TERM`, `MOAT_SANDBOX`, and the injected credential variables.
 
 `moat doctor` verifies this from *inside* the box: it lists the sandbox's environment,
 compares it against the host's, and requires that no host variable name (specifically no
@@ -464,8 +463,9 @@ host's `$HOME` and `$HOME/.ssh` are not reachable and that the host-only canary
 (`~/.moat/canary`, mode 0600) cannot be read.
 
 One deliberate escape hatch: `MOAT_SANDBOX_ENV` adds extra variables to the sandbox and
-**rejects any name that does not start with `OPENCODE_` or `MOAT_`**. It exists because
-`OPENCODE_CLIENT` is load-bearing for the bundle (§6).
+**rejects any name that does not start with `MOAT_`**, so it cannot replace a variable moat
+manages: a caller that names `MOAT_PROVIDER_BASE_URL` or one of the credential records is
+refused by name, not silently overridden.
 
 ---
 

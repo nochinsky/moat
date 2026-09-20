@@ -185,7 +185,7 @@ export function credentialRiskNotice(
   const reach =
     egress === "filtered"
       ? "The agent can read this value; its egress is restricted to an allowlist, but anything on that " +
-        "allowlist — and DNS — can still carry it out."
+        "allowlist, and DNS, can still carry it out."
       : egress === "isolated"
         ? "The agent can read this value and send it anywhere: its namespace is isolated from yours, its " +
           "egress is not filtered."

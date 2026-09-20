@@ -790,7 +790,7 @@ ${command}
 
   if (mustCopy && held) {
     log.warn(
-      `re-copying the project will discard ${held} that exist only inside the sandbox — the sandbox working tree ` +
+      `re-copying the project will discard ${held} that exist only inside the sandbox: the sandbox working tree ` +
         `is replaced from the host. \`moat fetch\` (add --commit-worktree for uncommitted work) keeps it.${detachedHint}`,
     )
   } else if (drift?.changed && mustCopy) {
@@ -1149,7 +1149,7 @@ function printUpSummary(
   log.info(`  env        ${paths.dir}`)
   // No server, so no endpoint and no password to report: the TUI and the tasks run in the
   // box's own rootfs, and the credential is what the box talks to the provider with.
-  log.info(`  runtime    codex (${state.model ?? "default model"}) — \`moat\` opens its TUI`)
+  log.info(`  runtime    codex (${state.model ?? "default model"}): \`moat\` opens its TUI`)
   log.info(`  workspace  ${SANDBOX_WORKDIR} (inside the sandbox)`)
   if (state.credential) {
     log.info(`  credential ${state.credential.provider} ${state.credential.fingerprint} expires ${state.credential.expiresAt}`)
@@ -1710,7 +1710,7 @@ async function cmdStatus(argv: string[]): Promise<number> {
     log.info(`rootfs       ${human(payload.rootfsBytes)}`)
     if (state!.credential) {
       const remaining = Math.round((new Date(state!.credential.expiresAt).getTime() - Date.now()) / 1000)
-      const note = remaining <= 0 ? log.red(" (EXPIRED — the box stops at this deadline)") : ""
+      const note = remaining <= 0 ? log.red(" (EXPIRED: the box stops at this deadline)") : ""
       log.info(`credential   ${state!.credential.provider} ${state!.credential.fingerprint} expires in ${remaining}s${note}`)
     }
     log.info(`snapshots    ${snapshots.map((s) => s.name).join(", ") || "none"}`)
@@ -2070,7 +2070,7 @@ async function cmdProfiles(argv: string[]): Promise<number> {
 // dispatch
 // ---------------------------------------------------------------------------
 
-const HELP = `moat — run an AI coding agent in a disposable sandbox. Your machine is never touched.
+const HELP = `moat runs an AI coding agent in a disposable sandbox. Your project is copied in, never mounted.
 
 Usage: moat <command> [options]
 

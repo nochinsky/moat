@@ -2,5 +2,5 @@
 --- exit 0
 --- stdout ---
 export const sum = (a, b) => a + b
-ff11136 fix: sum adds
+a05488b fix: sum adds
 --- stderr ---

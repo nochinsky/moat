@@ -6,30 +6,30 @@
   "version": 1,
   "id": "16a525996d67",
   "projectDir": "/home/user/moat-demo/egress-project",
-  "createdAt": "2026-09-20T16:13:04.413Z",
-  "lastUpAt": "2026-09-20T16:13:04.569Z",
+  "createdAt": "2026-09-20T18:35:58.365Z",
+  "lastUpAt": "2026-09-20T18:35:58.524Z",
   "status": "running",
   "alpineVersion": "3.21.4",
   "model": "deepseek/deepseek-flash",
   "provider": "deepseek",
   "providerBaseUrl": "https://api.deepseek.com",
-  "branch": "moat-session-2026-09-20-16-13",
+  "branch": "moat-session-2026-09-20-18-35",
   "baseBranch": "main",
   "profiles": [],
-  "pid": 102361,
-  "pidStart": "843036",
+  "pid": 180558,
+  "pidStart": "1700431",
   "egress": "isolated",
   "egressAllow": [],
-  "slirpPid": 102384,
-  "slirpStart": "843038",
+  "slirpPid": 180581,
+  "slirpStart": "1700434",
   "baselineDigest": "a6e0969b405179d93138af8bad320ad97cd990c49c894ad9af73f8b724d391b8",
-  "baselineHostState": "git:22a2b0983025b72def269701c73cc6532414d8c5:6e340b9cffb37a98",
-  "baselineCommit": "8931a6bbcd0720c86268dee613279ca337e3d2d0",
+  "baselineHostState": "git:aac690c1a8e91d977de1b1e6443881640e243ee8:6e340b9cffb37a98",
+  "baselineCommit": "d7634f6f159f1bd581ad6c44c6fa070fec4a6141",
   "credential": {
     "provider": "deepseek",
     "fingerprint": "sha256:34c4e933b47c1fb3",
-    "mintedAt": "2026-09-20T16:13:04.522Z",
-    "expiresAt": "2026-09-20T20:13:04.522Z"
+    "mintedAt": "2026-09-20T18:35:58.480Z",
+    "expiresAt": "2026-09-20T22:35:58.480Z"
   },
   "snapshots": [
     "baseline"
@@ -39,20 +39,20 @@
   "rootfsDir": "/home/user/.moat/envs/16a525996d67/rootfs",
   "running": true,
   "booting": null,
-  "rootfsBytes": 313157902,
+  "rootfsBytes": 313196529,
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "22a2b0983025b72def269701c73cc6532414d8c5",
+      "sha": "aac690c1a8e91d977de1b1e6443881640e243ee8",
       "subject": "egress fixture",
-      "committedAt": "2026-09-20T18:13:02+02:00",
+      "committedAt": "2026-09-20T20:35:56+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-20-16-13",
-      "sha": "22a2b0983025b72def269701c73cc6532414d8c5",
+      "name": "moat-session-2026-09-20-18-35",
+      "sha": "aac690c1a8e91d977de1b1e6443881640e243ee8",
       "subject": "egress fixture",
-      "committedAt": "2026-09-20T18:13:02+02:00",
+      "committedAt": "2026-09-20T20:35:56+02:00",
       "current": true
     }
   ]

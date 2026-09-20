@@ -2,15 +2,15 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.49s (extract cached image 1.27s)
+✓ image provisioned in 1.47s (extract cached image 1.26s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-20-18-05
+agent branch: moat-session-2026-09-20-18-34
 ✓ sandbox up, cold start 1.66s (image built)
 
   project    /home/user/moat-demo/nocred-doctor
   env        /home/user/.moat/envs/bc47e2d49e4f
-  runtime    codex (deepseek/deepseek-flash) — `moat` opens its TUI
+  runtime    codex (deepseek/deepseek-flash): `moat` opens its TUI
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do

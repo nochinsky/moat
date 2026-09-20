@@ -11,15 +11,15 @@ no project manifest found; booting with the base image only (see `moat profiles`
 ✓ copy-in via git: 1 files, 0.0 KiB, digest a6e0969b405179d9
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and send it anywhere: its namespace is isolated from yours, its egress is not filtered. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-20-16-13
-→ sandbox booted (pid 102361); the codex runtime has no server to wait for
-✓ sandbox up, cold start 1.65s (image built)
+agent branch: moat-session-2026-09-20-18-35
+→ sandbox booted (pid 180558); the codex runtime has no server to wait for
+✓ sandbox up, cold start 1.64s (image built)
 
   project    /home/user/moat-demo/egress-project
   env        /home/user/.moat/envs/16a525996d67
-  runtime    codex (deepseek/deepseek-flash) — `moat` opens its TUI
+  runtime    codex (deepseek/deepseek-flash): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T20:13:04.522Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-20T22:35:58.480Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

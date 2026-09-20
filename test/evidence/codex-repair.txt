@@ -6,13 +6,13 @@
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-20-18-05
-→ sandbox booted (pid 155925); the codex runtime has no server to wait for
-✓ sandbox up, warm start 797ms (image reused)
+agent branch: moat-session-2026-09-20-18-34
+→ sandbox booted (pid 176999); the codex runtime has no server to wait for
+✓ sandbox up, warm start 831ms (image reused)
 
   project    /home/user/moat-demo/codex-runtime
   env        /home/user/.moat/envs/a3e8fefc7c25
-  runtime    codex (deepseek/deepseek-flash) — `moat` opens its TUI
+  runtime    codex (deepseek/deepseek-flash): `moat` opens its TUI
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do

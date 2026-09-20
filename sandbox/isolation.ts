@@ -246,7 +246,7 @@ export function credentialExposureDetail(secretNames: string[], credentialInject
   if (!credentialInjected) {
     return (
       `secret-looking names in the environment tool execution inherits: ${secretNames.join(", ")}. ` +
-      "None of them is a provider credential — this box was booted with no key, so there is nothing " +
+      "None of them is a provider credential: this box was booted with no key, so there is nothing " +
       "here to leak. What is present is provider configuration, not a secret."
     )
   }

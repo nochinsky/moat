@@ -5,55 +5,55 @@
   "version": 1,
   "id": "5f160b318512",
   "projectDir": "/home/user/moat-demo/codex-project",
-  "createdAt": "2026-09-20T18:06:19.689Z",
-  "lastUpAt": "2026-09-20T18:06:19.839Z",
+  "createdAt": "2026-09-20T18:35:19.021Z",
+  "lastUpAt": "2026-09-20T18:35:19.143Z",
   "status": "running",
   "alpineVersion": "3.21.4",
   "model": "moat/mock-model",
   "provider": "moat",
   "providerBaseUrl": "http://127.0.0.1:5597/v1",
-  "branch": "moat-session-2026-09-20-18-06",
+  "branch": "moat-session-2026-09-20-18-35",
   "baseBranch": "main",
   "profiles": [
     "node"
   ],
-  "pid": 157466,
-  "pidStart": "1522565",
+  "pid": 178542,
+  "pidStart": "1696496",
   "egress": "open",
   "egressAllow": [],
   "slirpPid": null,
   "slirpStart": null,
   "baselineDigest": "c1ccc1457def136b9277f19aedd312435a50013452c7f0bc9ce9c1a7d1f9ead7",
-  "baselineHostState": "git:f810c0189cf7a908eb74df8e7766ef03fbccf3a7:1f41ff19b72e60c8",
-  "baselineCommit": "98311b594d0ef6f9ccd68a06fc933ec70b6102dd",
+  "baselineHostState": "git:758558e81288d167dec32ada0c3e40a7a578fcf4:1f41ff19b72e60c8",
+  "baselineCommit": "260bf837a4ec3ef4e80522078807afe0aa280a10",
   "credential": {
     "provider": "moat",
     "fingerprint": "sha256:304e485880327eb8",
-    "mintedAt": "2026-09-20T18:06:19.815Z",
-    "expiresAt": "2026-09-20T22:06:19.815Z"
+    "mintedAt": "2026-09-20T18:35:19.130Z",
+    "expiresAt": "2026-09-20T22:35:19.130Z"
   },
   "snapshots": [
     "baseline"
   ],
-  "lastBootMs": 6,
+  "lastBootMs": 4,
   "envDir": "/home/user/.moat/envs/5f160b318512",
   "rootfsDir": "/home/user/.moat/envs/5f160b318512/rootfs",
   "running": true,
   "booting": null,
-  "rootfsBytes": 419553126,
+  "rootfsBytes": 419553127,
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "f810c0189cf7a908eb74df8e7766ef03fbccf3a7",
+      "sha": "758558e81288d167dec32ada0c3e40a7a578fcf4",
       "subject": "initial project (the test fails)",
-      "committedAt": "2026-09-20T20:06:17+02:00",
+      "committedAt": "2026-09-20T20:35:16+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-20-18-06",
-      "sha": "f810c0189cf7a908eb74df8e7766ef03fbccf3a7",
+      "name": "moat-session-2026-09-20-18-35",
+      "sha": "758558e81288d167dec32ada0c3e40a7a578fcf4",
       "subject": "initial project (the test fails)",
-      "committedAt": "2026-09-20T20:06:17+02:00",
+      "committedAt": "2026-09-20T20:35:16+02:00",
       "current": true
     }
   ]

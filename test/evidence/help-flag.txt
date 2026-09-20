@@ -1,7 +1,7 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts profiles --help
 --- exit 0
 --- stdout ---
-moat — run an AI coding agent in a disposable sandbox. Your machine is never touched.
+moat runs an AI coding agent in a disposable sandbox. Your project is copied in, never mounted.
 
 Usage: moat <command> [options]
 
