@@ -2676,6 +2676,14 @@ Continue anyway? [y/N]` and waited. `runInteractive` now advertises the host's t
 type, sanitised (`interactiveTerm`, `test/unit/interactive-term.test.ts`), and only there: a
 check, a server or a batch boot still gets `dumb`, so the environment the other suites
 measure is unchanged.
+
+`--effort` is the other flag that is refused rather than dropped: Codex renders reasoning as
+`model_reasoning_effort` and sends it only for models it has metadata for, and it has none for
+`deepseek-flash` (measured through the recording proxy: the setting never reached the wire).
+Extras AJ checks the refusal and its message, and `test/unit/codex-effort.test.ts` pins which
+levels can be rendered at all — `max` and `off` are opencode's, and are omitted rather than
+passed through as an invalid enum.
+
 ### AG. A project's own check output cannot drive the terminal it is printed on
 
 `moat verify` streams the check's output as it arrives, and `moat take` and the session's

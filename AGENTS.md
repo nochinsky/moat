@@ -540,6 +540,18 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   verify the opencode adapter (server, attach, tools, REPL); extras section AJ and live
   suite §7 cover Codex. When opencode is deleted, those pins and sections go with it.
 
+* **An interactive boot forwards TERM; nothing else does.** `sandboxEnv` fixes
+  `TERM=dumb`, which is right for a boot nobody is watching and wrong for one attached to a
+  terminal: the first time `moat` was run under the default runtime, Codex's TUI opened with
+  `WARNING: TERM is set to "dumb". Codex's interactive TUI may not work in this terminal.
+  Continue anyway? [y/N]` and waited for an answer, and bash loses its line editing the same
+  way. `runInteractive` advertises the host's terminal type through `interactiveTerm`,
+  sanitised — it is a capability name from the host environment, not host data, and no
+  whitespace or punctuation reaches the box. `test/unit/interactive-term.test.ts` holds both
+  halves, including that a check, a server or a batch boot still gets `dumb`, so the
+  environment the other suites measure is unchanged; `test/codex-tui.py` (extras section AL)
+  is the pty proof that `moat` reaches a live TUI and that leaving it leaves the box running.
+
 **opencode 1.18.31**
 
 * The model-facing argument for file tools is `filePath`, not `path`. opencode's

@@ -185,6 +185,14 @@ it must **not** go through provisioning, which deletes the rootfs first and woul
 lost an untracked file exactly that way. A runtime switch is also a restart: the recorded box
 is stopped before anything touches the rootfs.
 
+Two consequences worth stating because they are easy to get wrong. An **interactive** boot
+(`moat`, `moat shell`) forwards the host's `TERM` into the box, sanitised to a capability
+name, because Codex's TUI and bash both need a real terminal type — a batch boot keeps
+`TERM=dumb`, so nothing the suites measure changes. And `--effort` is **refused** under the
+codex runtime rather than accepted and dropped: Codex renders reasoning as
+`model_reasoning_effort` and sends it only for models it has metadata for, and it has none for
+the DeepSeek models moat uses (measured: the setting never reached the wire).
+
 The two runtimes do not cost the same per turn. Measured on one identical trivial task:
 Codex used 17,692 tokens ($0.000259) against opencode's 9,363 ($0.0000937), because it
 carries a larger harness prompt and does more work per step; the full method and the fields

@@ -25,7 +25,12 @@ the checklist for ending it without breaking the product on the way.
    `test/unit/codex-runtime.test.ts` and extras AJ already hold.
 3. `moat tools` and `moat env` (both already refuse on a codex environment): they become
    codex-facing commands or they are deleted, not quietly kept as stubs.
-4. `--effort`/reasoning variants: Codex has `model_reasoning_effort`. The mapping is not written.
+4. `--effort`/reasoning variants: Codex has `model_reasoning_effort`, but it sends the setting
+   only for models it has metadata for, and it has none for DeepSeek's (measured: the value
+   never reached the wire). The flag is therefore *refused* under the codex runtime rather
+   than ignored, and `bundle/codex.ts` renders a stored effort only for the levels Codex
+   accepts. Making it work needs model metadata Codex does not have; until then the honest
+   state is a refusal.
 5. The acceptance suite's **driver**: `test/e2e.sh` drives opencode through `moat attach` and the
    chat-completions stub. Its criteria are the product's acceptance list, so they get *ported* to
    Codex plus the Responses stub, not deleted.
