@@ -2606,7 +2606,13 @@ async function cmdDemo(argv: string[]): Promise<number> {
   const total = result.steps.reduce((sum, step) => sum + step.ms, 0)
   log.info("")
   log.info(`  ${log.dim(result.steps.map((step) => `${step.name} ${(step.ms / 1000).toFixed(1)}s`).join("  "))}`)
-  log.info(`  ${log.dim(`total ${(total / 1000).toFixed(1)}s (warm cache; a cold one downloads the image first)`)}`)
+  // The label describes the run that happened. It used to be the literal "warm cache", so a cold
+  // run that spent 48 of its 56.7 seconds downloading reported itself as warm (measured).
+  const cacheNote =
+    result.coldCache.length > 0
+      ? `cold cache: this run downloaded ${result.coldCache.length} artifact(s); later runs skip that`
+      : "warm cache; a cold one downloads the image first"
+  log.info(`  ${log.dim(`total ${(total / 1000).toFixed(1)}s (${cacheNote})`)}`)
   if (flag<boolean>(p, "keep")) log.info(`  ${log.dim(`left in place: ${result.dir}`)}`)
   else log.info(`  ${log.dim(`the scratch project was removed; --keep leaves it in place`)}`)
   log.info("")

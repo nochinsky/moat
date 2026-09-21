@@ -65,6 +65,14 @@ export type DemoResult = {
   /** What the plan said, as the real code classified it. */
   classification: { path: string; verdict: string; detail: string }[]
   exported: string[]
+  /**
+   * What was missing from the cache when this run started.
+   *
+   * Recorded at the start, not inferred at the end: by the time the demo finishes it has filled
+   * the cache, so asking afterwards always answers "warm" and the footer then describes a run
+   * that did not happen. Measured — a cold run that took 56.7s reported "(warm cache)".
+   */
+  coldCache: string[]
 }
 
 /** The files the demo project starts as, before the agent or "you" touch anything. */
@@ -143,11 +151,21 @@ async function freePort(): Promise<number> {
 function coldCacheNotice(): string[] {
   const home = process.env.MOAT_HOME || path.join(os.homedir(), ".moat")
   const cache = path.join(home, "cache")
-  const warm = (name: string): boolean => fs.existsSync(path.join(cache, name)) && fs.readdirSync(path.join(cache, name)).length > 0
+  // Directories that hold something, named as the cache actually lays them out. The check used to
+  // look for a `net` directory and require it to be non-empty, but `slirpCachePath()` is a *file*
+  // (`net/slirp4netns-<version>`), so that test could never pass and every run — warm or cold —
+  // announced a download it was not going to do. The demo boots with open egress and does not use
+  // slirp at all, which is the second reason it does not belong in this list.
+  const filled = (name: string): boolean => {
+    try {
+      return fs.readdirSync(path.join(cache, name)).length > 0
+    } catch {
+      return false
+    }
+  }
   const missing: string[] = []
-  if (!warm("images")) missing.push("the Alpine rootfs image (~250 MB, plus the packages the image bakes in)")
-  if (!warm("codex")) missing.push("the pinned Codex runtime (~140 MB tarball, verified against its digest in lib/pins.ts)")
-  if (!warm("net")) missing.push("slirp4netns (2 MB) for the sandbox's own network namespace")
+  if (!filled("images")) missing.push("the Alpine rootfs image (~250 MB, plus the packages the image bakes in)")
+  if (!filled("codex")) missing.push("the pinned Codex runtime (~140 MB tarball, verified against its digest in lib/pins.ts)")
   return missing
 }
 
@@ -252,11 +270,11 @@ export async function runDemo(opts: DemoOptions = {}): Promise<DemoResult> {
 
   try {
     // --- what this is about to download, before it downloads it --------------------------
-    const missing = coldCacheNotice()
-    if (missing.length > 0) {
+    const coldCache = coldCacheNotice()
+    if (coldCache.length > 0) {
       log.warn(
         "this is a cold cache, so the first run downloads:\n" +
-          missing.map((item) => `    ${item}`).join("\n") +
+          coldCache.map((item) => `    ${item}`).join("\n") +
           "\n  they are cached under ~/.moat and reused by every later run; this one takes a few minutes. " +
           "`moat doctor` prints the state of the cache.",
       )
@@ -395,6 +413,7 @@ export async function runDemo(opts: DemoOptions = {}): Promise<DemoResult> {
       digestAfter,
       classification,
       exported: applied.skipped,
+      coldCache,
     }
   } finally {
     // The stub first: the sandbox is talking to it, and a box left running against a dead stub
