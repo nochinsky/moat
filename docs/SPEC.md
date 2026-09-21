@@ -355,6 +355,11 @@ Three properties hold for every selection, and each is a unit test in
   The conflict prompt (`--skip-conflicts`, or the interactive one) is *bypassed* when the
   selection is explicit: asking about a conflict the user has already excluded is a question
   with one answer.
+* **Nothing is written without a decision.** `--only`, `--skip` and `--hunks` are instructions;
+  a terminal is asked, hunk by hunk; `--yes` takes everything; with none of those and no terminal,
+  `moat apply` refuses and says which flag to pass. It used to write the whole plan in that
+  situation, which read as "nothing is applied automatically" while doing the opposite of what a
+  reviewer would have chosen.
 * **The bytes written are the verified destination plus the replacement lines from the
   plan-time frozen source.** Nothing is re-read from the sandbox between planning and
   writing, and `expectedHost` — the digest recorded for the destination at plan time — is

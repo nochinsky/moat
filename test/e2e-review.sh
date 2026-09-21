@@ -138,6 +138,32 @@ else
   fail "the classification" "the file was not classified as an agent-only change"
 fi
 
+# --- the same surface from `moat take` ----------------------------------------------------------
+#
+# The phase is about `moat take` *and* `moat apply`, and they answer different questions: take's
+# diffstat is against the host's HEAD, so it names what the agent committed, while this classifies
+# the three trees and splits each change into hunks. `--no-verify` keeps it to the review: the
+# fixture has no checks of its own, and this section is not about them.
+say ""
+say "--- moat take: the same review, before anything is decided ---"
+( cd "$PROJECT" && $M take --no-verify ) > "$WORK/take.log" 2>&1
+take_code=$?
+scrub < "$WORK/take.log" | tee -a "$LOG"
+if grep -qE "^  agent +notes\.txt +modify" "$WORK/take.log" \
+   && grep -qE "^    hunk 1 +lines [0-9]+-[0-9]+ of your file" "$WORK/take.log" \
+   && grep -qE "^    hunk 2 +lines [0-9]+-[0-9]+ of your file" "$WORK/take.log"; then
+  pass "take's review" "take presents the same per-hunk attribution apply does"
+else
+  fail "take's review" "take did not present the per-hunk attribution"
+fi
+# Read-only, and the check that it is: `take` must not have written the agent's lines into the tree
+# it just described.
+if [ "$take_code" = 0 ] && ! grep -qxF "line 3: the agent changed this" "$PROJECT/notes.txt"; then
+  pass "take writes nothing" "the review was shown and the working tree still holds your lines"
+else
+  fail "take writes nothing" "take exited $take_code, or wrote to the tree it was reviewing"
+fi
+
 # --- the partial accept -------------------------------------------------------------------
 say ""
 say "--- accepting hunk 2 only ---"

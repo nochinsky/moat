@@ -1417,6 +1417,33 @@ async function cmdTake(argv: string[]): Promise<number> {
     log.info(changed.stdout.trimEnd())
   }
 
+  // The same review `moat apply` shows, because it is the same decision: the diffstat above is
+  // against the *host's* HEAD, so it names what the agent committed, while this classifies the
+  // three trees — the recorded baseline, the sandbox's working tree, and your file — and splits
+  // each change into hunks. Two different questions, and the second is the one the user answers
+  // with `moat apply`. It is read-only here: `take` has never written to the tree and still does
+  // not, so the plan is made and shown and then dropped.
+  let reviewed: ReviewedChange[] | null = null
+  try {
+    const plan = await planApply(paths)
+    if (plan.baselineProblem) {
+      log.info("")
+      log.warn(`the review is unavailable: ${stripAnsi(plan.baselineProblem)}`)
+    } else if (!plan.empty) {
+      reviewed = await reviewPlan(paths, plan)
+      log.info("")
+      printReview(reviewed, { showContext: true })
+      // `planApply` warns about anything that looks like the credential on its own, in both callers;
+      // repeating it here would say the same thing twice.
+    }
+  } catch (error) {
+    // A review that cannot be computed must not fail the fetch that already happened: the work is
+    // in `refs/moat/<branch>` either way, and `moat apply` will report the same problem with more
+    // context when the user asks it to write.
+    log.info("")
+    log.warn(`the review is unavailable: ${stripAnsi((error as Error).message)}`)
+  }
+
   // The point of take is to decide whether to keep the work, and the single most
   // useful input to that decision is whether the project's own checks pass on it.
   let verified: { ok: boolean; summary: string } | null = null

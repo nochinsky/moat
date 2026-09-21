@@ -2,10 +2,10 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/376d0bba6c50/rootfs/work +refs/heads/moat-session-2026-09-21-09-12:refs/moat/moat-session-2026-09-21-09-12
+→ copy-out: git fetch /home/user/.moat/envs/376d0bba6c50/rootfs/work +refs/heads/moat-session-2026-09-21-13-00:refs/moat/moat-session-2026-09-21-13-00
 
-moat-session-2026-09-21-09-12  1 commit(s), d7505a9e8a06
-  d7505a9e8a  base
+moat-session-2026-09-21-13-00  1 commit(s), fadd7e685e3d
+  fadd7e685e  base
 → verifying: npm run test
 
   FAIL  npm test                 0.3s
@@ -18,7 +18,7 @@ moat-session-2026-09-21-09-12  1 commit(s), d7505a9e8a06
 
   checks:  npm test FAILED (exit 1)
   your working tree is untouched
-  review:  git log refs/moat/moat-session-2026-09-21-09-12
+  review:  git log refs/moat/moat-session-2026-09-21-13-00
   accept:  moat apply   (three-way merge into your tree)
-           moat apply moat-session-2026-09-21-09-12 --checkout   (or switch to the agent's branch)
-  reject:  git update-ref -d refs/moat/moat-session-2026-09-21-09-12
+           moat apply moat-session-2026-09-21-13-00 --checkout   (or switch to the agent's branch)
+  reject:  git update-ref -d refs/moat/moat-session-2026-09-21-13-00

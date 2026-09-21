@@ -1,0 +1,10 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts apply
+--- exit 1
+--- stdout ---
+--- stderr ---
+
+  agent    agent.txt  add
+    hunk 1  a new file
+      + made inside the box
+
+✗ nothing selected. Pass --yes to take every change, --only <path> / --skip <path> to choose, or run this at a terminal to review each hunk.

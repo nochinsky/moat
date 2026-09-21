@@ -1,8 +1,10 @@
---- $ node /home/user/Projects/moat/cmd/main.ts apply
+--- $ node /home/user/Projects/moat/cmd/main.ts apply --yes
 --- exit 0
 --- stdout ---
 --- stderr ---
 
-  add     agent.txt
+  agent    agent.txt  add
+    hunk 1  a new file
+      + made inside the box
 
 ✓ applied 1 change(s) to /home/user/moat-demo/plain

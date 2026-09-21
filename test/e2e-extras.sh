@@ -189,7 +189,8 @@ echo "the exit code above is the project's own verdict on whatever is in the san
 section "I. bare moat in a directory with no repository: the work still comes back"
 echo "the flow the tool exists for. A plain directory has no repository for git fetch to write" | tee -a "$EVIDENCE/extras.txt"
 echo "into, so moat fetch says so and points at moat apply, which merges the sandbox tree through" | tee -a "$EVIDENCE/extras.txt"
-echo "the recorded baseline instead. Five commands, no session, nothing to type at a prompt." | tee -a "$EVIDENCE/extras.txt"
+echo "the recorded baseline instead. A handful of commands, no session, and --yes where a decision" | tee -a "$EVIDENCE/extras.txt"
+echo "would otherwise need a person at a terminal." | tee -a "$EVIDENCE/extras.txt"
 PLAIN="$WORK/plain"
 rm -rf "$PLAIN"; mkdir -p "$PLAIN"
 printf 'a plain directory, no repository\n' > "$PLAIN/README.md"
@@ -198,14 +199,25 @@ printf 'a plain directory, no repository\n' > "$PLAIN/README.md"
 # Work happens inside the box, where a repository does exist; the host directory is untouched.
 ( cd "$PLAIN" && capture plain-agent $MOAT exec -- sh -c 'cd /work && echo "made inside the box" > agent.txt && git add -A && git -c user.email=a@b -c user.name=a commit -qm "agent: add agent.txt" && git log --oneline -1' )
 ( cd "$PLAIN" && capture plain-fetch $MOAT fetch )
-( cd "$PLAIN" && capture plain-apply $MOAT apply )
+# `--yes` is what makes this non-interactive, and the first run without it is the control: nothing is
+# written to a directory nobody was asked about. This used to apply everything silently, which is
+# what `--yes` now means explicitly.
+( cd "$PLAIN" && capture plain-apply-no $MOAT apply )
+# Read the tree *now*: after the `--yes` below, "the file is not there" is false whatever the first
+# apply did, so a condition checked afterwards proves nothing. Measured — that is exactly how the
+# first version of this check failed with every other clause true.
+PLAIN_UNWRITTEN=no
+if [ ! -e "$PLAIN/agent.txt" ]; then PLAIN_UNWRITTEN=yes; fi
+( cd "$PLAIN" && capture plain-apply $MOAT apply --yes )
 if grep -q "is not a git repository; there is nowhere to fetch into" "$EVIDENCE/plain-fetch.txt" \
    && grep -q "moat apply" "$EVIDENCE/plain-fetch.txt" \
+   && grep -q "nothing selected" "$EVIDENCE/plain-apply-no.txt" \
+   && [ "$PLAIN_UNWRITTEN" = yes ] \
    && grep -q "agent.txt" "$EVIDENCE/plain-apply.txt" \
    && [ "$(cat "$PLAIN/agent.txt" 2>/dev/null)" = "made inside the box" ]; then
-  pass "plain directory copy-out" "a plain directory: fetch refuses and names the way out; apply merges the work into it"
+  pass "plain directory copy-out" "a plain directory: fetch refuses and names the way out; apply --yes merges the work, and apply without it writes nothing"
 else
-  fail "plain directory copy-out" "the work did not come back, or fetch pretended to work"
+  fail "plain directory copy-out" "the work did not come back, or fetch pretended to work, or a bare apply wrote without being asked"
 fi
 ( cd "$PLAIN" && $MOAT destroy --yes >/dev/null 2>&1 )
 
@@ -595,7 +607,10 @@ export MOAT_CREDENTIAL="$CREDENTIAL"
   && git -C /work -c user.email=a@b -c user.name=agent add -A \
   && git -C /work -c user.email=a@b -c user.name=agent commit -qm 'oops, the key'" >/dev/null 2>&1 )
 ( cd "$LEAK" && capture leak-fetch $MOAT fetch )
-( cd "$LEAK" && capture leak-apply $MOAT apply )
+# `--yes`: the warning is deliberately *not* a gate, but the write is still a decision, and a
+# non-interactive apply now needs to be told to make it (`test/e2e-extras.sh` section I asserts the
+# refusal; here the point is that the warning does not stop the write once it is asked for).
+( cd "$LEAK" && capture leak-apply $MOAT apply --yes )
 unset MOAT_CREDENTIAL
 
 {

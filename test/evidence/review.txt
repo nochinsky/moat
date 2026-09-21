@@ -49,6 +49,57 @@ line 31: the agent changed this too
   pass  the review bodies
   pass  the classification
 
+--- moat take: the same review, before anything is decided ---
+→ copy-out: git fetch /home/user/moat-demo/review-gate/home/envs/2b4cb8590aed/rootfs/work +refs/heads/moat-session-2026-09-21-13-03:refs/moat/moat-session-2026-09-21-13-03
+! copy-out: fetch: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
+
+moat-session-2026-09-21-13-03  2 commit(s), f4f0e0a68813
+  f4f0e0a688  agent: two changes, 28 lines apart
+  3f2b4c92d4  the project as it was
+
+ notes.txt | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
+
+  agent    notes.txt  modify
+    hunk 1  lines 1-6 of your file
+      - line 1
+      - line 2
+      - line 3
+      - line 4
+      - line 5
+      - line 6
+      + line 1
+      + line 2
+      + line 3: the agent changed this
+      + line 4
+      + line 5
+      + line 6
+    hunk 2  lines 28-34 of your file
+      - line 28
+      - line 29
+      - line 30
+      - line 31
+      - line 32
+      - line 33
+      - line 34
+      + line 28
+      + line 29
+      + line 30
+      + line 31: the agent changed this too
+      + line 32
+      + line 33
+      + line 34
+
+
+  your working tree is untouched
+  review:  git log refs/moat/moat-session-2026-09-21-13-03
+  accept:  moat apply   (three-way merge into your tree)
+           moat apply moat-session-2026-09-21-13-03 --checkout   (or switch to the agent's branch)
+  reject:  git update-ref -d refs/moat/moat-session-2026-09-21-13-03
+  pass  take's review
+  pass  take writes nothing
+
 --- accepting hunk 2 only ---
 ! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
 
@@ -153,4 +204,4 @@ line 31: the agent changed this too
 
 review evidence written to /home/ektor/Projects/moat/test/evidence/review.txt
 
-checks passed: 19, failed: 0
+checks passed: 21, failed: 0

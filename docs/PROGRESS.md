@@ -852,6 +852,32 @@ running anything.
 Both remaining sabotages were run and are recorded in the file's comments: emptying the `[]`
 guard fails a unit test, and anchoring a merge to the merged bytes fails another.
 
+### The other half of the phase, and two regressions it caused in an older suite
+
+The phase names `moat take` **and** `moat apply`. `take` showed a diffstat against the host's HEAD
+and then printed "accept: moat apply" — a summary of something the user had not seen. It now runs
+the same `planApply` + `reviewPlan` and prints the same per-hunk review, read-only: the fetch has
+already happened, the work is in `refs/moat/<branch>` either way, and a review that cannot be
+computed warns instead of failing the command. The two outputs answer different questions and the
+suite asserts both are present — the diffstat names what the agent committed, the review classifies
+the three trees — and that `take` still writes nothing to the tree it just described.
+
+Running the whole suite on the committed tree then failed in `test/e2e-extras.sh`, twice, and both
+were this phase's doing rather than the extras suite being wrong:
+
+**`moat apply` in a non-interactive shell used to write the whole plan.** Section I applies the
+agent's work into a plain directory with no flags, and section Z asserts the credential warning is
+not a gate by applying a leaked file. Neither passes `--yes`, and neither could any more. That is
+the *point* of the phase — "nothing selected" now means nothing written — so the suites were
+updated, not the behaviour, and section I gained the control the old suite never had: a bare
+`moat apply` must write nothing, asserted by reading the tree *before* the `--yes` that follows.
+The first version of that control checked the tree afterwards, which is false whatever the first
+apply did; it failed with every other clause true, which is how the ordering bug was found.
+
+**One older check could not tell a refusal from a failure.** `capture` records an exit code and
+keeps going, so `apply` exiting 1 looked the same as `apply` doing nothing. Both are now asserted
+separately: the refusal in the log, and the absence of the file on disk.
+
 ### What the gate does not claim
 
 The review surface is a *merge* review. It shows the agent's proposed bytes against your file and
