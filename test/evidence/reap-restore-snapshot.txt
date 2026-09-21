@@ -1,0 +1,5 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts snapshot reap-base --yes
+--- exit 0
+--- stdout ---
+--- stderr ---
+✓ snapshot reap-base (115.0 MiB) -> /home/user/.moat/envs/f7355b303b3e/snapshots/reap-base.tar.gz

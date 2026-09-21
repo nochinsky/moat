@@ -152,7 +152,7 @@ APPLIED_BRANCH=$(git -C "$PROJECT" branch --list 'e2e-checkout')
   echo "\$ git -C $PROJECT status --porcelain   # only the user's own pre-existing dirt"
   git -C "$PROJECT" status --porcelain
 } | scrub | tee -a "$EVIDENCE/extras.txt"
-if printf '%s' "$APPLIED_BRANCH" | grep -q 'THIS-CANNOT-MATCH'; then
+if printf '%s' "$APPLIED_BRANCH" | grep -q 'e2e-checkout'; then
   pass "apply --name" "the local branch was created from the fetched ref"
 else
   fail "apply --name" "the local branch was not created"
@@ -1190,11 +1190,4 @@ scrub_evidence
 # the exit status is the count of failed checks rather than whatever `sed`
 # returned. `verdict` prints the summary; this is what makes the suite fail.
 verdict
-EXTRAS_RC=$?
-# An early stop for `test/fail-guard.sh`, whose whole point is to watch this
-# suite's exit status change when a check is broken: it does not need the other
-# forty minutes, only the verdict. Off unless asked for by name.
-if [ "${MOAT_STOP_AFTER_FAIL:-}" = "1" ] && [ "$EXTRAS_RC" != "0" ]; then
-  echo "MOAT_STOP_AFTER_FAIL=1: stopping after the first failed check" | tee -a "$EVIDENCE/extras.txt"
-fi
-echo "THE-SABOTAGED-RUN-REACHED-THE-END" >> "$EVIDENCE/extras.txt"
+exit $?

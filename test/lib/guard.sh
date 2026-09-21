@@ -70,6 +70,16 @@ fail() {
 # The last word. Has to be called *after* scrub_evidence: the evidence is exactly
 # what someone reads to find out what broke, so it must still be written on a
 # failed run.
+#
+# There is deliberately no "stop at the first failure" option, and two attempts at
+# one are recorded here so they are not made a third time. Both put the halt *after*
+# the failure was counted — first in a block at the bottom of e2e-extras.sh, then in
+# this function — but this function is the suite's last statement by construction, so
+# neither could stop a check that ran at the two-minute mark: measured, the sabotaged
+# suite carried on through all thirty sections both times. A real early stop would
+# have to live in `fail` itself, which would end a normal run at its first failure and
+# take away the list of everything that broke — the opposite of what this file is for.
+# The gate proof therefore runs the whole suite, which costs about seven minutes.
 verdict() {
   record ""
   local total=$((CHECKS_PASSED + CHECKS_FAILED))

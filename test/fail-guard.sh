@@ -157,8 +157,8 @@ PIPED=$(grep -cE '^[[:space:]]*(pass|fail) ".*" \| tee' "$REPO/test/e2e-extras.s
 if [ "${MOAT_FAIL_GUARD_E2E:-}" = "1" ]; then
   note ""
   note "the end-to-end half: a real suite run with one check deliberately broken"
-  note "(boots a real sandbox, and stops the suite as soon as the sabotage is"
-  note "measured, so it takes about a minute; MOAT_FAIL_GUARD_E2E=1 asked for it)"
+  note "(boots real sandboxes and runs the whole suite, so about seven minutes;"
+  note "MOAT_FAIL_GUARD_E2E=1 asked for it)"
   # The sabotage is applied to the real suite *in place*, with a restore in the
   # trap, and that is deliberate. The first version sabotaged a copy in a temp
   # directory and it proved nothing: the suite resolves its own repository root
@@ -175,7 +175,6 @@ if [ "${MOAT_FAIL_GUARD_E2E:-}" = "1" ]; then
   # Restore on any exit, including a failure or a signal: the working tree must not
   # keep a sabotaged suite.
   trap 'restore_suite; if [ "${MOAT_FAIL_GUARD_KEEP:-}" = "1" ]; then echo "kept: $TMP"; else rm -rf "$TMP"; fi' EXIT INT TERM
-  export MOAT_STOP_AFTER_FAIL=1
   # Break a check that runs early and asserts on real output. Section C's
   # `moat apply --name` check reads a real `git branch --list` from the fixture
   # repository; demanding a branch name that cannot exist makes the check fail at
@@ -186,17 +185,15 @@ if [ "${MOAT_FAIL_GUARD_E2E:-}" = "1" ]; then
 import sys
 path = sys.argv[1]
 text = open(path).read()
+
 needle = "if printf '%s' \"$APPLIED_BRANCH\" | grep -q 'e2e-checkout'; then"
 if needle not in text:
     sys.exit("sabotage target not found: the apply --name check moved")
 text = text.replace(needle, "if printf '%s' \"$APPLIED_BRANCH\" | grep -q 'THIS-CANNOT-MATCH'; then", 1)
-# The verdict still runs, but the suite must not continue past it. Replacing the
-# `exit` with a marker makes "did the early stop work?" a question about bytes in
-# the evidence instead of a question about elapsed time.
-tail = 'exit "$EXTRAS_RC"'
-if tail not in text:
-    sys.exit("sabotage target not found: the extras verdict exit moved")
-text = text.replace(tail, 'echo "THE-SABOTAGED-RUN-REACHED-THE-END" >> "$EVIDENCE/extras.txt"', 1)
+
+# One patch only: the exit status must stay the suite's own. An earlier version also
+# appended an end-of-run marker through an EXIT trap, which was harmless to $? but
+# made the harness claim something it could not observe.
 open(path, "w").write(text)
 PY
   then
@@ -215,11 +212,13 @@ PY
     else
       bad "the sabotaged run recorded no failed check at all"
     fi
-    if grep -q "THE-SABOTAGED-RUN-REACHED-THE-END" "$REPO/test/evidence/extras.txt" 2>/dev/null; then
-      bad "the sabotaged run reached the end of the suite: the early stop did not stop it"
-    else
-      ok "and the suite stopped there instead of running the remaining sections"
-    fi
+    # No end-of-run claim here. An earlier version checked that the sabotaged run had
+    # NOT reached the end, which required an early stop; two attempts at one both put
+    # the halt after the failure was counted, and `verdict` is the suite's last
+    # statement, so neither could stop anything (see test/lib/guard.sh). The EXIT trap
+    # that recorded the end also fired on every exit, so the check could not have
+    # distinguished the two cases even if the halt had worked. What this half has to
+    # show is the two claims above: a non-zero exit, and exactly one failed check.
   else
     bad "could not sabotage the copied suite"
   fi

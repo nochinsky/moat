@@ -12,5 +12,5 @@ MOAT-CHECK-MARKER
 red-text
 [moat] exit 1
 
-  FAIL  npm test                 0.3s (exit 1)
+  FAIL  npm test                 0.2s (exit 1)
 

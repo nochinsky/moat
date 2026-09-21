@@ -293,21 +293,37 @@ lines and an exit status of 2 ("no checks ran"). The cheap half of `fail-guard.s
 because it called the functions without a pipe. The end-to-end half caught it. The functions now
 do their own logging, no call site pipes, and both the cheap harness and a grep guard the shape.
 
-The end-to-end half itself was also wrong once and had to be fixed: it sabotaged a *copy* of the
-suite in a temp directory, and the suite resolves its own repository root from
-`${BASH_SOURCE[0]}`, so the copy could not find `bundle/codex.ts` or `test/codex-tui.py` and
-every boot failed — dozens of unrelated checks failed with it, which proves nothing. It now
-patches the real suite in place and restores it from a trap (including on INT/TERM), stopping the
-run after the sabotaged check so the proof takes about a minute rather than a full pass.
+The end-to-end half was wrong twice before it was right, and both are worth recording:
+
+1. It sabotaged a *copy* of the suite in a temp directory. The suite resolves its own repository
+   root from `${BASH_SOURCE[0]}`, so the copy could not find `bundle/codex.ts` or
+   `test/codex-tui.py`, every boot failed, and dozens of unrelated checks failed with it — a
+   harness that breaks the thing it measures measures itself. It now patches the real suite in
+   place and restores it from a trap, including on INT and TERM.
+2. It claimed the run had stopped early, and tried twice to make that true — first with a block
+   at the bottom of `e2e-extras.sh`, then with one inside `verdict`. Both put the halt *after* the
+   failure was counted, and `verdict` is the suite's last statement by construction, so neither
+   could stop a check that ran at the two-minute mark: measured, the sabotaged suite carried on
+   through all thirty sections both times. The claim is gone, and `test/lib/guard.sh` records why
+   there is no early-stop option: a real one would have to live in `fail`, which would end a
+   normal run at its first failure and take away the list of everything that broke. The gate proof
+   therefore runs the whole suite, about seven minutes.
+
+   The marker that recorded "the run reached the end" was also unsound on its own terms: an `EXIT`
+   trap fires on every exit, so it could not distinguish reaching the end from stopping early. Its
+   only real value was proving the trap did not mask the exit status, which the two claims above
+   prove directly.
 
 Measured results:
-- with section C's `apply --name` check broken on purpose in the real suite
-  (`MOAT_FAIL_GUARD_E2E=1 bash test/fail-guard.sh`), the suite exits **1**, and the evidence
-  records `FAILED: 1` for exactly the sabotaged check;
+- `MOAT_FAIL_GUARD_E2E=1 bash test/fail-guard.sh` exits **0**, and its two end-to-end claims
+  pass: with section C's `apply --name` check broken on purpose in the real suite, the suite
+  exits **1** and `test/evidence/extras.txt` records `FAILED: 1` for exactly that check. The
+  suite is restored from the harness's trap afterwards.
 - on the committed tree, from one clean run: `bash test/e2e-egress.sh` **0**,
   `bash test/e2e-codex.sh` **0**, `bash test/e2e-extras.sh` **0** with
   `checks passed: 49, failed: 0` in `test/evidence/extras.txt`, and `bash test/fail-guard.sh`
   **0**.
+- `npm run test:unit`: **204 pass, 0 fail**. `npm run typecheck`: clean, source and tests.
 
 `--verbose` produces output, proven twice. Mechanically: `lib/log.ts` now has
 `setVerbose()` (mirroring `setQuiet()`), which `main()` calls when `--verbose` is parsed,
