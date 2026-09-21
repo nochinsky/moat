@@ -37,7 +37,9 @@ running the suites; never edit it by hand.
 
 ## Published
 
-`moat-sandbox` is on npm, currently **0.0.2**, with a provenance record. The installed command is
+`moat-sandbox` is on npm, currently **0.0.3**, with a provenance record. A release is a tag: the
+`v*` tag runs `.github/workflows/release.yml`, which typechecks, tests, checks the tag against
+`package.json`, and publishes over GitHub OIDC — no token anywhere. The installed command is
 `moat`. Both `moat` and `moat-cli` were already taken by unrelated packages, which is why the
 package name and the command differ.
 
@@ -75,9 +77,8 @@ Everything else that was open has been closed:
   GitHub OIDC, so there is no token to store and every release carries provenance. `AGENTS.md` has
   the details, including the one-time publisher setup on npmjs.com.
 - **The cold cache is measured**, not argued: see *Published* above.
-- **Package metadata is staged for the next release.** The npm keywords and the GitHub description
-  were corrected after 0.0.2 shipped, so 0.0.2's page still carries the old ones. They will ride
-  along with the next functional release; no reason to spend a version number on keywords.
+- **Package metadata is current as of 0.0.3**, which carries the corrected keywords and the
+  `SECURITY.md`, `CONTRIBUTING.md` and `RUNTIMES.md` that 0.0.2 predated.
 
 **The cold-cache half of Phase 5's gate.** The tarball install and `moat demo` were measured with
 a warm cache. A genuinely cold one means roughly 560 MB of downloads, and it was skipped rather
