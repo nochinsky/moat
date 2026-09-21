@@ -34,8 +34,8 @@ moat demo three-way attribution, on a real sandbox, with no API key
   applied 1 change(s); skipped 1: notes.txt
   your notes.txt is exactly as you left it: moat does not write a file you both changed
 
-  build 0.0s  hash before 0.0s  up 1.9s  turn 6.6s  fetch 0.2s  plan 0.0s  apply 0.0s  hash after 0.0s
-  total 8.7s (warm cache; a cold one downloads the image first)
+  build 0.0s  hash before 0.0s  up 1.8s  turn 6.2s  fetch 0.2s  plan 0.0s  apply 0.0s  hash after 0.0s
+  total 8.2s (warm cache; a cold one downloads the image first)
   left in place: /home/user/moat-demo/demo-gate/project
 
 --- exit 0

@@ -35,9 +35,11 @@ Branches and history
 The environment
   moat up [task]         start it without a task; --profile, --fresh, --sync, --yes live here
   moat profiles          toolchain profiles the sandbox can be given
+  moat provider          which endpoint moat talks to, and the key it uses
   moat models [provider] what the model catalog offers, with context windows
   moat destroy           delete this project's environment and snapshots
-  moat snapshot [name]   save the rootfs; moat restore <name> brings it back
+  moat snapshot [name]   save the rootfs, including everything installed in it
+  moat restore <name>    put that rootfs back; the project's work is kept
 
 Diagnostics
   moat doctor            host support, the in-sandbox isolation checks, the measured exposures
