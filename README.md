@@ -20,7 +20,7 @@ instead of your home directory.
 ## See it work, in a minute, with no API key
 
 ```bash
-npx -y moat-cli demo
+npx -y moat-sandbox demo
 ```
 
 This makes a scratch project, boots a real sandbox, runs a real agent against a scripted model,
@@ -32,8 +32,8 @@ It leaves your directory alone and removes its scratch project afterwards.
 ## Install
 
 ```bash
-npx -y moat-cli          # run without installing
-npm i -g moat-cli        # or install it; the command is still `moat`
+npx -y moat-sandbox       # run without installing
+npm i -g moat-sandbox     # or install it; the command is still `moat`
 ```
 
 Then, in a project you have committed to git:

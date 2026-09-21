@@ -1,8 +1,7 @@
 {
-  "name": "moat-cli",
+  "name": "moat-sandbox",
   "version": "0.0.1",
-  "private": true,
-  "description": "Run an AI coding agent inside a disposable, fully isolated Linux sandbox. The host is never touched.",
+  "description": "Run an AI coding agent in a disposable Linux sandbox, and review what it did hunk by hunk before any of it reaches your machine.",
   "type": "module",
   "license": "MIT",
   "bin": {

@@ -37,8 +37,8 @@ running the suites; never edit it by hand.
 
 ## Shipped
 
-The package is publishable, not published. It is `moat-cli` on npm (the name `moat` belongs to an
-unrelated testing library), while the installed command stays `moat`.
+The package is publishable, not published. It is `moat-sandbox` on npm (both `moat` and `moat-cli` belong to unrelated
+packages), while the installed command stays `moat`.
 
 ```bash
 npm pack                     # builds dist/ via prepack, then packages it

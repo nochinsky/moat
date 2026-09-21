@@ -99,8 +99,8 @@ Two layout traps come with it, both found by installing the tarball and running 
   `test/scripts/responses-demo.json`; both now live in `stub/`, which `files` includes. When
   adding an asset a *command* reads, put it where `files` ships and check `npm pack` lists it.
 
-The npm name is `moat-cli`. `moat` on npm is an unrelated 2015 JavaScript testing library, so
-`npx moat` fetches the wrong thing; the installed **command** is still `moat`.
+The npm name is `moat-sandbox`. Both `moat` and `moat-cli` belong to unrelated packages, so
+`npx moat` and `npx moat-cli` fetch the wrong thing; the installed **command** is `moat`.
 
 ## Running it
 
