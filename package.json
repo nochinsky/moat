@@ -1,6 +1,6 @@
 {
   "name": "moat-sandbox",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Run an AI coding agent in a disposable Linux sandbox, and review what it did hunk by hunk before any of it reaches your machine.",
   "type": "module",
   "license": "MIT",
