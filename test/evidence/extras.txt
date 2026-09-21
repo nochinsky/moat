@@ -18,16 +18,16 @@ profiles: everything requested is already installed
 ✓ copy-in via git: 3 files, 0.3 KiB, digest ed2e86797199e208
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-41
+agent branch: moat-session-2026-09-21-18-51
 checks: npm run test
-→ sandbox booted (pid 821918); the codex runtime has no server to wait for
-✓ sandbox up, warm start 343ms (image reused)
+→ sandbox booted (pid 840253); the codex runtime has no server to wait for
+✓ sandbox up, warm start 335ms (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:41:06.512Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:51:17.221Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -52,8 +52,8 @@ host-side proof that /work is excluded from snapshots:
 $ tar tzf <snapshot> | grep -c '^\./work'   # expect 0
 snapshot: /home/user/.moat/envs/18620c2c4f34/snapshots/before-extras.tar.gz
 entries under ./work : 0
-entries under ./root  : 10
-total entries         : 4674
+entries under ./root  : 11
+total entries         : 4675
 
 ==============================================================
 == B. moat restore rolls the rootfs back and preserves /work
@@ -62,7 +62,7 @@ total entries         : 4674
 --- exit 0
 --- stdout ---
 --- stderr ---
-stopped sandbox pid 821918 before restoring
+stopped sandbox pid 840253 before restoring
 ✓ restored rootfs snapshot before-extras (the project copy in /work was preserved)
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c echo 'in-sandbox /opt after restore:'; ls /opt; echo '--- /work preserved? ---'; ls /work; echo '--- agent commit still present? ---'; git -C /work log --oneline -1
 --- exit 0
@@ -73,7 +73,7 @@ package.json
 src
 test
 --- agent commit still present? ---
-5de0bc9 initial project
+9eb2ace initial project
 --- stderr ---
 
 ==============================================================
@@ -87,16 +87,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-41
+agent branch: moat-session-2026-09-21-18-51
 checks: npm run test
-→ sandbox booted (pid 822154); the codex runtime has no server to wait for
-✓ sandbox up, warm start 234ms (image reused)
+→ sandbox booted (pid 840489); the codex runtime has no server to wait for
+✓ sandbox up, warm start 231ms (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:41:29.070Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:51:39.540Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -105,14 +105,14 @@ checks: npm run test
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-21-18-41:refs/moat/moat-session-2026-09-21-18-41
-✓ fetched moat-session-2026-09-21-18-41 -> refs/moat/moat-session-2026-09-21-18-41 (5de0bc96814b)
-  1 commit(s) reachable, HEAD 5de0bc96814b -> 5de0bc96814b
-    5de0bc96814b  initial project
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-21-18-51:refs/moat/moat-session-2026-09-21-18-51
+✓ fetched moat-session-2026-09-21-18-51 -> refs/moat/moat-session-2026-09-21-18-51 (9eb2ace1064c)
+  1 commit(s) reachable, HEAD 9eb2ace1064c -> 9eb2ace1064c
+    9eb2ace1064c  initial project
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-21-18-41
-  apply with:    moat apply moat-session-2026-09-21-18-41  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-21-18-51
+  apply with:    moat apply moat-session-2026-09-21-18-51  (or --checkout)
 --- $ node /home/user/Projects/moat/cmd/main.ts apply main --name e2e-checkout
 --- exit 0
 --- stdout ---
@@ -122,7 +122,7 @@ checks: npm run test
 $ git -C /home/user/moat-demo/project branch --list 'e2e-checkout'
   e2e-checkout
 $ git -C /home/user/moat-demo/project rev-parse HEAD   # unchanged: apply did not check anything out
-5de0bc96814b60ddd2ec9af1295928ed3c32b4dc
+9eb2ace1064cb282ef780c209b5ec30c5cd112f4
 $ git -C /home/user/moat-demo/project status --porcelain   # only the user's own pre-existing dirt
   pass  apply --name
 
@@ -134,7 +134,7 @@ booting with --credential-ttl 6s and watching the box stop on its own...
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 822154); the environment and its snapshots are kept
+✓ sandbox stopped (pid 840489); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --credential-env MOAT_MOCK_CREDENTIAL --credential-ttl 6s
@@ -145,7 +145,7 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 6s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-41
+agent branch: moat-session-2026-09-21-18-51
 checks: npm run test
 ✓ sandbox up, warm start 233ms (image reused)
 
@@ -153,7 +153,7 @@ checks: npm run test
   env        /home/user/.moat/envs/18620c2c4f34
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T18:41:36.025Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T18:51:46.485Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -168,16 +168,36 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 codex        0.155.1 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-21-18-41
+branch       moat-session-2026-09-21-18-51
 egress       open (host network namespace)
 rootfs       400.1 MiB
 credential   moat sha256:7726b438889c7f57 expires in -6s (EXPIRED: the box stops at this deadline)
 snapshots    before-extras
-branches     main, moat-session-2026-09-21-18-41*
+branches     main, moat-session-2026-09-21-18-51*
 --- $ node /home/user/Projects/moat/cmd/main.ts logs sandbox
 --- exit 0
 --- stdout ---
 --- stderr ---
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 6s; the box stops then
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
 [moat] codex runtime ready (pid 1)
 [moat] the injected credential expires in 14400s; the box stops then
 [moat] codex runtime ready (pid 1)
@@ -257,7 +277,7 @@ TAP version 13
 # Subtest: adds
 ok 1 - adds
   ---
-  duration_ms: 0.826281
+  duration_ms: 0.850688
   type: 'test'
   ...
 1..1
@@ -268,7 +288,7 @@ ok 1 - adds
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 74.063294
+# duration_ms 73.489562
 [moat] exit 0
 
   pass  npm test                 0.3s
@@ -287,19 +307,19 @@ would otherwise need a person at a terminal.
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.49s (extract cached image 1.26s)
+✓ image provisioned in 1.46s (extract cached image 1.25s)
 ! /home/user/moat-demo/plain is not a git repository; falling back to rsync + a fresh in-sandbox repo
 ✓ copy-in via rsync: 1 files, 0.0 KiB, digest 72c9e5bb8cc39736
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-41
-✓ sandbox up, cold start 1.78s (image built)
+agent branch: moat-session-2026-09-21-18-51
+✓ sandbox up, cold start 1.74s (image built)
 
   project    /home/user/moat-demo/plain
   env        /home/user/.moat/envs/61757d2076a6
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:41:44.676Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:51:55.081Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -307,7 +327,7 @@ agent branch: moat-session-2026-09-21-18-41
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c cd /work && echo "made inside the box" > agent.txt && git add -A && git -c user.email=a@b -c user.name=a commit -qm "agent: add agent.txt" && git log --oneline -1
 --- exit 0
 --- stdout ---
-ac83e75 agent: add agent.txt
+5b1a919 agent: add agent.txt
 --- stderr ---
 --- $ node /home/user/Projects/moat/cmd/main.ts fetch
 --- exit 1
@@ -370,12 +390,12 @@ env          /home/user/.moat/envs/18620c2c4f34
 status       stopped
 codex        0.155.1 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-21-18-41
+branch       moat-session-2026-09-21-18-51
 egress       open (host network namespace)
 rootfs       400.1 MiB
 credential   moat sha256:7726b438889c7f57 expires in -10s (EXPIRED: the box stops at this deadline)
 snapshots    before-extras
-branches     main, moat-session-2026-09-21-18-41*
+branches     main, moat-session-2026-09-21-18-51*
 --- $ node /home/user/Projects/moat/cmd/main.ts down
 --- exit 0
 --- stdout ---
@@ -389,6 +409,26 @@ sandbox is not running
 --- exit 0
 --- stdout ---
 --- stderr ---
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 6s; the box stops then
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
 [moat] codex runtime ready (pid 1)
 [moat] the injected credential expires in 14400s; the box stops then
 [moat] codex runtime ready (pid 1)
@@ -461,7 +501,7 @@ Terminated
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + codex 0.155.1)
 → provisioning from the cached image alpine-3.21.4-5fcd2d224a5c.tar.gz
-✓ image provisioned in 1.48s (extract cached image 1.27s)
+✓ image provisioned in 1.46s (extract cached image 1.25s)
 ✗ /home/user/moat-demo/bad-name-project/bad�name is not a valid UTF-8 file name (bytes: 626164ff6e616d65). moat addresses files by name as text, so this name cannot be handled reliably: rename it, or keep it out of the project directory.
   pass  bad file name
 --- $ node /home/user/Projects/moat/cmd/main.ts destroy --yes
@@ -522,16 +562,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-41
+agent branch: moat-session-2026-09-21-18-51
 checks: npm run test
-→ sandbox booted (pid 823028); the codex runtime has no server to wait for
-✓ sandbox up, warm start 258ms (image reused)
+→ sandbox booted (pid 841364); the codex runtime has no server to wait for
+✓ sandbox up, warm start 253ms (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:34c4e933b47c1fb3 expires 2026-09-21T22:41:49.293Z
+  credential moat sha256:34c4e933b47c1fb3 expires 2026-09-21T22:51:59.684Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -541,7 +581,7 @@ checks: npm run test
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 823028); the environment and its snapshots are kept
+✓ sandbox stopped (pid 841364); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts up --credential-ttl nonsense
@@ -577,18 +617,18 @@ checks: npm run test
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.46s (extract cached image 1.25s)
+✓ image provisioned in 1.45s (extract cached image 1.25s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 223d6a805fbb38e3
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-41
-✓ sandbox up, cold start 1.72s (image built)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, cold start 1.71s (image built)
 
   project    /home/user/moat-demo/stateless
   env        /home/user/.moat/envs/47af90427aba
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:41:51.886Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:02.258Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -597,21 +637,21 @@ agent branch: moat-session-2026-09-21-18-41
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 823238); the environment and its snapshots are kept
+✓ sandbox stopped (pid 841574); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c cd /work && printf 'agent work\n' > precious.txt && git add -A && git -c user.email=agent@moat.invalid -c user.name=agent commit -qm 'agent: work the host has never seen' && git rev-parse HEAD
 --- exit 0
 --- stdout ---
-d542c52f528057ca54d06a59c213a5499e55b65d
+6a8fa1d7531f27d960ec1a78044777e50674454e
 --- stderr ---
 --- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
 --- stderr ---
 ! state.json is missing, but the sandbox's working tree is still there, so the environment was recovered from disk instead of replaced.
-  branch   moat-session-2026-09-21-18-41
-  baseline b0008d01e8d6
+  branch   moat-session-2026-09-21-18-52
+  baseline 2a0d9be37dda
   everything installed in it, and every commit it holds, are intact; this boot mints a fresh credential.
   the host-drift check cannot run without the recorded baseline: `moat up --sync` re-copies the project and restores it.
   to discard the sandbox's copy instead: moat up --fresh --yes
@@ -620,14 +660,14 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-41
-✓ sandbox up, warm start 202ms (image reused)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, warm start 198ms (image reused)
 
   project    /home/user/moat-demo/stateless
   env        /home/user/.moat/envs/47af90427aba
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:41:52.854Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:03.225Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -638,14 +678,14 @@ agent branch: moat-session-2026-09-21-18-41
 --- stdout ---
 --- stderr ---
 → copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/main:refs/moat/main
-→ copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/moat-session-2026-09-21-18-41:refs/moat/moat-session-2026-09-21-18-41
-✓ fetched main -> refs/moat/main (f3651764b74a)
-  1 commit(s) reachable, HEAD f3651764b74a -> f3651764b74a
-    f3651764b74a  init
-✓ fetched moat-session-2026-09-21-18-41 -> refs/moat/moat-session-2026-09-21-18-41 (d542c52f5280)
-  2 commit(s) reachable, HEAD f3651764b74a -> f3651764b74a
-    d542c52f5280  agent: work the host has never seen
-    f3651764b74a  init
+→ copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/moat-session-2026-09-21-18-52:refs/moat/moat-session-2026-09-21-18-52
+✓ fetched main -> refs/moat/main (190f3dac08cc)
+  1 commit(s) reachable, HEAD 190f3dac08cc -> 190f3dac08cc
+    190f3dac08cc  init
+✓ fetched moat-session-2026-09-21-18-52 -> refs/moat/moat-session-2026-09-21-18-52 (6a8fa1d7531f)
+  2 commit(s) reachable, HEAD 190f3dac08cc -> 190f3dac08cc
+    6a8fa1d7531f  agent: work the host has never seen
+    190f3dac08cc  init
 
   the host working tree was recomputed and is byte-identical
   inspect with:  git log refs/moat/main
@@ -662,14 +702,14 @@ agent branch: moat-session-2026-09-21-18-41
 --- stderr ---
 project      /home/user/moat-demo/race
 env          /home/user/.moat/envs/abbcf717bc1f
-status       booting (pid 823543, 0s in)
+status       booting (pid 841879, 0s in)
 --- $ node /home/user/Projects/moat/cmd/main.ts down
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ moat up is already booting this environment (pid 823543, 0s in); waiting for it before stopping the sandbox
+→ moat up is already booting this environment (pid 841879, 0s in); waiting for it before stopping the sandbox
 the boot finished
-✓ sandbox stopped (pid 823615); the environment and its snapshots are kept
+✓ sandbox stopped (pid 841951); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 the background moat up exited 0
@@ -685,18 +725,18 @@ the background moat up exited 0
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.98s (extract cached image 1.71s)
+✓ image provisioned in 1.93s (extract cached image 1.67s)
 ✓ copy-in via git: 1 files, 0.1 KiB, digest f1d2a213f3604201
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-41
-✓ sandbox up, cold start 2.25s (image built)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, cold start 2.20s (image built)
 
   project    /home/user/moat-demo/notests
   env        /home/user/.moat/envs/9dd0ae9a1fa3
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:41:58.325Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:08.623Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -717,19 +757,19 @@ agent branch: moat-session-2026-09-21-18-41
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.96s (extract cached image 1.70s)
+✓ image provisioned in 1.92s (extract cached image 1.67s)
 ✓ copy-in via git: 1 files, 0.1 KiB, digest 4c6dd1a629071812
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
+agent branch: moat-session-2026-09-21-18-52
 checks: npm run test
-✓ sandbox up, cold start 2.23s (image built)
+✓ sandbox up, cold start 2.19s (image built)
 
   project    /home/user/moat-demo/slowchecks
   env        /home/user/.moat/envs/cb5aa1a212b5
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:42:01.243Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:11.502Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -789,16 +829,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
+agent branch: moat-session-2026-09-21-18-52
 checks: npm run test
-→ sandbox booted (pid 824120); the codex runtime has no server to wait for
-✓ sandbox up, warm start 234ms (image reused)
+→ sandbox booted (pid 842456); the codex runtime has no server to wait for
+✓ sandbox up, warm start 233ms (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:42:06.748Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:16.985Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -807,7 +847,7 @@ checks: npm run test
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 824120); the environment and its snapshots are kept
+✓ sandbox stopped (pid 842456); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
@@ -818,15 +858,15 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
+agent branch: moat-session-2026-09-21-18-52
 checks: npm run test
-✓ sandbox up, warm start 235ms (image reused)
+✓ sandbox up, warm start 231ms (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:42:07.347Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:17.578Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -837,7 +877,7 @@ checks: npm run test
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 824230); the environment and its snapshots are kept
+✓ sandbox stopped (pid 842566); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts up --verbose --no-detect --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
@@ -853,16 +893,16 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
+agent branch: moat-session-2026-09-21-18-52
 checks: npm run test
-→ sandbox booted (pid 824347); the codex runtime has no server to wait for
-✓ sandbox up, warm start 236ms (image reused)
+→ sandbox booted (pid 842683); the codex runtime has no server to wait for
+✓ sandbox up, warm start 238ms (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:42:07.943Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:18.183Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -873,7 +913,7 @@ checks: npm run test
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 824347); the environment and its snapshots are kept
+✓ sandbox stopped (pid 842683); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts profiles --help
@@ -968,18 +1008,18 @@ Docs: docs/SPEC.md, docs/VERIFICATION.md
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.46s (extract cached image 1.26s)
+✓ image provisioned in 1.45s (extract cached image 1.26s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 39be036c543bb13e
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
-✓ sandbox up, cold start 1.73s (image built)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, cold start 1.71s (image built)
 
   project    /home/user/moat-demo/leakscan
   env        /home/user/.moat/envs/345dfb73d559
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:42:10.185Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:20.413Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -988,32 +1028,32 @@ agent branch: moat-session-2026-09-21-18-42
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/345dfb73d559/rootfs/work +refs/heads/moat-session-2026-09-21-18-42:refs/moat/moat-session-2026-09-21-18-42
-✓ fetched moat-session-2026-09-21-18-42 -> refs/moat/moat-session-2026-09-21-18-42 (7545d1d1af36)
-  2 commit(s) reachable, HEAD 1d8b69304057 -> 1d8b69304057
-    7545d1d1af36  clean change
-    1d8b69304057  init
+→ copy-out: git fetch /home/user/.moat/envs/345dfb73d559/rootfs/work +refs/heads/moat-session-2026-09-21-18-52:refs/moat/moat-session-2026-09-21-18-52
+✓ fetched moat-session-2026-09-21-18-52 -> refs/moat/moat-session-2026-09-21-18-52 (bacdf569b844)
+  2 commit(s) reachable, HEAD f8b49884cffb -> f8b49884cffb
+    bacdf569b844  clean change
+    f8b49884cffb  init
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-21-18-42
-  apply with:    moat apply moat-session-2026-09-21-18-42  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-21-18-52
+  apply with:    moat apply moat-session-2026-09-21-18-52  (or --checkout)
 --- $ node /home/user/Projects/moat/cmd/main.ts fetch
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/345dfb73d559/rootfs/work +refs/heads/moat-session-2026-09-21-18-42:refs/moat/moat-session-2026-09-21-18-42
+→ copy-out: git fetch /home/user/.moat/envs/345dfb73d559/rootfs/work +refs/heads/moat-session-2026-09-21-18-52:refs/moat/moat-session-2026-09-21-18-52
 ! 1 file(s) in the branch just fetched contain the credential moat injected into the sandbox:
     leaked.env
   The agent has to read that value to call the model, and it can write it anywhere. moat names it instead of dropping it: review (or delete) the file before you commit or push, and rotate the key if that content has already reached a remote.
-✓ fetched moat-session-2026-09-21-18-42 -> refs/moat/moat-session-2026-09-21-18-42 (6df1ca34934e)
-  3 commit(s) reachable, HEAD 1d8b69304057 -> 1d8b69304057
-    6df1ca34934e  oops, the key
-    7545d1d1af36  clean change
-    1d8b69304057  init
+✓ fetched moat-session-2026-09-21-18-52 -> refs/moat/moat-session-2026-09-21-18-52 (0c01cc59df11)
+  3 commit(s) reachable, HEAD f8b49884cffb -> f8b49884cffb
+    0c01cc59df11  oops, the key
+    bacdf569b844  clean change
+    f8b49884cffb  init
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-21-18-42
-  apply with:    moat apply moat-session-2026-09-21-18-42  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-21-18-52
+  apply with:    moat apply moat-session-2026-09-21-18-52  (or --checkout)
 --- $ node /home/user/Projects/moat/cmd/main.ts apply --yes
 --- exit 0
 --- stdout ---
@@ -1064,18 +1104,18 @@ copy-out: fetch and apply both name the credential in the agent's commit, and th
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://localhost:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.47s (extract cached image 1.26s)
+✓ image provisioned in 1.45s (extract cached image 1.24s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 01d119f0b157f0c2
 model: moat/mock-model
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
-✓ sandbox up, cold start 1.74s (image built)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, cold start 1.70s (image built)
 
   project    /home/user/moat-demo/nobase
   env        /home/user/.moat/envs/028eed72b411
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:34c4e933b47c1fb3 expires 2026-09-21T22:42:13.457Z
+  credential moat sha256:34c4e933b47c1fb3 expires 2026-09-21T22:52:23.634Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -1090,18 +1130,18 @@ agent branch: moat-session-2026-09-21-18-42
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.48s (extract cached image 1.27s)
+✓ image provisioned in 1.45s (extract cached image 1.25s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 3079070042e2521c
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
-✓ sandbox up, cold start 1.73s (image built)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, cold start 1.71s (image built)
 
   project    /home/user/moat-demo/branchloss
   env        /home/user/.moat/envs/bec7e614d182
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:42:15.726Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:25.875Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -1115,14 +1155,14 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
-✓ sandbox up, warm start 236ms (image reused)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, warm start 232ms (image reused)
 
   project    /home/user/moat-demo/branchloss
   env        /home/user/.moat/envs/bec7e614d182
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:42:16.579Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:26.719Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -1132,11 +1172,11 @@ agent branch: moat-session-2026-09-21-18-42
 --- stdout ---
   experiment
   main
-* moat-session-2026-09-21-18-42
+* moat-session-2026-09-21-18-52
 --- all commits ---
-d7941e3 important work on a side branch
-95615c8 moat: state copied from the host
-8596113 base
+56a45cb important work on a side branch
+fe33f7b moat: state copied from the host
+6088738 base
 --- stderr ---
   pass  side branch
 --- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --model mock-model --base-url http://127.0.0.1:5599/v1 --credential-env MOAT_MOCK_CREDENTIAL
@@ -1148,14 +1188,14 @@ profiles: everything requested is already installed
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 01bc0dcde3c3588d (dirty tree: 1 modified, 0 untracked)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
-✓ sandbox up, warm start 274ms (image reused)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, warm start 291ms (image reused)
 
   project    /home/user/moat-demo/branchloss
   env        /home/user/.moat/envs/bec7e614d182
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:42:17.590Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:27.732Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -1170,18 +1210,18 @@ agent branch: moat-session-2026-09-21-18-42
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.48s (extract cached image 1.27s)
+✓ image provisioned in 1.45s (extract cached image 1.25s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 3079070042e2521c
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
-✓ sandbox up, cold start 1.75s (image built)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, cold start 1.72s (image built)
 
   project    /home/user/moat-demo/detached
   env        /home/user/.moat/envs/8651a31c28f7
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:42:19.752Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:29.886Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -1197,14 +1237,14 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-42
-✓ sandbox up, warm start 238ms (image reused)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, warm start 236ms (image reused)
 
   project    /home/user/moat-demo/detached
   env        /home/user/.moat/envs/8651a31c28f7
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:42:20.610Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:52:30.742Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -1212,9 +1252,9 @@ agent branch: moat-session-2026-09-21-18-42
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c git -C /work log --oneline --all | head -4; echo "--- detached.txt ---"; ls /work/detached.txt
 --- exit 0
 --- stdout ---
-6f5b130 work on a detached HEAD
-6dd3838 moat: state copied from the host
-9ec48a9 base
+5cc46c7 work on a detached HEAD
+ecd5659 moat: state copied from the host
+738ddef base
 --- detached.txt ---
 /work/detached.txt
 --- stderr ---
@@ -1223,10 +1263,10 @@ agent branch: moat-session-2026-09-21-18-42
 --- stdout ---
 --- stderr ---
 → copy-out: git fetch /home/user/.moat/envs/8651a31c28f7/rootfs/work +refs/heads/keep:refs/moat/keep
-✓ fetched keep -> refs/moat/keep (6f5b1308ba93)
-  2 commit(s) reachable, HEAD 9ec48a962ead -> 9ec48a962ead
-    6f5b1308ba93  work on a detached HEAD
-    9ec48a962ead  base
+✓ fetched keep -> refs/moat/keep (5cc46c7421e9)
+  2 commit(s) reachable, HEAD 738ddef186db -> 738ddef186db
+    5cc46c7421e9  work on a detached HEAD
+    738ddef186db  base
 
   the host working tree was recomputed and is byte-identical
   inspect with:  git log refs/moat/keep
@@ -1236,20 +1276,20 @@ agent branch: moat-session-2026-09-21-18-42
 ==============================================================
 == AF. a local endpoint runs with no credential in the box
 ==============================================================
---- $ node /home/user/Projects/moat/cmd/main.ts run --no-credential --no-detect --model mock-model --base-url http://127.0.0.1:57089/v1 do the task
+--- $ node /home/user/Projects/moat/cmd/main.ts run --no-credential --no-detect --model mock-model --base-url http://127.0.0.1:37885/v1 do the task
 --- exit 0
 --- stdout ---
 --- stderr ---
-egress: open, because the provider is on the host's loopback (http://127.0.0.1:57089/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
+egress: open, because the provider is on the host's loopback (http://127.0.0.1:37885/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
 → provisioning sandbox image (alpine 3.21.4 + codex 0.155.1)
 → provisioning from the cached image alpine-3.21.4-5fcd2d224a5c.tar.gz
-✓ image provisioned in 1.47s (extract cached image 1.26s)
+✓ image provisioned in 1.45s (extract cached image 1.24s)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 3b51b9bbd854d89f
 model: moat/mock-model
-! no credential injected, so requests to http://127.0.0.1:57089/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-21-18-42
-→ sandbox booted (pid 825839); the codex runtime has no server to wait for
+! no credential injected, so requests to http://127.0.0.1:37885/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
+agent branch: moat-session-2026-09-21-18-52
+→ sandbox booted (pid 844200); the codex runtime has no server to wait for
   ✗ /bin/sh -lc "cd /work && sed -i 's/a - b/a + b/' src/sum.js && git add -A && git -c user.email=mock@example.com -c user.
 
 Fixed src/sum.js so the test passes, and committed it.
@@ -1268,7 +1308,7 @@ authorization headers: null
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 3b51b9bbd854d89f
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-21-18-42
+agent branch: moat-session-2026-09-21-18-52
 ✗ no DEEPSEEK_API_KEY, so the agent has no model to call.
   export DEEPSEEK_API_KEY=sk-...   then run it again
   or run `moat` with no arguments at a terminal and it will ask for the key
@@ -1282,12 +1322,12 @@ agent branch: moat-session-2026-09-21-18-42
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.49s (extract cached image 1.26s)
+✓ image provisioned in 1.44s (extract cached image 1.24s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-21-18-42
-✓ sandbox up, cold start 1.87s (image built)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, cold start 1.81s (image built)
 
   project    /home/user/moat-demo/killed
   env        /home/user/.moat/envs/00edb0f8f18c
@@ -1304,28 +1344,28 @@ agent branch: moat-session-2026-09-21-18-42
   "version": 1,
   "id": "00edb0f8f18c",
   "projectDir": "/home/user/moat-demo/killed",
-  "createdAt": "2026-09-21T18:42:34.691Z",
-  "lastUpAt": "2026-09-21T18:42:35.050Z",
+  "createdAt": "2026-09-21T18:52:44.789Z",
+  "lastUpAt": "2026-09-21T18:52:45.134Z",
   "status": "running",
   "alpineVersion": "3.21.4",
   "model": "moat/mock-model",
   "provider": "moat",
   "providerBaseUrl": "http://127.0.0.1:5599/v1",
-  "branch": "moat-session-2026-09-21-18-42",
+  "branch": "moat-session-2026-09-21-18-52",
   "baseBranch": "main",
   "profiles": [],
-  "pid": 826149,
-  "pidStart": "10380064",
+  "pid": 844513,
+  "pidStart": "10441072",
   "egress": "isolated",
   "egressAllow": [],
-  "slirpPid": 826172,
-  "slirpStart": "10380066",
+  "slirpPid": 844536,
+  "slirpStart": "10441075",
   "baselineDigest": "6bdc92b0668ce66c1b51f3308654946a0e08ceddfdeb37828c80c1b8a877144f",
-  "baselineHostState": "git:47b01a6f7c0a2d68389b819d08b8e68c7201f5f7:6e340b9cffb37a98",
-  "baselineCommit": "0b79c6aef3e5b09cbdbd3afd5c122cf43085adf3",
+  "baselineHostState": "git:f0edefc50dcdb2149d38a055f29239590e9246e7:6e340b9cffb37a98",
+  "baselineCommit": "358e5420ee9457e729131b0c1d32358025a97b79",
   "credential": null,
   "snapshots": [],
-  "lastBootMs": 230,
+  "lastBootMs": 229,
   "envDir": "/home/user/.moat/envs/00edb0f8f18c",
   "rootfsDir": "/home/user/.moat/envs/00edb0f8f18c/rootfs",
   "running": true,
@@ -1334,35 +1374,35 @@ agent branch: moat-session-2026-09-21-18-42
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "47b01a6f7c0a2d68389b819d08b8e68c7201f5f7",
+      "sha": "f0edefc50dcdb2149d38a055f29239590e9246e7",
       "subject": "base",
-      "committedAt": "2026-09-21T20:42:32+02:00",
+      "committedAt": "2026-09-21T20:52:43+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-21-18-42",
-      "sha": "47b01a6f7c0a2d68389b819d08b8e68c7201f5f7",
+      "name": "moat-session-2026-09-21-18-52",
+      "sha": "f0edefc50dcdb2149d38a055f29239590e9246e7",
       "subject": "base",
-      "committedAt": "2026-09-21T20:42:32+02:00",
+      "committedAt": "2026-09-21T20:52:43+02:00",
       "current": true
     }
   ]
 }
 --- stderr ---
-box 826149, datapath 826172
+box 844513, datapath 844536
 datapath for that box still up one second after the kill: 1
 --- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --no-credential --egress isolated --model mock-model --base-url http://127.0.0.1:5599/v1
 --- exit 0
 --- stdout ---
 --- stderr ---
-! the recorded sandbox pid 826149 is not moat's any more; ignoring it
+! the recorded sandbox pid 844513 is not moat's any more; ignoring it
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-21-18-42
-! reaped the datapath of a sandbox that is no longer running (pid 826172)
-✓ sandbox up, warm start 335ms (image reused)
+agent branch: moat-session-2026-09-21-18-52
+! reaped the datapath of a sandbox that is no longer running (pid 844536)
+✓ sandbox up, warm start 331ms (image reused)
 
   project    /home/user/moat-demo/killed
   env        /home/user/.moat/envs/00edb0f8f18c
@@ -1372,18 +1412,18 @@ agent branch: moat-session-2026-09-21-18-42
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
         moat down    stop the sandbox (state and snapshots are kept)
-after the second boot: old datapath 0, new datapath 1 (new box 826282)
+after the second boot: old datapath 0, new datapath 1 (new box 844646)
   pass  out-of-band kill
 --- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --no-credential --egress isolated --model mock-model --base-url http://127.0.0.1:5599/v1
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.45s (extract cached image 1.24s)
+✓ image provisioned in 1.44s (extract cached image 1.24s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-21-18-42
-✓ sandbox up, cold start 1.84s (image built)
+agent branch: moat-session-2026-09-21-18-52
+✓ sandbox up, cold start 1.83s (image built)
 
   project    /home/user/moat-demo/killed
   env        /home/user/.moat/envs/00edb0f8f18c
@@ -1398,14 +1438,14 @@ datapath up while its box is still alive: 1
 --- exit 0
 --- stdout ---
 --- stderr ---
-! the recorded sandbox pid 826380 is not moat's any more; ignoring it
+! the recorded sandbox pid 844744 is not moat's any more; ignoring it
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-21-18-42
-! reaped the datapath of a sandbox that is no longer running (pid 826403)
-✓ sandbox up, warm start 308ms (image reused)
+agent branch: moat-session-2026-09-21-18-52
+! reaped the datapath of a sandbox that is no longer running (pid 844767)
+✓ sandbox up, warm start 335ms (image reused)
 
   project    /home/user/moat-demo/killed
   env        /home/user/.moat/envs/00edb0f8f18c
@@ -1420,11 +1460,11 @@ agent branch: moat-session-2026-09-21-18-42
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.46s (extract cached image 1.25s)
+✓ image provisioned in 1.46s (extract cached image 1.26s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-21-18-42
+agent branch: moat-session-2026-09-21-18-53
 ✓ sandbox up, cold start 1.84s (image built)
 
   project    /home/user/moat-demo/datapath-reap
@@ -1442,70 +1482,70 @@ agent branch: moat-session-2026-09-21-18-42
   "version": 1,
   "id": "f7355b303b3e",
   "projectDir": "/home/user/moat-demo/datapath-reap",
-  "createdAt": "2026-09-21T18:42:51.955Z",
-  "lastUpAt": "2026-09-21T18:42:52.316Z",
+  "createdAt": "2026-09-21T18:53:02.035Z",
+  "lastUpAt": "2026-09-21T18:53:02.390Z",
   "status": "running",
   "alpineVersion": "3.21.4",
   "model": "moat/mock-model",
   "provider": "moat",
   "providerBaseUrl": "http://127.0.0.1:5599/v1",
-  "branch": "moat-session-2026-09-21-18-42",
+  "branch": "moat-session-2026-09-21-18-53",
   "baseBranch": "main",
   "profiles": [],
-  "pid": 826594,
-  "pidStart": "10381790",
+  "pid": 844960,
+  "pidStart": "10442798",
   "egress": "isolated",
   "egressAllow": [],
-  "slirpPid": 826617,
-  "slirpStart": "10381793",
+  "slirpPid": 844983,
+  "slirpStart": "10442800",
   "baselineDigest": "6bdc92b0668ce66c1b51f3308654946a0e08ceddfdeb37828c80c1b8a877144f",
-  "baselineHostState": "git:79447fb01e270fd6d6bb3956b64be98e841d9956:6e340b9cffb37a98",
-  "baselineCommit": "73052987ec5f9c17359efb1678da49f8e3d1110e",
+  "baselineHostState": "git:ff38d50f8732220406709fd9e4128ff76b1dfd81:6e340b9cffb37a98",
+  "baselineCommit": "c9d5e6b3e2dcc4fab574e0f2eed678d33f76462e",
   "credential": null,
   "snapshots": [],
-  "lastBootMs": 231,
+  "lastBootMs": 230,
   "envDir": "/home/user/.moat/envs/f7355b303b3e",
   "rootfsDir": "/home/user/.moat/envs/f7355b303b3e/rootfs",
   "running": true,
   "booting": null,
-  "rootfsBytes": 313178158,
+  "rootfsBytes": 313178157,
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "79447fb01e270fd6d6bb3956b64be98e841d9956",
+      "sha": "ff38d50f8732220406709fd9e4128ff76b1dfd81",
       "subject": "base",
-      "committedAt": "2026-09-21T20:42:50+02:00",
+      "committedAt": "2026-09-21T20:53:00+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-21-18-42",
-      "sha": "79447fb01e270fd6d6bb3956b64be98e841d9956",
+      "name": "moat-session-2026-09-21-18-53",
+      "sha": "ff38d50f8732220406709fd9e4128ff76b1dfd81",
       "subject": "base",
-      "committedAt": "2026-09-21T20:42:50+02:00",
+      "committedAt": "2026-09-21T20:53:00+02:00",
       "current": true
     }
   ]
 }
 --- stderr ---
-down half: box 826594, datapath 826617, up before: 1
+down half: box 844960, datapath 844983, up before: 1
 --- $ node /home/user/Projects/moat/cmd/main.ts down
 --- exit 0
 --- stdout ---
 --- stderr ---
-! reaped the datapath of a sandbox that is no longer running (pid 826617)
-! the recorded sandbox is gone: pid 826594 now belongs to another process, so moat did not signal it.
+! reaped the datapath of a sandbox that is no longer running (pid 844983)
+! the recorded sandbox is gone: pid 844960 now belongs to another process, so moat did not signal it.
   the environment and its snapshots are kept
   pass  down
 --- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --no-credential --egress isolated --model mock-model --base-url http://127.0.0.1:5599/v1
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.44s (extract cached image 1.24s)
+✓ image provisioned in 1.46s (extract cached image 1.25s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-21-18-42
-✓ sandbox up, cold start 1.83s (image built)
+agent branch: moat-session-2026-09-21-18-53
+✓ sandbox up, cold start 1.84s (image built)
 
   project    /home/user/moat-demo/datapath-reap
   env        /home/user/.moat/envs/f7355b303b3e
@@ -1522,25 +1562,25 @@ agent branch: moat-session-2026-09-21-18-42
   "version": 1,
   "id": "f7355b303b3e",
   "projectDir": "/home/user/moat-demo/datapath-reap",
-  "createdAt": "2026-09-21T18:42:54.525Z",
-  "lastUpAt": "2026-09-21T18:42:54.884Z",
+  "createdAt": "2026-09-21T18:53:04.634Z",
+  "lastUpAt": "2026-09-21T18:53:04.991Z",
   "status": "running",
   "alpineVersion": "3.21.4",
   "model": "moat/mock-model",
   "provider": "moat",
   "providerBaseUrl": "http://127.0.0.1:5599/v1",
-  "branch": "moat-session-2026-09-21-18-42",
+  "branch": "moat-session-2026-09-21-18-53",
   "baseBranch": "main",
   "profiles": [],
-  "pid": 826728,
-  "pidStart": "10382047",
+  "pid": 845094,
+  "pidStart": "10443058",
   "egress": "isolated",
   "egressAllow": [],
-  "slirpPid": 826751,
-  "slirpStart": "10382050",
+  "slirpPid": 845117,
+  "slirpStart": "10443060",
   "baselineDigest": "6bdc92b0668ce66c1b51f3308654946a0e08ceddfdeb37828c80c1b8a877144f",
-  "baselineHostState": "git:79447fb01e270fd6d6bb3956b64be98e841d9956:6e340b9cffb37a98",
-  "baselineCommit": "e837312d5aa2ce1e6cce504f552e511318e26ff6",
+  "baselineHostState": "git:ff38d50f8732220406709fd9e4128ff76b1dfd81:6e340b9cffb37a98",
+  "baselineCommit": "0a3ec9522a32cbc5754148f6d2aefdc683cbe48e",
   "credential": null,
   "snapshots": [],
   "lastBootMs": 231,
@@ -1548,20 +1588,20 @@ agent branch: moat-session-2026-09-21-18-42
   "rootfsDir": "/home/user/.moat/envs/f7355b303b3e/rootfs",
   "running": true,
   "booting": null,
-  "rootfsBytes": 313178158,
+  "rootfsBytes": 313178157,
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "79447fb01e270fd6d6bb3956b64be98e841d9956",
+      "sha": "ff38d50f8732220406709fd9e4128ff76b1dfd81",
       "subject": "base",
-      "committedAt": "2026-09-21T20:42:50+02:00",
+      "committedAt": "2026-09-21T20:53:00+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-21-18-42",
-      "sha": "79447fb01e270fd6d6bb3956b64be98e841d9956",
+      "name": "moat-session-2026-09-21-18-53",
+      "sha": "ff38d50f8732220406709fd9e4128ff76b1dfd81",
       "subject": "base",
-      "committedAt": "2026-09-21T20:42:50+02:00",
+      "committedAt": "2026-09-21T20:53:00+02:00",
       "current": true
     }
   ]
@@ -1571,18 +1611,18 @@ agent branch: moat-session-2026-09-21-18-42
 --- exit 0
 --- stdout ---
 --- stderr ---
-! reaped the datapath of a sandbox that is no longer running (pid 826751)
+! reaped the datapath of a sandbox that is no longer running (pid 845117)
 ✓ destroyed /home/user/.moat/envs/f7355b303b3e
   pass  destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --no-credential --egress isolated --model mock-model --base-url http://127.0.0.1:5599/v1
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.45s (extract cached image 1.24s)
+✓ image provisioned in 1.46s (extract cached image 1.25s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-09-21-18-42
+agent branch: moat-session-2026-09-21-18-53
 ✓ sandbox up, cold start 1.84s (image built)
 
   project    /home/user/moat-demo/datapath-reap
@@ -1600,25 +1640,25 @@ agent branch: moat-session-2026-09-21-18-42
   "version": 1,
   "id": "f7355b303b3e",
   "projectDir": "/home/user/moat-demo/datapath-reap",
-  "createdAt": "2026-09-21T18:42:56.965Z",
-  "lastUpAt": "2026-09-21T18:42:57.331Z",
+  "createdAt": "2026-09-21T18:53:07.097Z",
+  "lastUpAt": "2026-09-21T18:53:07.452Z",
   "status": "running",
   "alpineVersion": "3.21.4",
   "model": "moat/mock-model",
   "provider": "moat",
   "providerBaseUrl": "http://127.0.0.1:5599/v1",
-  "branch": "moat-session-2026-09-21-18-42",
+  "branch": "moat-session-2026-09-21-18-53",
   "baseBranch": "main",
   "profiles": [],
-  "pid": 826849,
-  "pidStart": "10382292",
+  "pid": 845215,
+  "pidStart": "10443304",
   "egress": "isolated",
   "egressAllow": [],
-  "slirpPid": 826872,
-  "slirpStart": "10382294",
+  "slirpPid": 845238,
+  "slirpStart": "10443306",
   "baselineDigest": "6bdc92b0668ce66c1b51f3308654946a0e08ceddfdeb37828c80c1b8a877144f",
-  "baselineHostState": "git:79447fb01e270fd6d6bb3956b64be98e841d9956:6e340b9cffb37a98",
-  "baselineCommit": "23631aa8b2a44f5d9a61dfb7763f47ce9b158b65",
+  "baselineHostState": "git:ff38d50f8732220406709fd9e4128ff76b1dfd81:6e340b9cffb37a98",
+  "baselineCommit": "c7cfffb6f5694af6c36f61184dce5aeecdb95479",
   "credential": null,
   "snapshots": [],
   "lastBootMs": 229,
@@ -1626,20 +1666,20 @@ agent branch: moat-session-2026-09-21-18-42
   "rootfsDir": "/home/user/.moat/envs/f7355b303b3e/rootfs",
   "running": true,
   "booting": null,
-  "rootfsBytes": 313178158,
+  "rootfsBytes": 313178157,
   "sandboxBranches": [
     {
       "name": "main",
-      "sha": "79447fb01e270fd6d6bb3956b64be98e841d9956",
+      "sha": "ff38d50f8732220406709fd9e4128ff76b1dfd81",
       "subject": "base",
-      "committedAt": "2026-09-21T20:42:50+02:00",
+      "committedAt": "2026-09-21T20:53:00+02:00",
       "current": false
     },
     {
-      "name": "moat-session-2026-09-21-18-42",
-      "sha": "79447fb01e270fd6d6bb3956b64be98e841d9956",
+      "name": "moat-session-2026-09-21-18-53",
+      "sha": "ff38d50f8732220406709fd9e4128ff76b1dfd81",
       "subject": "base",
-      "committedAt": "2026-09-21T20:42:50+02:00",
+      "committedAt": "2026-09-21T20:53:00+02:00",
       "current": true
     }
   ]
@@ -1654,7 +1694,7 @@ agent branch: moat-session-2026-09-21-18-42
 --- exit 0
 --- stdout ---
 --- stderr ---
-! reaped the datapath of a sandbox that is no longer running (pid 826872)
+! reaped the datapath of a sandbox that is no longer running (pid 845238)
 ✓ restored rootfs snapshot reap-base (the project copy in /work was preserved)
   pass  restore
 
@@ -1665,11 +1705,11 @@ agent branch: moat-session-2026-09-21-18-42
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.44s (extract cached image 1.24s)
+✓ image provisioned in 1.46s (extract cached image 1.25s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-21-18-43
-✓ sandbox up, cold start 1.82s (image built)
+agent branch: moat-session-2026-09-21-18-53
+✓ sandbox up, cold start 1.83s (image built)
 
   project    /home/user/moat-demo/nocred-doctor
   env        /home/user/.moat/envs/bc47e2d49e4f
@@ -1704,15 +1744,15 @@ isolation (17 checks)
   pass  no host ssh directory          host /home/user/.ssh absent; sandbox /root/.ssh absent
   pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL)
   pass  no host data mounts            13 mounts; none reference a host filesystem path
-  pass  sandbox pid 1                  pid 1 is "entry-827049-1c", 3 visible processes
-  pass  own mount namespace            sandbox mnt:[4026532360] vs host mnt:[4026532219]
-  pass  own pid namespace              sandbox pid:[4026532363] vs host pid:[4026532221]
-  pass  own user namespace             sandbox user:[4026532359] vs host user:[4026531837]
-  pass  own uts namespace              sandbox uts:[4026532361] vs host uts:[4026532220]
-  pass  own ipc namespace              sandbox ipc:[4026532362] vs host ipc:[4026532208]
+  pass  sandbox pid 1                  pid 1 is "entry-845415-52", 4 visible processes
+  pass  own mount namespace            sandbox mnt:[4026532361] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532364] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532360] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532362] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532363] vs host ipc:[4026532208]
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
-  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 43993)
-  pass  network namespace isolated     sandbox net:net:[4026532364] differs from host net:net:[4026531833]; slirp4netns carries its traffic
+  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 43257)
+  pass  network namespace isolated     sandbox net:net:[4026532365] differs from host net:net:[4026531833]; slirp4netns carries its traffic
   pass  device nodes are real devices  all six device nodes are character devices inside the box
   pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
 
@@ -1745,14 +1785,14 @@ mount table inside the sandbox
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and send it anywhere: its namespace is isolated from yours, its egress is not filtered. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-43
+agent branch: moat-session-2026-09-21-18-53
 ✓ sandbox up, cold start 1.83s (image built)
 
   project    /home/user/moat-demo/cred-doctor
   env        /home/user/.moat/envs/1a606f7bca9f
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:43:20.935Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T22:53:31.036Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -1782,15 +1822,15 @@ isolation (17 checks)
   pass  no host ssh directory          host /home/user/.ssh absent; sandbox /root/.ssh absent
   pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, of which MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL is the credential, disclosed below)
   pass  no host data mounts            13 mounts; none reference a host filesystem path
-  pass  sandbox pid 1                  pid 1 is "entry-827274-50", 4 visible processes
-  pass  own mount namespace            sandbox mnt:[4026532360] vs host mnt:[4026532219]
-  pass  own pid namespace              sandbox pid:[4026532363] vs host pid:[4026532221]
-  pass  own user namespace             sandbox user:[4026532358] vs host user:[4026531837]
-  pass  own uts namespace              sandbox uts:[4026532361] vs host uts:[4026532220]
-  pass  own ipc namespace              sandbox ipc:[4026532362] vs host ipc:[4026532208]
+  pass  sandbox pid 1                  pid 1 is "entry-845640-35", 4 visible processes
+  pass  own mount namespace            sandbox mnt:[4026532362] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532365] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532361] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532363] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532364] vs host ipc:[4026532208]
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
-  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 36279)
-  pass  network namespace isolated     sandbox net:net:[4026532364] differs from host net:net:[4026531833]; slirp4netns carries its traffic
+  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 46529)
+  pass  network namespace isolated     sandbox net:net:[4026532366] differs from host net:net:[4026531833]; slirp4netns carries its traffic
   pass  device nodes are real devices  all six device nodes are character devices inside the box
   pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
 
@@ -1823,10 +1863,10 @@ mount table inside the sandbox
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.92s (extract cached image 1.67s)
+✓ image provisioned in 1.91s (extract cached image 1.66s)
 ✓ copy-in via git: 2 files, 0.2 KiB, digest b27d5e7ef3c1a586
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-21-18-43
+agent branch: moat-session-2026-09-21-18-53
 checks: npm run test
 ✓ sandbox up, cold start 2.31s (image built)
 
@@ -1858,10 +1898,10 @@ red-text
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/376d0bba6c50/rootfs/work +refs/heads/moat-session-2026-09-21-18-43:refs/moat/moat-session-2026-09-21-18-43
+→ copy-out: git fetch /home/user/.moat/envs/376d0bba6c50/rootfs/work +refs/heads/moat-session-2026-09-21-18-53:refs/moat/moat-session-2026-09-21-18-53
 
-moat-session-2026-09-21-18-43  1 commit(s), b3d3e10acf51
-  b3d3e10acf  base
+moat-session-2026-09-21-18-53  1 commit(s), 7590207c6b52
+  7590207c6b  base
 → verifying: npm run test
 
   FAIL  npm test                 0.3s
@@ -1874,10 +1914,10 @@ moat-session-2026-09-21-18-43  1 commit(s), b3d3e10acf51
 
   checks:  npm test FAILED (exit 1)
   your working tree is untouched
-  review:  git log refs/moat/moat-session-2026-09-21-18-43
+  review:  git log refs/moat/moat-session-2026-09-21-18-53
   accept:  moat apply   (three-way merge into your tree)
-           moat apply moat-session-2026-09-21-18-43 --checkout   (or switch to the agent's branch)
-  reject:  git update-ref -d refs/moat/moat-session-2026-09-21-18-43
+           moat apply moat-session-2026-09-21-18-53 --checkout   (or switch to the agent's branch)
+  reject:  git update-ref -d refs/moat/moat-session-2026-09-21-18-53
 escape-verify: 194 stderr bytes, 0 ESC byte(s), marker present: True
 escape-take: 787 stderr bytes, 0 ESC byte(s), marker present: True
   pass  check output
@@ -1889,11 +1929,11 @@ escape-take: 787 stderr bytes, 0 ESC byte(s), marker present: True
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.44s (extract cached image 1.24s)
+✓ image provisioned in 1.45s (extract cached image 1.25s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-21-18-43
-✓ sandbox up, cold start 2.44s (image built)
+agent branch: moat-session-2026-09-21-18-53
+✓ sandbox up, cold start 2.92s (image built)
 
   project    /home/user/moat-demo/codex-runtime
   env        /home/user/.moat/envs/a3e8fefc7c25
@@ -1911,13 +1951,13 @@ project      /home/user/moat-demo/codex-runtime
 env          /home/user/.moat/envs/a3e8fefc7c25
 status       running
 codex        0.155.1 / alpine 3.21.4
-pid          827739
+pid          846105
 model        deepseek/deepseek-flash (deepseek)
-branch       moat-session-2026-09-21-18-43
+branch       moat-session-2026-09-21-18-53
 egress       filtered (own network namespace, default-deny allowlist)
 rootfs       298.7 MiB
 snapshots    none
-branches     main, moat-session-2026-09-21-18-43*
+branches     main, moat-session-2026-09-21-18-53*
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c codex --version; cat /root/.codex/config.toml; head -1 /root/.codex/AGENTS.md; command -v opencode >/dev/null && echo "opencode PRESENT" || echo "opencode absent"
 --- exit 0
 --- stdout ---
@@ -1951,7 +1991,7 @@ codex gone
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 827739); the environment and its snapshots are kept
+✓ sandbox stopped (pid 846105); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy
 --- $ node /home/user/Projects/moat/cmd/main.ts up --no-detect --no-credential
@@ -1962,9 +2002,9 @@ codex gone
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-21-18-43
-→ sandbox booted (pid 828006); the codex runtime has no server to wait for
-✓ sandbox up, warm start 778ms (image reused)
+agent branch: moat-session-2026-09-21-18-53
+→ sandbox booted (pid 846372); the codex runtime has no server to wait for
+✓ sandbox up, warm start 805ms (image reused)
 
   project    /home/user/moat-demo/codex-runtime
   env        /home/user/.moat/envs/a3e8fefc7c25
@@ -1991,11 +2031,11 @@ deep
 --- stdout ---
 --- stderr ---
 egress: open, because the provider is on the host's loopback (http://127.0.0.1:5597/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
-✓ image provisioned in 1.92s (extract cached image 1.66s)
+✓ image provisioned in 1.92s (extract cached image 1.67s)
 ✓ copy-in via git: 3 files, 0.3 KiB, digest 2bed46acc1086825
 model: moat/deepseek-flash
 ! injecting moat credential sha256:35a96f4ab6d9388a (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-43
+agent branch: moat-session-2026-09-21-18-54
 checks: npm run test
 ✓ sandbox up, cold start 2.19s (image built)
 
@@ -2003,7 +2043,7 @@ checks: npm run test
   env        /home/user/.moat/envs/30983ebe0b2d
   runtime    codex (moat/deepseek-flash): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:35a96f4ab6d9388a expires 2026-09-21T22:43:50.899Z
+  credential moat sha256:35a96f4ab6d9388a expires 2026-09-21T22:54:01.609Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
@@ -2012,14 +2052,14 @@ checks: npm run test
 --- exit 0
 --- stdout ---
 --- stderr ---
-sandbox already running (pid 828203); restarting it for this run
+sandbox already running (pid 846569); restarting it for this run
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/deepseek-flash
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-43
+agent branch: moat-session-2026-09-21-18-54
 checks: npm run test
-→ sandbox booted (pid 828300); the codex runtime has no server to wait for
+→ sandbox booted (pid 846666); the codex runtime has no server to wait for
   ✓ /bin/sh -lc "cd /work && sed -i 's/a - b/a + b/' src/sum.js && git add -A && git -c user.email=mock@example.com -c user.
 
 Fixed src/sum.js so the test passes, and committed it.
@@ -2028,7 +2068,7 @@ Fixed src/sum.js so the test passes, and committed it.
 --- exit 0
 --- stdout ---
 export const sum = (a, b) => a + b
-38ffc2e fix: sum adds
+5cb6783 fix: sum adds
 --- stderr ---
 --- $ node /home/user/Projects/moat/cmd/main.ts verify
 --- exit 0
@@ -2044,7 +2084,7 @@ TAP version 13
 # Subtest: adds
 ok 1 - adds
   ---
-  duration_ms: 0.82684
+  duration_ms: 0.880137
   type: 'test'
   ...
 1..1
@@ -2055,7 +2095,7 @@ ok 1 - adds
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 72.614357
+# duration_ms 76.847164
 [moat] exit 0
 
   pass  npm test                 0.3s
@@ -2064,15 +2104,15 @@ ok 1 - adds
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/30983ebe0b2d/rootfs/work +refs/heads/moat-session-2026-09-21-18-43:refs/moat/moat-session-2026-09-21-18-43
-✓ fetched moat-session-2026-09-21-18-43 -> refs/moat/moat-session-2026-09-21-18-43 (38ffc2ed9c50)
-  2 commit(s) reachable, HEAD b1ba9b7b5d67 -> b1ba9b7b5d67
-    38ffc2ed9c50  fix: sum adds
-    b1ba9b7b5d67  base
+→ copy-out: git fetch /home/user/.moat/envs/30983ebe0b2d/rootfs/work +refs/heads/moat-session-2026-09-21-18-54:refs/moat/moat-session-2026-09-21-18-54
+✓ fetched moat-session-2026-09-21-18-54 -> refs/moat/moat-session-2026-09-21-18-54 (5cb6783a04fb)
+  2 commit(s) reachable, HEAD 85128f2cb2dc -> 85128f2cb2dc
+    5cb6783a04fb  fix: sum adds
+    85128f2cb2dc  base
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-21-18-43
-  apply with:    moat apply moat-session-2026-09-21-18-43  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-21-18-54
+  apply with:    moat apply moat-session-2026-09-21-18-54  (or --checkout)
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c grep -m1 "disposable Linux container" /root/.codex/AGENTS.md
 --- exit 0
 --- stdout ---
@@ -2084,14 +2124,14 @@ This is a **disposable Linux container**. It is not the user's machine, and it i
 --- stderr ---
 detected: package.json -> node
           adding profile(s) node; use --no-detect or --profile to override
-sandbox already running (pid 828300); restarting it for this run
+sandbox already running (pid 846666); restarting it for this run
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/deepseek-flash
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-43
+agent branch: moat-session-2026-09-21-18-54
 checks: npm run test
-→ sandbox booted (pid 828737); the codex runtime has no server to wait for
+→ sandbox booted (pid 847104); the codex runtime has no server to wait for
   ✗ /bin/sh -lc "cd /work && sed -i 's/a - b/a + b/' src/sum.js && git add -A && git -c user.email=mock@example.com -c user.
 
 Fixed src/sum.js so the test passes, and committed it.

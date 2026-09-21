@@ -647,6 +647,22 @@ async function cmdUp(argv: string[]): Promise<number> {
   // see a boot in progress instead of reading state.json and concluding nothing is
   // happening.
 
+  let credential: MintedCredential | null = null
+
+  // A provision is about to download the image, which on a cold cache is several hundred
+  // megabytes and a few minutes. Ask for the credential *before* that, not after: a first run
+  // used to spend the longest and most fragile step of the boot and only then reveal that it
+  // needed a key, so someone without one paid for the whole download and then hit a prompt they
+  // could not answer. Asking costs a round trip to the provider and saves the download.
+  //
+  // Only when the answer is still unknown: a credential that already resolved (the environment,
+  // the store, a flag) needs no prompt, and `moat up` on an existing environment does not
+  // provision at all. The key is saved by `onboard` and picked up by the mint below, so this
+  // reads it exactly as it would have anyway — the order changed, not the behaviour.
+  if (needsProvision && !flag<boolean>(p, "no-credential") && interactive && !credential) {
+    await onboard()
+  }
+
   if (needsProvision) {
     log.step(
       `provisioning sandbox image (alpine ${ALPINE_VERSION} + codex ${CODEX_VERSION}` +
@@ -889,7 +905,6 @@ ${command}
   const ttlText =
     flag<string>(p, "credential-ttl") ?? process.env.MOAT_CREDENTIAL_TTL ?? `${DEFAULT_TTL_SECONDS}s`
   const ttlSeconds = ttlToSeconds(ttlText)
-  let credential: MintedCredential | null = null
   // A custom endpoint may need no credential at all, and the box can reach it with no
   // Authorization header (measured: five tool calls, six requests, no auth header). The
   // native provider cannot: without the key there is no model. Say which case this is

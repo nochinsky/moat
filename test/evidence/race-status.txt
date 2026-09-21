@@ -4,4 +4,4 @@
 --- stderr ---
 project      /home/user/moat-demo/race
 env          /home/user/.moat/envs/abbcf717bc1f
-status       booting (pid 823543, 0s in)
+status       booting (pid 841879, 0s in)

@@ -105,6 +105,25 @@ resolving proxy moat would own, rather than an IP snapshot), provider-side crede
 cost ceilings, byte paths for filenames that are not valid UTF-8, tool-set curation, and the v1
 microVM. `VERIFICATION.md`'s closing table is the authoritative list of what remains unverified.
 
+## The first run asks for the key before it downloads anything
+
+A cold `moat up` used to provision first and ask second: the image download (several hundred
+megabytes, minutes on a cold cache) completed before the prompt that said a key was needed. Someone
+without one paid for the whole download and then hit a question they could not answer.
+
+The ask now happens before provisioning, and only when the answer is still unknown — an environment
+variable, the credential store or a flag needs no prompt, and an existing environment does not
+provision at all. `onboard` saves the key and the mint below reads it exactly as before, so this is
+an order change rather than a behaviour change. Two things worth knowing about it:
+
+* **It degrades.** Cancelling the prompt returns null and the boot carries on to the same
+  "no credential" notice it would have printed anyway. An unreachable provider saves the key
+  unchecked, which is what `onboard` already did.
+* **It is untested at the end-to-end level.** The prompt only appears when stdin is a terminal, and
+  exercising that needs a pty. The change is four lines and every suite passes, but nothing in
+  `test/` would catch a regression that moved the prompt back after provisioning. Recorded rather
+  than papered over.
+
 ## Repository surface
 
 `SECURITY.md` says how to report a vulnerability privately and, more usefully, lists what is *not*
