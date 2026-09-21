@@ -33,17 +33,19 @@
     "stub",
     "docs",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "SECURITY.md"
   ],
   "keywords": [
     "sandbox",
-    "agent",
+    "ai-agent",
     "coding-agent",
-    "isolation",
     "codex",
-    "ai",
-    "containers",
-    "userns"
+    "code-review",
+    "isolation",
+    "userns",
+    "linux"
   ],
   "repository": {
     "type": "git",

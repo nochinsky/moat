@@ -122,25 +122,31 @@ docs/            SPEC (the contract), VERIFICATION (the evidence), HISTORY, SEAM
 
 ## Working on moat
 
-`node` 22.18+ strips TypeScript types natively, so there is no build step for development: the
-CLI runs the source directly. `npm run build` exists only for the published tarball, whose
-`dist/` is compiled because **Node refuses to strip types inside `node_modules`** — a published
-package cannot ship `.ts`. `npm pack` and `npm publish` build it for you.
+`node` 22.18+ strips TypeScript types natively, so development has no build step: the CLI runs the
+sources directly. `npm run build` exists only for the published tarball, whose `dist/` is compiled
+because **Node refuses to strip types inside `node_modules`** — a published package cannot ship
+`.ts`.
 
 ```bash
-npm run test:unit         # pure unit tests, no sandbox, CI can run these
+npm run test:unit         # pure unit tests, no sandbox, CI runs these
 bash test/e2e-codex.sh    # the acceptance list, against a keyless model stub
 bash test/e2e-extras.sh   # snapshots, apply, credential expiry, state and process traps
 bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced
-bash test/e2e-provider.sh # a named, non-DeepSeek provider, end to end, no credential in the image
+bash test/e2e-provider.sh # a named, non-DeepSeek provider, end to end
 bash test/e2e-demo.sh     # `moat demo`: three-way attribution, keyless
 bash test/e2e-review.sh   # the review surface: per-hunk attribution, a partial accept
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # one real model, one real task
 ```
 
-The suites write `test/evidence/`, which is committed and quoted by `docs/VERIFICATION.md`.
-Regenerate it by running them; do not edit it by hand. Never run two suites at once: they
-share `~/moat-demo`.
+The sandbox suites need a user namespace, which GitHub's runners cannot provide, so they run
+locally. They write `test/evidence/`, which is committed and quoted by `docs/VERIFICATION.md` —
+regenerate it by running them rather than editing it. Do not run two at once; they share
+`~/moat-demo`.
+
+Bug reports and pull requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers what a
+change has to come with and what will get sent back. Found a security problem?
+[`SECURITY.md`](SECURITY.md) says how to report it privately, and lists what moat deliberately does
+**not** protect against.
 
 ## Reading order
 
