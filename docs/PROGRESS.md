@@ -4,7 +4,18 @@ The contract for this work is `docs/PROGRAM.md`; `AGENTS.md` is the standing con
 the codebase. This file is the resume point: it says **which phase is in progress**, whether
 that phase's gate has passed, and what a session with no memory needs to know to continue.
 
-**Current phase: 0 (make the ground trustworthy). Gate: NOT YET PASSED.**
+**Current phase: 3 (the review surface) — GATE PASSED.**
+**Next: phase 4 (name the harness seam, then spike ACP). Not started.**
+
+Phases 0, 1, 2 and 3 have all passed their gates; each gate report is a section below, and
+the last one (`### The gate PASSES`) is the Phase 3 record. The tree is green at `0cf9c44`:
+`npm run test:unit` 243/0, and the six sandbox suites — acceptance, extras 50/0, egress,
+provider 9/0, demo 9/0, review 21/0 — regenerated `test/evidence/` in one clean run.
+
+Phase 4 is a **spike**: name the seam `codexEntryScript` + `parseCodexEvents` + the turn
+runner already implement, then investigate ACP (Agent Client Protocol) with a throwaway
+client and write a recommendation. Do **not** replace the Codex adapter; a migration would
+be the next program. Nothing of phase 4 exists yet — no seam document, no spike.
 
 ---
 
@@ -110,7 +121,7 @@ while looking at the wrong object.
 
 **8. `test/evidence/onboard.txt` carries a plaintext session password. REPRODUCED, DELETED.**
 It is tracked, it is from the deleted opencode runtime, and the password is right there in
-the committed file (`password   <redacted-by-history-rewrite>`, from a server that no
+the committed file (a plaintext `password   <redacted>` line, from a server that no
 longer exists). `test/evidence/audit.jsonl` is the same runtime's orphan. Both `git rm`'d.
 Nothing referenced either file except the line in `docs/PROGRAM.md` that reports them; the
 suite regenerates `onboard.txt` in section J when a key is present, and that regenerated file
