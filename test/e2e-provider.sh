@@ -35,6 +35,10 @@ CREDENTIAL_PARTS='acme-secret""-value""-8f3a1c9d2e'
 CREDENTIAL="acme-secret-value-8f3a1c9d2e"
 
 mkdir -p "$EVIDENCE" "$WORK"
+# Truncate the evidence at the start, as the other suites do: an appending log mixes this run's
+# verdict with the last one's, and a reader cannot tell which run a FAILED line belongs to.
+# (Measured: after a deliberate sabotage run and a clean one, provider.txt held three verdicts.)
+: > "$LOG"
 CHECKS_LOG="$LOG"
 . "$REPO/test/lib/guard.sh"
 check_count
