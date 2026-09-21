@@ -4,3 +4,8 @@ node_modules/
 dist/
 test/evidence/*.out
 test/evidence/*.err
+# The onboarding smoke test writes this when a key is present, and the CLI output inside it
+# includes the session password it just minted. It has reached this repository twice by accident
+# (the file, then a verbatim quote of it in the journal) and both times the history had to be
+# rewritten. Everything else under test/evidence/ is regenerated and committed; this one is not.
+test/evidence/onboard.txt
