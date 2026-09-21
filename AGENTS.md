@@ -102,6 +102,28 @@ Two layout traps come with it, both found by installing the tarball and running 
 The npm name is `moat-sandbox`. Both `moat` and `moat-cli` belong to unrelated packages, so
 `npx moat` and `npx moat-cli` fetch the wrong thing; the installed **command** is `moat`.
 
+## Releasing
+
+A release is a tag. `.github/workflows/release.yml` runs on `v*`, typechecks, runs the unit
+suites, refuses a tag that disagrees with `package.json`, and publishes with provenance over
+GitHub's OIDC identity. **There is no npm token anywhere**, on purpose: npm restricted
+2FA-bypass tokens for direct publishing during this project, so a stored secret stops working
+precisely when an account has 2FA on. `0.0.1` was published through the browser flow before
+this existed.
+
+```bash
+npm version patch --no-git-tag-version   # edits package.json only
+git commit -am "0.0.2: ..."
+git tag v0.0.2 && git push origin main v0.0.2
+```
+
+One-time setup, in the npm web UI rather than here: npm has to be told which repository and
+workflow may publish, at `https://www.npmjs.com/package/moat-sandbox/access`. Until that
+publisher exists the workflow fails at the publish step with an authentication error.
+
+The version in `package.json` and the tag must match, and a published version can never be
+reused — not even after `npm unpublish`. When in doubt, bump rather than retry.
+
 ## Running it
 
 `node` 22.18+ strips TypeScript types natively, so **development** has no build step. `moat` is

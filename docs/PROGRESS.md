@@ -59,7 +59,25 @@ looked fine until the artifact was installed.
 
 Three items, in the order they are likely to matter:
 
-**Publishing.** One command for a logged-in owner. Everything up to it is verified.
+**Publishing 0.0.2 is set up but needs one browser step.** `0.0.1` is on the registry. The
+release workflow (`.github/workflows/release.yml`) publishes from a `v*` tag using GitHub OIDC,
+so there is no token to store and the published tarball carries a provenance record.
+
+Before the first tag, npm has to be told to trust the workflow. At
+<https://www.npmjs.com/package/moat-sandbox/access>, add a **GitHub Actions** publisher with
+organization/user `nochinsky`, repository `moat`, workflow filename `release.yml`, allowed action
+`npm publish`. Then:
+
+```bash
+git tag v0.0.2 && git push origin v0.0.2
+```
+
+A tag whose name does not match `package.json` stops the workflow in seconds, which matters
+because a published version number can never be reused.
+
+This replaced a token: npm restricted 2FA-bypass tokens for direct publishing during this work,
+so a stored token could not publish to an account with 2FA enabled. `0.0.1` went out through the
+browser/passkey flow.
 
 **The cold-cache half of Phase 5's gate.** The tarball install and `moat demo` were measured with
 a warm cache. A genuinely cold one means roughly 560 MB of downloads, and it was skipped rather

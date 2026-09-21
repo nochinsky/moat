@@ -1,0 +1,75 @@
+name: release
+
+# Publishes to npm from a git tag, using GitHub's OIDC identity rather than a stored token.
+#
+# There is no NPM_TOKEN anywhere, and that is the point. npm restricted tokens that bypass 2FA
+# for direct publishing in 2026, so the token route stops working exactly when an account turns
+# 2FA on. Trusted publishing swaps a long-lived secret for a short-lived signed claim that says
+# "this tarball was built by nochinsky/moat, from this commit, by this workflow" — which npm
+# verifies and records as provenance on the published version.
+#
+# Setup, once, at https://www.npmjs.com/package/moat-sandbox/access:
+#   Publisher: GitHub Actions   Organization/user: nochinsky
+#   Repository: moat            Workflow filename: release.yml
+#   Environment: (leave empty)  Allowed actions: npm publish
+#
+# To cut a release: bump the version, commit, then push a matching tag.
+#   npm version patch --no-git-tag-version && git commit -am "0.0.3" && git tag v0.0.3
+#   git push origin main v0.0.3
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  # The OIDC token. Without this the publish step cannot prove which workflow is running.
+  id-token: write
+
+jobs:
+  publish:
+    name: build, verify, publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # `registry-url` points npm at npmjs.org, which is what the OIDC exchange needs. Node 24
+      # ships npm 11, and trusted publishing needs >= 11.5.1; the version check below fails
+      # loudly rather than silently falling back to an unauthenticated publish.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: npm is new enough for OIDC
+        run: |
+          node -e '
+            const [maj, min] = require("child_process").execSync("npm --version").toString().trim().split(".").map(Number);
+            const ok = maj > 11 || (maj === 11 && min >= 5);
+            if (!ok) { console.error(`npm ${maj}.${min} is too old for trusted publishing`); process.exit(1) }
+          '
+
+      - run: npm ci --no-audit --no-fund
+
+      # The same gate the repository uses. A release that cannot pass its own unit tests must not
+      # reach the registry; the sandbox suites stay out because GitHub's runners cannot create
+      # user namespaces (see ci.yml).
+      - run: npm run typecheck
+      - run: npm run test:unit
+
+      # The tag is the version. Checking it here means a mistyped tag fails in ten seconds rather
+      # than publishing a version nobody meant — and a published version can never be reused.
+      - name: the tag matches package.json
+        run: |
+          node -e '
+            const { version } = require("./package.json");
+            const tag = process.env.GITHUB_REF_NAME.replace(/^v/, "");
+            if (version !== tag) {
+              console.error(`package.json says ${version} but the tag says ${tag}`);
+              process.exit(1);
+            }
+          '
+
+      # `prepack` builds dist/. Provenance is explicit because the whole reason this workflow
+      # exists is that the artifact should be traceable to this commit.
+      - run: npm publish --provenance --access public
