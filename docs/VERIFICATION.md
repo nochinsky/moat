@@ -587,31 +587,88 @@ here is configuration, resolution and capability: never a claim about a model.
 
 ### Model and provider resolution
 
-moat targets one provider, so there is nothing to resolve and no `--provider` flag. For
-DeepSeek the endpoint, context window and capabilities come from the
-[models.dev](https://models.dev) catalog, and moat renders the one
-`[model_providers.*]` block Codex needs. The rendered file, read back from inside the box
-(`test/evidence/codex-config-in-box.txt`), carries:
+The provider is configured, not fixed, and DeepSeek is the default rather than the only option
+(Phase 1). `moat provider add <id> --base-url <url> [--env-var NAME] [--model ID] [--wire-api
+responses|chat]` writes `~/.moat/providers.json`; `--provider <id>` selects one; `--base-url`
+remains the escape hatch for an endpoint moat does not know. A bare `moat up` is the default
+provider, an unconfigured name is refused rather than guessed, and nothing is inferred from the
+environment, so there is still no provider *registry*.
+
+The rendered file, read back from inside the box (`test/evidence/codex-config-in-box.txt`,
+`test/evidence/provider.txt`):
 
 ```toml
 model = "<the resolved model id>"
-model_provider = "deepseek-moat"
+model_provider = "<the provider's id>"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 preferred_auth_method = "apikey"
 forced_login_method = "api"
 model_catalog_json = "/root/.codex/models.json"
 web_search = "disabled"
-model_context_window = <catalog context window>
-model_max_output_tokens = <catalog output cap>
+model_context_window = <context window, when one is known>
+model_max_output_tokens = <output cap, when one is known>
 model_reasoning_effort = "<the --effort level, only when one was passed>"
 
-[model_providers.deepseek-moat]
-name = "DeepSeek"
-base_url = "<catalog base URL, or --base-url>"
-env_key = "MOAT_INJECTED_CREDENTIAL"
+[model_providers.<the provider's id>]
+name = "<the provider's label>"
+base_url = "<the configured endpoint>"
+env_key = "<the provider's key variable, or moat's own name>"
 wire_api = "responses"
 ```
+
+Two things in that block were one vendor's until Phase 1: the key was the literal
+`deepseek-moat` and the block's `name` was the literal `"DeepSeek"`, for every provider. The
+evidence in `test/evidence/codex-config-in-box.txt` shows what a non-DeepSeek boot renders now —
+`model_provider = "moat"` with `name = "moat"`, because a `--base-url` boot's label is the
+generic one and no text in the file says DeepSeek.
+
+### The model catalog is rendered, not vendored
+
+Codex reads `model_catalog_json` for each model's context window, output cap and reasoning
+levels. That file used to be 38KB of DeepSeek's published metadata, shipped in this repository
+and installed byte for byte on every boot — one vendor's description handed to a box that might
+be talking to anyone. It is now rendered per boot from the model that boot configured
+(`bundle/model-catalog.ts`), so the metadata always describes the model in use.
+
+The field set is not a guess. The pinned 0.155.1 binary names each field it needs and refuses
+the file without it; ten are required (`slug`, `display_name`, `supported_reasoning_levels`,
+`shell_type`, `visibility`, `supported_in_api`, `priority`, `support_verbosity`,
+`truncation_policy`, `experimental_supported_tools`) plus `base_instructions` or
+`model_messages.instructions_template`. A rendered catalog with those fields is accepted,
+removes Codex's "Model metadata for `X` not found. Defaulting to fallback metadata" advisory, and
+still sends `reasoning.effort`:
+
+```
+no-catalog   effort=high  instructions= 16979B sha256=3b08633fa672906666659d76  advisory: present
+with-catalog effort=high  instructions= 16979B sha256=3b08633fa672906666659d76  advisory: gone
+```
+
+`base_instructions` is the prompt pin, and it is **maintained rather than dropped**: the catalog
+changes metadata and never the prompt, and the two lines above are that claim measured by round
+trip. The text is the pinned binary's own built-in prompt, captured from it and kept as a source
+constant (`bundle/codex-prompt.ts`) with the refresh recipe beside it. A Codex version bump can
+move that prompt, so the pin has to move in the same commit; `test/unit/model-catalog.test.ts`
+fails if the constant and the digest disagree.
+
+### A configured provider's credential
+
+The key is environment-only, as it always was, and *which name* it answers to is configuration:
+the provider's own variable when it declared one, moat's `MOAT_INJECTED_CREDENTIAL`, and never
+`DEEPSEEK_API_KEY` for a provider that is not DeepSeek. `moat provider` stores the variable's
+*name*, never its value.
+
+Verified in `test/evidence/provider.txt` and `test/unit/provider-security.test.ts`:
+
+- the key reaches the provider as a bearer token (asserted on what the stub *received*, not on
+  what moat says it sent);
+- the value is nowhere on disk inside the box, searched from inside the box;
+- `installCodexFiles` refuses a literal key in all three texts it writes, including the catalog,
+  which is a third text now that it is rendered;
+- `--no-credential` models a box with no credential variable at all;
+- the post-boot rootfs sweep still runs and still aborts the boot. It searches for the *value*,
+  so it is provider-agnostic by construction — the property that matters after a phase which made
+  the variable's name configurable.
 
 ### Toolchain profiles
 

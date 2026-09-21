@@ -8,15 +8,15 @@ profiles: everything requested is already installed
   moat exec -- git -C /work branch keep && moat fetch keep
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
-! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s). The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-00-22
-✓ sandbox up, warm start 227ms (image reused)
+! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-21-01-36
+✓ sandbox up, warm start 228ms (image reused)
 
   project    /home/user/moat-demo/detached
   env        /home/user/.moat/envs/8651a31c28f7
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T04:22:12.929Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T05:36:25.048Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

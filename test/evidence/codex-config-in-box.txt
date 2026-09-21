@@ -2,7 +2,7 @@
 --- exit 0
 --- stdout ---
 model = "mock-model"
-model_provider = "deepseek-moat"
+model_provider = "moat"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 preferred_auth_method = "apikey"
@@ -10,8 +10,8 @@ forced_login_method = "api"
 model_catalog_json = "/root/.codex/models.json"
 web_search = "disabled"
 
-[model_providers.deepseek-moat]
-name = "DeepSeek"
+[model_providers.moat]
+name = "moat"
 base_url = "http://127.0.0.1:5597/v1"
 env_key = "MOAT_INJECTED_CREDENTIAL"
 wire_api = "responses"

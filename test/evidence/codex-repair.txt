@@ -6,9 +6,9 @@
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-21-00-23
-→ sandbox booted (pid 356071); the codex runtime has no server to wait for
-✓ sandbox up, warm start 701ms (image reused)
+agent branch: moat-session-2026-09-21-01-37
+→ sandbox booted (pid 397589); the codex runtime has no server to wait for
+✓ sandbox up, warm start 857ms (image reused)
 
   project    /home/user/moat-demo/codex-runtime
   env        /home/user/.moat/envs/a3e8fefc7c25

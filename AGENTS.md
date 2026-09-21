@@ -51,9 +51,14 @@ Breaking any of these breaks the product, not a feature.
    There is no server in the box and nothing is proxied.
 7. **No container runtime.** `unshare` + `mount` + `chroot` directly. No Docker, no podman,
    no daemon. This is a constraint, not an accident.
-8. **One provider.** DeepSeek. No provider registry, no `--provider`, no inference of a
-   provider from the environment. `--base-url` is an escape hatch for an OpenAI-compatible
-   endpoint, not the beginning of a provider system.
+8. **No provider registry, and no guessing.** DeepSeek is the default provider; a *named* one
+   is configuration the user wrote down (`moat provider add`, `--provider <id>`), never inferred
+   from the environment, and an unconfigured name is refused. `--base-url` remains an escape
+   hatch for an OpenAI-compatible endpoint rather than the beginning of a provider system.
+   *(Amended by Phase 1 of `docs/PROGRAM.md`, which instructs this unlock by name. The original
+   invariant was "One provider. DeepSeek." — the discipline about not guessing is what survives,
+   and `test/unit/provider-security.test.ts` holds it. `docs/SPEC.md` §5 carries the same
+   amendment and the reasoning.)*
 
 ## Layout
 
@@ -79,6 +84,7 @@ npm run test:unit         # pure unit tests, no sandbox, so CI runs them
 bash test/e2e-codex.sh    # the acceptance list, against a keyless model stub
 bash test/e2e-extras.sh   # snapshots, apply, credential expiry, state and process traps
 bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced, default (no key)
+bash test/e2e-provider.sh # a named, non-DeepSeek provider end to end, no credential in the image
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
 ```
 
@@ -246,11 +252,17 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   §1.3) was reported as `credential visible to the agent` with `DEEPSEEK_API_KEY` and
   `MOAT_INJECTED_CREDENTIAL`, names that existed only inside the probe, and a custom
   endpoint was reported as having `DEEPSEEK_API_KEY`, which it never has. The list now
-  comes from `doctorInjectedVarNames({ credential: Boolean(state.credential), native })`
+  comes from `doctorInjectedVarNames({ credential, native, credentialVars })`
   (`secrets/broker.ts`), and the wording helpers (`ownEnvNote`, `credentialExposureDetail`
   in `sandbox/isolation.ts`) only call the names that carry a credential "the credential".
-  `test/unit/doctor-claims.test.ts` holds all three; extras section AH is the two-box
-  end-to-end (keyless, plus a credentialed control).
+  `credentialVars` is the third correction and the one Phase 1 needed: the only credential
+  name the probe could model was `DEEPSEEK_API_KEY`, so a box configured against any other
+  provider — which now exists — was reported as having that variable while the variable it
+  really has went unlisted. It is derived in `cmd/main.ts` (`doctorCredentialVars`) from the
+  same function the boot uses, so the probe and the box cannot drift.
+  `test/unit/doctor-claims.test.ts` holds the first three;
+  `test/unit/provider-security.test.ts` holds the provider half; extras section AH is the
+  two-box end-to-end (keyless, plus a credentialed control).
 * Copy-out scans for the credential it carries, and the value can only come from the host:
   the sandbox stores a fingerprint, never the key. `sync/leak-scan.ts` compares against
   `DEEPSEEK_API_KEY`/`MOAT_CREDENTIAL`/the credential store at fetch/apply time, so a key
@@ -466,26 +478,36 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   real captured stream and the rendered config against the load-bearing lines.
   `docs/HISTORY.md` holds the runtime history and the measurements behind it.
 * **The model catalog is policy too, and its `base_instructions` is a prompt
-  pin.** `installCodexFiles` writes `bundle/deepseek-models.json` to
-  `/root/.codex/models.json` byte-for-byte on every boot, and the rendered config points
-  `model_catalog_json` at it. The file is DeepSeek's documented metadata with
-  `model_messages` dropped, but the schema still requires
-  `base_instructions` **or** `model_messages.instructions_template`: measured, deleting the
-  field makes the pinned binary exit 1 parsing the catalog
-  (``model `deepseek-flash` is missing both ...``; the exact command and error are in the
-  `bundle/codex.ts` comment). So the field stays and carries the *pinned binary's own*
-  built-in prompt, sha256 `3b08633f...`, and with the catalog installed Codex sends
-  exactly that text as the request's `instructions`, so the catalog changes metadata and
-  never the prompt. **A Codex version bump can move that built-in prompt; refresh the pin
-  in the same commit**, or the agent keeps running a stale prompt while the binary moves.
-  The refresh recipe is in the `bundle/codex.ts` comment: run the new binary with no
-  `model_catalog_json` against the recording stub and sha256 the request's `instructions`
-  field. `--effort` is the same seam: it renders `model_reasoning_effort`, and *that
-  config line* is what Codex honors, measured, `high` and `low` differ on the wire and the
-  catalog's `default_reasoning_level` is irrelevant, validated against the catalog's
-  levels before provisioning. `test/unit/codex-runtime.test.ts` pins the config lines and
-  the sha; extras section AK asserts the metadata notice's absence, the level on the wire,
-  and no `web_search` from the stub's record.
+  pin.** `installCodexFiles` writes `models.json` to `/root/.codex/models.json` on every
+  boot, and the rendered config points `model_catalog_json` at it. It used to be
+  `bundle/deepseek-models.json`, 38KB of one vendor's metadata installed byte-for-byte;
+  it is now rendered per boot from the model that boot configured
+  (`bundle/model-catalog.ts`), so the metadata always describes the model in use and a
+  boot against any provider gets that provider's model described rather than DeepSeek's.
+  The field set is measured, not guessed: the pinned binary names each field it needs and
+  refuses the file without it, and ten are required (`slug`, `display_name`,
+  `supported_reasoning_levels`, `shell_type`, `visibility`, `supported_in_api`, `priority`,
+  `support_verbosity`, `truncation_policy`, `experimental_supported_tools`).
+  `shell_type` and `apply_patch_tool_type` are behavioural — they choose the tool surface —
+  so a provider override changes what the agent can do rather than how it is labelled.
+  `base_instructions` **or** `model_messages.instructions_template` is required on top of
+  those: measured, the binary exits 1 with neither. So the field stays and carries the
+  *pinned binary's own* built-in prompt, sha256 `3b08633f...`, kept as a source constant in
+  `bundle/codex-prompt.ts`; with the catalog installed Codex sends exactly that text as the
+  request's `instructions`, so the catalog changes metadata and never the prompt.
+  **A Codex version bump can move that built-in prompt, and can add required fields;
+  refresh the pin in the same commit**, or the agent keeps running a stale prompt while the
+  binary moves. The refresh recipe is in the `bundle/model-catalog.ts` comment, and
+  `codex debug models` is the useful half: it prints the binary's own fully-resolved
+  catalog entry as JSON, which is where the field values and the required set come from.
+  `--effort` is a separate seam and **does not need the catalog at all** — measured with no
+  `model_catalog_json`, `model_reasoning_effort = "high"` still reaches the wire; what the
+  catalog buys is the absence of the "Model metadata for `X` not found" advisory and the
+  declared limits. `test/unit/model-catalog.test.ts` pins the prompt digest and the
+  required fields, `test/unit/codex-runtime.test.ts` pins the config lines; extras section
+  AK asserts the metadata notice's absence, the level on the wire, and no `web_search` from
+  the stub's record, and `test/e2e-provider.sh` asserts the same for a non-DeepSeek
+  provider.
 * **A missing runtime binary is repaired, never re-provisioned.** The agent is root in its
   own rootfs, so it can `rm /usr/local/bin/codex`, and an environment made by an older
   moat never had it. The next boot copies it into the live rootfs through

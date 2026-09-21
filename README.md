@@ -82,6 +82,7 @@ npm run test:unit         # pure unit tests, no sandbox, CI can run these
 bash test/e2e-codex.sh    # the acceptance list, against a keyless model stub
 bash test/e2e-extras.sh   # snapshots, apply, credential expiry, state and process traps
 bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced
+bash test/e2e-provider.sh # a named, non-DeepSeek provider, end to end, no credential in the image
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # one real model, one real task
 ```
 

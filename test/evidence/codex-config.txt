@@ -3,7 +3,7 @@
 --- stdout ---
 codex-cli 0.155.1
 model = "deepseek-flash"
-model_provider = "deepseek-moat"
+model_provider = "deepseek"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 preferred_auth_method = "apikey"
@@ -13,7 +13,7 @@ web_search = "disabled"
 model_context_window = 1000000
 model_max_output_tokens = 384000
 
-[model_providers.deepseek-moat]
+[model_providers.deepseek]
 name = "DeepSeek"
 base_url = "https://api.deepseek.com"
 env_key = "DEEPSEEK_API_KEY"

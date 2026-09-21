@@ -395,17 +395,32 @@ be checked because the network is down is saved with a warning rather than refus
 from your environment.** It says the key is there and tells you to pass
 `--credential-env NAME` if you really mean it (see §1.3).
 
-The endpoint and model come from `--base-url`/`--model`, or from the store entry. moat
-targets DeepSeek and nothing else: the endpoint, the context window and the capabilities
-come from the [models.dev](https://models.dev) catalog, and moat renders the one
-`[model_providers.*]` block that points Codex at it. There is no provider registry and no
-`--provider` flag.
+The endpoint and model come from the configured provider, `--base-url`/`--model`, or the store
+entry. **DeepSeek is the default provider, not the only one** (amended in Phase 1 of
+`docs/PROGRAM.md`; see the note below). `moat provider add <id> --base-url <url> [--env-var NAME]
+[--model ID] [--wire-api responses|chat]` writes `~/.moat/providers.json`, and `--provider <id>`
+selects one. The context window and capabilities come from the [models.dev](https://models.dev)
+catalog when it describes the model, and otherwise from the model's own metadata.
 
-`--base-url` still points the rendered config at **any OpenAI-compatible endpoint**
-(Ollama, llama.cpp, LiteLLM, a gateway), which is how the test suite runs against a local
-stub; it is an escape hatch, not a provider system. `--upstream` is the narrower flag,
-same catalog definition and a different address, for a DeepSeek-compatible gateway or a
-proxy you want to watch.
+`--base-url` still points the rendered config at **any OpenAI-compatible endpoint** (Ollama,
+llama.cpp, LiteLLM, a gateway), which is how the test suite runs against a local stub, and it is
+what a provider written down on the command line compiles to. `--upstream` is the narrower flag,
+same provider definition and a different address, for a gateway or a proxy you want to watch.
+
+**There is still no provider registry and no inference.** A provider exists because the user
+declared it or named it; `--provider` selects a thing the user wrote down rather than guessing
+from the environment, an unconfigured name is refused, and a bare `moat up` is the default
+provider. What Phase 1 removed was the *lock*, not the discipline: the provider id, its label,
+its endpoint and the name of the environment variable its key arrives in were all DeepSeek's —
+hard-coded, in the block rendered for every provider.
+
+> **Amendment, Phase 1.** `AGENTS.md` invariant 8 says "One provider. DeepSeek. No provider
+> registry, no `--provider`, no inference of a provider from the environment." `AGENTS.md` also
+> says `docs/PROGRAM.md` "says what to build next", and Phase 1 of that document instructs this
+> change by name. Invariant 8 is therefore amended to: **no provider registry and no inference
+> from the environment**, with DeepSeek as the default. The parts of the invariant that were
+> about not guessing, and about `--base-url` being an escape hatch rather than the beginning of a
+> provider system, are what survived, and `test/unit/provider-security.test.ts` holds them.
 
 The **provider configuration**, the base URL and the model id, travels the same channel
 but is not part of the credential: it is set whether or not one was injected. So

@@ -18,7 +18,8 @@
     "coverage": "node --experimental-test-coverage --test test/unit/*.test.ts",
     "test:unit": "node --test test/unit/*.test.ts",
     "test:e2e": "bash test/e2e-codex.sh",
-    "test:extras": "bash test/e2e-extras.sh"
+    "test:extras": "bash test/e2e-extras.sh",
+    "test:provider": "bash test/e2e-provider.sh"
   },
   "devDependencies": {
     "@types/node": "^24.13.5",
