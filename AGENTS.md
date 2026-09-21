@@ -102,6 +102,13 @@ Two layout traps come with it, both found by installing the tarball and running 
 The npm name is `moat-sandbox`. Both `moat` and `moat-cli` belong to unrelated packages, so
 `npx moat` and `npx moat-cli` fetch the wrong thing; the installed **command** is `moat`.
 
+**`npm pack` prints `No bin file found at dist/cmd/main.js`, and it is wrong.** npm validates the
+`bin` path before any pack-time lifecycle script runs, so the check happens while `dist/` does not
+yet exist and `prepack` has not built it. The tarball is still correct — measured: 80 files under
+`dist/`, `dist/cmd/main.js` present, and the published 0.0.2 installs and runs. Moving the build to
+`prepare` does not help; that was tried. The only way to silence it is committing `dist/`, which
+would put built output in the repository to satisfy a cosmetic warning. Leave it.
+
 ## Releasing
 
 A release is a tag. `.github/workflows/release.yml` runs on `v*`, typechecks, runs the unit
