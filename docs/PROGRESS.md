@@ -344,6 +344,101 @@ the same proven code, but **it has not been executed against a live model in thi
 
 ---
 
+## Session 2 — Phase 0 verified, Phase 1 reconnaissance
+
+### Phase 0 re-verified (independent of session 1's claims)
+
+- Working tree clean at `67f240c`; `npm run test:unit` **204 pass, 0 fail**;
+  `npm run typecheck` clean for the source *and* `test/`.
+- `test/evidence/extras.txt` (committed output of a clean run) reads
+  `checks passed: 49, failed: 0`, and contains both `--verbose` checks as passes.
+- The gate proof's own log shows its two end-to-end claims passing and `GATE_EXIT=0`.
+
+Phase 0 is closed. Phase 1 starts below.
+
+### Phase 1 reconnaissance — what the DeepSeek lock actually is
+
+Measured against the pinned 0.155.1 binary and the recording stub, not read off the source.
+Three findings change the shape of this phase, and one of them contradicts a comment that is
+currently in the code.
+
+**R1. `--effort` does NOT need the model catalog.** The comment above
+`CodexConfigInput.reasoningEffort` says rendering the level into the catalog does nothing and
+"the config line wins", but `bundle/codex.ts`'s header also records that `--effort` "had to be
+removed before this file existed". Measured with **no** `model_catalog_json` at all and
+`model_reasoning_effort = "high"` in the config:
+
+```
+model=some-other-model  effort=high  instructions=16979B  auth=Bearer probe…
+```
+
+The level reaches the wire. So the catalog is not what makes `--effort` work, and the comment
+claiming otherwise is stale. What the catalog actually buys is the next finding.
+
+**R2. Without a catalog, every request carries a metadata advisory and no declared limits.** The
+same run emitted:
+
+```
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Model metadata for
+ `some-other-model` not found. Defaulting to fallback metadata; this can degrade performance
+ and cause issues."}}
+```
+
+Codex already tolerates an arbitrary model against an arbitrary `model_providers` block — that
+part of the lock is not real. What is real is the advisory plus no context/output metadata.
+
+**R3. The catalog's required field set is nine fields, and the prompt has a source of truth now.**
+`codex debug models` renders the binary's own fully-resolved catalog as JSON. Building a
+minimal catalog from that entry — the nine fields the parser demands
+(`slug`, `display_name`, `supported_reasoning_levels`, `shell_type`, `visibility`,
+`supported_in_api`, `priority`, `support_verbosity`, `truncation_policy`,
+`experimental_supported_tools`) plus `base_instructions` — is **accepted**, with the advisory
+gone and `effort=high` still on the wire:
+
+```
+minimal        exit=0 warning=no  model=some-other-model effort=high instructions=21261B sha=152dfaee…
+no-catalog     exit=0 warning=YES model=some-other-model effort=high instructions=16979B sha=3b08633f…
+```
+
+So the 38KB `bundle/deepseek-models.json` is not load-bearing as a *file*: the same effect comes
+from about twenty lines of rendered metadata. `base_instructions` remains required (the binary
+refuses an entry with neither it nor `model_messages.instructions_template`), which is the
+prompt pin — but `codex debug models` is the symbol to read it from, so the pin stops being a
+hand-copied blob.
+
+**The one measurement still outstanding**, and it is the gate's second half: the minimal catalog
+above sent `instructions` of **21261 bytes / sha `152dfaee…`** where the current pin sends
+**16979 bytes / sha `3b08633f…`**. The difference is in the derivation, not the binary — the
+17KB figure is the prompt from a request the language server actually made, while the 21KB one
+came out of `debug models` for a model with no metadata. Before Phase 1 accepts any new pin, it
+has to do the round trip: build the minimal catalog from the request-captured prompt and confirm
+the request carries that prompt back, sha for sha. "The catalog changes metadata and never the
+prompt" is the invariant the current design documents, and it is worth keeping.
+
+### Phase 1 plan
+
+Ordered so the security-relevant parts are pinned before anything is deleted:
+
+1. **Round-trip the prompt pin**, then decide what the pin *is* (a per-boot prompt captured from
+   the binary, or a small moat-authored one). State the decision and its cost in this journal.
+2. **Render the catalog per boot** from what the user configured, replacing the vendored 38KB
+   file. Keep the nine required fields; take `base_instructions` from the decided source.
+3. **Generalise the provider**: the provider id, its label, its base URL and the environment
+   variable its key arrives in become configuration with DeepSeek as the default. No provider
+   inference from the environment (invariant 8's spirit survives: a named provider, not a guess),
+   no provider *registry*.
+4. **Keep the credential guarantees generic, with tests**: no credential in the image for any
+   provider, `installCodexFiles`' `LITERAL_KEY` tripwire extended to the new config shape,
+   `--no-credential` still leaves nothing stealable, and the post-boot rootfs sweep still runs
+   and still aborts the boot.
+5. **Delete the machinery the unlock makes unnecessary** and say what was deleted.
+
+### Phase 1 progress
+
+Not started. Nothing has been changed in this session yet.
+
+---
+
 ## Open items for the owner (not fixable inside the phases)
 
 - **Defect 8 is a published secret.** `test/evidence/onboard.txt` held a plaintext session
