@@ -739,3 +739,129 @@ is demonstrated is the harness around the model, which is the part moat owns.
 - The baseline sabotage: restoring the `add -A` rule fails two tests, and the demo then writes the
   conflicting file.
 - Every suite is wired into `package.json` (`test:demo`) and listed in the README and `AGENTS.md`.
+
+---
+
+## Session 2, continued — Phase 3, the review surface
+
+### Where Phase 3 stands
+
+The review surface is **implemented and typechecks**, and its first measurement passed. What is
+not done is the gate: no partial accept has been run end to end yet, and there is no suite.
+
+**`lib/hunks.ts` (new).** Turns a planned change into hunks and writes back a subset. The design
+decision that matters is what a hunk is expressed *against*: hunks are anchored to the
+**destination** — each names a range of destination lines and the lines that replace it. Anchoring
+to the source would make every later hunk's offsets depend on the earlier decisions. Where the two
+sides come from, per change kind: `add` is one hunk against an empty file; `modify` diffs the host
+file against the frozen source; `merge` diffs **your file against the merged bytes**, so the hunks
+are what the merge would change about *your* file and rejecting one leaves your own line standing.
+That last one is the correction of a real bug: the first version diffed the merged bytes against
+themselves, which reported zero hunks for a merge that changed everything, and — worse — anchoring
+the write to the merged bytes meant a *rejected* hunk came back on the next apply, because the
+merged content already contains every hunk. `delete`/`mode`/`link` are path-level and `partial` is
+false for them rather than pretending otherwise.
+
+Hunks come from `git diff --no-index` rather than a hand-written diff: the output has to line up
+with what `git merge-file` and the planner already decided, and a second diff implementation is a
+second thing that can disagree with them.
+
+**Measured by hand, before any CLI work:** two edits 28 lines apart in a 40-line file produce two
+hunks; accepting hunk 1 alone writes only the first change, hunk 2 alone only the second, both
+writes both, and none leaves the file byte-identical. Selection parsing (`1,3-5`, `all`, `none`)
+rejects a number the file does not have rather than silently accepting less than was asked for.
+
+**`sync/apply.ts`.** `reviewPlan` presents the plan for a reviewer — the verdict and the note are
+the planner's own, carried through, and the only thing added is the split into hunks.
+`applySelection` writes a chosen subset, and its four safety properties are structural rather than
+conventional: a conflict is refused by the *plan's* flag so no selection can talk moat into writing
+one; `expectedHost` is re-checked against the destination immediately before every write; the
+written bytes are the destination's verified content plus replacement lines from the file frozen at
+plan time, so a symlink swapped in after the plan cannot reach the write; and a rejected hunk stays
+out because the hunks are destination-anchored.
+
+**`cmd/main.ts`.** `moat apply` now prints the review per hunk and decides per hunk. Selection
+comes from `--only`/`--skip`/`--hunks`, or from a terminal prompt, or from `--yes`; with none of
+those and nothing attached it refuses rather than writing anything. The old `describePlan` summary
+is gone from this path — it printed a one-word verb per file, which is a summary of a decision the
+user was being asked to make blind.
+
+### The blocker, and how it resolved
+
+`npm run test:unit` was green at **228 pass, 0 fail** and `npm run typecheck` clean with all of the
+above in place, and then nothing could run at all: **the tmpfs backing `/tmp` reached 100% (3.8
+GiB)**, and the harness stages every command through `TMPDIR`, so the staging write failed before
+any command started — `true` failed with `ENOSPC: no space left on device, write`.
+
+The consumers were the demo's `--keep` scratch projects and a hand-check environment, each holding
+a ~300 MB copy of the Alpine rootfs. `pkill -9` was what actually freed it: a process holding a
+deleted file pins tmpfs space that `rm` cannot reclaim, and killing the stale `unshare`/`codex`/
+`slirp4netns` processes released it. The `rm` that was meant to run in the same command had been
+swallowed as an argument to `pkill`. `/tmp` went from 100% back to 1.1G used, and the suites ran.
+
+### The gate PASSES
+
+`bash test/e2e-review.sh` — **17 checks passed, 0 failed** — and it is a real repo with real agent
+work: a committed forty-line file, a booted sandbox, `moat exec` making two changes 28 lines apart
+and committing them in the box, `moat fetch`, then `moat apply --dry-run` reviewed by a script. It
+accepts `--hunks 2` and asserts on the bytes: line 31 carries the agent's change, line 3 is still
+the host's own line, the file is still forty lines, and a full-tree SHA-256 equals the tree with
+*only* hunk 2 applied. Then hunk 1 from a fresh plan, both hunks present, and a re-review that says
+there is nothing left to apply. Then the conflict half: a file both sides changed is presented as a
+conflict and is not written even when `--only` names it. Evidence: `test/evidence/review.txt`.
+
+`test/unit/review.test.ts` (8 tests, and `npm run test:unit` is now **243 pass, 0 fail**) covers every classification branch the gate names — agent,
+you, both, added, deleted, mode, link, conflict — plus every partial-accept path: some hunks, none,
+all, an unselected path, a stale plan, and a conflict no selection can write. The fixture runs the
+real boot sequence (`copyIn` -> `ensureSandboxRepo` -> `recordBaseline`) against a real repository,
+because the classification *is* a comparison of three trees and a fixture that fabricates a
+baseline would test a different thing. `test/unit/hunks.test.ts` (7 tests) holds the hunk layer.
+
+### Three defects found by running the gate, not by reading it
+
+**The check that could not fail, found by checking.** The first version of the classification
+assertion was `grep -q "agent" && ! grep -q "conflict"` over the whole review output. It failed on a
+file the planner had correctly called the agent's, because the same output carries a credential-scan
+warning containing the word "conflict". A looser assertion in the other direction would have passed
+for the wrong reason forever; it now matches the rendered verdict row (`^  agent +notes\.txt`).
+
+**A check that could not fail, found by sabotaging.** With the suite at 15/0 I removed the guard
+that skips changes a selection does not name, expecting a failure. All 15 still passed. The reason
+is real and worth writing down: `selectChanges` in the CLI filters the selection list *before* it
+reaches `applySelection`, so no end-to-end run can see the writer's guard on its own — the guard
+protects a caller that hands the writer a short list. The measurement moved to where it is
+observable: with `chosen.has` deleted, `accepting nothing writes nothing at all` fails in
+`test/unit/review.test.ts` — an unselected path reaches the `?? null` default and the whole-file
+form writes it. The e2e check
+stayed as the CLI-level promise (`--only X` writes X and nothing else), with a control that the
+unnamed change was really pending, and its comment now says which level it holds.
+
+**A `??` default that collapses three states into two.** Chasing the above turned up the real shape
+of the bug the guard defends against. The selection map holds `null` ("the whole file"), `[]` ("none
+of it"), and *absent* ("not selected"). `chosen.get(path) ?? null` made an absent path arrive as the
+whole file: rejecting everything applied everything. The obvious fix, `?? []`, is worse and quieter
+— it answers `[]` for a `null` value too, so "the whole file" becomes unreachable and `--yes` stops
+writing anything. The map is now read with no default, `chosen.has` is the guard, and the unit test
+holds both halves.
+
+**A fourth, cosmetic, and it was in the evidence.** The review printed `hunk 1  lines 1-0 of your
+file` for an added file, because an addition's hunk is `@@ -0,0 +1,N @@` and `destStart`/`destEnd`
+are `1`/`0`. It now says `a new file`. Found by reading the regenerated evidence rather than by
+running anything.
+
+Both remaining sabotages were run and are recorded in the file's comments: emptying the `[]`
+guard fails a unit test, and anchoring a merge to the merged bytes fails another.
+
+### What the gate does not claim
+
+The review surface is a *merge* review. It shows the agent's proposed bytes against your file and
+lets you take part of them; it does not show a whole-project diff, does not annotate the model's
+reasoning, and has no notion of a change you asked for. Cross-file coupling is the user's problem:
+taking hunk 2 of a file and none of the file that makes it compile is a state moat will happily
+write, because moat has no model of what the project means. SPEC §4.1 says what it does instead of
+implying more.
+
+Nothing was rewritten to make the surface fit. The classification the planner already made is what
+the review shows; the four verdicts, their notes and the conflict flag are the planner's own,
+carried through by `reviewPlan`. What the phase added on top is the split into hunks and a writer
+that takes a subset.

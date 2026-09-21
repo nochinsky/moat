@@ -84,6 +84,7 @@ bash test/e2e-extras.sh   # snapshots, apply, credential expiry, state and proce
 bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced
 bash test/e2e-provider.sh # a named, non-DeepSeek provider, end to end, no credential in the image
 bash test/e2e-demo.sh     # `moat demo`: three-way attribution, keyless
+bash test/e2e-review.sh   # the review surface: per-hunk attribution, a partial accept
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # one real model, one real task
 ```
 

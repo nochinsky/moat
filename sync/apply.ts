@@ -3,6 +3,8 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { partPath, type EnvPaths } from "../lib/paths.ts"
+import { applyHunks, hunksBetween, type Hunk } from "../lib/hunks.ts"
+export type { Hunk } from "../lib/hunks.ts"
 import { run } from "../lib/shell.ts"
 import { SANITIZED_GIT_ENV, sandboxGit, sandboxGitRaw } from "../lib/git.ts"
 import {
@@ -669,6 +671,229 @@ export async function applyPlan(p: EnvPaths, plan: ApplyPlan): Promise<{ applied
   }
 
   return { applied, skipped }
+}
+
+/**
+ * The plan, as a reviewer sees it: one row per changed path, with its hunks.
+ *
+ * This is the review surface's data, and it is deliberately a *presentation* of `planApply`'s
+ * answer rather than a second opinion about it. `verdict` is the planner's classification, `note`
+ * is the planner's own words for why, and `conflict` is the planner's refusal. The only thing
+ * added here is the split into hunks.
+ *
+ * A path the planner refused (`conflict: true`) is still listed, with no hunks: the reviewer has
+ * to be able to see that it was considered and why it was not written. It can never be accepted —
+ * `applySelection` refuses it — so listing it is information, not an option.
+ */
+export type ReviewedChange = {
+  path: string
+  /** The planner's classification, carried through rather than re-derived. */
+  verdict: "agent" | "you" | "both" | "conflict"
+  kind: ChangeKind
+  /** The planner's own note, for the reviewer. */
+  note?: string
+  /** The file the proposed content was frozen into at plan time, outside the rootfs. */
+  sourceFile?: string
+  hunks: Hunk[]
+  /** False for `delete`/`mode`/`link`, and for a diff that could not be produced. */
+  partial: boolean
+  /** True when the planner refused this change; nothing may write it. */
+  conflict: boolean
+}
+
+export async function reviewPlan(p: EnvPaths, plan: ApplyPlan): Promise<ReviewedChange[]> {
+  const rows: ReviewedChange[] = []
+  for (const row of planVerdict(plan)) {
+    const change = [...plan.changes, ...plan.conflicts].find((entry) => entry.path === row.path)
+    if (!change) continue
+    // `delete`, `mode` and `link` have nothing to split: the change is the path.
+    const divisible = !change.conflict && (change.kind === "add" || change.kind === "modify" || change.kind === "merge")
+    const dest = safeDestination(p.projectDir, change.path)
+    const source = change.kind === "merge" ? change.mergedFile : change.sourceFile
+    let hunks: Hunk[] = []
+    if (divisible && dest !== null && source && fs.existsSync(source)) {
+      const proposed = fs.readFileSync(source, "utf8")
+      // The hunks are always `your file` -> `the proposed content`, for a merge as much as for a
+      // modify. Two bugs lived in the one line this replaces:
+      //
+      //  - a merge diffed the merged content against *itself*, so a merge that changed anything
+      //    reported zero hunks and `--hunks` refused it as "not divisible";
+      //  - anchoring a merge to the merged bytes would have made a rejected hunk vanish rather
+      //    than stay out: rewriting from `merged + accepted hunks` re-applies every hunk that was
+      //    not explicitly rejected, because the merged bytes already contain them.
+      //
+      // Anchoring to your file is right for both: rejecting a hunk leaves your own line, because
+      // your own line is what the hunk's range holds.
+      const current = entryState(dest).kind === "file" ? fs.readFileSync(dest, "utf8") : ""
+      hunks = (await hunksBetween(current, proposed)) ?? []
+      // A diff that could not be produced (a binary file, or a git that refused) falls back to
+      // path-level: the file is still offered, just not divisible. Saying "one hunk" here would be
+      // a promise the writer cannot keep.
+    }
+    rows.push({
+      path: change.path,
+      verdict: row.verdict,
+      kind: change.kind,
+      ...(row.detail ? { note: row.detail } : {}),
+      ...(source ? { sourceFile: source } : {}),
+      ...(dest !== null && change.kind !== "add" ? { destFile: dest } : {}),
+      hunks,
+      partial: divisible && hunks.length > 0,
+      conflict: Boolean(change.conflict),
+    })
+  }
+  return rows
+}
+
+/**
+ * What a reviewer decided about one path.
+ *
+ * `accepted: null` means "the whole file" — every hunk, or for a `delete`/`mode`/`link` the change
+ * itself. An empty set means "none of it", which is the same outcome as refusing the path but is
+ * recorded differently so the report can say which happened.
+ */
+export type Selection = { path: string; accepted: number[] | null }
+
+/** The outcome of writing a selection, per path. */
+export type SelectionResult = {
+  applied: { path: string; hunks: number; mode: "whole" | "partial" }[]
+  skipped: { path: string; reason: string }[]
+}
+
+/**
+ * Write the accepted hunks of a plan to the user's directory.
+ *
+ * Safety properties, each of which is why this is a separate function from `applyPlan` rather than
+ * a flag on it:
+ *
+ *  - **A conflict is never written.** The check is the plan's `conflict` flag, not the selection,
+ *    so no selection can talk moat into writing one.
+ *  - **The three-way re-check still happens, immediately before the write.** `expectedHost` is
+ *    compared against the destination's *current* state for every path, and a file edited since
+ *    the plan was made is skipped exactly as before.
+ *  - **The written bytes come from the destination plus the frozen source.** The destination's
+ *    content is the one that was just verified, and the replacement lines come from the file
+ *    frozen at plan time — never a fresh read of the agent's tree. A symlink swapped in after the
+ *    plan cannot reach this write.
+ *  - **A rejected hunk stays out.** Hunks are anchored to the destination, so a path with hunks 1
+ *    and 3 accepted and 2 rejected contains the agent's lines in 1 and 3 and the host's own line
+ *    where 2 would have been.
+ */
+export async function applySelection(
+  p: EnvPaths,
+  plan: ApplyPlan,
+  selections: Selection[],
+): Promise<SelectionResult> {
+  if (plan.baselineProblem) throw new Error(plan.baselineProblem)
+  const chosen = new Map(selections.map((entry) => [entry.path, entry.accepted]))
+  const result: SelectionResult = { applied: [], skipped: [] }
+
+  try {
+    for (const change of plan.changes) {
+      if (!chosen.has(change.path)) continue
+      const dest = safeDestination(p.projectDir, change.path)
+      if (change.conflict) {
+        // Unreachable through `reviewPlan`, which offers no hunks for a conflict, and kept anyway:
+        // "no selection may cause a conflicting file to be written" is the invariant, and an
+        // invariant that depends on a caller's good behaviour is not one.
+        result.skipped.push({ path: change.path, reason: "conflicting: moat never writes one" })
+        continue
+      }
+      if (dest === null) {
+        result.skipped.push({ path: change.path, reason: "outside the project directory" })
+        continue
+      }
+      if (entryKey(entryState(dest)) !== change.expectedHost) {
+        result.skipped.push({ path: change.path, reason: "changed on the host since the plan was made" })
+        continue
+      }
+      // A path absent from the selection map is "not selected", which is a *third* thing next to
+      // `null` ("the whole file") and `[]` ("none of it"). The map is read without a default so all
+      // three survive to here: `?? []` would answer `[]` for a `null` value too, making "the whole
+      // file" unreachable, and `?? null` was the original bug in the other direction — an absent
+      // path arrived at it as the whole-file form and was written in full. The guard on the line
+      // above is what keeps that from happening, and this is measured rather than asserted:
+      // deleting it fails `accepting nothing writes nothing at all` in `test/unit/review.test.ts`:
+      // the unselected path arrives at the default below and is written in full.
+      const accepted = chosen.get(change.path) ?? null
+      if (accepted !== null && accepted.length === 0) {
+        result.skipped.push({ path: change.path, reason: "you accepted none of it" })
+        continue
+      }
+
+      if (change.kind === "mode") {
+        fs.chmodSync(dest, change.mode ?? 0o644)
+        result.applied.push({ path: change.path, hunks: 0, mode: "whole" })
+        continue
+      }
+      if (change.kind === "delete") {
+        fs.rmSync(dest, { recursive: true, force: true })
+        result.applied.push({ path: change.path, hunks: 0, mode: "whole" })
+        continue
+      }
+      if (change.kind === "link") {
+        fs.rmSync(dest, { force: true })
+        fs.mkdirSync(path.dirname(dest), { recursive: true })
+        fs.symlinkSync(change.linkTarget ?? "", dest)
+        result.applied.push({ path: change.path, hunks: 0, mode: "whole" })
+        continue
+      }
+
+      const source = change.kind === "merge" ? change.mergedFile : change.sourceFile
+      if (!source || !fs.existsSync(source)) {
+        result.skipped.push({ path: change.path, reason: "the planned bytes are no longer available" })
+        continue
+      }
+      const proposed = fs.readFileSync(source, "utf8")
+
+      if (accepted === null) {
+        copyAtomic(source, dest, change.mode)
+        result.applied.push({ path: change.path, hunks: 0, mode: "whole" })
+        continue
+      }
+
+      // Partial: the destination as it is now (just verified) plus the accepted hunks, anchored
+      // to the destination so a rejected hunk keeps the host's own line. See `reviewPlan` for why
+      // a merge is anchored here rather than to the merged bytes.
+      const current = change.kind === "add" ? "" : fs.readFileSync(dest, "utf8")
+      const hunks = (await hunksBetween(current, proposed)) ?? []
+      const wanted = new Set(accepted)
+      // Accepting every hunk means "the whole file", so the bytes written are the frozen proposed
+      // content rather than a re-derivation of it. The two are equal by construction, and this is
+      // what makes that true by *use* as well: a re-derived equal-length buffer is a chance to
+      // write something the user did not review, and the cost of being sure is nothing here.
+      const next = hunks.length > 0 && wanted.size >= hunks.length ? proposed : applyHunks(current, hunks, wanted)
+      writeAtomic(dest, next, change.mode)
+      result.applied.push({ path: change.path, hunks: wanted.size, mode: "partial" })
+    }
+  } catch (error) {
+    // A failure part-way through leaves the plan's frozen files in place rather than deleting
+    // them: the plan is a description of work, and a caller that saw an error may want to retry it
+    // or hand it to `applyPlan`. `cleanupMergeTemps` reaps them an hour later either way.
+    throw error
+  }
+
+  // The plan's temps are deliberately *not* deleted here, and that is the fix for a real bug:
+  // consuming them on the first call made a plan single-use by accident. The unit test that
+  // caught it applies a selection, is refused for a stale host, re-plans, and applies again — and
+  // the second call on the same plan found `mergedFile` already gone and reported "the planned
+  // bytes are no longer available" while looking exactly like a write that had happened.
+  // `cleanupMergeTemps` reaps abandoned ones by age, which is the mechanism that already existed.
+  return result
+}
+
+/** Also called by `applyHunks`; the shared writer keeps the mode handling in one place. */
+function writeAtomic(dest: string, content: string, mode?: number): void {
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  try {
+    if (fs.lstatSync(dest).isSymbolicLink()) fs.rmSync(dest, { force: true })
+  } catch {
+    /* nothing there */
+  }
+  const temp = partPath(dest)
+  fs.writeFileSync(temp, content, mode !== undefined ? { mode } : undefined)
+  if (mode !== undefined) fs.chmodSync(temp, mode)
+  fs.renameSync(temp, dest)
 }
 
 /**

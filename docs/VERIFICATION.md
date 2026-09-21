@@ -2055,6 +2055,78 @@ streaming site reverted (4 ESC bytes, verdict FAILED).
 
 ---
 
+### AN. The review surface: attribution per hunk, and a partial accept that writes only what was taken
+
+Evidence: `test/evidence/review.txt` (checks and failures printed at the end of the capture),
+`test/unit/review.test.ts` (8 tests), `test/unit/hunks.test.ts` (7 tests).
+
+The run is not a fixture with a mocked plan. A repository with one committed forty-line file is
+booted, `moat exec` makes two changes **in the sandbox** 28 lines apart and commits them, `moat
+fetch` brings the branch across, and `moat apply --dry-run` is the review under test. Then one
+hunk is taken out of two:
+
+```
+$ moat apply --dry-run
+  agent    notes.txt  modify
+    hunk 1  lines 1-6 of your file
+      - line 3
+      + line 3: the agent changed this
+    hunk 2  lines 28-34 of your file
+      - line 31
+      + line 31: the agent changed this too
+
+  0 of 1 change(s) selected; 0 conflict(s) are never written. Nothing written (--dry-run).
+
+$ moat apply --only notes.txt --hunks 2
+✓ applied 1 change(s) …
+```
+
+The assertions after it are on the host's bytes, not on moat's account of them: line 31 carries
+the agent's change, line 3 is still the host's own line, the file is still forty lines (a
+replacement, not an append or a truncation), and a full-tree SHA-256 recomputed with *only* hunk 2
+swapped in equals the tree on disk. That last one is the gate's sentence — "the host tree
+containing exactly what the user approved and nothing else" — measured rather than described. Then
+hunk 1 from a fresh plan, both hunks present, and a re-review that reports nothing left to apply.
+Finally the conflict half: a file both sides changed is presented as a conflict, and `moat apply
+--only <that file>` still does not write it.
+
+`--only` excludes by name, and the check for that has a control so it cannot pass on an empty
+plan: the agent changes a second file, the review is asserted to offer **both** changes, and then
+the unnamed one must be absent from the host while the named one is present:
+
+```
+  agent    other.txt  add
+    hunk 1  a new file
+      + the agent wrote this too
+  pass  the pending changes    two changes were offered and the selection named one of them
+  pass  the unselected change  --only notes.txt did not write the file it did not name
+  pass  the named change       the file the selection did name was written
+```
+
+**Which level holds which promise, measured rather than assumed.** With the suite green, the guard
+that skips unselected changes was deleted from `applySelection` and the whole end-to-end suite was
+re-run: **every check still passed.** That is not a hole in the suite, it is the CLI's shape —
+`selectChanges` filters the selection list before it reaches the writer, so no end-to-end run can
+observe the writer's own guard. The measurement moved to where the guard is observable: deleting
+`chosen.has` fails `accepting nothing writes nothing at all` in `test/unit/review.test.ts`. The
+other two sabotages recorded
+in the source are that emptying the `[]` guard fails a unit test, and that anchoring a merge to the
+merged bytes — rather than to your file — fails another, because a rejected hunk then comes back on
+the next apply.
+
+**The three selection states.** The map from a path to what was accepted holds `null` ("the whole
+file"), `[]` ("none of it"), and *absent* ("not selected"). `chosen.get(path) ?? null` collapsed
+the third into the first, so rejecting everything applied everything; the reverse fix, `?? []`, is
+quieter and worse, because it answers `[]` for a `null` value too and "the whole file" becomes
+unreachable. The map is read with no default and the guard is explicit, with a unit test on each
+half.
+
+**What the review is not.** It is a merge review, not a project diff: there is no cross-file
+reasoning, no annotation of the model's intent, and no check that the accepted subset still builds.
+Taking hunk 2 of a file and none of the file that makes it compile is a state `moat apply` will
+write, because moat has no model of what the project means. That is the user's decision to make and
+the review is what makes it an informed one.
+
 ## Requirement-by-requirement
 
 | # | requirement | status |
@@ -2064,7 +2136,7 @@ streaming site reverted (4 ESC bytes, verdict FAILED).
 | 3 | no approval prompts, no deny rules | **met**: moat renders `approval_policy = "never"` and `sandbox_mode = "danger-full-access"` on every boot; there is no prompt to answer and no second sandbox to trip |
 | 4 | curated, bundled tool set: exactly what the bundle declares | **NOT met, and no longer attempted** (see below) |
 | 5 | project copied in, never bind-mounted | **met**: `git clone --no-hardlinks` from the host project path into the rootfs; no mount of it appears in the table |
-| 6 | copy-out explicit and user-initiated | **met**: `moat fetch` writes one ref; `moat apply` is separate; `HEAD` and the working tree are provably unchanged |
+| 6 | copy-out explicit and user-initiated | **met**: `moat fetch` writes one ref; `moat apply` is separate; `HEAD` and the working tree are provably unchanged; and `moat apply` writes only what was selected — whole changes by `--only`/`--skip`, or part of a file by `--hunks`, with the host tree's bytes checked against the approved subset (§AN) |
 | 7 | one scoped credential at boot; no keys in the image; no host env, SSH agent or dotfiles | **met** for injection, no-keys-in-image, and no-env/SSH/dotfiles; **partial** for "scoped" (see below) |
 | n/a | environments persist, snapshots cover the rootfs not the project | **met** |
 
@@ -2098,7 +2170,7 @@ Listed so that absence is not mistaken for success.
 | v1 (microVM on KVM): boot time, image size, delta vs v0 | `/dev/kvm` is present but not accessible to this user (mode 660, gid 991, not a member). v1 is a separate phase and is not claimed here. |
 | v2 (provider-side credential revocation and spend caps, concurrent sandboxes) | explicitly gated on v0 *and* v1 passing. Egress rules landed ahead of v2 and are verified in §L. |
 | Model quality, as opposed to model reachability | a real DeepSeek session is verified above. That is one task, one model, one run: a smoke test with teeth, not a benchmark. |
-| Non-DeepSeek providers | moat is DeepSeek-only by design; `--base-url` exists for a gateway or a local model and is exercised against a stub, but no second hosted provider was wired up or called. |
+| Non-DeepSeek providers | a *named* provider configured with `moat provider add` is verified end to end against a stub (`test/e2e-provider.sh`, 9 checks: the model id and base URL on the wire, no credential name from the default provider in the image or the environment, the rendered catalog describing that provider's model). No second **hosted** provider has been called with a real key, and moat still refuses a provider name nobody configured and infers nothing from the environment. |
 | The `countUnfetched` / host-drift logic under adversarial git states | §AB and §AC cover multiple branches, tags, an already-fetched ref, a non-git host, a detached host HEAD and a detached sandbox HEAD; a *rebased* sandbox branch, and commits that survive only in the sandbox reflog after a `reset --hard`, are still not staged. |
 | The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |
 | The absolute correctness of a cost figure against a DeepSeek invoice | the figure is the published table applied to the billed token counts in the CLI's own usage block. Codex reports one usage block per turn, so a turn that crosses a peak-pricing boundary is priced at one rate and the label names one side; only per-request timestamps could split it, and they are not reported. Nothing here is compared against a real bill. |
@@ -2109,5 +2181,7 @@ Listed so that absence is not mistaken for success.
 | Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all: a refusal, not support, and not a silent drop. |
 | What the copy-out credential scan cannot see | it compares against the values the host holds at fetch/apply time (`DEEPSEEK_API_KEY`, `MOAT_CREDENTIAL`, the credential store) and searches the commits a fetch brought in (the most recent 50) or the files an apply plan would write (up to 64 MiB each). A key rotated since the boot, a secret the agent obtained somewhere else, older commits and larger files are outside it: each bound is named when it is reached (extras §AB, `test/unit/leak-scan.test.ts`). A file that does not match is not a claim that it is clean. |
 | Whether the Codex loop is better than the old runtime's on long work | cost per turn is measured (`docs/HISTORY.md`), but the old runtime is deleted, so that comparison is history rather than a live A/B, and "which harness does long autonomous work better" would need a task suite and many runs. |
+| Whether a partially accepted subset of a change is coherent | the review is per file and per hunk, with no cross-file reasoning. Taking hunk 2 and rejecting the hunk in another file that makes it compile is a state `moat apply` will write; nothing verifies that an accepted subset builds, imports, or runs, and no check is run afterwards (§AN). |
+| A merge's hunks as an exhaustive description of the merge | a `both` path is presented as the hunks between your file and the merged bytes, so the review shows what would change in your copy. A conflict between the *two sides'* intentions that the three-way merge resolved silently is not surfaced as such: it arrives as an ordinary hunk, and the review does not say that the merge chose one side. |
 | Anything about a real model other than what the live suite ran | `bash test/e2e-live.sh` is the only evidence against the hosted model. Everything else runs against the deterministic stub, which cannot show model quality, refusals, or provider-side behaviour. |
 

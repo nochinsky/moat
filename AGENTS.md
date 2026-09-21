@@ -86,6 +86,7 @@ bash test/e2e-extras.sh   # snapshots, apply, credential expiry, state and proce
 bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced, default (no key)
 bash test/e2e-provider.sh # a named, non-DeepSeek provider end to end, no credential in the image
 bash test/e2e-demo.sh     # `moat demo`: three-way attribution, keyless
+bash test/e2e-review.sh   # the review surface: per-hunk attribution, a partial accept
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
 ```
 
@@ -158,6 +159,23 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   find, so a plan made while another apply was in flight lost its merged inputs under it
   and `applyPlan` skipped the change without a word. `test/unit/apply.test.ts` plans twice
   and applies the first plan.
+* **`moat apply`'s selection map holds three states, and a `??` default collapses two of
+  them.** `null` is "the whole file", `[]` is "none of it", and *absent* is "not selected".
+  `chosen.get(path) ?? null` made an absent path mean the whole file — rejecting everything
+  applied everything — and the reverse fix, `?? []`, is worse in a quieter way: it answers
+  `[]` for a `null` value too, so "the whole file" becomes unreachable and `--yes` stops
+  writing anything. `applySelection` therefore reads the map with no default and tests
+  `chosen.has` explicitly. Measured: deleting the `has` guard fails
+  `accepting nothing writes nothing at all` in `test/unit/review.test.ts`, because the unselected
+  path then reaches the `?? null` default and is written in full.
+* **A partial accept makes a plan stale for the same file.** The plan's hunks are computed
+  against the destination *as it is*, so after one hunk is written, re-applying the same
+  plan to the same path is not idempotent — `moat apply` re-plans each time, and a caller
+  holding an `ApplyPlan` across a write must plan again. Related, same function: hunks are
+  anchored to the **destination**, not the source. Anchoring a merge to the merged bytes
+  made a *rejected* hunk come back on the next apply, because the merged content already
+  contains every hunk; anchoring to your file is what makes rejection stick, and
+  `test/unit/review.test.ts` fails if that regresses.
 
 **Processes, scripts and logs**
 

@@ -1,0 +1,156 @@
+==============================================================
+== the review surface: per-hunk attribution and a partial accept
+==============================================================
+one committed file of forty lines. The agent changes line 3 and line 31, which are far enough
+apart to be two hunks. 'You' then take only the second. The first must not be written.
+  pass  the boot
+
+--- the agent's lines, read inside the box ---
+line 3: the agent changed this
+line 31: the agent changed this too
+  pass  the agent's work
+
+--- the review: moat apply --dry-run ---
+! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
+
+  agent    notes.txt  modify
+    hunk 1  lines 1-6 of your file
+      - line 1
+      - line 2
+      - line 3
+      - line 4
+      - line 5
+      - line 6
+      + line 1
+      + line 2
+      + line 3: the agent changed this
+      + line 4
+      + line 5
+      + line 6
+    hunk 2  lines 28-34 of your file
+      - line 28
+      - line 29
+      - line 30
+      - line 31
+      - line 32
+      - line 33
+      - line 34
+      + line 28
+      + line 29
+      + line 30
+      + line 31: the agent changed this too
+      + line 32
+      + line 33
+      + line 34
+
+
+  0 of 1 change(s) selected; 0 conflict(s) are never written. Nothing written (--dry-run).
+  pass  the review
+  pass  the review bodies
+  pass  the classification
+
+--- accepting hunk 2 only ---
+! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
+
+  agent    notes.txt  modify
+    hunk 1  lines 1-6 of your file
+      - line 1
+      - line 2
+      - line 3
+      - line 4
+      - line 5
+      - line 6
+      + line 1
+      + line 2
+      + line 3: the agent changed this
+      + line 4
+      + line 5
+      + line 6
+    hunk 2  lines 28-34 of your file
+      - line 28
+      - line 29
+      - line 30
+      - line 31
+      - line 32
+      - line 33
+      - line 34
+      + line 28
+      + line 29
+      + line 30
+      + line 31: the agent changed this too
+      + line 32
+      + line 33
+      + line 34
+
+✓ applied 1 change(s) to /home/user/moat-demo/review-gate/project, 1 of them partially (1 hunk(s) accepted)
+  pass  the partial accept
+  pass  the accepted hunk
+  pass  the rejected hunk
+  pass  the file's shape
+
+  digest before the accept   f7d5b6680bba93ef03c981da0508e108872226edd2e1dfd8f2c3125edd7210c6
+  digest after the accept    c7bcd9c479d2b2f159af316534322557e04837f11ff06120b6f94575ca262ea5
+  digest with only hunk 2    c7bcd9c479d2b2f159af316534322557e04837f11ff06120b6f94575ca262ea5
+  pass  the accept
+  pass  exactly what was approved
+
+--- then hunk 1, from a fresh plan ---
+! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
+
+  both     notes.txt  merge
+    both changed it; merged
+    hunk 1  lines 1-6 of your file
+      - line 1
+      - line 2
+      - line 3
+      - line 4
+      - line 5
+      - line 6
+      + line 1
+      + line 2
+      + line 3: the agent changed this
+      + line 4
+      + line 5
+      + line 6
+
+✓ applied 1 change(s) to /home/user/moat-demo/review-gate/project
+  pass  the second accept
+  pass  convergence
+
+--- a second change the selection does not name ---
+! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
+
+  both     notes.txt  merge
+    both changed it; merged
+    hunk 1  lines 17-23 of your file
+      - line 17
+      - line 18
+      - line 19
+      - line 20
+      - line 21
+      - line 22
+      - line 23
+      + line 17
+      + line 18
+      + line 19
+      + line 20: the agent came back
+      + line 21
+      + line 22
+      + line 23
+  agent    other.txt  add
+    hunk 1  a new file
+      + the agent wrote this too
+
+✓ applied 1 change(s) to /home/user/moat-demo/review-gate/project
+  pass  the pending changes
+  pass  the unselected change
+  pass  the named change
+  pass  an added file's hunk
+
+--- a conflict is never written, whatever the selection ---
+  pass  the conflict
+  pass  the conflict, after a selection
+
+review evidence written to /home/ektor/Projects/moat/test/evidence/review.txt
+
+checks passed: 19, failed: 0

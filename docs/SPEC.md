@@ -323,6 +323,50 @@ contract in §4 holds for every project.
    changed. Overlapping edits leave the user's file untouched and are reported.
    `--dry-run` plans without writing.
 
+### 4.1 The review surface
+
+**Requirement: the user sees what is about to be written, and can take part of it.**
+
+`moat apply` is not one decision. It plans first (§3's classification, four verdicts), shows
+the plan, and then writes only what was chosen:
+
+* **Whole changes** — `--only <path>`, `--skip <path>`, comma-separated and repeatable, or
+  the interactive prompt, which takes the same spec. A file named in neither list is not
+  written.
+* **Part of a file** — `--hunks <spec>`, where the spec is `1,3-5` of the hunk list the
+  review just printed, `all`, or `none`. Each hunk is listed with its line range in *your*
+  file and its own diff.
+
+Hunks are anchored to the **destination**, not the source. A hunk records the lines of your
+file it replaces, so accepting a subset of them produces a coherent file: an accepted hunk
+writes the agent's lines there, and a rejected one leaves the lines you already have. The
+alternative — anchoring to the source and reconstructing — makes a partial accept either
+drop your lines or reintroduce the rejected ones. Measured: the first version of this
+anchored a merge to the merged bytes, which made a rejected hunk come back on the next
+apply.
+
+Three properties hold for every selection, and each is a unit test in
+`test/unit/review.test.ts`:
+
+* **An unselected change is not written.** `--only a.txt` leaves `b.txt` alone even when the
+  plan would have applied it cleanly.
+* **A conflict is never written, whatever the selection.** Conflict rows are excluded before
+  the selection is read, so `--only` naming a conflicted file still refuses it and says why.
+  The conflict prompt (`--skip-conflicts`, or the interactive one) is *bypassed* when the
+  selection is explicit: asking about a conflict the user has already excluded is a question
+  with one answer.
+* **The bytes written are the verified destination plus the replacement lines from the
+  plan-time frozen source.** Nothing is re-read from the sandbox between planning and
+  writing, and `expectedHost` — the digest recorded for the destination at plan time — is
+  re-checked immediately before each write. A host file that changed under the plan is
+  refused rather than merged from stale inputs.
+
+A partial accept writes a file that is in no tree yet, so the plan is not reusable for a
+second partial accept on the same file; `moat apply` re-plans. The temp files a plan merges
+into are kept until `applyPlan` finishes with them (or reaped by age), because deleting them
+at the end of planning made a plan single-use and made a concurrent apply skip a change
+without a word.
+
 This makes copy-out work for **any** directory: a plain directory has no repository for
 `git fetch` to write into, and the baseline commit supplies the missing third input,
 recorded with a temporary index so neither the working tree nor the index is disturbed.

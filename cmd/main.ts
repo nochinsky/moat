@@ -112,6 +112,7 @@ import {
   type MintedCredential,
 } from "../secrets/broker.ts"
 import { copyIn, ensureSandboxRepo, hostState, isGitRepo, recordBaseline, SANITIZED_GIT_ENV } from "../sync/copyin.ts"
+import { parseHunkSelection } from "../lib/hunks.ts"
 import {
   applyBranch,
   commitSandboxWorktree,
@@ -122,7 +123,13 @@ import {
   sandboxWorktreeChanges,
   suggestBranch,
 } from "../sync/copyout.ts"
-import { applyPlan, describePlan, planApply } from "../sync/apply.ts"
+import {
+  applySelection,
+  planApply,
+  reviewPlan,
+  type ReviewedChange,
+  type Selection,
+} from "../sync/apply.ts"
 import { COMMAND_FLAGS, SPEC, flag, parse, type Parsed } from "../lib/flags.ts"
 
 // ---------------------------------------------------------------------------
@@ -1445,6 +1452,197 @@ async function cmdTake(argv: string[]): Promise<number> {
   return before.digest === after.digest ? 0 : 1
 }
 
+/** A comma or whitespace separated flag value, as a list. */
+function splitList(value: string | undefined): string[] {
+  if (!value) return []
+  return value
+    .split(/[,\s]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+}
+
+/** The word and colour for a planner verdict, in one place so the review reads consistently. */
+function verdictLabel(verdict: ReviewedChange["verdict"]): string {
+  if (verdict === "conflict") return log.yellow("conflict")
+  if (verdict === "both") return log.cyan("both    ")
+  if (verdict === "you") return log.cyan("you     ")
+  return log.green("agent   ")
+}
+
+/**
+ * Print the review, per hunk.
+ *
+ * Every line here comes from the plan: the verdict is the planner's classification, the note is
+ * the planner's own words, and the hunk bodies are the diff between the destination and the frozen
+ * proposed content. Nothing is summarised away — a review that hides the change is a review the
+ * user cannot make.
+ */
+function printReview(rows: ReviewedChange[], opts: { showContext: boolean }): void {
+  if (rows.length === 0) {
+    log.info("  nothing to review: the directory already matches the sandbox")
+    return
+  }
+  for (const row of rows) {
+    const where = `${verdictLabel(row.verdict)} ${log.bold(stripAnsi(row.path))}`
+    log.info(`  ${where}  ${log.dim(row.kind)}`)
+    if (row.note) log.info(`    ${log.dim(stripAnsi(row.note))}`)
+    if (row.conflict) {
+      log.info(`    ${log.dim("not written: moat never writes a file you both changed")}`)
+      continue
+    }
+    if (row.hunks.length === 0) {
+      log.info(`    ${log.dim("(no textual change: the whole path is the change)")}`)
+      continue
+    }
+    row.hunks.forEach((hunk, index) => {
+      // A hunk that replaces nothing has no range in your file to name: an added file's only hunk
+      // is `@@ -0,0 +1,N @@`, so printing `destStart`-`destEnd` gives "lines 0-0 of your file",
+      // which reads as a range in a file that is not there. Measured in the evidence.
+      const where = hunk.destEnd > hunk.destStart
+        ? `lines ${hunk.destStart}-${hunk.destEnd} of your file`
+        : "a new file"
+      log.info(`    ${log.dim(`hunk ${index + 1}  ${where}`)}`)
+      for (const line of hunk.removed) {
+        if (opts.showContext || hunk.removed.length <= 6) log.info(`      ${log.red("- " + stripAnsi(line))}`)
+      }
+      for (const line of hunk.lines) log.info(`      ${log.green("+ " + stripAnsi(line))}`)
+    })
+  }
+  log.info("")
+}
+
+/**
+ * Decide what to write, from the flags, the terminal, or `--yes`.
+ *
+ * The order is deliberate: an explicit flag is an instruction and is never second-guessed; a
+ * terminal gets asked; with neither, nothing is written unless `--yes` said so. The one case that
+ * is *not* a decision is a conflict — it is excluded here as well as in `applySelection`, because
+ * a selection list is data that could come from a script.
+ */
+function selectChanges(
+  rows: ReviewedChange[],
+  opts: { only: string[]; skip: string[]; hunks?: string; assumeYes: boolean; interactive: boolean; dryRun: boolean },
+): Selection[] {
+  const selectable = rows.filter((row) => !row.conflict)
+  const known = new Set(rows.map((row) => row.path))
+  for (const path of [...opts.only, ...opts.skip]) {
+    if (!known.has(path)) {
+      throw new Error(`no changed path "${path}" in this plan. Run \`moat apply --dry-run\` to list them.`)
+    }
+  }
+
+  // An explicit --only/--skip is the whole answer.
+  if (opts.only.length > 0 || opts.skip.length > 0) {
+    return selectable
+      .filter((row) => (opts.only.length > 0 ? opts.only.includes(row.path) : true))
+      .filter((row) => !opts.skip.includes(row.path))
+      .map((row) => ({ path: row.path, accepted: hunkChoice(row, opts.hunks) }))
+  }
+
+  if (opts.assumeYes) return selectable.map((row) => ({ path: row.path, accepted: null }))
+  if (opts.dryRun) return []
+  if (!opts.interactive) {
+    throw new Error(
+      "nothing selected. Pass --yes to take every change, --only <path> / --skip <path> to choose, " +
+        "or run this at a terminal to review each hunk.",
+    )
+  }
+  return promptForChanges(rows)
+}
+
+/** The hunk numbers a `--hunks` value means for one path, or the whole file. */
+function hunkChoice(row: ReviewedChange, hunkSelection: string | undefined): number[] | null {
+  if (hunkSelection === undefined) return null
+  if (row.conflict) {
+    // The real reason, not "not divisible". Re-applying a file you already took makes it a
+    // conflict — the host no longer matches the baseline — and the first version of this message
+    // said the file "is not divisible into hunks", which describes a property of the change
+    // instead of what the user did and how to see it.
+    throw new Error(
+      `${row.path} cannot be written: ${row.note ?? "you and the agent both changed it"}.\n` +
+        `  nothing was written. Review it with \`moat apply --dry-run\`, or take it in full with \`moat apply --only ${row.path} --skip-conflicts\`.`,
+    )
+  }
+  if (!row.partial) {
+    throw new Error(`${row.path} is not divisible into hunks (${row.kind}), so --hunks cannot apply to it`)
+  }
+  const { accepted, error } = parseHunkSelection(hunkSelection, row.hunks.length)
+  if (error) throw new Error(`${row.path}: ${error}`)
+  return accepted
+}
+
+/**
+ * Ask, per hunk, at a terminal.
+ *
+ * A small synchronous line reader rather than a TUI: this runs on the user's own terminal, in the
+ * middle of a command whose whole job is to stop and ask, and `readline` keeps that legible and
+ * testable. Answers are read from stdin line by line so a piped answer sequence works too, which
+ * is what makes this reachable from a test.
+ */
+function promptForChanges(rows: ReviewedChange[]): Selection[] {
+  const readline = require("node:readline") as typeof import("node:readline")
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr })
+  const selections: Selection[] = []
+  let acceptAll = false
+  try {
+    for (const row of rows) {
+      if (row.conflict) continue
+      if (acceptAll) {
+        selections.push({ path: row.path, accepted: null })
+        continue
+      }
+      log.info("")
+      printReview([row], { showContext: true })
+      if (!row.partial) {
+        const answer = ask(rl, `  take this ${row.kind}? [y/n/a/q] `)
+        if (answer === "q") break
+        if (answer === "a") acceptAll = true
+        if (answer === "y" || answer === "a") selections.push({ path: row.path, accepted: null })
+        continue
+      }
+      const answer = ask(
+        rl,
+        `  accept which hunks? [y] all, [n] none, 1,3-4, [a] all files, [q] stop `,
+      )
+      if (answer === "q") break
+      if (answer === "a") {
+        acceptAll = true
+        selections.push({ path: row.path, accepted: null })
+        continue
+      }
+      if (answer === "n" || answer.length === 0) continue
+      if (answer === "y") {
+        selections.push({ path: row.path, accepted: null })
+        continue
+      }
+      const { accepted, error } = parseHunkSelection(answer, row.hunks.length)
+      if (error) {
+        log.warn(`${stripAnsi(row.path)}: ${error} — taking none of it`)
+        continue
+      }
+      selections.push({ path: row.path, accepted })
+    }
+  } finally {
+    rl.close()
+  }
+  return selections
+}
+
+/** One line of input, lowercased and trimmed. */
+function ask(rl: import("node:readline").Interface, prompt: string): string {
+  // `question` callbacks are async; this command is inherently synchronous from the user's point of
+  // view, and blocking on one answer at a time is what makes the loop above readable.
+  const buffer = new Int32Array(new SharedArrayBuffer(4))
+  let answer = ""
+  rl.question(prompt, (reply) => {
+    answer = reply.trim().toLowerCase()
+    Atomics.store(buffer, 0, 1)
+    Atomics.notify(buffer, 0)
+  })
+  while (Atomics.load(buffer, 0) === 0) Atomics.wait(buffer, 0, 0, 50)
+  return answer
+}
+
 /** Accept `moat apply <branch>`, `refs/moat/<branch>` or `refs/heads/<branch>`. */
 function normaliseBranchRef(input: string): string {
   return input.replace(/^refs\/moat\//, "").replace(/^refs\/heads\//, "")
@@ -1516,44 +1714,82 @@ async function cmdApply(argv: string[]): Promise<number> {
     return 0
   }
 
-  if (!flag<boolean>(p, "json")) {
+  // --- the review surface ---------------------------------------------------
+  //
+  // Every changed path, classified by the planner, shown per hunk, with the decision made per
+  // hunk. `describePlan` is gone from this path: it printed a one-word verb per file, which is the
+  // summary of a decision the user was being asked to make blind.
+  const reviewed = await reviewPlan(paths, plan)
+
+  const only = splitList(flag<string>(p, "only"))
+  const skipList = splitList(flag<string>(p, "skip"))
+  const hunkSelection = flag<string>(p, "hunks")
+  const dryRun = flag<boolean>(p, "dry-run") ?? false
+
+  if (!json) {
     log.info("")
-    for (const line of describePlan(plan)) log.info(`  ${stripAnsi(line)}`)
-    for (const conflict of plan.conflicts) {
-      log.info(`  ${log.yellow("skip")}    ${stripAnsi(conflict.path)}  ${log.dim(conflict.note ?? "conflict")}`)
-    }
-    log.info("")
+    printReview(reviewed, { showContext: true })
   }
 
-  if (flag<boolean>(p, "dry-run")) {
-    if (flag<boolean>(p, "json")) log.emit(plan)
-    else log.info(`  ${plan.changes.length - plan.conflicts.length} change(s) ready, ${plan.conflicts.length} conflict(s). Nothing written (--dry-run).`)
-    return 0
+  // Selection: explicit flags first, then the terminal, then --yes.
+  const explicit = only.length > 0 || skipList.length > 0 || hunkSelection !== undefined
+  let selections: Selection[]
+  try {
+    selections = selectChanges(reviewed, {
+      only,
+      skip: skipList,
+      hunks: hunkSelection,
+      assumeYes: flag<boolean>(p, "yes") ?? false,
+      interactive: !json && process.stdin.isTTY === true && !explicit,
+      dryRun,
+    })
+  } catch (error) {
+    log.fail((error as Error).message)
   }
 
-  // A conflict means moat cannot decide, so it stops rather than half-applying.
-  // That is the one place this tool refuses to guess.
-  if (plan.conflicts.length > 0 && !flag<boolean>(p, "skip-conflicts")) {
-    if (flag<boolean>(p, "json")) log.emit(plan)
+  // A conflict still stops the run, exactly as SPEC §2.2 has always said: moat does not decide
+  // what to do when both sides changed the same lines. This runs *after* the selection, which is
+  // what makes `--only app.js` usable in a repository that also has a conflict — the user named
+  // the file they want, and the conflict is not in it. It runs *before* the terminal prompt, so a
+  // reviewer working through the hunks is not asked about files that cannot be written anyway.
+  const disagreeing = reviewed.filter((row) => row.conflict).map((row) => row.path)
+  if (!explicit && disagreeing.length > 0) {
+    if (json) log.emit({ ...plan, reviewed })
     else {
       log.warn(
-        `${plan.conflicts.length} file(s) changed on both sides and could not be merged automatically. ` +
-          "Nothing has been written.",
+        `${disagreeing.length} file(s) changed on both sides and could not be merged automatically: ` +
+          `${disagreeing.map((item) => stripAnsi(item)).join(", ")}.`,
       )
       log.info("")
       log.info(`  the agent's version is in the sandbox:  moat exec -- cat /work/<path>`)
       log.info(`  the baseline is recorded at refs/moat/baseline in the sandbox repository`)
-      log.info(`  to apply everything else and leave those alone:  moat apply --skip-conflicts`)
+      log.info(`  to apply the rest and leave those alone:  moat apply --skip-conflicts`)
+      log.info(`  to take one file you have already checked:  moat apply --only <path>`)
     }
     return 1
   }
 
-  const result = await applyPlan(paths, plan)
-  if (flag<boolean>(p, "json")) log.emit({ ...plan, ...result })
+  if (dryRun) {
+    if (json) log.emit({ ...plan, reviewed, selection: selections })
+    else {
+      log.info("")
+      log.info(
+        `  ${selections.length} of ${reviewed.length} change(s) selected; ` +
+          `${reviewed.filter((row) => row.conflict).length} conflict(s) are never written. Nothing written (--dry-run).`,
+      )
+    }
+    return 0
+  }
+
+  const result = await applySelection(paths, plan, selections)
+  if (json) log.emit({ ...plan, reviewed, selection: selections, ...result })
   else {
-    log.success(`applied ${result.applied} change(s) to ${paths.projectDir}`)
-    if (result.skipped.length > 0)
-      log.warn(`left alone: ${result.skipped.map((item) => stripAnsi(item)).join(", ")}`)
+    const partial = result.applied.filter((entry) => entry.mode === "partial")
+    log.success(
+      `applied ${result.applied.length} change(s) to ${paths.projectDir}` +
+        `${partial.length > 0 ? `, ${partial.length} of them partially (${partial.reduce((n, e) => n + e.hunks, 0)} hunk(s) accepted)` : ""}`,
+    )
+    for (const entry of result.skipped) log.info(`  ${log.dim(`left alone: ${stripAnsi(entry.path)} (${entry.reason})`)}`)
   }
   return 0
 }
@@ -2414,6 +2650,11 @@ Branches and history
   moat apply             merge the agent's work into this directory
                          --dry-run          show the plan, write nothing
                          --skip-conflicts   apply what can be merged, leave the rest
+                         --only PATH        just this change; comma-separated, repeatable
+                         --skip PATH        everything but this change
+                         --hunks SPEC       part of a file: 1,3-5 of a hunk list, or all/none
+                         --checkout         land it on a local branch too
+                         --name BRANCH      the branch --checkout writes
 
 The environment
   moat up [task]         start it without a task; --profile, --fresh, --sync, --yes live here
