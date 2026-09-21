@@ -2,4 +2,4 @@
 --- exit 1
 --- stdout ---
 --- stderr ---
-✗ moat has one provider (deepseek); there is no "bogus" to list
+✗ no configured provider "bogus". Known: deepseek   (moat provider)

@@ -1,5 +1,5 @@
 
---- $ node /home/user/Projects/moat/cmd/main.ts up --base-url https://nxdomain-20845.invalid/v1
+--- $ node /home/user/Projects/moat/cmd/main.ts up --base-url https://nxdomain-27974.invalid/v1
 --- exit 1
 --- stdout ---
 --- stderr ---
@@ -11,5 +11,5 @@ no project manifest found; booting with the base image only (see `moat profiles`
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 5ea85862e8d72055
 model: moat/deepseek-flash
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value; its egress is restricted to an allowlist, but anything on that allowlist, and DNS, can still carry it out. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-01-34
-✗ could not resolve nxdomain-20845.invalid, so a filtered sandbox would not reach the model. Check DNS and try again, or pass --egress open to boot without the allowlist.
+agent branch: moat-session-2026-09-21-08-31
+✗ could not resolve nxdomain-27974.invalid, so a filtered sandbox would not reach the model. Check DNS and try again, or pass --egress open to boot without the allowlist.

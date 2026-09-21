@@ -309,10 +309,23 @@ else
 fi
 
 capture models-bogus $MOAT models bogus
-if grep -q "one provider" "$EVIDENCE/models-bogus.txt"; then
-  pass "models <provider>" "refused instead of silently listing DeepSeek"
+# This required the refusal to say "one provider". That was true until `moat models` was made
+# provider-aware, and it had been passing on wording since the message changed — the check
+# grepped a phrase, not the behaviour. What it is for has not changed: an unknown argument must
+# be refused rather than silently listing the default provider and exiting 0. So it asserts the
+# refusal and that it names the providers moat does know.
+if grep -q "no configured provider" "$EVIDENCE/models-bogus.txt" \
+   && grep -q "deepseek" "$EVIDENCE/models-bogus.txt"; then
+  pass "models <provider>" "refused, naming the providers it does know, instead of listing the default"
 else
   fail "models <provider>" "no refusal in the output"
+fi
+# The positive half: the default provider still lists its models with its default marked.
+capture models-default $MOAT models
+if grep -qE "^ \*deepseek-flash" "$EVIDENCE/models-default.txt"; then
+  pass "models" "lists the default provider's models and marks the default"
+else
+  fail "models" "the default provider's listing is not what it was"
 fi
 
 capture up-bad-egress $MOAT up --egress bogus

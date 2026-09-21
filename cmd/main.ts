@@ -2095,7 +2095,10 @@ async function cmdModels(argv: string[]): Promise<number> {
   }
   if (!spec) {
     const known = listProviderSpecs().map((entry) => entry.id)
-    log.fail(`no configured provider "${requested}". Known: ${known.join(", ")}   (moat provider)`)
+    log.fail(
+      `no configured provider "${requested}": the argument to \`moat models\` must be a provider moat ` +
+        `knows.\n  known: ${known.join(", ")}   (add one with \`moat provider add\`)`,
+    )
   }
   const provider = spec!
   const catalog = await loadCatalog({ refresh: flag<boolean>(p, "refresh") ?? false })

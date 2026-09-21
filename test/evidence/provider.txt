@@ -49,6 +49,6 @@ Fixed src/sum.js so the test passes, and committed it.
 # fail 0
   pass  the task
 
-provider evidence written to /home/ektor/Projects/moat/test/evidence/provider.txt
+provider evidence written to /home/user/Projects/moat/test/evidence/provider.txt
 
 checks passed: 9, failed: 0
