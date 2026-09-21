@@ -23,15 +23,15 @@ isolation (17 checks)
   pass  no host ssh directory          host /home/user/.ssh absent; sandbox /root/.ssh absent
   pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL)
   pass  no host data mounts            13 mounts; none reference a host filesystem path
-  pass  sandbox pid 1                  pid 1 is "entry-679384-80", 4 visible processes
-  pass  own mount namespace            sandbox mnt:[4026532362] vs host mnt:[4026532219]
-  pass  own pid namespace              sandbox pid:[4026532365] vs host pid:[4026532221]
-  pass  own user namespace             sandbox user:[4026532361] vs host user:[4026531837]
-  pass  own uts namespace              sandbox uts:[4026532363] vs host uts:[4026532220]
-  pass  own ipc namespace              sandbox ipc:[4026532364] vs host ipc:[4026532208]
+  pass  sandbox pid 1                  pid 1 is "entry-704122-b4", 4 visible processes
+  pass  own mount namespace            sandbox mnt:[4026532359] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532362] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532358] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532360] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532361] vs host ipc:[4026532208]
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
-  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 40761)
-  pass  network namespace isolated     sandbox net:net:[4026532366] differs from host net:net:[4026531833]; slirp4netns carries its traffic
+  pass  host loopback reachable        the sandbox has its own network namespace and reached the host's loopback through neither 127.0.0.1 nor slirp's 10.0.2.2 gateway (port 41469)
+  pass  network namespace isolated     sandbox net:net:[4026532363] differs from host net:net:[4026531833]; slirp4netns carries its traffic
   pass  device nodes are real devices  all six device nodes are character devices inside the box
   pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
 

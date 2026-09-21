@@ -126,7 +126,7 @@ Naming the seam makes its edges visible, and these are the edges:
 ## 4. Invariants the seam must keep
 
 Any second runtime behind this seam has to satisfy all of these, and they are the checklist
-for the ACP spike in `docs/PROGRESS.md`:
+for the ACP spike in `docs/archive/PROGRESS.md`:
 
 1. **No server, no port** (AGENTS.md invariant 6: the agent is a subprocess of the client, and
    nothing is proxied).

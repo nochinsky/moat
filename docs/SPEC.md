@@ -540,13 +540,13 @@ does not have.**
 
 ### 6.1 What moat does not control
 
-moat does not curate Codex's tool list. Codex ships its own tools (the pinned version
-offers `exec_command`, `write_stdin`, `view_image`, `web_search`, `multi_agent_v1` and the
-goal tools among others), and there is no supported hook that removes one from the list
-the model receives. One entry is disabled at the config level (`web_search`, §6.2). The
-runtime before Codex had a plugin that refused tools outside a curated set; under Codex
-that guarantee does not exist, and what bounds the tools is moat's box, not a filter.
-Closing it properly would need an upstream hook, and v0 does not fork or patch the CLI.
+Codex's tool list is Codex's business. The pinned version offers `exec_command`,
+`write_stdin`, `view_image`, `web_search`, `multi_agent_v1` and the goal tools, and there is
+no supported hook for removing one from the list the model receives. Only `web_search` is
+switchable at the config level, and §6.2 explains why it is off. The runtime before Codex
+had a plugin that refused tools outside a curated set; no equivalent exists here. What
+bounds the tools now is the box. Closing the gap properly needs an upstream hook, and v0
+neither forks nor patches the CLI.
 
 ### 6.2 What moat renders, every boot
 
@@ -607,8 +607,8 @@ So moat renders one `[model_providers.<id>]` block with the base URL,
 context window and output cap come from the [models.dev](https://models.dev) catalog,
 fetched once a day and cached on the host; without it moat falls back to a built-in model
 list and says so. `moat models [provider]` reads it live, and a model id it does not
-describe boots with its own id as its label and **no declared limits**, rather than with
-limits that belong to another model or with nothing said about the difference. With
+describe boots with its own id as its label and **no declared limits**; it never borrows
+another model's numbers, and it says so rather than staying quiet. With
 `--base-url` there is usually no catalog entry, so that is the normal path rather than an
 error, and the rendered config carries no `env_key` unless a credential was injected.
 

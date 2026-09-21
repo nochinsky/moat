@@ -2,6 +2,6 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ sandbox stopped (pid 673754); the environment and its snapshots are kept
+✓ sandbox stopped (pid 698510); the environment and its snapshots are kept
   resume with: moat up
   remove with: moat destroy

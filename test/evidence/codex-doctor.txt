@@ -23,12 +23,12 @@ isolation (15 checks)
   pass  no host ssh directory          host /home/user/.ssh absent; sandbox /root/.ssh absent
   pass  no host env forwarded          no variable from the host environment reached the sandbox; present: HOME, LANG, LC_ALL, MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, MOAT_SANDBOX, PATH, PWD, SHLVL, TERM (plus moat's own MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL, MOAT_MODEL, MOAT_MODEL_ID, MOAT_PROVIDER_BASE_URL, of which MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_FINGERPRINT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_INJECTED_CREDENTIAL is the credential, disclosed below)
   pass  no host data mounts            13 mounts; none reference a host filesystem path
-  pass  sandbox pid 1                  pid 1 is "entry-672302-96", 4 visible processes
-  pass  own mount namespace            sandbox mnt:[4026532303] vs host mnt:[4026532219]
-  pass  own pid namespace              sandbox pid:[4026532306] vs host pid:[4026532221]
-  pass  own user namespace             sandbox user:[4026532302] vs host user:[4026531837]
-  pass  own uts namespace              sandbox uts:[4026532304] vs host uts:[4026532220]
-  pass  own ipc namespace              sandbox ipc:[4026532305] vs host ipc:[4026532208]
+  pass  sandbox pid 1                  pid 1 is "entry-697080-9f", 4 visible processes
+  pass  own mount namespace            sandbox mnt:[4026532301] vs host mnt:[4026532219]
+  pass  own pid namespace              sandbox pid:[4026532304] vs host pid:[4026532221]
+  pass  own user namespace             sandbox user:[4026532239] vs host user:[4026531837]
+  pass  own uts namespace              sandbox uts:[4026532302] vs host uts:[4026532220]
+  pass  own ipc namespace              sandbox ipc:[4026532303] vs host ipc:[4026532208]
   pass  uid mapping                    uid_map "0 1000 1", uid 0 inside is the calling user outside
   pass  device nodes are real devices  all six device nodes are character devices inside the box
   pass  device nodes are the only host mounts 6/6 device node bind(s), rw like every rootless runtime: /dev/full, /dev/null, /dev/random, /dev/tty, /dev/urandom, /dev/zero
@@ -37,7 +37,7 @@ exposures, measured, and NOT fixed in v0. Read these before trusting the box.
   expose  credential visible to the agent
           MOAT_CREDENTIAL_EXPIRES_AT, MOAT_CREDENTIAL_TTL_SECONDS, MOAT_CREDENTIAL_FINGERPRINT, MOAT_INJECTED_CREDENTIAL are in the environment tool execution inherits: the box's process environment, readable via /proc/<pid>/environ. That is how the agent calls the model, so the mitigation is a provider-scoped, spend-capped token rather than hiding the value.
   expose  host loopback reachable
-          the sandbox connected to a service the host opened on 127.0.0.1:37993. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent.
+          the sandbox connected to a service the host opened on 127.0.0.1:37437. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent.
   expose  egress unrestricted
           the sandbox reached 1.1.1.1:443. It shares the host's network namespace (egress mode "open"), so the agent can install dependencies AND exfiltrate anything it can read, including the project and the injected credential. A new environment defaults to "filtered".
 

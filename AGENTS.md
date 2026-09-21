@@ -4,9 +4,9 @@ Read this before changing anything. Most of the design here is load-bearing, and
 constraints are not obvious from the code.
 
 If you are working through the product program rather than a one-off change, that is
-`docs/PROGRAM.md`: gated phases, its own journal at `docs/PROGRESS.md`, and a list of
-reported defects to confirm before fixing. This file stays the contract; that one says
-what to build next.
+`docs/PROGRAM.md`: gated phases, a status page at `docs/PROGRESS.md`, the session record
+it points to, and a list of reported defects to confirm before fixing. This file stays the
+contract; that one says what to build next.
 
 ## The idea
 
@@ -73,8 +73,9 @@ stub/            the keyless model stub and its scripts — runtime, not test, b
                  `moat demo` ships them and a published package cannot reach into test/
 test/            the pty suites, the fixtures, and the committed evidence they write
 docs/            SPEC (the contract), VERIFICATION (the evidence),
-                 HISTORY (how the project got here), SEAM (the agent-harness
-                 interface a second runtime would have to satisfy)
+                 HISTORY (how the project got here), SEAM (the interface a second
+                 runtime would have to satisfy), PROGRESS (where things stand),
+                 archive/ (the build journal, closed phases only)
 ```
 
 ## Packaging

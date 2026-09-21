@@ -2,9 +2,10 @@
 
 You are working on **moat** at the repo root, unattended, across many sessions.
 This document is the contract for the whole program. Re-read it and `AGENTS.md`
-at the start of **every** session. Keep `docs/PROGRESS.md` as the journal that
+at the start of **every** session. Keep `docs/PROGRESS.md` current as the page that
 lets a session with no memory resume: it must always state **which phase you are
-in** and whether that phase's gate has passed.
+in** and whether that phase's gate has passed. Its session-by-session history lives
+in `docs/archive/PROGRESS.md` once a phase is closed.
 
 ---
 
@@ -288,7 +289,8 @@ verification Not-verified table say about what moat does *not* protect stays.
 **and able to fail**. `moat demo` works keyless on a clean checkout. `moat take`
 presents per-hunk attribution with working partial accept. A non-DeepSeek
 provider boots with no credential in the image. The README leads with the trust
-pitch. `docs/PROGRESS.md` explains what you did, what you decided, and what you
+pitch. `docs/PROGRESS.md` explains where the project stands; the session record in
+`docs/archive/PROGRESS.md` explains what you did, what you decided, and what you
 are unsure about.
 
 Write two closing sections: **what you built**, and **everything you found that
