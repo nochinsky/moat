@@ -18,7 +18,7 @@ import {
   ownNetns,
   type EgressMode,
 } from "../lib/pins.ts"
-import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, checkBaseUrl, isDeepSeekHost } from "../lib/provider.ts"
+import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, checkBaseUrl, isDeepSeekHost, type ProviderSpec } from "../lib/provider.ts"
 import { resolveProvider, type ResolvedProvider } from "../lib/resolve-provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES, PROFILES, FULL_PROFILE_ID } from "../sandbox/profiles.ts"
@@ -2006,6 +2006,10 @@ async function cmdDoctor(argv: string[]): Promise<number> {
       injectedVarNames: doctorInjectedVarNames({
         credential: Boolean(state.credential),
         native: state.provider === undefined || state.provider === DEEPSEEK.id,
+        // Derived from the boot, not from a convention: this is the same list the sandbox
+        // process would be given, so the probe models the box the agent actually gets
+        // whatever provider it was configured against.
+        credentialVars: doctorCredentialVars(state),
       }),
       // In filtered mode the doctor proves both sides: an arbitrary address is
       // refused and the provider the environment actually uses is reachable.
@@ -2157,6 +2161,38 @@ function credentialVarNames(provider: ResolvedProvider): string[] {
   else if (provider.id === DEEPSEEK.id) names.add(DEEPSEEK.envVar)
   names.add("MOAT_INJECTED_CREDENTIAL")
   return [...names]
+}
+
+/**
+ * The credential variable names a doctor probe should model for this environment.
+ *
+ * The names the box actually has, reconstructed from what the boot recorded: the configured
+ * provider's variable (looked up the same way the boot looks it up) plus moat's own injected
+ * name. A state.json from an older moat, or one whose provider is no longer configured, falls
+ * back to the default provider's name — which is what that box would have had.
+ */
+function doctorCredentialVars(state: EnvState): string[] {
+  const providerId = state.provider ?? DEEPSEEK.id
+  const spec = safeProviderSpec(providerId)
+  return credentialVarNames({
+    id: providerId,
+    envVar: spec?.envVar,
+    label: spec?.label ?? providerId,
+    codexProviderID: providerId,
+    baseUrl: state.providerBaseUrl ?? spec?.baseUrl ?? "",
+    wireApi: spec?.wireApi ?? "responses",
+    native: providerId === DEEPSEEK.id,
+    modelID: state.model?.split("/").pop() ?? "",
+  })
+}
+
+/** A configured provider's spec, or undefined when it cannot be read. */
+function safeProviderSpec(id: string): ProviderSpec | undefined {
+  try {
+    return resolveProviderSpec(id)
+  } catch {
+    return undefined
+  }
 }
 
 /**

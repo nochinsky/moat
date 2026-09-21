@@ -294,19 +294,32 @@ export function sandboxProviderEnv(input: { baseUrl: string; model: string; mode
 /**
  * The environment names a doctor probe has to inject to model a real box.
  *
- * The probe is an ephemeral boot, and it has to look like the box the agent actually gets
- * or the environment check measures a cleaner box than reality. Two corrections over one
- * shared list: the credential names only when the environment records a credential — a
- * `--no-credential` box has none, and injecting them made the doctor report a credential
- * exposure for a box that deliberately had nothing stealable in it — and the provider's
- * own variable name only for the native provider, because a custom endpoint receives the
- * value under moat's name and never as `DEEPSEEK_API_KEY`.
+ * The probe is an ephemeral boot that is handed a value of `REDACTED-BY-DOCTOR` under each of
+ * these names, and the exposure it prints — "these are in the environment tool execution
+ * inherits" — is a statement about *the box*, derived from this list. So a name that would not
+ * be in the box makes the doctor assert something false about it, and a missing name hides a
+ * real exposure. Two corrections over one shared list already: the credential names only when
+ * the environment records one (a `--no-credential` box has none, and injecting them made the
+ * doctor report a credential exposure for a box that deliberately had nothing stealable in it).
+ *
+ * `credentialVars` is the third, and it comes from the boot rather than from a convention: it
+ * is exactly what `credentialVarNames` gives the sandbox process. Before it, the only
+ * credential name this could model was `DEEPSEEK_API_KEY`, so a box configured against any
+ * other provider was reported as having `DEEPSEEK_API_KEY` in its environment — a variable that
+ * box never has — while the variable it actually has went unlisted. The provider's own variable
+ * and moat's injected name both travel in that list.
  */
-export function doctorInjectedVarNames(opts: { credential: boolean; native: boolean }): string[] {
+export function doctorInjectedVarNames(opts: {
+  credential: boolean
+  native: boolean
+  /** The names the boot would inject the credential under, from `credentialVarNames`. */
+  credentialVars?: readonly string[]
+}): string[] {
   const names = ["MOAT_PROVIDER_BASE_URL", "MOAT_MODEL_ID", "MOAT_MODEL"]
   if (!opts.credential) return names
   names.push(...INJECTED_ENV_NAMES)
-  if (opts.native) names.push(DEEPSEEK.envVar)
+  if (opts.credentialVars && opts.credentialVars.length > 0) names.push(...opts.credentialVars)
+  else if (opts.native) names.push(DEEPSEEK.envVar)
   return [...new Set(names)]
 }
 

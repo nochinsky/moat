@@ -1,0 +1,109 @@
+==============================================================
+== a named, non-DeepSeek provider, end to end
+==============================================================
+the provider is configured in moat's own store with its own key variable, then booted
+with --provider. Before this phase the only route to another endpoint was --base-url, and
+the box still described itself as DeepSeek in its config key, its provider label, its key
+variable and the model catalog it was handed.
+✓ configured provider acme at http://127.0.0.1:5687/v1
+
+providers moat can be pointed at with --provider, or --base-url for one it does not know
+  deepseek     https://api.deepseek.com           DeepSeek  (the default)
+  acme         http://127.0.0.1:5687/v1           acme
+
+  add one:   moat provider add <id> --base-url <url> [--env-var NAME] [--model ID] [--wire-api responses|chat]
+  use one:   moat up --provider <id> --model <id>
+  remove:    moat provider remove <id>
+
+  --env-var names the host variable holding the key. The value is never written to disk.
+
+--- the config in the box ---
+model = "mock-model"
+model_provider = "acme"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+preferred_auth_method = "apikey"
+forced_login_method = "api"
+model_catalog_json = "/root/.codex/models.json"
+web_search = "disabled"
+
+[model_providers.acme]
+name = "acme"
+base_url = "http://127.0.0.1:5687/v1"
+env_key = "ACME_API_KEY"
+wire_api = "responses"
+  pass  the provider block
+  pass  the base URL
+  pass  env_key
+  pass  the rendered config
+  pass  the model
+  pass  the model catalog
+
+--- the turn ---
+Fixed src/sum.js so the test passes, and committed it.
+  17280 tokens  1 tool
+  pass  what the provider received
+  pass  the credential in the image
+# tests 1
+# pass 1
+# fail 0
+  pass  the task
+
+provider evidence written to /home/ektor/Projects/moat/test/evidence/provider.txt
+
+checks passed: 9, failed: 0
+==============================================================
+== a named, non-DeepSeek provider, end to end
+==============================================================
+the provider is configured in moat's own store with its own key variable, then booted
+with --provider. Before this phase the only route to another endpoint was --base-url, and
+the box still described itself as DeepSeek in its config key, its provider label, its key
+variable and the model catalog it was handed.
+✓ configured provider acme at http://127.0.0.1:5687/v1
+
+providers moat can be pointed at with --provider, or --base-url for one it does not know
+  deepseek     https://api.deepseek.com           DeepSeek  (the default)
+  acme         http://127.0.0.1:5687/v1           acme
+
+  add one:   moat provider add <id> --base-url <url> [--env-var NAME] [--model ID] [--wire-api responses|chat]
+  use one:   moat up --provider <id> --model <id>
+  remove:    moat provider remove <id>
+
+  --env-var names the host variable holding the key. The value is never written to disk.
+
+--- the config in the box ---
+model = "mock-model"
+model_provider = "acme"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+preferred_auth_method = "apikey"
+forced_login_method = "api"
+model_catalog_json = "/root/.codex/models.json"
+web_search = "disabled"
+
+[model_providers.acme]
+name = "DeepSeek"
+base_url = "http://127.0.0.1:5687/v1"
+env_key = "ACME_API_KEY"
+wire_api = "responses"
+the provider block: FAILED — does not name the configured provider
+  pass  the base URL
+  pass  env_key
+the rendered config: FAILED — still names DeepSeek for a non-DeepSeek provider
+  pass  the model
+  pass  the model catalog
+
+--- the turn ---
+Fixed src/sum.js so the test passes, and committed it.
+  17280 tokens  1 tool
+  pass  what the provider received
+  pass  the credential in the image
+# tests 1
+# pass 1
+# fail 0
+  pass  the task
+
+provider evidence written to /home/ektor/Projects/moat/test/evidence/provider.txt
+
+checks passed: 7, FAILED: 2
+read the "FAILED" lines above, and /home/ektor/Projects/moat/test/evidence/provider.txt

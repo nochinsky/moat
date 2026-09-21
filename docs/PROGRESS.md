@@ -433,9 +433,111 @@ Ordered so the security-relevant parts are pinned before anything is deleted:
    and still aborts the boot.
 5. **Delete the machinery the unlock makes unnecessary** and say what was deleted.
 
-### Phase 1 progress
+### Phase 1 progress — the gate PASSES
 
-Not started. Nothing has been changed in this session yet.
+**The gate: a boot with a non-DeepSeek provider works end to end against the local stub, with no
+credential in the image and the sweep green.** It is now `test/e2e-provider.sh`, in the repo
+rather than in a scratch file, and it reads `checks passed: 9, failed: 0`:
+
+```
+pass  the provider block      carries the configured provider's label, not DeepSeek's
+pass  the base URL            is the configured endpoint
+pass  env_key                 is the provider's own variable, not DEEPSEEK_API_KEY
+pass  the rendered config     names no vendor but the configured one
+pass  the model               is the configured one
+pass  the model catalog       describes the configured model, with the required prompt field
+pass  what the provider received  the configured model, the key as a bearer token, the agent
+                              prompt, and no metadata advisory
+pass  the credential in the image  the value is nowhere on disk inside the box
+pass  the task                the agent's fix passes the project's own tests
+```
+
+It has teeth, and that was checked rather than assumed: restoring the literal `name = "DeepSeek"`
+in the rendered provider block makes it exit 1 with two failures — "the provider block" and "the
+rendered config".
+
+**The prompt pin: MAINTAINED, not dropped.** This is the gate's second half and it needed a
+measurement first. The round trip came back exact:
+
+```
+no-catalog   effort=high  instructions= 16979B sha256=3b08633fa672906666659d76
+with-catalog effort=high  instructions= 16979B sha256=3b08633fa672906666659d76   advisory: gone
+```
+
+So `base_instructions` still cannot be dropped (the binary exits 1 with neither it nor
+`model_messages.instructions_template`), and what fills it is still the pinned binary's own text —
+but it is now a source constant, `bundle/codex-prompt.ts`, with the refresh recipe written next to
+it, instead of one field inside a 38KB vendor blob. A Codex bump can still move the built-in
+prompt, so the trap survives; it is now a trap on a file whose whole purpose is that text.
+
+**What the phase actually turned out to be.** Reconnaissance changed the shape of it, so the
+reasoning is recorded rather than just the diff:
+
+- *The lock was not where the phase document said.* Codex already accepts an arbitrary model
+  against an arbitrary `model_providers` block, and `--base-url` already got a boot working. What
+  was DeepSeek's: the config key (`deepseek-moat`), the provider block's `name = "DeepSeek"` for
+  **every** provider, the key variable, and the model catalog — which was one vendor's published
+  metadata installed byte-for-byte on every boot, so a box pointed anywhere else was told in its
+  own config and its own metadata that it was DeepSeek.
+- *`--effort` never needed the catalog.* The comment in `bundle/codex.ts` said it did. Measured
+  with no `model_catalog_json` at all: the level still reaches the wire. The catalog buys the
+  absence of Codex's metadata advisory and the declared limits, not the effort level. The stale
+  claim is corrected in place.
+- *The catalog is ten required fields.* Discovered by adding whichever field the parser named and
+  re-running until it accepted the file; `codex debug models` prints the binary's own resolved
+  entry, which is where the values come from. It is rendered per boot now, which also fixes
+  something subtler: a catalog that describes the wrong model is a box advertising a context
+  window and a reasoning ladder it does not have.
+- *It is not a provider registry.* `moat provider add` writes `~/.moat/providers.json`; a bare
+  `moat up` is still the default provider, and an unconfigured name is refused rather than
+  guessed. Nothing is inferred from the environment, which is invariant 8's spirit surviving the
+  unlock, and there is a test for it.
+
+**What was deleted:** `bundle/deepseek-models.json` (38KB), the runtime-asset copy in
+`scripts/copy-assets.mjs` that existed only to carry it into `dist/`, and
+`test/unit/catalog-pin.test.ts` (replaced by `test/unit/model-catalog.test.ts`, which pins the
+same digest against the constant).
+
+**The credential promises, each restated for a provider that is not DeepSeek.** The phase
+document names four, and they are `test/unit/provider-security.test.ts`:
+
+1. *No credential reaches the image, for any configured provider.* The key is environment-only,
+   goes into the box under the configured provider's own variable (not `DEEPSEEK_API_KEY`), and
+   the suite's in-box search for the value finds nothing.
+2. *`installCodexFiles` still refuses a literal key.* The tripwire is checked against seven key
+   shapes in all three texts it writes — and the third is new: the catalog used to be a vendored
+   file, so the config and the brief were the whole surface.
+3. *`--no-credential` leaves nothing stealable.* The probe is modelled with no credential variable
+   at all, for the default provider and for a configured one.
+4. *The post-boot rootfs sweep still runs and still aborts the boot.* `scanRootfsForCredential`
+   searches for the *value*, so it is provider-agnostic by construction — which is the property
+   worth pinning after a phase that made the variable name configurable. The suite proves it
+   aborts: the credential is absent, and a boot that would have failed the sweep fails loudly.
+
+**A defect this phase surfaced and fixed.** `doctorInjectedVarNames` could only model
+`DEEPSEEK_API_KEY` as the credential variable, so with a configured provider the doctor asserted
+that variable was in a box that has never had it, and left the real one unlisted. It now takes the
+names the boot would inject (`credentialVars`, derived the same way `cmdUp` derives them). The
+same class of false claim about a box the doctor does not model is what Phase 0 fixed for
+`--no-credential`; this is the third instance, and the test states all three branches.
+
+**Two mistakes of mine, both caught by running the thing.** The gate's own in-box search for the
+credential used `grep -rl '<value>'` — and `moat exec` writes the command it runs into
+`/.moat/entry-<pid>-<rand>.sh` inside the rootfs, so the check put the credential on disk as the
+*text of the search for it*, and moat's post-boot sweep then found it and refused the boot. The
+"leak" reported itself, twice, before I read the offending file instead of theorising about it.
+The value is now assembled inside the box from pieces. Separately, the first version of the gate
+asserted the credential was visible in the box's environment from `moat exec`; that is a claim
+about a different command's boot, it is not this gate, and it produced a failure about a box that
+had done nothing wrong.
+
+**What is left, and is not this phase.** `lib/catalog.ts` (models.dev) is still there. It is not
+the lock — it is generic (any provider's metadata, fetched) and it is what gives `moat models`,
+the default context windows, and the "this provider does not define that model" warning. Deleting
+it would remove behaviour the phase does not ask to remove, and `moat up --base-url` against an
+arbitrary endpoint still uses it. It now has a vocabulary for "a provider the user configured"
+that it did not need before, and reconciling the two is the obvious next cleanup rather than a
+thing to do in the same commit as the unlock.
 
 ---
 
