@@ -96,6 +96,7 @@ import {
   DEFAULT_TTL_SECONDS,
   credentialRiskNotice,
   doctorInjectedVarNames,
+  findCredential,
   mint,
   sandboxProviderEnv,
   scanRootfsForCredential,
@@ -649,18 +650,37 @@ async function cmdUp(argv: string[]): Promise<number> {
 
   let credential: MintedCredential | null = null
 
-  // A provision is about to download the image, which on a cold cache is several hundred
-  // megabytes and a few minutes. Ask for the credential *before* that, not after: a first run
-  // used to spend the longest and most fragile step of the boot and only then reveal that it
-  // needed a key, so someone without one paid for the whole download and then hit a prompt they
-  // could not answer. Asking costs a round trip to the provider and saves the download.
+  // Provisioning downloads the image, which on a cold cache is several hundred megabytes and a
+  // few minutes, so everything that can fail cheaply is checked before it starts.
   //
-  // Only when the answer is still unknown: a credential that already resolved (the environment,
-  // the store, a flag) needs no prompt, and `moat up` on an existing environment does not
-  // provision at all. The key is saved by `onboard` and picked up by the mint below, so this
-  // reads it exactly as it would have anyway — the order changed, not the behaviour.
-  if (needsProvision && !flag<boolean>(p, "no-credential") && interactive && !credential) {
-    await onboard()
+  // Both checks here concern the two sources that live on the host and need nothing from the
+  // boot: a `--credential-env NAME` naming a variable that is not set is a typo that used to be
+  // reported after the download, and a terminal with no key anywhere used to be asked *after* it.
+  // The store needs no check — `moat provider add` and `onboard` are what fill it, and it lives
+  // between boots.
+  if (needsProvision && !flag<boolean>(p, "no-credential")) {
+    const envName = flag<string>(p, "credential-env")
+    if (flag<string>(p, "credential") === undefined && envName !== undefined && !process.env[envName]) {
+      log.fail(
+        `--credential-env ${envName} was given but that variable is not set on the host.\n` +
+          `  Set it, or pass --credential VALUE, or let moat ask for a key on first run.`,
+      )
+    }
+    // Ask only when there is genuinely nothing to use, and only for the provider `onboard` can
+    // write a credential for: it stores the native key, so for any other provider there is
+    // nothing it could usefully save and the mint below resolves it from the flags or the store.
+    // The mint reads whatever `onboard` saves, so this is when the question is asked, not what
+    // happens with the answer.
+    // `findCredential`, not `mint`: this only asks whether there is a key to use. `mint` also
+    // validates the model and base URL, which are not resolved yet at this point in the boot, and
+    // it is the call below that should report those.
+    const nothingToUse =
+      findCredential({
+        provider: provider.id,
+        envName: flag<string>(p, "credential-env"),
+        literal: flag<string>(p, "credential"),
+      }) === null
+    if (interactive && provider.id === DEEPSEEK.id && nothingToUse) await onboard()
   }
 
   if (needsProvision) {

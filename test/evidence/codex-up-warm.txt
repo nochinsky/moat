@@ -6,7 +6,7 @@
   "envId": "5f160b318512",
   "profileInstall": {
     "installed": [],
-    "ms": 140
+    "ms": 143
   },
   "copyInMs": 10,
   "provider": {
@@ -20,14 +20,14 @@
   },
   "egress": "open",
   "status": "running",
-  "pid": 839545,
+  "pid": 857662,
   "bootMs": 3,
-  "totalMs": 235,
+  "totalMs": 239,
   "readyCheck": "the entry script reported ready ([moat] codex runtime ready)",
   "credential": {
     "provider": "moat",
     "fingerprint": "sha256:304e485880327eb8",
-    "expiresAt": "2026-09-21T22:51:09.979Z",
+    "expiresAt": "2026-09-21T23:00:24.453Z",
     "source": "env:MOAT_MOCK_CREDENTIAL"
   },
   "host": "linux x64 wsl2 userns=yes kvm=no",
@@ -47,6 +47,6 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:304e485880327eb8 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-51
+agent branch: moat-session-2026-09-21-19-00
 checks: npm run test
-→ sandbox booted (pid 839545); the codex runtime has no server to wait for
+→ sandbox booted (pid 857662); the codex runtime has no server to wait for

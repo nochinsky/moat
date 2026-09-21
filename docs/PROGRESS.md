@@ -111,18 +111,28 @@ A cold `moat up` used to provision first and ask second: the image download (sev
 megabytes, minutes on a cold cache) completed before the prompt that said a key was needed. Someone
 without one paid for the whole download and then hit a question they could not answer.
 
-The ask now happens before provisioning, and only when the answer is still unknown — an environment
-variable, the credential store or a flag needs no prompt, and an existing environment does not
-provision at all. `onboard` saves the key and the mint below reads it exactly as before, so this is
-an order change rather than a behaviour change. Two things worth knowing about it:
+Everything that can fail cheaply is now checked before the download, and there are two of those:
 
-* **It degrades.** Cancelling the prompt returns null and the boot carries on to the same
-  "no credential" notice it would have printed anyway. An unreachable provider saves the key
-  unchecked, which is what `onboard` already did.
-* **It is untested at the end-to-end level.** The prompt only appears when stdin is a terminal, and
-  exercising that needs a pty. The change is four lines and every suite passes, but nothing in
-  `test/` would catch a regression that moved the prompt back after provisioning. Recorded rather
-  than papered over.
+* **A `--credential-env NAME` naming an unset variable** used to be reported after the image was
+  provisioned — measured at 42 seconds, and minutes on a genuinely cold cache. It is a typo, and it
+  now fails in under a second with no cache directory created at all.
+* **A terminal with no key anywhere** is asked before provisioning rather than after. `onboard`
+  saves the key and the unchanged mint below reads it, so this is when the question is asked, not
+  what happens with the answer.
+
+Asking is guarded on `findCredential` returning nothing: a key in the environment, in the store or
+on the command line needs no prompt, and an existing environment does not provision at all. The
+prompt is offered only for the native provider, because `onboard` writes a credential the store can
+find for that one; for any other provider there is nothing it could usefully save, and the mint
+resolves it from the flags or the store as before.
+
+`onboard` degrades the way it always did: cancelling returns null and the boot carries on to the
+same "no credential" notice, and an unreachable provider saves the key unchecked.
+
+**Not verified at the end-to-end level.** The prompt only appears when stdin is a terminal, and
+exercising that needs a pty. Every suite passes, and the failure path was measured by hand, but
+nothing in `test/` would catch a regression that moved the prompt back after provisioning. Recorded
+rather than papered over.
 
 ## Repository surface
 

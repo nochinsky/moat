@@ -6,20 +6,20 @@
 no project manifest found; booting with the base image only (see `moat profiles`)
 → provisioning sandbox image (alpine 3.21.4 + codex 0.155.1)
 → provisioning from the cached image alpine-3.21.4-5fcd2d224a5c.tar.gz
-✓ image provisioned in 1.45s (extract cached image 1.24s)
+✓ image provisioned in 1.48s (extract cached image 1.27s)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest a6e0969b405179d9
 model: deepseek/deepseek-flash (context 1M, out 384k)
 ! injecting deepseek credential sha256:34c4e933b47c1fb3 (ttl 14400s) as DEEPSEEK_API_KEY. The agent can read this value and send it anywhere: its namespace is isolated from yours, its egress is not filtered. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-18-54
-→ sandbox booted (pid 847865); the codex runtime has no server to wait for
-✓ sandbox up, cold start 1.83s (image built)
+agent branch: moat-session-2026-09-21-19-03
+→ sandbox booted (pid 865949); the codex runtime has no server to wait for
+✓ sandbox up, cold start 1.88s (image built)
 
   project    /home/user/moat-demo/egress-project
   env        /home/user/.moat/envs/16a525996d67
   runtime    codex (deepseek/deepseek-flash): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-21T22:54:17.073Z
+  credential deepseek sha256:34c4e933b47c1fb3 expires 2026-09-21T23:03:32.232Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
