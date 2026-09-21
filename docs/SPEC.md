@@ -447,7 +447,7 @@ from your environment.** It says the key is there and tells you to pass
 The endpoint and model come from the configured provider, `--base-url`/`--model`, or the store
 entry. **DeepSeek is the default provider, not the only one** (amended in Phase 1 of
 `docs/PROGRAM.md`; see the note below). `moat provider add <id> --base-url <url> [--env-var NAME]
-[--model ID] [--wire-api responses|chat]` writes `~/.moat/providers.json`, and `--provider <id>`
+[--model ID] [--wire-api responses]` writes `~/.moat/providers.json`, and `--provider <id>`
 selects one. The context window and capabilities come from the [models.dev](https://models.dev)
 catalog when it describes the model, and otherwise from the model's own metadata.
 
@@ -604,6 +604,10 @@ Codex does not ship a working `deepseek` provider in the pinned version: 0.155.1
 `Error: Model provider "deepseek" not found`, measured and recorded in `docs/HISTORY.md`.
 So moat renders one `[model_providers.<id>]` block with the base URL,
 `wire_api = "responses"` and `env_key` naming the variable that carries the key. The
+pinned runtime accepts **only** `responses`: it removed the older chat protocol in February 2026
+and refuses to load a config that names it, so `moat provider add --wire-api chat` is refused with
+that reason rather than written into a config the box cannot start with
+(`test/unit/wire-api.test.ts`). The
 context window and output cap come from the [models.dev](https://models.dev) catalog,
 fetched once a day and cached on the host; without it moat falls back to a built-in model
 list and says so. `moat models [provider]` reads it live, and a model id it does not

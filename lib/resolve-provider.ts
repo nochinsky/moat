@@ -19,7 +19,7 @@ export type ResolvedProvider = {
   /** Where traffic really goes, when it is not the provider's own endpoint. */
   upstream?: string
   /** The wire API this endpoint speaks. */
-  wireApi: "responses" | "chat"
+  wireApi: "responses"
   /**
    * Whether the credential for this provider is the one moat mints from its own store.
    *

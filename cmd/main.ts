@@ -2561,8 +2561,16 @@ async function cmdProvider(argv: string[]): Promise<number> {
   if (envVar !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(envVar)) {
     log.fail(`--env-var must be an environment variable name (letters, digits, underscore): ${envVar}`)
   }
-  if (wireApi !== undefined && wireApi !== "responses" && wireApi !== "chat") {
-    log.fail(`--wire-api must be "responses" or "chat": ${wireApi}`)
+  // `chat` was accepted until it turned out Codex had removed the protocol: the pinned binary
+  // exits with `wire_api = "chat" is no longer supported`, so a provider configured that way
+  // booted a box whose runtime would not start. The value is refused here, with the reason,
+  // rather than written into a config that cannot load.
+  if (wireApi !== undefined && wireApi !== "responses") {
+    log.fail(
+      wireApi === "chat"
+        ? `--wire-api chat: Codex removed the chat protocol in February 2026, so the pinned runtime refuses to start with it.\n  Use --wire-api responses (the default) and an endpoint that speaks the Responses API.`
+        : `--wire-api must be "responses": ${wireApi}`,
+    )
   }
 
   const store = readProviderStore()

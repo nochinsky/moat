@@ -62,7 +62,7 @@ export type ProviderSpec = {
    */
   envVar?: string
   /** Which wire API the endpoint speaks. `responses` unless it only speaks chat completions. */
-  wireApi?: "responses" | "chat"
+  wireApi?: "responses"
   /** The model to use when the user names none. */
   defaultModel?: string
   /**

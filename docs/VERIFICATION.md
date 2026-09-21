@@ -589,7 +589,7 @@ here is configuration, resolution and capability: never a claim about a model.
 
 The provider is configured, not fixed, and DeepSeek is the default rather than the only option
 (Phase 1). `moat provider add <id> --base-url <url> [--env-var NAME] [--model ID] [--wire-api
-responses|chat]` writes `~/.moat/providers.json`; `--provider <id>` selects one; `--base-url`
+responses]` writes `~/.moat/providers.json`; `--provider <id>` selects one; `--base-url`
 remains the escape hatch for an endpoint moat does not know. A bare `moat up` is the default
 provider, an unconfigured name is refused rather than guessed, and nothing is inferred from the
 environment, so there is still no provider *registry*.

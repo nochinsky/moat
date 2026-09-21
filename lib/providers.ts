@@ -28,7 +28,12 @@ export type StoredProvider = {
   baseUrl?: string
   /** Name of the environment variable on the HOST holding the key. Never the value. */
   envVar?: string
-  wireApi?: "responses" | "chat"
+  /**
+   * Codex removed the `chat` protocol in February 2026, so `responses` is the only value the
+   * pinned binary accepts. A stored `chat` is read as `responses` and a warning says so; writing
+   * it would boot a box whose runtime refuses to start. See `docs/SPEC.md` §6.2.
+   */
+  wireApi?: "responses"
   defaultModel?: string
   /** The reasoning levels this provider's models implement, when they are not moat's default. */
   effortLevels?: string[]
@@ -74,7 +79,7 @@ export function validateStoredProvider(id: string, entry: unknown): StoredProvid
   const record = entry as Record<string, unknown>
   const str = (key: string): string | undefined =>
     typeof record[key] === "string" && (record[key] as string).trim().length > 0 ? (record[key] as string).trim() : undefined
-  const wireApi = record.wireApi === "chat" ? "chat" : record.wireApi === "responses" ? "responses" : undefined
+  const wireApi = record.wireApi === "responses" ? "responses" : undefined
   const envVar = str("envVar")
   if (envVar !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(envVar)) return null
   const baseUrl = str("baseUrl")
