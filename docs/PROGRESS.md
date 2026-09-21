@@ -4,13 +4,16 @@ The contract for this work is `docs/PROGRAM.md`; `AGENTS.md` is the standing con
 the codebase. This file is the resume point: it says **which phase is in progress**, whether
 that phase's gate has passed, and what a session with no memory needs to know to continue.
 
-**Current phase: 4 (the harness seam, and a spike) — GATE PASSED.**
-**Next: phase 5 (make it reachable: publishable package, `npx`-able, README rewritten). Not started.**
+**Current phase: 5 (make it reachable) — GATE PASSED. That is the last phase in the program.**
 
-Phase 4's two deliverables are in: the seam is written down in `docs/SEAM.md` (documentation
-only, no behaviour change), and the ACP spike is answered in the session-4 report at the end of
-this file, with a recommendation **not** to migrate in this program. The one thing it could not
-settle is recorded there as an open question rather than as a result.
+Phases 0-5 have all passed their gates. The package is publish-ready as `moat-cli` and the
+install was verified from a tarball; it has **not been published** (the owner chose prepare-only).
+The one thing Phase 5 left open is the cold-cache half of its gate, recorded in the session-5
+report as measured-by-argument rather than measured.
+
+Earlier phases: the seam is in `docs/SEAM.md`, and the ACP spike is answered in the session-4
+report with a recommendation **not** to migrate in this program — including the one question it
+could not settle, which is recorded as an open question rather than as a result.
 
 The published history was rewritten on the owner's instruction (session 3, at the end of this
 file): 22 session passwords were in `main`'s history and are now gone from the public repository,
@@ -1185,3 +1188,98 @@ and `NO_BROWSER` on every boot the way the config is rendered today;
 drives `codex app-server`, and moat's pinned binary speaks it. That is a supported,
 stdio-only, port-free control channel into the runtime moat already ships — a useful fallback
 for mid-turn control that does not require adopting ACP at all.
+
+---
+
+## Session 5 — Phase 5: make it reachable
+
+### What "installable" actually took, and it was not the flag
+
+The phase reads like one line of work: `"private": true` is the only thing standing between this
+and `npx`. It was four defects, and three of them were only visible by installing the tarball and
+running it.
+
+**The npm name is taken.** `moat` on npm is an unrelated JavaScript testing library at 1.2.3,
+maintained since 2015 (`inventit/moatjs-stub`). `npx moat` fetches the wrong program. The owner
+chose `moat-cli`; the installed *command* stays `moat`, so nothing in the docs or the suites
+changes.
+
+**A published package cannot ship TypeScript.** This is the one that would have shipped broken.
+The design is "node strips types, so there is no build step", and `bin` pointed at
+`./cmd/main.ts`. Installed from a tarball, that dies immediately:
+
+```
+Error [ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING]: Stripping types is currently unsupported
+for files under node_modules, for ".../node_modules/moat-cli/cmd/main.ts"
+```
+
+Node refuses to strip types inside `node_modules`, deliberately and for good reasons. So there
+*is* a build — the dormant `tsconfig.build.json` and `scripts/copy-assets.mjs` were already there
+from an earlier CI-only arrangement — and `bin` now points at `dist/cmd/main.js`, built by
+`prepack` so `npm pack` and `npm publish` ship the same artifact.
+
+**The package root is not a fixed number of levels up.** Source is `<root>/cmd/main.ts`; the
+build is `<root>/dist/cmd/main.js`. Two places walked `".."` from the module and were correct in
+exactly one of the two layouts: the version line and `moat demo`'s own CLI path. `lib/paths.ts`
+gained `PACKAGE_ROOT`, which walks upward for the package's `package.json` instead of counting
+directories, and both read through it.
+
+**`moat demo` reached into `test/`.** The one thing the phase promises a stranger is "a first run
+that shows something without demanding an API key", and that is `moat demo` — which spawned
+`test/mock-responses.mjs` and read `test/scripts/responses-demo.json`. `test/` is not in `files`,
+so the headline command would have failed for every user while working perfectly in this
+repository. Both moved to a new top-level `stub/`, which is the honest home: the stub is a
+*runtime* asset that the suites also use, not a test fixture. Eight reference sites in three
+suites, plus the docs.
+
+### The gate
+
+Measured the way a user meets it — tarball, clean prefix, no repository in sight:
+
+```
+$ npm pack                          # 91 files, 331 kB, zero .ts
+$ npm install --prefix … moat-cli-0.0.1.tgz
+added 1 package in 306ms
+$ …/.bin/moat --version
+moat 0.0.1 (codex 0.155.1, alpine 3.21.4)
+$ cd /tmp/demo-user/project && env -u DEEPSEEK_API_KEY … moat demo
+  digest after the agent      591ad688…   identical: nothing reached your tree until you said so
+  digest after you accepted   556e922b…
+  update  app.js
+  conflict  notes.txt  not written
+  applied 1 change(s); skipped 1: notes.txt
+  total 9.1s
+```
+
+`moat demo` ran end to end from the installed tarball with no API key: a real boot, a real
+three-way classification, a conflict left alone. Warm cache, 9.1s.
+
+**Not run: the cold-cache half.** The gate says "fresh cache", and a genuinely cold one is a ~300
+MB Alpine image plus a 257 MB Codex binary — a heavy, slow, network-dependent run that also
+throws away a warm cache the rest of this session depends on. `moat demo` prints what it is about
+to download before it does (`coldCacheNotice`, verified in Phase 2), and the download path itself
+is unchanged by this phase: the tarball carries no data files, so a cold start fetches exactly
+what a warm-cache source run would have. Recorded as measured-by-argument rather than measured,
+so the next session can close it cheaply if it disagrees.
+
+### One check I wrote, proved worthless, and deleted
+
+The version line was a hardcoded `moat 0.0.1` in the source — a second place a release has to be
+edited. I changed it to read `package.json` and wrote a test asserting the CLI's printed version
+equals the declared one. Then I sabotaged it: set `package.json` to `9.9.9` and re-ran. **Both
+tests passed**, because the CLI and the test now read the same field and cannot disagree. The
+test was a tautology over a single source of truth — the exact thing this program says not to
+trust, and it would have sat there looking like coverage forever. Deleted.
+
+What survives is the change itself: one read instead of a repeated literal, with a fallback to
+`unknown` when the file is absent or unreadable, which is the one case a diagnostic should still
+answer in.
+
+### What the phase did not do
+
+**It did not publish.** The owner chose "prepare only", so `private` stays `true` and no version
+has been pushed to the registry. `npm publish` is a single command for a logged-in owner; the
+tarball it would upload is the one measured above.
+
+**It did not rename the command.** `moat` is still the binary, the docs still say `moat`, and the
+only change a user sees is that the *package* is `moat-cli`.

@@ -73,7 +73,7 @@ git commit -qm "initial commit (test suite currently failing)"
 # The stub: a keyless Responses server, standing in for a third-party provider.
 : > "$WORK/record.jsonl"
 if [ -f "$WORK/stub.pid" ]; then kill "$(cat "$WORK/stub.pid")" 2>/dev/null; fi
-setsid node "$REPO/test/mock-responses.mjs" --port "$PORT" \
+setsid node "$REPO/stub/mock-responses.mjs" --port "$PORT" \
   --script "$REPO/test/scripts/responses-basic.json" --record "$WORK/record.jsonl" \
   > "$WORK/stub.log" 2>&1 < /dev/null &
 echo $! > "$WORK/stub.pid"

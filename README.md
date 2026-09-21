@@ -2,34 +2,60 @@
 
 [![ci](https://github.com/nochinsky/moat/actions/workflows/ci.yml/badge.svg)](https://github.com/nochinsky/moat/actions/workflows/ci.yml)
 
-moat runs an AI coding agent inside a disposable Linux sandbox on your own machine, with
-no container runtime and no permission prompts. The agent gets a copy of your project.
-Your machine keeps the original.
+**See exactly what your agent did, accept it hunk by hunk, and know it never touched your
+machine.**
 
-That is the whole idea: **autonomy without prompts**, bought by making the blast radius a
-box instead of your home directory.
+Every other tool works inside your repo, where the agent's edits and yours are
+indistinguishable. moat records a baseline before the agent starts, so afterwards it can tell
+you which changes are the agent's, which are yours, and which are both — and then apply the
+part you actually want.
 
-It is not a confidentiality boundary, and the docs say so everywhere it matters. The agent
-has to read the project to work on it and has to read the key to call the model, so it has
-both. The default network policy only narrows where those can go: an allowlisted address,
-or DNS, can still carry them out.
+It does that by copying your project into a disposable Linux sandbox and running the agent
+there. Nothing crosses back until you say so. There is no container runtime involved:
+`unshare`, `mount` and `chroot` directly, no Docker, no daemon.
 
-## What a run looks like
+That is the whole idea: **autonomy without prompts**, bought by making the blast radius a box
+instead of your home directory.
 
+## See it work, in a minute, with no API key
+
+```bash
+npx -y moat-cli demo
 ```
-moat                            # open the agent in this project; boot the box if needed
+
+This makes a scratch project, boots a real sandbox, runs a real agent against a scripted model,
+and shows the three-way classification on your terminal: what the agent changed, what you
+changed, and the file you both touched — which moat refuses to write and hands back to you. It
+costs nothing and needs no credential, because the point being demonstrated is not the model.
+It leaves your directory alone and removes its scratch project afterwards.
+
+## Install
+
+```bash
+npx -y moat-cli          # run without installing
+npm i -g moat-cli        # or install it; the command is still `moat`
+```
+
+Then, in a project you have committed to git:
+
+```bash
+moat                     # open the agent in this project; boot the box if needed
 moat run "fix the failing tests"
-moat verify                     # run the project's own checks inside the box
-moat fetch                      # bring the agent's branch back as refs/moat/<branch>
-moat apply                      # merge that work into this directory, a separate step
-moat down                       # stop the box; nothing is lost
-moat destroy                    # delete the environment and its snapshots
+moat verify              # run the project's own checks inside the box
+moat take                # review what the agent did, per file and per hunk
+moat apply               # write the part you accepted — a separate, explicit step
+moat down                # stop the box; nothing is lost
 ```
 
-Also useful: `moat exec -- <cmd>` and `moat shell` to work in the box yourself,
-`moat logs sandbox` for the boot log, `moat snapshot <name>` / `moat restore <name>`,
-`moat doctor` for what the box actually is, and `--profile node,python,cc,...` to have a
-toolchain installed when the project needs one.
+`moat apply` is not one decision. It classifies every changed path as *agent*, *you*, *both* or
+*conflict*, shows each change per hunk, and writes only what you choose: whole files with
+`--only`/`--skip`, or `--hunks 1,3-5` for part of one. A file you both changed is never written
+unless you ask for it by name, and even then only after moat tells you it is a conflict.
+
+Also useful: `moat exec -- <cmd>` and `moat shell` to work in the box yourself, `moat logs
+sandbox` for the boot log, `moat snapshot <name>` / `moat restore <name>`, `moat doctor` for
+what the box actually is, and `--profile node,python,cc,...` to have a toolchain installed when
+the project needs one.
 
 ## What a boot does
 
@@ -51,16 +77,34 @@ and a log reader, nothing more.
 
 ## What it does not do
 
-* It does not keep your project or your key secret from the model. It gives the agent both;
-  the allowlist only narrows where they can be sent.
-* The network policy is a policy, not a jail. Inside the box, root can flush its own
-  ruleset. moat re-applies it on every boot and `moat doctor` re-measures it, so you find
-  out on the next run, not before.
-* Isolation is namespaces, which is v0. A microVM is the next step, not a claim.
-* Nothing stops spending. A turn reports what it cost; no ceiling stops it.
-* moat does not curate the agent's tools. Codex ships its own and the box bounds them.
+This is the part most projects leave out. Read it before deciding how much to trust the box.
+
+* **It does not keep your project or your key secret from the model.** It gives the agent both;
+  the allowlist only narrows where they can be sent. Egress to an allowlisted address, or over
+  DNS, can still carry them out.
+* **The network policy is a policy, not a jail.** Inside the box, root owns its network
+  namespace and can flush the ruleset. moat re-applies it on every boot and `moat doctor`
+  re-measures it, so you find out on the next run — never before.
+* **Isolation is namespaces, which is v0.** A microVM is the next step, not a claim.
+* **Nothing stops spending.** A turn reports what it cost; no ceiling stops it.
+* **moat does not curate the agent's tools.** Codex ships its own and the box bounds them.
   `web_search` is the one entry the config can switch off, and it is off: DeepSeek's API
   accepts that tool and ignores it.
+* **A partial accept is not checked for coherence.** The review is per file and per hunk, with
+  no cross-file reasoning: taking one hunk and rejecting the one that makes it compile is a
+  state `moat apply` will write. Nothing verifies that an accepted subset builds.
+
+`docs/VERIFICATION.md` ends with a table of everything that is **not** verified. It is the
+honest half of this section and it is longer.
+
+## Requirements
+
+Linux, `node` 22.18 or newer, and an unprivileged user namespace. No container runtime, no
+daemon, no root.
+
+`moat doctor` checks the host and prints its findings — including the sandbox's mount table and
+the environment it can see — before anything is copied. If your machine cannot create a user
+namespace, it says so instead of failing later.
 
 ## Layout
 
@@ -71,11 +115,17 @@ sync/            copy-in, copy-out, the three-way apply
 secrets/         credential broker, first-run onboarding
 bundle/          the rendered Codex config, the model catalog, the agent brief
 lib/             provider, catalog, pricing, git, host probe
-test/            keyless model stubs, suite scripts, committed evidence
-docs/            SPEC (the contract), VERIFICATION (the evidence), HISTORY
+stub/            the keyless model stub (`moat demo` ships it, so it lives here)
+test/            the suite scripts and the committed evidence they write
+docs/            SPEC (the contract), VERIFICATION (the evidence), HISTORY, SEAM
 ```
 
-## Running the tests
+## Working on moat
+
+`node` 22.18+ strips TypeScript types natively, so there is no build step for development: the
+CLI runs the source directly. `npm run build` exists only for the published tarball, whose
+`dist/` is compiled because **Node refuses to strip types inside `node_modules`** — a published
+package cannot ship `.ts`. `npm pack` and `npm publish` build it for you.
 
 ```bash
 npm run test:unit         # pure unit tests, no sandbox, CI can run these
@@ -95,15 +145,9 @@ share `~/moat-demo`.
 ## Reading order
 
 * `docs/SPEC.md` is the contract: what each command promises, and where the sharp edges are.
-* `docs/VERIFICATION.md` is the evidence: the criteria, the captures, and a closing table of
+* `docs/VERIFICATION.md` is the evidence: the criteria, the captures, and the closing table of
   what is **not** verified. Read that table before believing anything here.
-* `docs/HISTORY.md` is how the project got here, including the runtime it used before this
-  one.
-* `AGENTS.md` is for people changing the code: the invariants, the traps that cost real
-  time, and what is still unbuilt.
-
-## Requirements
-
-Linux, `node` 22.18 or newer (types are stripped, there is no build step), and an
-unprivileged user namespace. `moat doctor` checks the host and prints its findings before
-anything is copied.
+* `docs/HISTORY.md` is how the project got here, including the runtime it used before this one.
+* `docs/SEAM.md` is the interface a second agent runtime would have to satisfy.
+* `AGENTS.md` is for people changing the code: the invariants, the traps that cost real time,
+  and what is still unbuilt.

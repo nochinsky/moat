@@ -43,7 +43,7 @@ $ env | grep -iE 'api_key|token|anthropic|openai|deepseek|gemini'
 ```
 
 So the suites drive a deterministic local OpenAI-compatible stub
-(`test/mock-responses.mjs`, speaking the Responses wire API) that sits exactly where
+(`stub/mock-responses.mjs`, speaking the Responses wire API) that sits exactly where
 a real endpoint sits. Everything inside the sandbox is real: the pinned Codex CLI
 and its own tool loop, `exec_command` (which runs a shell inside the box), its
 file-editing tools, and `git`. What the stub does not test is model quality. A real
@@ -1932,7 +1932,7 @@ watched failing with the old list and the old wording restored.
 ### AI. The acceptance suite
 
 `test/e2e-codex.sh` is the acceptance list: it drives `moat run` through
-`test/mock-responses.mjs`, the Responses stub whose event shapes were captured from a real
+`stub/mock-responses.mjs`, the Responses stub whose event shapes were captured from a real
 DeepSeek stream, and exits non-zero on any failed criterion. It is keyless. Measured: all
 criteria passed (`test/evidence/codex-summary.txt`).
 

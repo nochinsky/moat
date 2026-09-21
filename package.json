@@ -1,12 +1,12 @@
 {
-  "name": "moat",
+  "name": "moat-cli",
   "version": "0.0.1",
   "private": true,
   "description": "Run an AI coding agent inside a disposable, fully isolated Linux sandbox. The host is never touched.",
   "type": "module",
   "license": "MIT",
   "bin": {
-    "moat": "./cmd/main.ts"
+    "moat": "./dist/cmd/main.js"
   },
   "engines": {
     "node": ">=22.18.0"
@@ -21,19 +21,17 @@
     "test:extras": "bash test/e2e-extras.sh",
     "test:provider": "bash test/e2e-provider.sh",
     "test:demo": "bash test/e2e-demo.sh",
-    "test:review": "bash test/e2e-review.sh"
+    "test:review": "bash test/e2e-review.sh",
+    "prepublishOnly": "npm run typecheck && npm run test:unit",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^24.13.5",
     "typescript": "^7.0.2"
   },
   "files": [
-    "cmd",
-    "lib",
-    "sandbox",
-    "sync",
-    "secrets",
-    "bundle",
+    "dist",
+    "stub",
     "docs",
     "README.md",
     "LICENSE"

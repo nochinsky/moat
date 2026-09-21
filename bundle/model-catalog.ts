@@ -30,7 +30,7 @@ import { CODEX_BUILTIN_PROMPT } from "./codex-prompt.ts"
  *
  * MAINTAINER TRAP, and the recipe the prompt pin refers to. A Codex version bump can move
  * the built-in prompt and can add required fields. To re-check both against the new
- * binary, with the recording stub from `test/mock-responses.mjs`:
+ * binary, with the recording stub from `stub/mock-responses.mjs`:
  *
  *   # 1. what the new binary sends for a model it has no metadata for
  *   $ CODEX_HOME=<dir> codex exec --json --skip-git-repo-check "say hi"

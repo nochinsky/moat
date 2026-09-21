@@ -50,12 +50,12 @@ line 31: the agent changed this too
   pass  the classification
 
 --- moat take: the same review, before anything is decided ---
-→ copy-out: git fetch /home/user/moat-demo/review-gate/home/envs/2b4cb8590aed/rootfs/work +refs/heads/moat-session-2026-09-21-13-46:refs/moat/moat-session-2026-09-21-13-46
+→ copy-out: git fetch /home/user/moat-demo/review-gate/home/envs/2b4cb8590aed/rootfs/work +refs/heads/moat-session-2026-09-21-14-20:refs/moat/moat-session-2026-09-21-14-20
 ! copy-out: fetch: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
 
-moat-session-2026-09-21-13-46  2 commit(s), cdd168d77dc1
-  cdd168d77d  agent: two changes, 28 lines apart
-  3f18df271e  the project as it was
+moat-session-2026-09-21-14-20  2 commit(s), bced45f716cf
+  bced45f716  agent: two changes, 28 lines apart
+  03fee9f96d  the project as it was
 
  notes.txt | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
@@ -93,10 +93,10 @@ moat-session-2026-09-21-13-46  2 commit(s), cdd168d77dc1
 
 
   your working tree is untouched
-  review:  git log refs/moat/moat-session-2026-09-21-13-46
+  review:  git log refs/moat/moat-session-2026-09-21-14-20
   accept:  moat apply   (three-way merge into your tree)
-           moat apply moat-session-2026-09-21-13-46 --checkout   (or switch to the agent's branch)
-  reject:  git update-ref -d refs/moat/moat-session-2026-09-21-13-46
+           moat apply moat-session-2026-09-21-14-20 --checkout   (or switch to the agent's branch)
+  reject:  git update-ref -d refs/moat/moat-session-2026-09-21-14-20
   pass  take's review
   pass  take writes nothing
 

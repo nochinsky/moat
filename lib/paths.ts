@@ -2,6 +2,7 @@ import crypto from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 import { CODEX_VERSION, SLIRP4NETNS_VERSION } from "./pins.ts"
 
@@ -165,3 +166,33 @@ export function slirpCachePath(): string {
 export function codexCachePath(triple: string): string {
   return path.join(cacheDir(), "codex", CODEX_VERSION, triple, "codex")
 }
+
+/**
+ * The package root, which is *not* a fixed number of levels up.
+ *
+ * Run from a source checkout, the CLI is `<root>/cmd/main.ts` and the root is `..`. Run from the
+ * published tarball it is `<root>/dist/cmd/main.js` and the root is `../..`, because `tsc` keeps
+ * the `cmd/` directory. One relative walk is therefore wrong in one of the two, and the failure
+ * is a runtime ENOENT that only the published artifact sees.
+ *
+ * Found by walking upward for the package's own `package.json` (matching the declared name)
+ * rather than by counting directories.
+ */
+export const PACKAGE_ROOT: string = (() => {
+  let dir = path.dirname(fileURLToPath(import.meta.url))
+  for (let i = 0; i < 4; i += 1) {
+    const candidate = path.join(dir, "package.json")
+    try {
+      const pkg = JSON.parse(fs.readFileSync(candidate, "utf8")) as { name?: unknown }
+      if (typeof pkg.name === "string" && pkg.name.length > 0) return dir
+    } catch {
+      /* keep walking */
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  // Nothing found: name the directory the module lives in, which is at least honest about where
+  // the search gave up, and let the caller's own read fail with a path it can act on.
+  return path.dirname(fileURLToPath(import.meta.url))
+})()

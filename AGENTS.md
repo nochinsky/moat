@@ -69,16 +69,43 @@ sync/            copy-in and copy-out, and the three-way apply
 secrets/         the credential broker and first-run onboarding
 bundle/          the rendered Codex config, the agent brief, the event parser
 lib/             provider, models.dev catalog, pricing, host probe, hashing
-test/            the keyless model stubs, the pty suites, and the evidence they write
+stub/            the keyless model stub and its scripts — runtime, not test, because
+                 `moat demo` ships them and a published package cannot reach into test/
+test/            the pty suites, the fixtures, and the committed evidence they write
 docs/            SPEC (the contract), VERIFICATION (the evidence),
                  HISTORY (how the project got here), SEAM (the agent-harness
                  interface a second runtime would have to satisfy)
 ```
 
+## Packaging
+
+`npm pack` / `npm publish` run `npm run build` first (`prepack`) and ship **`dist/`**, not the
+sources, because **Node refuses to strip TypeScript types inside `node_modules`** — a published
+package that points `bin` at a `.ts` file installs fine and dies on first run with
+`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`. That is measured, not theoretical: it is what the
+first tarball here did. `npm run build` is therefore the *only* build step in the project, and it
+exists solely for the tarball; development still runs the sources directly.
+
+Two layout traps come with it, both found by installing the tarball and running it:
+
+* **The package root is not a fixed number of levels up.** Source is `<root>/cmd/main.ts`;
+  the compiled build is `<root>/dist/cmd/main.js`. `lib/paths.ts` exports `PACKAGE_ROOT`, which
+  walks upward for the package's own `package.json`, and `cmd/main.ts` (the version line) and
+  `cmd/demo.ts` (the stub and the CLI it spawns) read through it. Do not reintroduce
+  `path.join(import.meta.dirname, "..", ...)`.
+* **A runtime asset under `test/` is invisible to the published package**, because `test/` is
+  not shipped. `moat demo` used to read `test/mock-responses.mjs` and
+  `test/scripts/responses-demo.json`; both now live in `stub/`, which `files` includes. When
+  adding an asset a *command* reads, put it where `files` ships and check `npm pack` lists it.
+
+The npm name is `moat-cli`. `moat` on npm is an unrelated 2015 JavaScript testing library, so
+`npx moat` fetches the wrong thing; the installed **command** is still `moat`.
+
 ## Running it
 
-`node` 22.18+ strips TypeScript types natively, so there is no build step. `moat` is wired
-with `npm link` and runs the source directly.
+`node` 22.18+ strips TypeScript types natively, so **development** has no build step. `moat` is
+wired with `npm link` and runs the source directly. The one build that exists is for the
+published tarball — see *Packaging* above.
 
 ```bash
 npm run test:unit         # pure unit tests, no sandbox, so CI runs them
@@ -581,7 +608,7 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   that `moat` reaches a live TUI and that leaving it leaves the box running.
 
 * **`test/e2e-codex.sh` is the acceptance suite.** It drives `moat run` through
-  `test/mock-responses.mjs`, the Responses wire API, whose event shapes were captured from
+  `stub/mock-responses.mjs`, the Responses wire API, whose event shapes were captured from
   a real DeepSeek stream, and asserts the whole list with no key: cold start, the doctor's
   isolation checks, a mocked turn that fixes the fixture and whose `moat verify` passes,
   host paths and the canary unreachable, one ref from `moat fetch` with the host tree
@@ -635,7 +662,7 @@ is not mistaken for success. Read its closing table before claiming anything wor
 
 Two rules the suite follows, worth preserving:
 
-* **Assert on the thing, not on moat's account of the thing.** `test/mock-responses.mjs`
+* **Assert on the thing, not on moat's account of the thing.** `stub/mock-responses.mjs`
   records the request it received, including whether an `Authorization` header was sent,
   so a test reads what the provider would have seen rather than what moat says it sent.
 * **A check that cannot fail is not a check.** When adding a regression guard, reintroduce

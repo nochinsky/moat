@@ -9,3 +9,4 @@ test/evidence/*.err
 # (the file, then a verbatim quote of it in the journal) and both times the history had to be
 # rewritten. Everything else under test/evidence/ is regenerated and committed; this one is not.
 test/evidence/onboard.txt
+*.tgz

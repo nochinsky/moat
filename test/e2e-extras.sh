@@ -85,7 +85,7 @@ capture() {
 start_mock() {
   if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; sleep 0.4; fi
   : > "$MOCK_RECORD"
-  setsid node "$REPO/test/mock-responses.mjs" --port "$MOCK_PORT" --script "$MOCK_SCRIPT" \
+  setsid node "$REPO/stub/mock-responses.mjs" --port "$MOCK_PORT" --script "$MOCK_SCRIPT" \
     --record "$MOCK_RECORD" > "$WORK/responses-mock.log" 2>&1 < /dev/null &
   echo $! > "$MOCK_PIDFILE"
   sleep 1.2
@@ -766,7 +766,7 @@ section "AF. a local endpoint runs with no credential in the box"
 # key: there the key *is* the model.
 AF_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()")
 rm -f "$WORK/af-requests.jsonl"
-setsid node "$REPO/test/mock-responses.mjs" --port "$AF_PORT" --script "$REPO/test/scripts/responses-basic.json" \
+setsid node "$REPO/stub/mock-responses.mjs" --port "$AF_PORT" --script "$REPO/test/scripts/responses-basic.json" \
   --record "$WORK/af-requests.jsonl" > "$WORK/af-mock.log" 2>&1 < /dev/null &
 AF_MOCK=$!
 sleep 1.2
@@ -1078,7 +1078,7 @@ fi
 ( cd "$CDX" && $MOAT destroy --yes >/dev/null 2>&1 )
 section "AK. the codex runtime drives a keyless model stub end to end"
 # Codex speaks the Responses wire API, so the chat-completions stub that drives opencode
-# cannot drive it. test/mock-responses.mjs replays the event shapes captured from a real
+# cannot drive it. stub/mock-responses.mjs replays the event shapes captured from a real
 # DeepSeek stream through a recording proxy, which makes the DEFAULT runtime testable
 # without a key — including the project's own checks, which are the verdict the user reads.
 CK="$WORK/codex-mock"
@@ -1100,7 +1100,7 @@ JS
 ( cd "$CK" && $MOAT destroy --yes >/dev/null 2>&1 )
 RESP_PORT=5597
 rm -f "$WORK/responses-requests.jsonl"
-node "$REPO/test/mock-responses.mjs" --port "$RESP_PORT" --script "$REPO/test/scripts/responses-basic.json" \
+node "$REPO/stub/mock-responses.mjs" --port "$RESP_PORT" --script "$REPO/test/scripts/responses-basic.json" \
   --record "$WORK/responses-requests.jsonl" > "$WORK/mock-responses.log" 2>&1 &
 RESP_PID=$!
 sleep 1
@@ -1131,7 +1131,7 @@ kill "$RESP_PID" 2>/dev/null
 # environment (exec, verify) re-renders config.toml from that boot's flags, with no effort in it.
 RESP_PORT_LOW=5598
 rm -f "$WORK/responses-requests-low.jsonl"
-node "$REPO/test/mock-responses.mjs" --port "$RESP_PORT_LOW" --script "$REPO/test/scripts/responses-basic.json" \
+node "$REPO/stub/mock-responses.mjs" --port "$RESP_PORT_LOW" --script "$REPO/test/scripts/responses-basic.json" \
   --record "$WORK/responses-requests-low.jsonl" > "$WORK/mock-responses-low.log" 2>&1 &
 RESP_PID_LOW=$!
 sleep 1

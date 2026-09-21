@@ -8,7 +8,7 @@ import { spawn } from "node:child_process"
 import * as log from "../lib/log.ts"
 import { hashTree } from "../lib/hash.ts"
 import { probeHost, assertHostUsable, describeHost } from "../lib/host.ts"
-import { ensureMoatHome, envPaths, validateLogName, type EnvPaths } from "../lib/paths.ts"
+import { PACKAGE_ROOT, ensureMoatHome, envPaths, type EnvPaths, validateLogName } from "../lib/paths.ts"
 import {
   ALPINE_VERSION,
   CODEX_VERSION,
@@ -2859,6 +2859,26 @@ async function runCodexTask(paths: EnvPaths, body: string, opts: CodexRunOptions
   if (result.timedOut) log.warn(`the turn was still running after ${opts.timeoutSeconds ?? 2700}s and was killed`)
   return result.code
 }
+/**
+ * The package's own version, read rather than repeated.
+ *
+ * It used to be the literal `0.0.1` in the line below, which is a second place a release has to
+ * be edited and therefore a place it will eventually be forgotten. `PACKAGE_ROOT` is what makes
+ * this work from a source checkout and from the compiled tarball, where the layout differs.
+ */
+const VERSION: string = (() => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8")) as {
+      version?: unknown
+    }
+    return typeof pkg.version === "string" && pkg.version.length > 0 ? pkg.version : "unknown"
+  } catch {
+    // A read that fails must not take `moat --version` down with it: naming the version is a
+    // diagnostic, and "unknown" is an answer where an exception is not.
+    return "unknown"
+  }
+})()
+
 async function main(): Promise<number> {
   // ~/.moat holds the credential store and the server password; make sure it is
   // 0700 before anything reads or writes there.
@@ -2879,7 +2899,7 @@ async function main(): Promise<number> {
     return 0
   }
   if (command === "--version" || command === "version") {
-    process.stdout.write(`moat 0.0.1 (codex ${CODEX_VERSION}, alpine ${ALPINE_VERSION})\n`)
+    process.stdout.write(`moat ${VERSION} (codex ${CODEX_VERSION}, alpine ${ALPINE_VERSION})\n`)
     return 0
   }
   // Parse once before dispatch: this is where a flag the command does not read is

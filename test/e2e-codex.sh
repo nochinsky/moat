@@ -4,7 +4,7 @@
 #
 # There is one runtime (Codex), and it is a CLI rather than a server: moat drives it with
 # `codex exec --json` for a task and hands the terminal to its TUI for a session. Everything
-# here is measured through test/mock-responses.mjs, which speaks the Responses wire API and
+# here is measured through stub/mock-responses.mjs, which speaks the Responses wire API and
 # replays event shapes captured from a real DeepSeek stream, so the whole list runs with no key.
 #
 # One acceptance criterion from the list this replaced is deliberately absent, and its absence
@@ -66,7 +66,7 @@ json_field() { python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(
 start_mock() {
   if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; sleep 0.4; fi
   : > "$MOCK_RECORD"
-  setsid node "$REPO/test/mock-responses.mjs" --port "$MOCK_PORT" --script "$1" \
+  setsid node "$REPO/stub/mock-responses.mjs" --port "$MOCK_PORT" --script "$1" \
     --record "$MOCK_RECORD" > "$WORK/responses-mock.log" 2>&1 < /dev/null &
   echo $! > "$MOCK_PIDFILE"
   sleep 1.2

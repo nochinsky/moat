@@ -9,6 +9,7 @@ import * as log from "../lib/log.ts"
 import { hashTree } from "../lib/hash.ts"
 import { stripAnsi } from "../lib/terminal.ts"
 import { sandboxGit } from "../lib/git.ts"
+import { PACKAGE_ROOT } from "../lib/paths.ts"
 
 /**
  * `moat demo` — the pitch, runnable on your own machine.
@@ -155,17 +156,19 @@ function coldCacheNotice(): string[] {
  *
  * The demo drives the real runtime against a scripted model, because a demo that needs an API
  * key is a demo nobody runs. What the script says the agent did is in
- * `test/scripts/responses-demo.json`, next to the fixture this file writes, so the claim and the
- * scenario can be read together.
+ * `stub/scripts/responses-demo.json`, next to the fixture this file writes, so the claim and the
+ * scenario can be read together. Both the model stub and this script live in `stub/` rather than
+ * under `test/`, because `moat demo` ships: a published package that reached into `test/` for a
+ * runtime asset would work in this repository and fail for everyone who installed it.
  */
 async function startStub(): Promise<{ port: number; child: ChildProcess; record: string }> {
   const port = await freePort()
   const record = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "moat-demo-record-")), "requests.jsonl")
-  const script = path.join(HERE, "..", "test", "scripts", "responses-demo.json")
+  const script = path.join(PACKAGE_ROOT, "stub", "scripts", "responses-demo.json")
   if (!fs.existsSync(script)) throw new Error(`the demo's model script is missing: ${script}`)
   const child = spawn(
     process.execPath,
-    [path.join(HERE, "..", "test", "mock-responses.mjs"), "--port", String(port), "--script", script, "--record", record],
+    [path.join(PACKAGE_ROOT, "stub", "mock-responses.mjs"), "--port", String(port), "--script", script, "--record", record],
     { stdio: ["ignore", "pipe", "pipe"] },
   )
   const ready = await new Promise<boolean>((resolve) => {
@@ -226,7 +229,12 @@ function buildProject(dir: string): void {
  * number nobody measured is a number that drifts.
  */
 export async function runDemo(opts: DemoOptions = {}): Promise<DemoResult> {
-  const cli = path.join(HERE, "..", "cmd", "main.ts")
+  // The demo drives the real CLI, so it has to name it correctly in both layouts: run from a
+  // checkout, this file is `cmd/demo.ts` and the CLI is `cmd/main.ts` beside it; run from the
+  // published tarball, both are `.js` under `dist/cmd/`. Asking for `main.ts` from the compiled
+  // build is an ENOENT that only the published artifact sees.
+  const cliFromSource = path.join(HERE, "..", "cmd", "main.ts")
+  const cliEntry = fs.existsSync(cliFromSource) ? cliFromSource : path.join(PACKAGE_ROOT, "dist", "cmd", "main.js")
   const steps: Step[] = []
   const timed = async <T>(name: string, fn: () => Promise<T> | T): Promise<T> => {
     const started = Date.now()
@@ -262,7 +270,7 @@ export async function runDemo(opts: DemoOptions = {}): Promise<DemoResult> {
     const digestBefore = await timed("hash before", () => hashTree(dir).digest)
 
     const run = (args: string[], extra: { quiet?: boolean } = {}): string => {
-      const result = spawnSync(process.execPath, [cli, ...args], {
+      const result = spawnSync(process.execPath, [cliEntry, ...args], {
         cwd: dir,
         encoding: "utf8",
         env: {
@@ -399,7 +407,7 @@ export async function runDemo(opts: DemoOptions = {}): Promise<DemoResult> {
       // knows whether a boot actually happened. It used to run before `cli` was defined, so the
       // teardown never ran at all and left the environment behind.
       if (booted) {
-        const result = spawnSync(process.execPath, [cli, "destroy", "--yes"], { cwd: dir, encoding: "utf8", env: process.env })
+        const result = spawnSync(process.execPath, [cliEntry, "destroy", "--yes"], { cwd: dir, encoding: "utf8", env: process.env })
         if (result.status !== 0) {
           log.warn(`could not remove the demo's sandbox environment; \`moat destroy --yes\` in ${dir} does it`)
         }

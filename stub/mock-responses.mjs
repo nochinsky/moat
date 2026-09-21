@@ -14,7 +14,7 @@ import http from "node:http"
  *   {"input_tokens": N, "input_tokens_details": {"cached_tokens": N},
  *    "output_tokens": N, "output_tokens_details": {"reasoning_tokens": N}, "total_tokens": N}
  *
- * Usage: node test/mock-responses.mjs --port 5599 --script test/scripts/responses-basic.json
+ * Usage: node stub/mock-responses.mjs --port 5599 --script test/scripts/responses-basic.json
  *        [--record /tmp/responses-requests.jsonl]
  */
 
