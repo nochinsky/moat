@@ -2,24 +2,26 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
+egress: open, because the provider is on the host's loopback (http://127.0.0.1:5599/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
 detected: package.json -> node
           adding profile(s) node; use --no-detect or --profile to override
-profiles: everything requested is already installed
-! the host project has changed since it was copied in, and the sandbox holds nothing that is not already on the host. Re-copying it now.
+→ provisioning sandbox image (alpine 3.21.4 + codex 0.155.1 + node)
+→ provisioning from the cached image alpine-3.21.4-2c1b310cad94.tar.gz
+✓ image provisioned in 1.98s (extract cached image 1.72s)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 3 files, 0.3 KiB, digest ed2e86797199e208
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-15-08
+agent branch: moat-session-2026-09-21-15-32
 checks: npm run test
-→ sandbox booted (pid 745467); the codex runtime has no server to wait for
-✓ sandbox up, warm start 325ms (image reused)
+→ sandbox booted (pid 777903); the codex runtime has no server to wait for
+✓ sandbox up, cold start 2.25s (image built)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T19:08:35.926Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T19:32:33.107Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

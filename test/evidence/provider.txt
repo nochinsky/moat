@@ -11,7 +11,9 @@ providers moat can be pointed at with --provider, or --base-url for one it does 
   deepseek     https://api.deepseek.com           DeepSeek  (the default)
   acme         http://127.0.0.1:5687/v1           acme
 
-  add one:   moat provider add <id> --base-url <url> [--env-var NAME] [--model ID] [--wire-api responses|chat]
+  add one:   moat provider add <id> [--base-url <url>] [--env-var NAME] [--model ID]
+             moat knows openrouter and openai by name and reads their endpoint and key variable from the model catalog.
+             Anything else needs --base-url, because moat will not guess an endpoint for a name it does not know.
   use one:   moat up --provider <id> --model <id>
   remove:    moat provider remove <id>
 

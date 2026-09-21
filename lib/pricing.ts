@@ -110,10 +110,42 @@ export type Cost = {
  * the obvious reading of a provider's `input_tokens` field — which includes the cached ones —
  * and it was pinned down by reconciling a real bill (see the header of this file).
  */
-export function computeCost(modelID: string, usage: TokenUsage, at: Date = new Date()): Cost {
-  const entry = TABLE[modelID]
+/**
+ * A price for a model this file has no hand-checked entry for, from the fetched catalog.
+ *
+ * A separate parameter rather than something looked up here, because `computeCost` is pure and
+ * the catalog is a network document. The caller has it and passes it; this file decides how to
+ * bill against it.
+ */
+export type CatalogPrice = {
+  /** USD per 1M input tokens, cache misses. */
+  input: number
+  /** USD per 1M output tokens. */
+  output: number
+  /** USD per 1M cached input tokens, when the catalog publishes one. */
+  cacheRead?: number
+}
+
+export function computeCost(
+  modelID: string,
+  usage: TokenUsage,
+  at: Date = new Date(),
+  catalogPrice?: CatalogPrice,
+): Cost {
   const peak = isPeak(at)
-  if (!entry) return { usd: 0, known: false, peak }
+  const entry = TABLE[modelID]
+  if (!entry) {
+    // Not a DeepSeek model. The catalog's figure is used as published, with one deliberate
+    // choice: a catalog that lists no cache-read price is charged at the *input* rate rather
+    // than at zero. Treating it as free would understate a mostly-cached turn, and an
+    // understated cost is the failure this whole file exists to avoid.
+    if (!catalogPrice) return { usd: 0, known: false, peak }
+    const usd =
+      (usage.input / 1e6) * catalogPrice.input +
+      (usage.cacheRead / 1e6) * (catalogPrice.cacheRead ?? catalogPrice.input) +
+      ((usage.output + usage.reasoning) / 1e6) * catalogPrice.output
+    return { usd, known: true, peak: false }
+  }
   const price = peak ? entry.pricing.peak : entry.pricing.offPeak
   const usd =
     (usage.input / 1e6) * price.cacheMiss +

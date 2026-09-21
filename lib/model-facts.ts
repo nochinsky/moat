@@ -1,5 +1,6 @@
 import * as log from "./log.ts"
 import { catalogModel, formatTokens, type Catalog, type CatalogModel } from "./catalog.ts"
+import type { CatalogPrice } from "./pricing.ts"
 import {
   DEFAULT_REASONING_LEVEL,
   DEFAULT_REASONING_LEVELS,
@@ -205,4 +206,26 @@ export function renderCatalogFromFacts(facts: ModelFacts, opts: { overrides?: Re
     defaultReasoningLevel: facts.defaultEffort,
     overrides: opts.overrides,
   })
+}
+
+/**
+ * What the catalog says this model costs, for a provider moat has no checked table for.
+ *
+ * Read through the facts record rather than by searching the catalog by model id: 1,093 ids in
+ * the current catalog are defined by more than one provider, so a model-only lookup is a guess,
+ * and guessing is the thing invariant 8 exists to forbid. Returns undefined for DeepSeek, whose
+ * published prices models.dev gets wrong — `lib/pricing.ts` stays authoritative there.
+ *
+ * Returns undefined whenever there is nothing trustworthy to report, which the footer already
+ * handles by saying the cost is unknown rather than printing a number.
+ */
+export function catalogPriceForFacts(facts: ModelFacts, catalog: Catalog | null): CatalogPrice | undefined {
+  if (facts.providerID === "deepseek") return undefined
+  const model = catalogModel(catalog, facts.providerID, facts.id)
+  if (!model?.cost) return undefined
+  return {
+    input: model.cost.input,
+    output: model.cost.output,
+    ...(model.cost.cacheRead !== undefined ? { cacheRead: model.cost.cacheRead } : {}),
+  }
 }

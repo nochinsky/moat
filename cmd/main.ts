@@ -21,15 +21,7 @@ import {
 import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, checkBaseUrl, isDeepSeekHost, type ProviderSpec } from "../lib/provider.ts"
 import { resolveProvider, type ResolvedProvider } from "../lib/resolve-provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
-import {
-  catalogEntryFromFacts,
-  checkEffort,
-  defaultEffortLevels,
-  describeModelFacts,
-  renderCatalogFromFacts,
-  resolveModelFacts,
-  type ModelFacts,
-} from "../lib/model-facts.ts"
+import { catalogEntryFromFacts, catalogPriceForFacts, checkEffort, defaultEffortLevels, describeModelFacts, renderCatalogFromFacts, resolveModelFacts, type ModelFacts } from "../lib/model-facts.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES, PROFILES, FULL_PROFILE_ID } from "../sandbox/profiles.ts"
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
 import { runChecks, summarise } from "../sandbox/checks.ts"
@@ -96,7 +88,7 @@ import {
   validateStoredProvider,
   writeProviderStore,
 } from "../lib/providers.ts"
-import { computeCost, formatUSD } from "../lib/pricing.ts"
+import { computeCost, formatUSD, type CatalogPrice } from "../lib/pricing.ts"
 import { runIsolationChecks, type IsolationReport } from "../sandbox/isolation.ts"
 import { onboard } from "../secrets/onboard.ts"
 import {
@@ -1181,7 +1173,16 @@ ${command}
   // a batch run drives one turn and reports it.
   const showOutput = flag<boolean>(p, "show-output") ?? false
   const timeoutSeconds = optionalPositiveIntFlag(p, "timeout")
-  const runOptions = { env: sandboxEnvVars, egress, slirpBinary: egressConfig.slirpBinary, egressRules: egressConfig.egressRules }
+  // Resolved here rather than inside the runner: this is where the boot's own `ModelFacts` and
+  // the loaded catalog are both in hand, so the price belongs to the model that actually ran.
+  const catalogPrice = catalogPriceForFacts(facts, catalog)
+  const runOptions = {
+    env: sandboxEnvVars,
+    egress,
+    slirpBinary: egressConfig.slirpBinary,
+    egressRules: egressConfig.egressRules,
+    ...(catalogPrice ? { catalogPrice } : {}),
+  }
   if (task.length > 0 && interactive) return await runInteractive(paths, codexTuiBody(task), runOptions)
   if (task.length > 0) return await runCodexTask(paths, codexExecBody(task), { ...runOptions, timeoutSeconds, showOutput, json })
   if (interactive) return await runInteractive(paths, codexTuiBody(), runOptions)
@@ -2470,6 +2471,33 @@ function safeProviderSpec(id: string): ProviderSpec | undefined {
  * The key's value is never written here, only the variable's name — the same rule the rest of
  * moat follows, and what lets this file be readable without leaking anything.
  */
+/**
+ * Providers moat can configure from its own knowledge, so `provider add <id>` needs no lookup.
+ *
+ * Deliberately short. The gate is not popularity — it is whether the endpoint serves the
+ * **Responses** API, because the pinned runtime speaks nothing else (`--wire-api chat` is refused
+ * for that reason). OpenRouter and OpenAI publish Responses endpoints; most OpenAI-compatible
+ * providers only expose chat completions and are reachable through `--base-url` alone, where moat
+ * makes no claim about them.
+ *
+ * Nothing here is invented: the endpoint, the key variable and the display name come from the
+ * models.dev catalog, which moat already fetches and caches. A provider in this list whose
+ * details are not in the catalog is refused rather than half-configured.
+ */
+const RESPONSES_API_PROVIDERS = ["openrouter", "openai"] as const
+
+async function knownProviderDetails(id: string): Promise<{ name: string; api: string; envVar?: string } | null> {
+  if (!(RESPONSES_API_PROVIDERS as readonly string[]).includes(id)) return null
+  const catalog = await loadCatalog()
+  const provider = catalog?.get(id)
+  if (!provider?.api) return null
+  return {
+    name: provider.name,
+    api: provider.api,
+    ...(provider.envVars.length > 0 ? { envVar: provider.envVars[0]! } : {}),
+  }
+}
+
 async function cmdProvider(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC, "provider")
   const json = flag<boolean>(p, "json") ?? false
@@ -2508,7 +2536,9 @@ async function cmdProvider(argv: string[]): Promise<number> {
       log.info(`  ${spec.id.padEnd(12)} ${(spec.baseUrl ?? log.yellow("no endpoint configured")).padEnd(34)} ${spec.label}${builtIn}`)
     }
     log.info("")
-    log.info(`  add one:   moat provider add <id> --base-url <url> [--env-var NAME] [--model ID] [--wire-api responses|chat]`)
+    log.info(`  add one:   moat provider add <id> [--base-url <url>] [--env-var NAME] [--model ID]`)
+    log.info(`             ${log.dim(`moat knows ${RESPONSES_API_PROVIDERS.join(" and ")} by name and reads their endpoint and key variable from the model catalog.`)}`)
+    log.info(`             ${log.dim("Anything else needs --base-url, because moat will not guess an endpoint for a name it does not know.")}`)
     log.info(`  use one:   moat up --provider <id> --model <id>`)
     log.info(`  remove:    moat provider remove <id>`)
     log.info("")
@@ -2531,7 +2561,39 @@ async function cmdProvider(argv: string[]): Promise<number> {
   const envVar = flag<string>(p, "env-var")
   const model = flag<string>(p, "model")
   const wireApi = flag<string>(p, "wire-api")
-  if (baseUrl === undefined && envVar === undefined && model === undefined && wireApi === undefined) {
+
+  // A provider moat knows is configured by name: the endpoint and key variable come from the
+  // catalog rather than from the user's memory. This runs before the query branch below, because
+  // `provider add openrouter` is a request to add and `provider openrouter` is a request to look
+  // — the verb is what tells them apart, and the bare form must keep asking.
+  const known = await knownProviderDetails(id!)
+  if (verb === "add" || verb === "set") {
+    // Two different failures, and telling them apart matters. A name moat knows but cannot read
+    // details for is a catalog problem with a specific fix; a name it has never heard of is a
+    // request moat will not guess at. The first version reported both as "does not know a provider
+    // called openrouter", which is false and sends the reader looking in the wrong place.
+    const named = (RESPONSES_API_PROVIDERS as readonly string[]).includes(id!)
+    if (baseUrl === undefined && !known && named) {
+      log.fail(
+        `moat knows "${id}" but could not read its endpoint from the model catalog.\n` +
+          `  The catalog is fetched from models.dev and cached under ~/.moat; check the network, or\n` +
+          `  give the endpoint explicitly:  moat provider add ${id} --base-url <url>`,
+      )
+    }
+    if (!known && !named && baseUrl === undefined) {
+      log.fail(
+        `moat does not know a provider called "${id}", and will not guess its endpoint.\n` +
+          `  Give it one:  moat provider add ${id} --base-url <url> [--env-var NAME]\n` +
+          `  Known by name: ${RESPONSES_API_PROVIDERS.join(", ")}`,
+      )
+    }
+    if (known && baseUrl === undefined) {
+      log.info(
+        `  ${log.dim(`${known.name} from the model catalog: ${known.api}${known.envVar ? `, key in ${known.envVar}` : ""}`)}`,
+      )
+    }
+  }
+  if (baseUrl === undefined && envVar === undefined && model === undefined && wireApi === undefined && !(verb === "add" || verb === "set")) {
     // Asking about one provider rather than adding it.
     const spec = resolveProviderSpec(id)
     if (!spec) log.fail(`no configured provider "${id}"`)
@@ -2554,12 +2616,17 @@ async function cmdProvider(argv: string[]): Promise<number> {
   } catch (error) {
     log.fail((error as Error).message)
   }
-  if (baseUrl !== undefined) {
-    const problem = checkBaseUrl("base-url", baseUrl)
+
+  // Anything moat does not know by name still needs an endpoint of its own.
+  const filledBaseUrl = baseUrl ?? known?.api
+  const filledEnvVar = envVar ?? known?.envVar
+
+  if (filledBaseUrl !== undefined) {
+    const problem = checkBaseUrl("base-url", filledBaseUrl)
     if (problem) log.fail(problem)
   }
-  if (envVar !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(envVar)) {
-    log.fail(`--env-var must be an environment variable name (letters, digits, underscore): ${envVar}`)
+  if (filledEnvVar !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(filledEnvVar)) {
+    log.fail(`--env-var must be an environment variable name (letters, digits, underscore): ${filledEnvVar}`)
   }
   // `chat` was accepted until it turned out Codex had removed the protocol: the pinned binary
   // exits with `wire_api = "chat" is no longer supported`, so a provider configured that way
@@ -2578,9 +2645,9 @@ async function cmdProvider(argv: string[]): Promise<number> {
   const entry = validateStoredProvider(id, {
     ...existing,
     id,
-    label: existing?.label ?? id,
-    ...(baseUrl !== undefined ? { baseUrl } : {}),
-    ...(envVar !== undefined ? { envVar } : {}),
+    label: existing?.label ?? known?.name ?? id,
+    ...(filledBaseUrl !== undefined ? { baseUrl: filledBaseUrl } : {}),
+    ...(filledEnvVar !== undefined ? { envVar: filledEnvVar } : {}),
     ...(model !== undefined ? { defaultModel: model } : {}),
     ...(wireApi !== undefined ? { wireApi } : {}),
   })
@@ -2817,6 +2884,14 @@ exec codex ${prompt && prompt.length > 0 ? shellQuote(prompt) : ""}
 
 type CodexRunOptions = {
   env: Record<string, string>
+  /**
+   * What the catalog says this model costs, when the model is not one of DeepSeek's.
+   *
+   * Resolved by the caller, which holds the `ModelFacts` record and the loaded catalog; the
+   * footer only does arithmetic. Undefined means "no price is known", and the footer says so
+   * instead of printing a number.
+   */
+  catalogPrice?: CatalogPrice
   egress: EgressMode
   slirpBinary?: string
   egressRules?: string
@@ -2863,7 +2938,7 @@ async function runCodexTask(paths: EnvPaths, body: string, opts: CodexRunOptions
       cacheRead: turn.usage.cached,
     }
     const modelID = opts.env.MOAT_MODEL_ID ?? ""
-    const cost = computeCost(modelID, usage)
+    const cost = computeCost(modelID, usage, new Date(), opts.catalogPrice)
     const tokens = usage.input + usage.cacheRead + usage.output + usage.reasoning
     const money = cost.known ? `  ${log.dim(`${formatUSD(cost.usd)} ${cost.peak ? "peak" : "off-peak"}`)}` : ""
     log.info(`  ${log.dim(`${tokens} tokens`)}${money}  ${log.dim(describeCodexTurn(turn))}`)

@@ -25,6 +25,19 @@ import * as log from "./log.ts"
 export const CATALOG_URL = "https://models.dev/api.json"
 const MAX_AGE_MS = 24 * 60 * 60 * 1000
 
+/**
+ * What the catalog says a model costs, in USD per 1M tokens.
+ *
+ * Used for providers moat has no hand-checked table for. DeepSeek is deliberately excluded from
+ * this path: models.dev's DeepSeek prices are wrong (see `lib/pricing.ts`), which is the whole
+ * reason that table exists.
+ */
+export type CatalogCost = {
+  input: number
+  output: number
+  cacheRead?: number
+}
+
 export type CatalogModel = {
   id: string
   name?: string
@@ -33,6 +46,7 @@ export type CatalogModel = {
   output?: number
   reasoning?: boolean
   attachment?: boolean
+  cost?: CatalogCost
 }
 
 export type CatalogProvider = {
@@ -56,6 +70,7 @@ type RawModel = {
   reasoning?: boolean
   attachment?: boolean
   limit?: { context?: unknown; output?: unknown }
+  cost?: { input?: unknown; output?: unknown; cache_read?: unknown }
 }
 type RawProvider = { name?: string; env?: string[]; api?: string; npm?: string; models?: Record<string, RawModel> }
 
@@ -76,6 +91,27 @@ function tokenCount(value: unknown): number | undefined {
   return value
 }
 
+/**
+ * A price from the network, or nothing.
+ *
+ * Same rule as `tokenCount`: this is a fetched document, and a price that is not a finite
+ * non-negative number would be multiplied into a total and printed as money. A missing price is
+ * reported as "not known", which the footer already says out loud.
+ */
+function price(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined
+  return value
+}
+
+function catalogCost(cost: RawModel["cost"]): CatalogCost | undefined {
+  if (!cost || typeof cost !== "object") return undefined
+  const input = price(cost.input)
+  const output = price(cost.output)
+  if (input === undefined || output === undefined) return undefined
+  const cacheRead = price(cost.cache_read)
+  return { input, output, ...(cacheRead !== undefined ? { cacheRead } : {}) }
+}
+
 export function parseCatalog(raw: Record<string, RawProvider>): Catalog {
   const catalog: Catalog = new Map()
   for (const [id, provider] of Object.entries(raw)) {
@@ -94,6 +130,7 @@ export function parseCatalog(raw: Record<string, RawProvider>): Catalog {
         output: tokenCount(model.limit?.output),
         reasoning: model.reasoning,
         attachment: model.attachment,
+        cost: catalogCost(model.cost),
       })),
     })
   }

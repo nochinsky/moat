@@ -447,9 +447,17 @@ from your environment.** It says the key is there and tells you to pass
 The endpoint and model come from the configured provider, `--base-url`/`--model`, or the store
 entry. **DeepSeek is the default provider, not the only one** (amended in Phase 1 of
 `docs/PROGRAM.md`; see the note below). `moat provider add <id> --base-url <url> [--env-var NAME]
-[--model ID] [--wire-api responses]` writes `~/.moat/providers.json`, and `--provider <id>`
+[--model ID]` writes `~/.moat/providers.json`, and `--provider <id>`
 selects one. The context window and capabilities come from the [models.dev](https://models.dev)
 catalog when it describes the model, and otherwise from the model's own metadata.
+
+Two names are known outright — `openrouter` and `openai` — and for those,
+`moat provider add <id>` reads the endpoint and the key variable from that same catalog instead of
+asking for them. This is a convenience and not an inference: the user still has to name the
+provider, an explicit `--base-url` still wins, and a name moat does not know is refused with the
+endpoint it needs rather than resolved to a guessed one. The list is short on purpose, and the gate
+is whether the endpoint serves the Responses API, because the pinned runtime speaks nothing else.
+It is `RESPONSES_API_PROVIDERS` in `cmd/main.ts`.
 
 `--base-url` still points the rendered config at **any OpenAI-compatible endpoint** (Ollama,
 llama.cpp, LiteLLM, a gateway), which is how the test suite runs against a local stub, and it is
