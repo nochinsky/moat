@@ -1,4 +1,18 @@
-# Program: turn moat into a sellable product
+# Program: turn moat into a sellable product (archive)
+
+**This program is finished. All six phases (0 to 5) ran and passed their gates.** The file is kept
+because it is where the phases, their gates and the reasoning behind them are written down, and
+because `SPEC.md` and `AGENTS.md` cite it for the changes it authorised — notably Phase 1, which
+loosened the "one provider" invariant by name.
+
+It is a plan, not a description of what exists. **For the current state of the project read
+[`../PROGRESS.md`](../PROGRESS.md)**, and for what the tool promises read `../SPEC.md`. Where this
+file says "do not start phase N+1 until phase N's gate is green", that instruction has been carried
+out and is history.
+
+The rest of this file is unchanged from when it was the live contract.
+
+---
 
 You are working on **moat** at the repo root, unattended, across many sessions.
 This document is the contract for the whole program. Re-read it and `AGENTS.md`

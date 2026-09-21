@@ -4,14 +4,14 @@
 --- stderr ---
 detected: package.json -> node
           adding profile(s) node; use --no-detect or --profile to override
-sandbox already running (pid 777254); restarting it for this run
+sandbox already running (pid 821223); restarting it for this run
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-15-32
+agent branch: moat-session-2026-09-21-18-41
 checks: npm run test
-→ sandbox booted (pid 777421); the codex runtime has no server to wait for
+→ sandbox booted (pid 821390); the codex runtime has no server to wait for
 
 clearing the screen, retitling the window, and done.
   8640 tokens  0 tools

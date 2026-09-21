@@ -19,7 +19,7 @@ how it turned out.
 
 - One section per session, newest last, each ending with a status block.
 - A claim here is a claim that was *measured*. Anything not measured says so.
-- `docs/PROGRAM.md` §8 is a list of reported defects, split into "verified by hand" (1-9) and
+- `docs/archive/PROGRAM.md` §8 is a list of reported defects, split into "verified by hand" (1-9) and
   "reported by review, not independently verified" (10-21). Each one gets a verdict here:
   **reproduced**, **did not reproduce**, or **not yet attempted**, with the command that
   settled it.
@@ -31,7 +31,7 @@ how it turned out.
 
 ### Starting state
 
-- Branch `main`, clean apart from untracked `docs/PROGRAM.md` and a 5-line edit to
+- Branch `main`, clean apart from untracked `docs/archive/PROGRAM.md` and a 5-line edit to
   `AGENTS.md` that points at it.
 - `npm run test:unit`: **177 tests, 177 pass, 0 fail** (baseline, before any change here).
 - Sandbox capability preflight on this host: `unshare --user --map-root-user --net --mount`
@@ -119,7 +119,7 @@ while looking at the wrong object.
 It is tracked, it is from the deleted opencode runtime, and the password is right there in
 the committed file (a plaintext `password   <redacted>` line, from a server that no
 longer exists). `test/evidence/audit.jsonl` is the same runtime's orphan. Both `git rm`'d.
-Nothing referenced either file except the line in `docs/PROGRAM.md` that reports them; the
+Nothing referenced either file except the line in `docs/archive/PROGRAM.md` that reports them; the
 suite regenerates `onboard.txt` in section J when a key is present, and that regenerated file
 is scrubbed like every other.
 **This is a published secret and deleting the file is not enough** — it was in this
@@ -1144,7 +1144,7 @@ sufficient, and it was — right up until someone edits the prompt's punctuation
 ### Recommendation
 
 **Do not migrate in this program; keep the hand-written Codex adapter.** That is what
-`docs/PROGRAM.md` instructs, and the spike gives it an evidence-backed reason rather than
+`docs/archive/PROGRAM.md` instructs, and the spike gives it an evidence-backed reason rather than
 merely following orders:
 
 1. Nothing moat needs today is blocked by the current seam. The four things ACP would add —

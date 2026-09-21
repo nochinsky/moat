@@ -45,14 +45,6 @@ import * as log from "../lib/log.ts"
  */
 const DEVICE_NODES = ["null", "zero", "full", "random", "urandom", "tty"] as const
 
-export type SandboxSpawn = {
-  rootfs: string
-  mountpoint: string
-  entry: string
-  /** Absolute path inside the rootfs of a script to exec. */
-  innerScript: string
-}
-
 export function newroot(p: EnvPaths): string {
   return p.mountpoint
 }

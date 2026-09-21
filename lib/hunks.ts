@@ -1,11 +1,9 @@
 import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
-import crypto from "node:crypto"
 
 import { run } from "./shell.ts"
 import { SANITIZED_GIT_ENV } from "./git.ts"
-import { partPath } from "./paths.ts"
 
 /**
  * Per-hunk review of a planned change.
@@ -206,9 +204,4 @@ export function parseHunkSelection(text: string, hunkCount: number): { accepted:
     }
   }
   return { accepted: [...accepted].sort((a, b) => a - b), error: null }
-}
-
-/** A scratch file for content that has to be handed to git. Unique per call, like every temp. */
-export function scratchPath(dir: string, stem: string): string {
-  return partPath(path.join(dir, `${stem}-${crypto.randomBytes(4).toString("hex")}`))
 }

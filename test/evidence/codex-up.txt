@@ -2,11 +2,11 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.47s (extract cached image 1.26s)
+✓ image provisioned in 1.44s (extract cached image 1.24s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-21-15-34
-✓ sandbox up, cold start 2.33s (image built)
+agent branch: moat-session-2026-09-21-18-43
+✓ sandbox up, cold start 2.44s (image built)
 
   project    /home/user/moat-demo/codex-runtime
   env        /home/user/.moat/envs/a3e8fefc7c25

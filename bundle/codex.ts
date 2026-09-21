@@ -430,5 +430,3 @@ export function describeCodexTurn(turn: CodexTurn): string {
   if (turn.errors.length > 0) parts.push(turn.errors.length === 1 ? "1 error" : `${turn.errors.length} errors`)
   return parts.join(" · ")
 }
-
-export const CODEX_RUNTIME_VERSION = CODEX_VERSION

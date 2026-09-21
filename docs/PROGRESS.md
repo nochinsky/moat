@@ -1,13 +1,19 @@
 # Where the project stands
 
-moat is built and the six phases of `PROGRAM.md` are closed. This page is the short version:
-what runs, what is green, and what is still open. The session-by-session record, including every
-defect found and how each was settled, is in [`archive/PROGRESS.md`](archive/PROGRESS.md).
+moat is built. This page is the short version: what runs, what is green, and what is still open.
+The session-by-session record, including every defect found and how each was settled, is in
+[`archive/PROGRESS.md`](archive/PROGRESS.md), and the phase program that produced it is in
+[`archive/PROGRAM.md`](archive/PROGRAM.md). Both are history; neither tells you what to do next.
 
 `AGENTS.md` remains the contract for anyone changing the code. `SPEC.md` is what the tool
 promises. `VERIFICATION.md` is the evidence, and its closing table lists what is *not* verified.
 
 ## Where things live
+
+`docs/archive/` holds two documents that were once live instructions and are now records: the
+build journal, and the six-phase program that produced the tool. They are worth reading for the
+reasoning behind a decision — the journal is where every defect and measurement is written down —
+and they are not a to-do list.
 
 `SPEC.md` is the contract and `VERIFICATION.md` is the evidence, so both are long by design:
 one states what each command promises, the other quotes the raw output that shows it. The two

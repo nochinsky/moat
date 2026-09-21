@@ -7,7 +7,7 @@
 # whatever that `sed` loop returned, which is 0. The suite could report a broken
 # sandbox in its own evidence file and still exit 0. `test/e2e-live.sh` was the
 # same shape with no assertions at all. A check that cannot fail is not a check
-# (docs/PROGRAM.md §3), and a suite nobody can gate on is worse than no suite.
+# (docs/archive/PROGRAM.md §3), and a suite nobody can gate on is worse than no suite.
 #
 # Sourced, not executed. It defines four functions and one counter:
 #

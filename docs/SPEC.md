@@ -446,7 +446,7 @@ from your environment.** It says the key is there and tells you to pass
 
 The endpoint and model come from the configured provider, `--base-url`/`--model`, or the store
 entry. **DeepSeek is the default provider, not the only one** (amended in Phase 1 of
-`docs/PROGRAM.md`; see the note below). `moat provider add <id> --base-url <url> [--env-var NAME]
+`docs/archive/PROGRAM.md`; see the note below). `moat provider add <id> --base-url <url> [--env-var NAME]
 [--model ID]` writes `~/.moat/providers.json`, and `--provider <id>`
 selects one. The context window and capabilities come from the [models.dev](https://models.dev)
 catalog when it describes the model, and otherwise from the model's own metadata.
@@ -473,7 +473,7 @@ hard-coded, in the block rendered for every provider.
 
 > **Amendment, Phase 1.** `AGENTS.md` invariant 8 says "One provider. DeepSeek. No provider
 > registry, no `--provider`, no inference of a provider from the environment." `AGENTS.md` also
-> says `docs/PROGRAM.md` "says what to build next", and Phase 1 of that document instructs this
+> says `docs/archive/PROGRAM.md` "says what to build next", and Phase 1 of that document instructs this
 > change by name. Invariant 8 is therefore amended to: **no provider registry and no inference
 > from the environment**, with DeepSeek as the default. The parts of the invariant that were
 > about not guessing, and about `--base-url` being an escape hatch rather than the beginning of a

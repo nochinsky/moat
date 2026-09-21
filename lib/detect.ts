@@ -81,10 +81,6 @@ export function detectProfiles(projectDir: string, limit = 4000): Detection {
   return { profiles, reasons, uncertain: reasons.length === 0 }
 }
 
-/** Whether the one key moat uses is present on the host. */
-export function hasCredentialInEnv(): boolean {
-  return Boolean(process.env.DEEPSEEK_API_KEY || process.env.MOAT_CREDENTIAL)
-}
 
 /**
  * The commands the project uses to check itself.

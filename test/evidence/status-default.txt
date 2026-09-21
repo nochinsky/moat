@@ -7,11 +7,11 @@ project      /home/user/moat-demo/egress-default
 env          /home/user/.moat/envs/2a1bb9cb2696
 status       running
 codex        0.155.1 / alpine 3.21.4
-pid          786551
+pid          830554
 model        deepseek/deepseek-flash (deepseek)
-branch       moat-session-2026-09-21-15-36
+branch       moat-session-2026-09-21-18-44
 egress       filtered (own network namespace, default-deny allowlist)
 rootfs       298.7 MiB
 credential   deepseek sha256:34c4e933b47c1fb3 expires in 14399s
 snapshots    none
-branches     main, moat-session-2026-09-21-15-36*
+branches     main, moat-session-2026-09-21-18-44*

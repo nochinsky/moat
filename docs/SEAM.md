@@ -1,6 +1,6 @@
 # The harness seam
 
-Phase 4 of `docs/PROGRAM.md` asks for the interface that `codexEntryScript` +
+Phase 4 of `docs/archive/PROGRAM.md` asks for the interface that `codexEntryScript` +
 `parseCodexEvents` + the turn runner already implement to be written down, with **no behaviour
 change**. This is that document.
 

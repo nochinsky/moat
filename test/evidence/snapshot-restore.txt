@@ -2,5 +2,5 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-stopped sandbox pid 777903 before restoring
+stopped sandbox pid 821918 before restoring
 ✓ restored rootfs snapshot before-extras (the project copy in /work was preserved)

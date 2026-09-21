@@ -50,16 +50,13 @@ const V4_PRO: ModelPricing = {
  * their cost is still right, and flagged `retired` so the UI can say so rather
  * than presenting four current models when there are two.
  */
-const TABLE: Record<string, { pricing: ModelPricing; retired: boolean }> = {
-  "deepseek-flash": { pricing: FLASH, retired: false },
-  "deepseek-v4-pro": { pricing: V4_PRO, retired: false },
-  "deepseek-v4-flash": { pricing: FLASH, retired: true },
-  "deepseek-v4-flash-vision-exp": { pricing: FLASH, retired: true },
+const TABLE: Record<string, ModelPricing> = {
+  "deepseek-flash": FLASH,
+  "deepseek-v4-pro": V4_PRO,
+  "deepseek-v4-flash": FLASH,
+  "deepseek-v4-flash-vision-exp": FLASH,
 }
 
-export function isRetiredModel(modelID: string): boolean {
-  return TABLE[modelID]?.retired ?? false
-}
 
 /**
  * Peak is 01:00–04:00 and 06:00–10:00 UTC, Monday to Friday; everything else is
@@ -146,7 +143,7 @@ export function computeCost(
       ((usage.output + usage.reasoning) / 1e6) * catalogPrice.output
     return { usd, known: true, peak: false }
   }
-  const price = peak ? entry.pricing.peak : entry.pricing.offPeak
+  const price = peak ? entry.peak : entry.offPeak
   const usd =
     (usage.input / 1e6) * price.cacheMiss +
     (usage.cacheRead / 1e6) * price.cacheHit +
@@ -167,10 +164,6 @@ export function usageOf(tokens: unknown): TokenUsage {
   }
 }
 
-/** Total prompt tokens, which is `input` plus the cached part. */
-export function promptTokens(usage: TokenUsage): number {
-  return usage.input + usage.cacheRead
-}
 
 /**
  * Money, at a precision that stays readable.
@@ -259,12 +252,4 @@ export function summariseTurn(modelID: string, entries: Iterable<BilledUsage>): 
     usd += cost.usd
   }
   return { input, cached, output, reasoning, usd, costKnown: known && requests > 0, rate: rateLabel(peaks), requests }
-}
-export function pricingTable(): { model: string; retired: boolean; offPeak: Price; peak: Price }[] {
-  return Object.entries(TABLE).map(([model, entry]) => ({
-    model,
-    retired: entry.retired,
-    offPeak: entry.pricing.offPeak,
-    peak: entry.pricing.peak,
-  }))
 }

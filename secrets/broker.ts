@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 
 import { fingerprint } from "../lib/hash.ts"
@@ -21,12 +20,6 @@ import { resolveProviderSpec } from "../lib/providers.ts"
  * What it deliberately does NOT do: forward the host environment, mount
  * ~/.ssh, mount the SSH agent socket, or read dotfiles.
  */
-
-export type CredentialSource =
-  | { kind: "flag" }
-  | { kind: "env"; name: string }
-  | { kind: "store"; path: string }
-  | { kind: "none" }
 
 export type StoredCredential = {
   value: string
@@ -112,14 +105,6 @@ export function readStore(file = credentialsFile()): Store {
   return JSON.parse(fs.readFileSync(file, "utf8")) as Store
 }
 
-export function describeSources(store: Store): CredentialSource[] {
-  const sources: CredentialSource[] = [{ kind: "flag" }]
-  for (const name of CREDENTIAL_ENV_NAMES) {
-    if (process.env[name]) sources.push({ kind: "env", name })
-  }
-  if (Object.keys(store).length > 0) sources.push({ kind: "store", path: credentialsFile() })
-  return sources
-}
 
 export function findCredential(opts: MintOptions): { provider: string; credential: StoredCredential; source: string } | null {
   if (opts.literal) {
@@ -350,9 +335,6 @@ export function toSandboxEnv(minted: MintedCredential): Record<string, string> {
  * host env vars that carry a credential for `provider`, in priority order.
  * Explicit user intent (`--credential-env`) always wins over convention.
  */
-export function credentialCandidates(envVars: string[]): string[] {
-  return ["MOAT_CREDENTIAL", ...envVars]
-}
 
 /**
  * The environment variable names moat will look in for this provider's key.
@@ -397,6 +379,3 @@ export function describe(minted: MintedCredential): string {
   return `${minted.provider} ${minted.fingerprint} ttl=${minted.ttlSeconds}s remaining=${remaining}s source=${minted.source}`
 }
 
-export function homeDir(): string {
-  return os.homedir()
-}

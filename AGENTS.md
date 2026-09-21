@@ -3,10 +3,9 @@
 Read this before changing anything. Most of the design here is load-bearing, and several
 constraints are not obvious from the code.
 
-If you are working through the product program rather than a one-off change, that is
-`docs/PROGRAM.md`: gated phases, a status page at `docs/PROGRESS.md`, the session record
-it points to, and a list of reported defects to confirm before fixing. This file stays the
-contract; that one says what to build next.
+This file is the contract for the code. `docs/PROGRESS.md` says where the project stands and
+what is open; `docs/archive/` holds the build journal and the finished phase program, which are
+history rather than instructions.
 
 ## The idea
 
@@ -55,7 +54,7 @@ Breaking any of these breaks the product, not a feature.
    is configuration the user wrote down (`moat provider add`, `--provider <id>`), never inferred
    from the environment, and an unconfigured name is refused. `--base-url` remains an escape
    hatch for an OpenAI-compatible endpoint rather than the beginning of a provider system.
-   *(Amended by Phase 1 of `docs/PROGRAM.md`, which instructs this unlock by name. The original
+   *(Amended by Phase 1 of `docs/archive/PROGRAM.md`, which instructs this unlock by name. The original
    invariant was "One provider. DeepSeek." — the discipline about not guessing is what survives,
    and `test/unit/provider-security.test.ts` holds it. `docs/SPEC.md` §5 carries the same
    amendment and the reasoning.)*
@@ -76,7 +75,8 @@ docs/            SPEC (the contract), VERIFICATION (the evidence),
                  HISTORY (how the project got here), SEAM (the interface a second
                  runtime would have to satisfy), RUNTIMES (what a second runtime
                  costs, and why ACP is not the shortcut), PROGRESS (where things
-                 stand), archive/ (the build journal, closed phases only)
+                 stand), archive/ (the build journal and the finished phase
+                 program — history, not instructions)
 ```
 
 ## Packaging

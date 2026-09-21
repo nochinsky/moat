@@ -28,7 +28,7 @@ CREDENTIAL="moat-e2e-scoped-credential-8c1d4e"
 # statement was `scrub_evidence`: the exit status was whatever that `sed` loop
 # returned, which is 0. So the suite could report a broken sandbox in its own
 # evidence file and still exit 0 -- a check that cannot fail, which
-# docs/PROGRAM.md §3 calls out by name. The machinery is in test/lib/guard.sh so
+# docs/archive/PROGRAM.md §3 calls out by name. The machinery is in test/lib/guard.sh so
 # that e2e-live.sh shares it and so that `bash test/fail-guard.sh` can prove it
 # works; every failure must go through `fail`, and `verdict` decides the exit
 # status at the very end.
