@@ -35,18 +35,21 @@ All five phases passed their gates. The suites run green on `main`:
 `test/evidence/` holds the raw output from the last clean run of all of them. Regenerate it by
 running the suites; never edit it by hand.
 
-## Shipped
+## Published
 
-The package is publishable, not published. It is `moat-sandbox` on npm (both `moat` and `moat-cli` belong to unrelated
-packages), while the installed command stays `moat`.
+`moat-sandbox` is on npm, currently **0.0.2**, with a provenance record. The installed command is
+`moat`. Both `moat` and `moat-cli` were already taken by unrelated packages, which is why the
+package name and the command differ.
 
 ```bash
-npm pack                     # builds dist/ via prepack, then packages it
-npm publish                  # the owner's step; not done yet
+npx -y moat-sandbox demo     # the first thing a stranger should run
 ```
 
-A tarball installed into a clean prefix runs `moat demo` end to end with no API key: a real boot,
-a real three-way classification, a conflict left alone. That is Phase 5's gate, measured.
+A cold start downloads about 560 MB (the Alpine rootfs and the pinned Codex binary) and takes
+roughly a minute; later runs are under ten seconds. Verified by running `npx` from a clean
+directory with an empty cache, no API key, and no repository — a real boot, a real three-way
+classification, and a conflict left alone. That is Phase 5's gate, measured, and the demo says
+which artifacts it is about to fetch before it fetches them.
 
 Three things had to change for that to be true, and none of them are visible from inside the
 repository: a published package cannot ship TypeScript (Node refuses to strip types under
@@ -57,27 +60,24 @@ looked fine until the artifact was installed.
 
 ## Open
 
-Three items, in the order they are likely to matter:
+One item, and it is a question rather than a task:
 
-**Publishing 0.0.2 is set up but needs one browser step.** `0.0.1` is on the registry. The
-release workflow (`.github/workflows/release.yml`) publishes from a `v*` tag using GitHub OIDC,
-so there is no token to store and the published tarball carries a provenance record.
+**The ACP permission question.** Phase 4's spike showed that the official Codex ACP adapter drives
+moat's pinned binary over stdio with no port, which answers the question that mattered most. It
+could not show whether `session/request_permission` is answerable under moat's configuration,
+because the adapter never asked. This only matters if ACP is ever adopted, and the recommendation
+in `archive/PROGRESS.md` is not to adopt it in this program.
 
-Before the first tag, npm has to be told to trust the workflow. At
-<https://www.npmjs.com/package/moat-sandbox/access>, add a **GitHub Actions** publisher with
-organization/user `nochinsky`, repository `moat`, workflow filename `release.yml`, allowed action
-`npm publish`. Then:
+Everything else that was open has been closed:
 
-```bash
-git tag v0.0.2 && git push origin v0.0.2
-```
-
-A tag whose name does not match `package.json` stops the workflow in seconds, which matters
-because a published version number can never be reused.
-
-This replaced a token: npm restricted 2FA-bypass tokens for direct publishing during this work,
-so a stored token could not publish to an account with 2FA enabled. `0.0.1` went out through the
-browser/passkey flow.
+- **Publishing** is done, and it is a tag: `npm version patch --no-git-tag-version`, commit, then
+  `git tag v0.0.3 && git push origin main v0.0.3`. `.github/workflows/release.yml` publishes over
+  GitHub OIDC, so there is no token to store and every release carries provenance. `AGENTS.md` has
+  the details, including the one-time publisher setup on npmjs.com.
+- **The cold cache is measured**, not argued: see *Published* above.
+- **Package metadata is staged for the next release.** The npm keywords and the GitHub description
+  were corrected after 0.0.2 shipped, so 0.0.2's page still carries the old ones. They will ride
+  along with the next functional release; no reason to spend a version number on keywords.
 
 **The cold-cache half of Phase 5's gate.** The tarball install and `moat demo` were measured with
 a warm cache. A genuinely cold one means roughly 560 MB of downloads, and it was skipped rather
