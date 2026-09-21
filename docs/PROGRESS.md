@@ -7,10 +7,16 @@ that phase's gate has passed, and what a session with no memory needs to know to
 **Current phase: 3 (the review surface) — GATE PASSED.**
 **Next: phase 4 (name the harness seam, then spike ACP). Not started.**
 
+The published history was rewritten on the owner's instruction (session 3, at the end of this
+file): 22 session passwords were in `main`'s history and are now gone from the public repository,
+so every commit SHA changed. Re-clone rather than pull.
+
 Phases 0, 1, 2 and 3 have all passed their gates; each gate report is a section below, and
-the last one (`### The gate PASSES`) is the Phase 3 record. The tree is green at `0cf9c44`:
-`npm run test:unit` 243/0, and the six sandbox suites — acceptance, extras 50/0, egress,
-provider 9/0, demo 9/0, review 21/0 — regenerated `test/evidence/` in one clean run.
+the last one (`### The gate PASSES`) is the Phase 3 record. The tree is green: `npm run
+test:unit` 243/0, and the six sandbox suites — acceptance, extras 50/0, egress, provider 9/0,
+demo 9/0, review 21/0 — regenerated `test/evidence/` in one clean run. (That run is recorded
+against a SHA that no longer exists; the history rewrite changed every one. The rewrite touched
+no source file, which is why the result still stands, and it is re-verified at the tip below.)
 
 Phase 4 is a **spike**: name the seam `codexEntryScript` + `parseCodexEvents` + the turn
 runner already implement, then investigate ACP (Agent Client Protocol) with a throwaway
@@ -126,10 +132,13 @@ longer exists). `test/evidence/audit.jsonl` is the same runtime's orphan. Both `
 Nothing referenced either file except the line in `docs/PROGRAM.md` that reports them; the
 suite regenerates `onboard.txt` in section J when a key is present, and that regenerated file
 is scrubbed like every other.
-**This is a published secret and deleting the file is not enough** — the credential is in
-this repository's history. Recorded below under "open items" as something the owner has to
-decide about, because rewriting published history is not a decision this program can make
-unilaterally.
+**This is a published secret and deleting the file is not enough** — it was in this
+repository's history from `a675bb7` onward. Recorded below under "open items" as something
+the owner had to decide about, because rewriting published history is not a decision this
+program can make unilaterally. **The owner authorised the rewrite, and it is done**; see
+"Removing the published secrets" below. Two corrections to what is written here: there was
+not one password but **twenty-two**, because the smoke test mints a server per run, and the
+journal's own quote of one of them was itself published by the next push.
 
 **9. `docs/SPEC.md:805-809` duplicates the `exposure` bullet. REPRODUCED, FIXED.**
 The same three lines appeared twice; one copy removed.
@@ -554,14 +563,13 @@ thing to do in the same commit as the unlock.
 
 ## Open items for the owner (not fixable inside the phases)
 
-- **Defect 8 is a published secret.** `test/evidence/onboard.txt` held a plaintext session
-  password for an interactive server, and it was committed. The file is deleted in this
-  session, but it remains in the git history of a public repository
-  (`https://github.com/nochinsky/moat`). Removing it from history means a force-push or a
-  filter-repo rewrite, and `docs/PROGRAM.md` does not authorise that under any phase, so it
-  is reported rather than done. The password belongs to a runtime that has been removed and
-  a process that no longer exists, so the exposure is historical rather than live — but the
-  decision is the owner's.
+- ~~**Defect 8 is a published secret.**~~ **RESOLVED (owner-authorised rewrite).** The
+  history was rewritten with `git filter-branch --tree-filter` over all of `main` and
+  force-pushed with `--force-with-lease`; a fresh clone of the public repository now contains
+  none of the 22 passwords in any blob. The `.gitignore` gained the file so it cannot be
+  recommitted. The passwords belonged to a runtime that has been removed and a process that
+  no longer exists, so the exposure was historical rather than live — but the bytes are gone
+  now rather than merely unreachable. Details and the mistakes made on the way are below.
 
 
 ---
@@ -902,3 +910,81 @@ Nothing was rewritten to make the surface fit. The classification the planner al
 the review shows; the four verdicts, their notes and the conflict flag are the planner's own,
 carried through by `reviewPlan`. What the phase added on top is the split into hunks and a writer
 that takes a subset.
+
+---
+
+## Session 3 — the published secrets, removed from history
+
+Requested by the owner after the Phase 3 gate: push everything, and then rewrite the history to
+take the published passwords out of it.
+
+### What was actually published
+
+The first pass found one password and I nearly published a second copy of it: **the journal's own
+defect-8 entry quoted the value verbatim**, so the next push would have re-leaked the very secret it
+documented. Redacted, and the commits carrying it were rewritten before that push.
+
+Enumerating properly changed the picture. `test/evidence/onboard.txt` was written by the onboarding
+smoke test, which **starts a real server and mints a password per run**, so the file held a
+different secret in almost every commit that had it: **22 distinct passwords**, across 66 commits,
+the oldest at `a675bb7`. The phase-0 fix had deleted the file and the journal had recorded "the
+password" as a single value. Both were wrong about the scope.
+
+### The rewrite
+
+`git filter-branch --tree-filter` over all of `main`, redacting `password   <value>` lines in the
+two files that ever carried one (`test/evidence/onboard.txt`, `docs/PROGRESS.md`), then
+`git push --force-with-lease`. No `git-filter-repo` on this host and no pip to install it.
+
+Verified by **cloning the public repository and scanning every blob in it**: 5176 blobs, 96 commits,
+none of the 22 values present. The clone's `npm run test:unit` is 243/0 and `npm run typecheck` is
+clean, so what is published is a working tree, not just a clean one.
+
+### Three mistakes, all mine, all instructive
+
+**The regex matched nothing and said nothing.** `onboard.txt` is **CRLF**. `^password\s{2,}(\S+)$`
+with `MULTILINE` does not match `VALUE\r\n` — the `\r` is whitespace, so `$` has nothing to bind
+to — and `filter-branch` ran the script 95 times, got zero replacements, and reported success. I had
+written `|| true` on the filter command as well, so even a non-zero exit would have been invisible.
+The tell was a verification step that took ten seconds and asked the object database directly
+instead of trusting the tool's own "Ref was rewritten". The fix: match the value with the carriage
+return excluded, and let the script fail loudly.
+
+**A verification loop that could not have caught it.** The first "is it gone?" check printed an
+empty result and I read that as clean. It was empty because the loop's `git grep -l` output was
+being piped into a `sed` that did not match the format, and the surrounding `for` loop had already
+consumed the exit code. Two probes that disagree — one populated, one empty — is the signal to stop
+and look, and I did not stop the first time.
+
+**`git gc` cannot prune what a ref still points at.** After the rewrite the objects were still
+there, because `refs/original/refs/heads/main` (filter-branch's backup) and
+`refs/remotes/origin/main` (still at the pre-rewrite commit) both rooted the old graph. Deleting the
+backup, resyncing the remote-tracking ref, expiring every reflog and then pruning is what finally
+emptied it. `e2e-checkout` and the two `refs/moat/*` test fixtures pointed at the old history too;
+they were repointed at their rewritten twins, which a tree comparison proved identical except for
+the redaction.
+
+### What this cost, and what it did not
+
+Every commit SHA on `main` changed, `a675bb7` -> a new root, so any existing clone or fork must be
+re-cloned. No source file, suite, or piece of evidence differs: the tree-filter touched exactly two
+files, and `lib/`, `cmd/`, `sandbox/`, `sync/`, `secrets/`, `bundle/`, `test/` and the evidence are
+byte-identical to the tree the Phase 3 gate was measured on. The local `e2e-checkout` fixture and
+`refs/moat/*` still exist and now point at rewritten commits.
+
+`.gitignore` gained `test/evidence/onboard.txt`, proven with `git check-ignore` and a regeneration
+of the file: it is invisible to `git status` and only `git add --force` can commit it. That is the
+guard that would have prevented all of this, and it was missing while the file was being regenerated
+on every run with a key present.
+
+### Re-verified at the rewritten tip
+
+All seven suites were re-run against the rewritten history rather than assumed to be unaffected:
+acceptance passed, extras **50/0**, egress passed, provider **9/0**, demo **9/0**, review **21/0**,
+and `npm run test:unit` **243 pass, 0 fail**. `npm run typecheck` is clean, in this repository and
+in a fresh clone of the public one. `test/evidence/` was regenerated by that run, so the captures in
+the repository now carry the rewritten session identifiers.
+
+The `onboard.txt` guard was checked directly rather than by hoping the suite would exercise it: the
+suites run keyless, so section J skips and never writes the file. Writing one by hand showed
+`git check-ignore` matching it and `git status` ignoring it.

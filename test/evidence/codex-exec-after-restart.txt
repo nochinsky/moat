@@ -1,6 +1,6 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c cat /opt/moat-marker; jq --version 2>&1 | head -1
 --- exit 0
 --- stdout ---
-persisted-at-1789995467
+persisted-at-1789998082
 jq-1.7.1
 --- stderr ---

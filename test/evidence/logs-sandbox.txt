@@ -44,31 +44,6 @@ Terminated
 Terminated
 [moat] injected credential expired; stopping the sandbox
 [moat] codex runtime ready (pid 1)
-[moat] the injected credential expires in 14400s; the box stops then
-Terminated
-[moat] injected credential expired; stopping the sandbox
-[moat] codex runtime ready (pid 1)
-[moat] the injected credential expires in 14400s; the box stops then
-[moat] codex runtime ready (pid 1)
-[moat] the injected credential expires in 14400s; the box stops then
-Terminated
-[moat] injected credential expired; stopping the sandbox
-[moat] codex runtime ready (pid 1)
-[moat] the injected credential expires in 6s; the box stops then
-[moat] injected credential expired; stopping the sandbox
-[moat] codex runtime ready (pid 1)
-[moat] the injected credential expires in 14400s; the box stops then
-Terminated
-[moat] injected credential expired; stopping the sandbox
-[moat] codex runtime ready (pid 1)
-[moat] the injected credential expires in 14400s; the box stops then
-Terminated
-[moat] injected credential expired; stopping the sandbox
-[moat] codex runtime ready (pid 1)
-[moat] the injected credential expires in 14400s; the box stops then
-Terminated
-[moat] injected credential expired; stopping the sandbox
-[moat] codex runtime ready (pid 1)
 [moat] the injected credential expires in 14399s; the box stops then
 Terminated
 [moat] injected credential expired; stopping the sandbox
@@ -80,5 +55,30 @@ Terminated
 [moat] injected credential expired; stopping the sandbox
 [moat] codex runtime ready (pid 1)
 [moat] the injected credential expires in 6s; the box stops then
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14400s; the box stops then
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 14399s; the box stops then
+Terminated
+[moat] injected credential expired; stopping the sandbox
+[moat] codex runtime ready (pid 1)
+[moat] the injected credential expires in 5s; the box stops then
 [moat] injected credential expired; stopping the sandbox
 

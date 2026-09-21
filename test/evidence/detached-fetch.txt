@@ -3,10 +3,10 @@
 --- stdout ---
 --- stderr ---
 → copy-out: git fetch /home/user/.moat/envs/8651a31c28f7/rootfs/work +refs/heads/keep:refs/moat/keep
-✓ fetched keep -> refs/moat/keep (57ea32fc4c8f)
-  2 commit(s) reachable, HEAD 09eb9828e0b5 -> 09eb9828e0b5
-    57ea32fc4c8f  work on a detached HEAD
-    09eb9828e0b5  base
+✓ fetched keep -> refs/moat/keep (d6201aedfe00)
+  2 commit(s) reachable, HEAD 17b123f232ab -> 17b123f232ab
+    d6201aedfe00  work on a detached HEAD
+    17b123f232ab  base
 
   the host working tree was recomputed and is byte-identical
   inspect with:  git log refs/moat/keep

@@ -7,14 +7,14 @@ egress: open, because the provider is on the host's loopback (http://127.0.0.1:5
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 39be036c543bb13e
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-12-59
+agent branch: moat-session-2026-09-21-13-42
 ✓ sandbox up, cold start 1.71s (image built)
 
   project    /home/user/moat-demo/leakscan
   env        /home/user/.moat/envs/345dfb73d559
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-21T16:59:10.614Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-21T17:42:46.152Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

@@ -3,7 +3,7 @@
 --- exit 0
 --- stdout ---
 /usr/sbin/nft
-curl: (28) Connection timed out after 6002 milliseconds
+curl: (28) Connection timed out after 6003 milliseconds
 code 000
 curl-exit=28
 --- stderr ---
