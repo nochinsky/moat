@@ -12,7 +12,7 @@ TAP version 13
 # Subtest: adds
 ok 1 - adds
   ---
-  duration_ms: 0.841086
+  duration_ms: 0.828286
   type: 'test'
   ...
 1..1
@@ -23,7 +23,7 @@ ok 1 - adds
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 77.752633
+# duration_ms 74.87201
 [moat] exit 0
 
   pass  npm test                 0.3s

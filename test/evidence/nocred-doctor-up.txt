@@ -5,8 +5,8 @@
 ✓ image provisioned in 1.46s (extract cached image 1.25s)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-21-08-39
-✓ sandbox up, cold start 1.83s (image built)
+agent branch: moat-session-2026-09-21-09-12
+✓ sandbox up, cold start 1.84s (image built)
 
   project    /home/user/moat-demo/nocred-doctor
   env        /home/user/.moat/envs/bc47e2d49e4f

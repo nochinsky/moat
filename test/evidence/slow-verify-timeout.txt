@@ -11,5 +11,5 @@ $ npm run test
 [moat] TIMED OUT after 1s
 [moat] exit 124
 
-  FAIL  npm test                 1.1s (timed out)
+  FAIL  npm test                 1.0s (timed out)
 
