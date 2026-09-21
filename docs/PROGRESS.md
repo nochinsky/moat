@@ -394,7 +394,7 @@ removed before this file existed". Measured with **no** `model_catalog_json` at 
 `model_reasoning_effort = "high"` in the config:
 
 ```
-model=some-other-model  effort=high  instructions=16979B  auth=Bearer probe…
+model=some-other-model  effort=high  instructions=16979u/17119B  auth=Bearer probe…
 ```
 
 The level reaches the wire. So the catalog is not what makes `--effort` work, and the comment
@@ -422,7 +422,7 @@ gone and `effort=high` still on the wire:
 
 ```
 minimal        exit=0 warning=no  model=some-other-model effort=high instructions=21261B sha=152dfaee…
-no-catalog     exit=0 warning=YES model=some-other-model effort=high instructions=16979B sha=3b08633f…
+no-catalog     exit=0 warning=YES model=some-other-model effort=high instructions=16979u/17119B sha=3b08633f…
 ```
 
 So the 38KB `bundle/deepseek-models.json` is not load-bearing as a *file*: the same effect comes
@@ -433,7 +433,9 @@ hand-copied blob.
 
 **The one measurement still outstanding**, and it is the gate's second half: the minimal catalog
 above sent `instructions` of **21261 bytes / sha `152dfaee…`** where the current pin sends
-**16979 bytes / sha `3b08633f…`**. The difference is in the derivation, not the binary — the
+**16979 / sha `3b08633f…`** (since measured: 16979 UTF-16 code units, **17119 UTF-8 bytes** —
+see the Phase 4 session at the end, where the unit was found to have been mislabelled as bytes).
+The difference is in the derivation, not the binary — the
 17KB figure is the prompt from a request the language server actually made, while the 21KB one
 came out of `debug models` for a model with no metadata. Before Phase 1 accepts any new pin, it
 has to do the round trip: build the minimal catalog from the request-captured prompt and confirm
@@ -485,8 +487,8 @@ rendered config".
 measurement first. The round trip came back exact:
 
 ```
-no-catalog   effort=high  instructions= 16979B sha256=3b08633fa672906666659d76
-with-catalog effort=high  instructions= 16979B sha256=3b08633fa672906666659d76   advisory: gone
+no-catalog   effort=high  instructions= 16979u/17119B sha256=3b08633fa672906666659d76
+with-catalog effort=high  instructions= 16979u/17119B sha256=3b08633fa672906666659d76   advisory: gone
 ```
 
 So `base_instructions` still cannot be dropped (the binary exits 1 with neither it nor
@@ -1122,6 +1124,37 @@ Two things it drags in that moat does not have today:
 - **New surface with no moat equivalent**: `session/{list,resume,fork,delete}`, subagent
   sessions, MCP over HTTP, terminal passthrough (`terminal/create`, `fs/read_text_file`) —
   all of which a client may simply not implement, but each is a decision.
+
+### A loose end found while tidying: the prompt pin's unit was mislabelled
+
+Not part of the phase, and found by checking a claim instead of trusting it.
+
+The catalog's prompt pin was recorded everywhere as `instructions=16979B` — "16979 **bytes**".
+The binding value, the sha256, is correct, and `test/unit/model-catalog.test.ts` asserted the
+length with the message "byte for byte" against `String.length`, which counts UTF-16 **code
+units**. The built-in Codex prompt contains 70 non-ASCII characters (typographic quotes), so the
+two differ by exactly 140.
+
+Settled by measurement rather than by reading: a `moat run` against the recording stub, then
+measuring the `instructions` field the provider actually received.
+
+```
+[1] /v1/responses
+      utf-16 code units : 16979
+      utf-8 bytes       : 17119
+      sha256 (of bytes) : 3b08633fa672906666659d764864dfda1d7af5b5111ea5817c8f46e5de4e1a8d
+```
+
+So the pin never drifted — the wire carries the same bytes as the source constant, and the
+digest proves it. What was wrong was the *label*, in four capture lines across two documents and
+in the test's assertion message. All corrected, and the test now asserts both counts explicitly,
+so a rewrite that kept one length and changed the other would fail rather than pass quietly.
+
+This is the "a check that cannot fail is not a check" rule applied to a check that *was* failing
+to check what its message claimed. It is the same class of error as the review surface's
+`grep conflict` and the CRLF regex: the assertion ran, passed, and described something other
+than what it tested. Worth recording because the digest made the weaker assertion look
+sufficient, and it was — right up until someone edits the prompt's punctuation.
 
 ### Recommendation
 

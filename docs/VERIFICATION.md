@@ -640,8 +640,8 @@ removes Codex's "Model metadata for `X` not found. Defaulting to fallback metada
 still sends `reasoning.effort`:
 
 ```
-no-catalog   effort=high  instructions= 16979B sha256=3b08633fa672906666659d76  advisory: present
-with-catalog effort=high  instructions= 16979B sha256=3b08633fa672906666659d76  advisory: gone
+no-catalog   effort=high  instructions= 16979u/17119B sha256=3b08633fa672906666659d76  advisory: present
+with-catalog effort=high  instructions= 16979u/17119B sha256=3b08633fa672906666659d76  advisory: gone
 ```
 
 `base_instructions` is the prompt pin, and it is **maintained rather than dropped**: the catalog
@@ -2183,5 +2183,6 @@ Listed so that absence is not mistaken for success.
 | Whether the Codex loop is better than the old runtime's on long work | cost per turn is measured (`docs/HISTORY.md`), but the old runtime is deleted, so that comparison is history rather than a live A/B, and "which harness does long autonomous work better" would need a task suite and many runs. |
 | Whether a partially accepted subset of a change is coherent | the review is per file and per hunk, with no cross-file reasoning. Taking hunk 2 and rejecting the hunk in another file that makes it compile is a state `moat apply` will write; nothing verifies that an accepted subset builds, imports, or runs, and no check is run afterwards (§AN). |
 | A merge's hunks as an exhaustive description of the merge | a `both` path is presented as the hunks between your file and the merged bytes, so the review shows what would change in your copy. A conflict between the *two sides'* intentions that the three-way merge resolved silently is not surfaced as such: it arrives as an ordinary hunk, and the review does not say that the merge chose one side. |
+| Harness interchangeability, and ACP | **Measured but deliberately not adopted.** The agent-harness seam is written down in `docs/SEAM.md`. A Phase 4 spike drove `@agentclientprotocol/codex-acp` 1.12.0 (digest recomputed and matched, so it pins like everything else in `lib/pins.ts`) against moat's own pinned Codex binary inside a sandbox, over stdio with no port: `initialize`, `authenticate`, `session/new`, a full turn to `end_turn`. Two facts matter for anyone who takes it further and neither is a claim that it is adopted: the adapter is a Node program and the default image has **no `node`** (`node` is a profile, not `BASE_PACKAGES`), and it overrides `approval_policy` per turn from its own mode table, so moat's rendered `approval_policy = "never"` would stop being what decides whether the box asks. The one question that decides whether it *fits* — whether a client can answer `session/request_permission` under moat's configuration — **was not settled**: the adapter never asked in any of its three modes, so "moat keeps its never-ask stance at the protocol level" is unverified. The recommendation in `docs/PROGRESS.md` is not to migrate in this program. |
 | Anything about a real model other than what the live suite ran | `bash test/e2e-live.sh` is the only evidence against the hosted model. Everything else runs against the deterministic stub, which cannot show model quality, refusals, or provider-side behaviour. |
 

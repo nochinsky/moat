@@ -46,7 +46,12 @@ test("the catalog carries Codex's own prompt, pinned by digest", () => {
   // binary's prompt while moat keeps sending the old one.
   const sha = crypto.createHash("sha256").update(CODEX_BUILTIN_PROMPT).digest("hex")
   assert.equal(sha, CATALOG_INSTRUCTIONS_SHA256)
-  assert.equal(CODEX_BUILTIN_PROMPT.length, 16979, "the captured prompt's length, byte for byte")
+  // Both counts, because they differ and the difference is not obvious: the prompt carries 70
+  // typographic quotes, so it is 16979 UTF-16 code units and 17119 UTF-8 bytes. The digest above
+  // is the binding pin (a request through the stub carries exactly these bytes — measured); these
+  // two are what notices a rewrite that happens to keep the length in one unit but not the other.
+  assert.equal(CODEX_BUILTIN_PROMPT.length, 16979, "the prompt's UTF-16 length, in code units")
+  assert.equal(Buffer.byteLength(CODEX_BUILTIN_PROMPT, "utf8"), 17119, "the prompt's UTF-8 length, in bytes")
   // It is the binary's text, not a moat-written one: this is the opening of Codex's built-in
   // prompt, and a substitution would change it.
   assert.match(CODEX_BUILTIN_PROMPT, /^You are a coding agent running in the Codex CLI/)
