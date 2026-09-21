@@ -98,6 +98,22 @@ resolving proxy moat would own, rather than an IP snapshot), provider-side crede
 cost ceilings, byte paths for filenames that are not valid UTF-8, tool-set curation, and the v1
 microVM. `VERIFICATION.md`'s closing table is the authoritative list of what remains unverified.
 
+## Repository surface
+
+`SECURITY.md` says how to report a vulnerability privately and, more usefully, lists what is *not*
+one: the agent reading your key, the egress policy being a policy rather than a jail, namespaces
+rather than a VM, and the bounds on the copy-out leak scan. Each of those is a documented tradeoff
+in `SPEC.md` §1.2 or the Not-verified table, so a report about one is a documentation question
+rather than a security one.
+
+`CONTRIBUTING.md` holds what `AGENTS.md` does not: setup, which suite covers what, and what gets a
+pull request sent back. Its hardest rule is the one the project keeps relearning — a change arrives
+with a test that fails without it. Three guards in this repository's history looked like coverage
+and were not: an assertion satisfied by unrelated warning text, a check of a guard the CLI filters
+before it can be reached, and a regex that matched nothing because the file had CRLF endings.
+
+Both ship in the npm tarball, and the README points at them.
+
 ## Two things worth knowing before you touch anything
 
 The published history was rewritten once, on the owner's instruction, to remove session passwords
