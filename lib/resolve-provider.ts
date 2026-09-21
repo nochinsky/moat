@@ -30,6 +30,9 @@ export type ResolvedProvider = {
   native: boolean
   /** The environment variable this provider's key arrives in, when one is configured. */
   envVar?: string
+  /** The provider's own reasoning ladder, when it declares one. See `ModelFacts`. */
+  effortLevels?: string[]
+  defaultEffort?: string
   modelID: string
 }
 
@@ -90,6 +93,8 @@ export function resolveProvider(p: Parsed, state?: ProviderState | null): Resolv
     wireApi: spec.wireApi ?? "responses",
     native,
     envVar: spec.envVar,
+    effortLevels: spec.effortLevels,
+    defaultEffort: spec.defaultEffort,
     modelID: modelFlag ?? state?.model?.split("/").pop() ?? spec.defaultModel ?? DEEPSEEK.defaultModel,
   })
 
@@ -128,7 +133,9 @@ export function resolveProvider(p: Parsed, state?: ProviderState | null): Resolv
       upstream: undefined,
       wireApi: "responses",
       native: false,
-      envVar: undefined,
+      envVar: resolveProviderSpec(recordedProvider)?.envVar,
+      effortLevels: resolveProviderSpec(recordedProvider)?.effortLevels,
+      defaultEffort: resolveProviderSpec(recordedProvider)?.defaultEffort,
       modelID: modelFlag ?? state?.model?.split("/").pop() ?? DEEPSEEK.defaultModel,
     }
   }

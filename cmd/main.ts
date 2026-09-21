@@ -21,6 +21,15 @@ import {
 import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, checkBaseUrl, isDeepSeekHost, type ProviderSpec } from "../lib/provider.ts"
 import { resolveProvider, type ResolvedProvider } from "../lib/resolve-provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
+import {
+  catalogEntryFromFacts,
+  checkEffort,
+  defaultEffortLevels,
+  describeModelFacts,
+  renderCatalogFromFacts,
+  resolveModelFacts,
+  type ModelFacts,
+} from "../lib/model-facts.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES, PROFILES, FULL_PROFILE_ID } from "../sandbox/profiles.ts"
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
 import { runChecks, summarise } from "../sandbox/checks.ts"
@@ -74,13 +83,11 @@ import {
 } from "../sandbox/launcher.ts"
 import { renderInstructions } from "../bundle/instructions.ts"
 import {
-  catalogAllEffortLevels,
   describeCodexTurn,
   installCodexFiles,
   parseCodexEvents,
   renderCodexConfig,
 } from "../bundle/codex.ts"
-import { renderModelCatalog } from "../bundle/model-catalog.ts"
 import {
   assertProviderID,
   listProviderSpecs,
@@ -368,61 +375,28 @@ function ms(value: number): string {
 // Provider resolution lives in lib/resolve-provider.ts, where it can be unit tested
 // without a CLI: it is the decision that remembered too little (an environment's own
 // endpoint) and silently reverted it on the next boot.
-type ResolvedModel = {
-  providerID: string
-  modelID: string
-  model: string
-  native: boolean
-  /** Every model id the provider defines, for declaring per-model config. */
-  modelIDs: string[]
-  meta: { context?: number; output?: number; toolCall?: boolean; reasoning?: boolean; attachment?: boolean } | undefined
-}
-
-async function resolveModel(provider: ResolvedProvider, catalog: Catalog | null): Promise<ResolvedModel> {
+//
+// Model *facts* resolution lives in lib/model-facts.ts, and it is one record because the same
+// model used to be described twice by two modules that did not agree: models.dev knew the
+// default model's name, and the catalog handed to Codex carried the raw id instead, because the
+// caller had nothing else to pass it. The rendered config, the catalog, the report and the
+// `--effort` check all read this one record now.
+async function resolveModel(provider: ResolvedProvider, catalog: Catalog | null): Promise<ModelFacts> {
   const modelID = provider.modelID
   const known = catalogModel(catalog, provider.id, modelID)
-
-  // A native model id that the catalog does not describe would leave opencode
-  // unable to resolve it, so say so and describe it here instead.
-  const catalogProvider = catalog?.get(provider.id)
-  if (catalog && provider.native && catalogProvider && !known) {
-    log.warn(
-      `${provider.id} does not define "${modelID}" in the models.dev catalog; declaring it as a custom ` +
-        `model instead. Known ids: ${catalogProvider.models.map((m) => m.id).join(", ")}   (moat models)`,
-    )
-  }
-  if (known && known.toolCall === false) {
-    log.warn(`${provider.id}/${modelID} does not advertise tool calling; the agent will not be able to act.`)
-  }
-
+  // A provider models.dev describes, but not this model: moat stops claiming the provider is
+  // "native" for it, which is what makes the boot treat it as a declared custom model rather
+  // than silently inheriting limits that belong to a different one.
   const useNative = provider.native && (known !== null || !catalog)
-  const providerID = useNative ? provider.id : CUSTOM_ENDPOINT.id
-  return {
-    providerID,
+  const facts = resolveModelFacts({
+    catalog,
+    providerID: useNative ? provider.id : CUSTOM_ENDPOINT.id,
     modelID,
-    model: `${providerID}/${modelID}`,
-    native: useNative,
-    /**
-     * Every model id this provider defines, so the bundle can declare its
-     * variants for all of them and not just the one being booted. `/model`
-     * switches between them at runtime, and a variant declared only for the
-     * boot model would silently disappear after a switch.
-     *
-     * The chosen model is always included: for a custom endpoint there is no
-     * catalog entry to enumerate, and for a native model the catalog may not
-     * know the id the user asked for.
-     */
-    modelIDs: [...new Set([modelID, ...(catalogProvider?.models.map((m) => m.id) ?? [])])],
-    meta: known
-      ? {
-          context: known.context,
-          output: known.output,
-          toolCall: known.toolCall,
-          reasoning: known.reasoning,
-          attachment: known.attachment,
-        }
-      : undefined,
-  }
+    providerIsNative: useNative,
+    effortLevels: provider.effortLevels,
+    defaultEffort: provider.defaultEffort,
+  })
+  return facts
 }
 
 /** The branch the agent works on, so the user's own branch is untouched even inside the box. */
@@ -489,12 +463,23 @@ async function cmdUp(argv: string[]): Promise<number> {
   // --timeout is seconds everywhere. Validating it here means a typo fails before
   // provisioning rather than after the boot.
   optionalPositiveIntFlag(p, "timeout")
-  // --effort is validated against the levels the vendored catalog declares (low/high/max for
-  // DeepSeek), before provisioning: a level Codex would silently drop is the bug class this
-  // project keeps finding, and the catalog is the only honest source for the list.
+  // --effort is validated before provisioning, because a level Codex would silently drop is the
+  // bug class this project keeps finding. The list is the *provider's* when the configured
+  // provider declares one, and moat's default ladder otherwise — models.dev describes whether a
+  // model reasons, not which levels it implements, so the ladder is the one fact neither catalog
+  // can supply. Resolving the provider here (rather than a few hundred lines later, where it is
+  // resolved anyway) is what lets the check name the provider's own levels.
   const effortFlag = flag<string>(p, "effort")
-  if (effortFlag !== undefined && !catalogAllEffortLevels().includes(effortFlag)) {
-    log.fail(`unknown --effort "${effortFlag}". DeepSeek catalog declares: ${catalogAllEffortLevels().join(", ")}`)
+  if (effortFlag !== undefined) {
+    let ladder = defaultEffortLevels()
+    try {
+      const named = flag<string>(p, "provider") ?? state?.provider
+      if (named) ladder = resolveProviderSpec(named)?.effortLevels ?? ladder
+    } catch {
+      /* an unreadable store falls back to the default ladder; the boot path reports it */
+    }
+    const problem = checkEffort(effortFlag, ladder)
+    if (problem) log.fail(problem)
   }
   // --credential-ttl is parsed with the same function that will parse it at mint time, for the
   // same reason: measured before this, a typo ran the whole copy-in and then failed.
@@ -887,22 +872,19 @@ ${command}
   // --- provider, model, catalog ---------------------------------------------
   const catalog = flag<boolean>(p, "refresh") ? await loadCatalog({ refresh: true }) : await loadCatalog()
   const baseUrl = provider.baseUrl
-  const resolvedModel = await resolveModel(provider, catalog)
-  report.provider = { id: resolvedModel.providerID, native: resolvedModel.native, label: provider.label }
+  // One resolution, one record: the rendered config, the catalog Codex parses, this report and
+  // the `--effort` check below all read these facts, so nothing describes the model differently
+  // from anything else.
+  const facts = await resolveModel(provider, catalog)
+  report.provider = { id: facts.providerID, native: facts.native, label: provider.label }
   report.model = {
-    id: resolvedModel.model,
-    context: resolvedModel.meta?.context,
-    output: resolvedModel.meta?.output,
-    toolCall: resolvedModel.meta?.toolCall,
+    id: facts.label,
+    name: facts.displayName,
+    context: facts.contextWindow,
+    output: facts.maxOutputTokens,
+    toolCall: facts.catalog?.toolCall,
   }
-  if (resolvedModel.meta?.context) {
-    log.info(
-      `model: ${resolvedModel.model} (context ${formatTokens(resolvedModel.meta.context)}` +
-        `${resolvedModel.meta.output ? `, out ${formatTokens(resolvedModel.meta.output)}` : ""})`,
-    )
-  } else {
-    log.info(`model: ${resolvedModel.model}`)
-  }
+  log.info(describeModelFacts(facts))
 
   // --- credential -----------------------------------------------------------
   const ttlText =
@@ -939,7 +921,7 @@ ${command}
       // is indexed by, and what `onboard` writes.
       provider: provider.id,
       baseUrl,
-      model: resolvedModel.modelID,
+      model: facts.id,
       ttlSeconds,
       // The key goes into the box under the name this provider's own client expects: the
       // variable the user configured, or the default provider's name, or (for an endpoint that
@@ -955,7 +937,7 @@ ${command}
         credential = mint({
           provider: provider.id,
           baseUrl,
-          model: resolvedModel.modelID,
+          model: facts.id,
           ttlSeconds,
           targetEnvVars: credentialVarNames(provider),
         })
@@ -1003,7 +985,7 @@ ${command}
   // how the brief came to describe a boot that was not the one being made.
   const briefInput = {
     provider: provider.label,
-    model: resolvedModel.model,
+    model: facts.label,
     branch,
     profiles: resolvedProfiles.profiles,
     installedPackages: resolvedProfiles.profiles.length > 0 ? resolvedProfiles.packages : BASE_PACKAGES,
@@ -1042,7 +1024,7 @@ ${command}
   // any other endpoint was described to itself and to the runtime as DeepSeek.
   installCodexFiles(paths.rootfs, {
     config: renderCodexConfig({
-      model: resolvedModel.modelID,
+      model: facts.id,
       providerID: provider.codexProviderID,
       providerLabel: provider.label,
       baseURL: baseUrl,
@@ -1052,17 +1034,14 @@ ${command}
       // rather than pointing Codex at a name nothing sets.
       envKey: provider.envVar ?? (credential ? "MOAT_INJECTED_CREDENTIAL" : undefined),
       reasoningEffort: effortFlag,
-      contextWindow: resolvedModel.meta?.context,
-      maxOutputTokens: resolvedModel.meta?.output,
+      contextWindow: facts.contextWindow,
+      maxOutputTokens: facts.maxOutputTokens,
     }),
-    // The catalog describes the model this boot configured, so the box never advertises a
-    // context window or a reasoning ladder belonging to a different one.
-    catalog: renderModelCatalog({
-      model: resolvedModel.modelID,
-      displayName: resolvedModel.modelID,
-      contextWindow: resolvedModel.meta?.context,
-      maxOutputTokens: resolvedModel.meta?.output,
-    }),
+    // The catalog describes the model this boot configured, from the same facts the config
+    // above was rendered from — so the box never advertises a name, a context window or a
+    // reasoning ladder belonging to a different model. `displayName` used to be the raw id
+    // here while models.dev knew the real one: two descriptions of one model in one boot.
+    catalog: renderCatalogFromFacts(facts),
     // Codex reads a global brief from its home directory (default ~/.codex, or CODEX_HOME if
     // that is set). Measured through the recording proxy: the content arrives in the request
     // body wrapped as AGENTS.md instructions, not in the top-level instructions field.
@@ -1074,7 +1053,7 @@ ${command}
     // URL and the model whether or not a credential was injected. They used to arrive
     // only with the credential, so a --no-credential boot had a provider with no URL
     // at all and every model call died inside the box with ERR_INVALID_URL, silently.
-    ...sandboxProviderEnv({ baseUrl, model: resolvedModel.model, modelId: resolvedModel.modelID }),
+    ...sandboxProviderEnv({ baseUrl, model: facts.label, modelId: facts.id }),
     ...(credential ? toSandboxEnv(credential) : {}),
   }
   // The escape hatch is spread first and the managed values last, and it may not
@@ -1134,7 +1113,7 @@ ${command}
     egressAllow,
     slirpPid: sandbox.slirp?.pid ?? null,
     slirpStart: sandbox.slirp?.startTime ?? null,
-    model: resolvedModel.model,
+    model: facts.label,
     providerBaseUrl: baseUrl,
     provider: provider.id,
     branch,
@@ -2102,26 +2081,43 @@ exec /bin/bash -l
 /** `moat models`, what DeepSeek actually offers, straight from the catalog. */
 async function cmdModels(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
-  // One provider by design (SPEC section 1, invariant 8). This used to ignore the
-  // argument entirely: `moat models bogus` listed DeepSeek and exited 0, which
-  // reads as "bogus is a provider moat knows".
-  const requested = p._[0]
-  if (requested !== undefined && requested.toLowerCase() !== DEEPSEEK.id) {
-    log.fail(`moat has one provider (${DEEPSEEK.id}); there is no "${requested}" to list`)
+  // `moat models [provider]`. It used to refuse any argument but DeepSeek — "moat has one
+  // provider" — which was true before Phase 1 and is a wrong answer now that providers are
+  // configured: `moat models acme` said there was no such provider while `moat up --provider acme`
+  // was booting it. The argument names a configured provider, and an unknown one is refused with
+  // the same list the provider command prints.
+  const requested = p._[0]?.trim()
+  let spec: ProviderSpec | undefined
+  try {
+    spec = resolveProviderSpec(requested ?? DEEPSEEK.id)
+  } catch (error) {
+    log.fail((error as Error).message)
   }
+  if (!spec) {
+    const known = listProviderSpecs().map((entry) => entry.id)
+    log.fail(`no configured provider "${requested}". Known: ${known.join(", ")}   (moat provider)`)
+  }
+  const provider = spec!
   const catalog = await loadCatalog({ refresh: flag<boolean>(p, "refresh") ?? false })
 
-  const entry = catalog?.get(DEEPSEEK.id)
+  const entry = catalog?.get(provider.id)
   const models = entry
     ? [...entry.models].sort((a, b) => (b.context ?? 0) - (a.context ?? 0))
-    : FALLBACK_MODELS.map((id) => ({ id, toolCall: true, context: undefined, output: undefined }))
+    : provider.defaultModel
+      ? [{ id: provider.defaultModel, toolCall: true, context: undefined, output: undefined }]
+      : FALLBACK_MODELS.map((id) => ({ id, toolCall: true, context: undefined, output: undefined }))
 
   if (flag<boolean>(p, "json")) {
     log.emit({
-      provider: DEEPSEEK.id,
-      endpoint: entry?.api ?? DEEPSEEK.baseUrl,
-      env: DEEPSEEK.envVar,
-      default: DEEPSEEK.defaultModel,
+      provider: provider.id,
+      label: provider.label,
+      endpoint: entry?.api ?? provider.baseUrl ?? null,
+      env: provider.envVar ?? null,
+      default: provider.defaultModel ?? DEEPSEEK.defaultModel,
+      // models.dev is the only source for a *list* of models: it is the dataset that enumerates
+      // what a provider defines. When it is unavailable the answer is the provider's own default
+      // and nothing invented, which the source field says rather than leaving the reader to guess
+      // why the list is one entry long.
       source: entry ? "models.dev catalog" : "built-in fallback (catalog unavailable)",
       models,
     })
@@ -2129,11 +2125,13 @@ async function cmdModels(argv: string[]): Promise<number> {
   }
 
   log.info("")
-  log.info(`${log.bold(DEEPSEEK.label)}  env=${DEEPSEEK.envVar}  ${log.dim(entry?.api ?? DEEPSEEK.baseUrl)}`)
+  log.info(
+    `${log.bold(provider.label)}  ${provider.envVar ? `env=${provider.envVar}  ` : ""}${log.dim(entry?.api ?? provider.baseUrl ?? "no endpoint configured")}`,
+  )
   if (!entry) log.info(`  ${log.yellow("catalog unavailable, showing the built-in list")}`)
   log.info(`  ${"model".padEnd(30)} ${"context".padStart(7)} ${"output".padStart(7)}  tools`)
   for (const model of models) {
-    const isDefault = model.id === DEEPSEEK.defaultModel ? log.green(" *") : "  "
+    const isDefault = model.id === (provider.defaultModel ?? DEEPSEEK.defaultModel) ? log.green(" *") : "  "
     log.info(
       `${isDefault}${model.id.padEnd(28)} ${formatTokens(model.context).padStart(7)} ` +
         `${formatTokens(model.output).padStart(7)}  ${model.toolCall ? "yes" : log.yellow("NO")}`,

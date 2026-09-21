@@ -508,6 +508,23 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   AK asserts the metadata notice's absence, the level on the wire, and no `web_search` from
   the stub's record, and `test/e2e-provider.sh` asserts the same for a non-DeepSeek
   provider.
+* **One model, described once.** The model a boot is configured to use is resolved into a single
+  `ModelFacts` record (`lib/model-facts.ts`), and every consumer reads that record: the rendered
+  TOML, the catalog Codex parses, `--effort` validation, the boot log and the task report. It
+  used to be described twice by two modules that disagreed — models.dev knew the default model's
+  name (`DeepSeek V4.1 Flash`) while the catalog handed to Codex carried the raw id
+  (`deepseek-flash`), so one boot used two names for one model. **Do not build a catalog entry or
+  read a context window from anywhere but the facts record**: a second path is a second
+  description, and `test/unit/model-facts.test.ts` covers the three branches a model arrives
+  through (described by models.dev, named by a provider but not described, a `--base-url` model
+  nobody has published) plus the case where the catalog could not be fetched at all. The
+  division of labour is the thing to keep: **models.dev** is the host's broad picture (which
+  providers exist, which ids they define, context/output/name/capabilities) and is fetched and
+  optional; **moat's own ladder** is the one fact neither catalog can supply (models.dev says
+  whether a model reasons and nothing finer), per provider when the provider declares one; and
+  **the model id** is always a fact. An unknown model is not an error — that is the `--base-url`
+  case the whole suite runs on — so it boots with the id as its label and no declared limits, and
+  says so.
 * **A missing runtime binary is repaired, never re-provisioned.** The agent is root in its
   own rootfs, so it can `rm /usr/local/bin/codex`, and an environment made by an older
   moat never had it. The next boot copies it into the live rootfs through

@@ -531,7 +531,7 @@ asserted the credential was visible in the box's environment from `moat exec`; t
 about a different command's boot, it is not this gate, and it produced a failure about a box that
 had done nothing wrong.
 
-**What is left, and is not this phase.** `lib/catalog.ts` (models.dev) is still there. It is not
+**Reconciled after the gate, on request.** `lib/catalog.ts` (models.dev) was still there. It is not
 the lock — it is generic (any provider's metadata, fetched) and it is what gives `moat models`,
 the default context windows, and the "this provider does not define that model" warning. Deleting
 it would remove behaviour the phase does not ask to remove, and `moat up --base-url` against an
@@ -551,3 +551,88 @@ thing to do in the same commit as the unlock.
   is reported rather than done. The password belongs to a runtime that has been removed and
   a process that no longer exists, so the exposure is historical rather than live — but the
   decision is the owner's.
+
+
+---
+
+## Session 2, continued — the two catalogs reconciled
+
+Requested after the Phase 1 gate: reconcile `lib/catalog.ts` and `bundle/model-catalog.ts`
+before moving to Phase 2.
+
+### The defect, measured before anything changed
+
+Two files described the same model, and for the default model they disagreed:
+
+```
+slug / id        agree     rendered=deepseek-flash      models.dev=deepseek-flash
+display name     DISAGREE  rendered=deepseek-flash      models.dev=DeepSeek V4.1 Flash
+context window   agree     rendered=1000000             models.dev=1000000
+max output       agree     rendered=384000              models.dev=384000
+```
+
+The catalog handed to Codex carried the raw model id as its `display_name` where models.dev
+knew the human name — because nothing joined the two, so the caller passed the only thing it
+had. One boot, two names for one model: `moat up` printed `model: deepseek/deepseek-flash`
+while the metadata Codex read said the model was called `deepseek-flash` and the host's own
+dataset said `DeepSeek V4.1 Flash`. The context and output happened to agree, which is exactly
+why this needed measuring rather than reading: a divergence in the fields that agreed would
+have been invisible until it was not.
+
+### What reconciliation is here, and what it is not
+
+Not "delete one of the files". They answer different questions, and the honest version of
+reconciling is to say which question each answers and to make them unable to disagree:
+
+| fact | source | why not the other |
+| --- | --- | --- |
+| which providers and model ids exist | models.dev (fetched, cached, optional) | a vendor's own file describes one vendor |
+| a model's name, context window, output cap, capabilities | models.dev | it is the dataset the ecosystem uses and covers every provider |
+| the reasoning levels a model implements | moat's own ladder, per provider when one declares it | models.dev carries `reasoning: true/false` and nothing finer |
+| the model id | always known | it is what the user asked for |
+
+So the fix is one record, `ModelFacts` (`lib/model-facts.ts`), resolved once before the boot,
+that every consumer reads: the rendered TOML (`model_context_window`,
+`model_max_output_tokens`), the `model_catalog_json` file, the boot log, the task report and
+the `--effort` validation. A second path that builds a catalog entry or reads a context window
+is now a second description of the model, and `test/unit/model-facts.test.ts` says so.
+
+Three things fell out of doing it properly rather than patching the symptom:
+
+1. **`--effort` is validated against the model's own ladder.** It was checked against a global
+   list baked into the bundle, so a configured provider that implements `none`/`medium` would
+   have been offered `max` and had it silently dropped by Codex. A provider can now declare
+   `effortLevels` in `~/.moat/providers.json`, and the refusal names the levels *that model*
+   declares and says why the ladder is moat's own.
+2. **`moat models` follows the provider.** It refused any argument but `deepseek` — "moat has
+   one provider" — which was true before Phase 1 and is a wrong answer after it: it said there
+   was no provider `acme` while `moat up --provider acme` was booting it. It now lists a
+   configured provider's models, and an unknown one is refused with the same list
+   `moat provider` prints.
+3. **A dead field went.** `ResolvedModel.modelIDs` was computed carefully and read by nothing.
+   Its doc comment described a `/model` switcher that the comment above it already recorded as
+   gone. Deleted rather than carried.
+
+### Verified
+
+- `npm run test:unit`: **224 pass, 0 fail** (six new in `test/unit/model-facts.test.ts`).
+- Both sabotages checked: making the display name the id again fails
+  "a model models.dev describes is described by its own name, not its id"; ignoring a
+  provider's declared ladder fails "a provider's own reasoning ladder wins over moat's
+  default".
+- `bash test/e2e-provider.sh` on the reconciled tree: `checks passed: 9, failed: 0`.
+- Measured after, for two models: `deepseek-v4-pro` renders `display_name="DeepSeek V4 Pro"`
+  with context 1000000 and `low/high/max`; `mock-model` (the `--base-url` case every keyless
+  suite uses) renders `display_name="mock-model"` with **no declared limits** rather than
+  invented ones.
+- `moat models` on the default provider, on a configured one, and on an unknown one, all read
+  back correctly.
+
+### Recorded, not fixed
+
+- The reasoning ladder is still moat's, not the model's. models.dev does not describe levels,
+  so nothing better exists to read; the provider can now declare one, which is the honest
+  extent of it. Written into SPEC §6b.1 as the division of labour rather than left implied.
+- `lib/catalog.ts` is still the only source for a *list* of models. That is the right place
+  for it — enumerating what a provider defines is a dataset question — and it is now consumed
+  through the facts record rather than beside it.

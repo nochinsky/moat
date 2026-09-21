@@ -65,6 +65,16 @@ export type ProviderSpec = {
   wireApi?: "responses" | "chat"
   /** The model to use when the user names none. */
   defaultModel?: string
+  /**
+   * The reasoning levels this provider's models implement, when they differ from moat's default.
+   *
+   * models.dev describes *whether* a model reasons and nothing finer, so the ladder is the one
+   * fact neither catalog can supply. A provider that implements `none`/`medium` declares it here
+   * rather than being offered `max` and having Codex drop it.
+   */
+  effortLevels?: string[]
+  /** The level to use when the user passes no `--effort`. */
+  defaultEffort?: string
   /** A pre-validated `[model_providers.<id>]` key, when the id itself is not one. */
   codexProviderID?: string
 }

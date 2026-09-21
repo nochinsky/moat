@@ -30,6 +30,10 @@ export type StoredProvider = {
   envVar?: string
   wireApi?: "responses" | "chat"
   defaultModel?: string
+  /** The reasoning levels this provider's models implement, when they are not moat's default. */
+  effortLevels?: string[]
+  /** The level to use when the user passes no `--effort`. */
+  defaultEffort?: string
 }
 
 export type ProviderStore = Record<string, StoredProvider>
@@ -83,6 +87,9 @@ export function validateStoredProvider(id: string, entry: unknown): StoredProvid
       return null
     }
   }
+  const effortLevels = Array.isArray(record.effortLevels)
+    ? (record.effortLevels as unknown[]).filter((level): level is string => typeof level === "string" && level.length > 0)
+    : undefined
   return {
     id,
     label: str("label") ?? id,
@@ -90,6 +97,8 @@ export function validateStoredProvider(id: string, entry: unknown): StoredProvid
     envVar,
     wireApi,
     defaultModel: str("defaultModel"),
+    ...(effortLevels && effortLevels.length > 0 ? { effortLevels } : {}),
+    ...(str("defaultEffort") ? { defaultEffort: str("defaultEffort") } : {}),
   }
 }
 
@@ -127,6 +136,8 @@ export function resolveProviderSpec(id: string, store: ProviderStore = readProvi
     envVar: stored.envVar,
     wireApi: stored.wireApi,
     defaultModel: stored.defaultModel,
+    effortLevels: stored.effortLevels,
+    defaultEffort: stored.defaultEffort,
   }
 }
 

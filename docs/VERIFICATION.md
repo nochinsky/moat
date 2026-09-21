@@ -651,6 +651,49 @@ constant (`bundle/codex-prompt.ts`) with the refresh recipe beside it. A Codex v
 move that prompt, so the pin has to move in the same commit; `test/unit/model-catalog.test.ts`
 fails if the constant and the digest disagree.
 
+### The model is described once, and the two sources agree
+
+Two files described the same model and disagreed, which was measurable rather than
+theoretical. For the default model, before the reconciliation:
+
+```
+slug / id        agree     rendered=deepseek-flash      models.dev=deepseek-flash
+display name     DISAGREE  rendered=deepseek-flash      models.dev=DeepSeek V4.1 Flash
+context window   agree     rendered=1000000             models.dev=1000000
+max output       agree     rendered=384000              models.dev=384000
+```
+
+The rendered catalog — the file Codex parses for the model's metadata — carried the raw id
+where models.dev knew the human name, because nothing resolved the two into one answer.
+There is now one record (`lib/model-facts.ts`) and every consumer reads it, so the same
+model cannot be described differently by the config, the catalog, the boot log, the task
+report and `--effort` validation. Measured after:
+
+```
+deepseek/deepseek-v4-pro  display_name="DeepSeek V4 Pro"  context=1000000  levels=low/high/max
+moat/mock-model           display_name="mock-model"       context=(none)    levels=low/high/max
+```
+
+The second line is the `--base-url` case, which is how every keyless suite in this
+repository runs: a model nobody has published metadata for boots with its own id as its
+label and **no declared limits**, rather than with invented ones or with a failure.
+
+The division of labour is deliberate and worth keeping visible:
+
+| fact | source | why not the other |
+| --- | --- | --- |
+| which providers and model ids exist | models.dev (fetched, cached, optional) | a vendor's own file describes one vendor |
+| a model's name, context window, output cap, capabilities | models.dev | it is the dataset the ecosystem uses, and it covers every provider |
+| the reasoning levels a model implements | moat's own ladder, per provider when one declares it | models.dev carries `reasoning: true/false` and nothing finer |
+| the model id | always known | it is what the user asked for |
+
+`test/unit/model-facts.test.ts` covers the three branches a model arrives through
+(described by models.dev, named by a provider but not described, a `--base-url` model nobody
+has published) and the case where the catalog could not be fetched at all — `loadCatalog`
+returns null offline, and the boot must proceed, because a boot that refused there would
+make moat unusable on a plane. Both sabotages were checked: making the display name the id
+again fails the first test, and ignoring a provider's declared ladder fails the fourth.
+
 ### A configured provider's credential
 
 The key is environment-only, as it always was, and *which name* it answers to is configuration:

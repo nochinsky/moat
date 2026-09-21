@@ -254,7 +254,7 @@ subprocess.
 | `moat exec -- <cmd>` | run one command in a fresh boot of the environment's sandbox |
 | `moat shell` | interactive shell inside the sandbox |
 | `moat doctor` | host probe plus the in-box isolation checks for the egress mode in force; `open`, `isolated` and `filtered` each run a different set, and the command prints the count it ran |
-| `moat models` | DeepSeek models and their context windows, from the catalog |
+| `moat models [provider]` | a provider's models and their context windows, from the catalog |
 | `moat profiles` | toolchain profiles, and the base packages every image has |
 | `moat logs [name]` | tail a log (`sandbox` by default) |
 
@@ -557,10 +557,22 @@ So moat renders one `[model_providers.<id>]` block with the base URL,
 `wire_api = "responses"` and `env_key` naming the variable that carries the key. The
 context window and output cap come from the [models.dev](https://models.dev) catalog,
 fetched once a day and cached on the host; without it moat falls back to a built-in model
-list and says so. `moat models` reads it live, and a model id it does not describe is
-declared inline rather than left for Codex to fail to resolve. With `--base-url` there is
-no catalog entry, so moat states the context and output limits explicitly and the rendered
-config carries no `env_key` unless a credential was injected.
+list and says so. `moat models [provider]` reads it live, and a model id it does not
+describe boots with its own id as its label and **no declared limits**, rather than with
+limits that belong to another model or with nothing said about the difference. With
+`--base-url` there is usually no catalog entry, so that is the normal path rather than an
+error, and the rendered config carries no `env_key` unless a credential was injected.
+
+The model is described **once**. One record (`lib/model-facts.ts`) is resolved before the
+boot and every consumer reads it: the rendered config's `model_context_window` and
+`model_max_output_tokens`, the `model_catalog_json` file, the boot log, the task report and
+the `--effort` check. It used to be described twice by two modules that disagreed —
+models.dev knew the default model's name while the catalog handed to Codex carried the raw
+id — so one boot could use two names for one model. The division of labour: models.dev
+supplies which providers and model ids exist and each model's name, context window, output
+cap and capabilities; moat's own ladder supplies the reasoning levels, which models.dev
+does not describe beyond a yes/no (a configured provider may declare its own); and the
+model id is always a fact.
 
 ### 6b.2 Toolchain profiles
 
