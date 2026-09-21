@@ -154,6 +154,7 @@ change has to come with and what will get sent back. Found a security problem?
 * `docs/VERIFICATION.md` is the evidence: the criteria, the captures, and the closing table of
   what is **not** verified. Read that table before believing anything here.
 * `docs/HISTORY.md` is how the project got here, including the runtime it used before this one.
-* `docs/SEAM.md` is the interface a second agent runtime would have to satisfy.
+* `docs/SEAM.md` is the interface a second agent runtime would have to satisfy, and
+  `docs/RUNTIMES.md` is what adding one costs — including why it is not a protocol problem.
 * `AGENTS.md` is for people changing the code: the invariants, the traps that cost real time,
   and what is still unbuilt.

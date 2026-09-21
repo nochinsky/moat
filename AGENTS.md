@@ -74,8 +74,9 @@ stub/            the keyless model stub and its scripts — runtime, not test, b
 test/            the pty suites, the fixtures, and the committed evidence they write
 docs/            SPEC (the contract), VERIFICATION (the evidence),
                  HISTORY (how the project got here), SEAM (the interface a second
-                 runtime would have to satisfy), PROGRESS (where things stand),
-                 archive/ (the build journal, closed phases only)
+                 runtime would have to satisfy), RUNTIMES (what a second runtime
+                 costs, and why ACP is not the shortcut), PROGRESS (where things
+                 stand), archive/ (the build journal, closed phases only)
 ```
 
 ## Packaging

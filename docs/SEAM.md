@@ -137,6 +137,10 @@ for the ACP spike in `docs/archive/PROGRESS.md`:
    weaker one next to it is worse than none.
 5. **Whatever moat ships into the box is pinned by digest** (`lib/pins.ts`).
 
+If you are here because you want to add a second runtime, read `RUNTIMES.md` first: it records
+what that involves, why ACP is not the shortcut it looks like, and the token-accounting trap that
+misprises a turn silently.
+
 `bundle/codex.ts`, `bundle/codex-prompt.ts`, `bundle/model-catalog.ts` and
 `bundle/instructions.ts` are **not** part of this seam. They render the files that make one
 specific runtime behave, and a second runtime would have its own equivalents rather than a
