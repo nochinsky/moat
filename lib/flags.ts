@@ -24,6 +24,7 @@ export const SPEC: Spec = {
   json: "boolean",
   verbose: "boolean",
   model: "string",
+  provider: "string",
   effort: "string",
   profile: "string",
   profiles: "boolean",
@@ -42,6 +43,9 @@ export const SPEC: Spec = {
   all: "boolean",
   checkout: "boolean",
   name: "string",
+  "env-var": "string",
+  "wire-api": "string",
+  remove: "boolean",
   yes: "boolean",
   tail: "number",
   timeout: "number",
@@ -68,6 +72,7 @@ export const GLOBAL_FLAGS: readonly string[] = ["help", "quiet", "verbose"]
 /** `moat run "task"` is `moat up "task"`: same command, same flags. */
 const UP_FLAGS: readonly string[] = [
   "base-url",
+  "provider",
   "credential",
   "credential-env",
   "credential-ttl",
@@ -111,6 +116,7 @@ export const COMMAND_FLAGS: Record<string, readonly string[]> = {
   shell: [],
   exec: [],
   models: ["json", "refresh"],
+  provider: ["remove", "base-url", "env-var", "wire-api", "model", "json"],
   profiles: ["json"],
 }
 

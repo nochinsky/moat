@@ -80,6 +80,15 @@ import {
   parseCodexEvents,
   renderCodexConfig,
 } from "../bundle/codex.ts"
+import { renderModelCatalog } from "../bundle/model-catalog.ts"
+import {
+  assertProviderID,
+  listProviderSpecs,
+  readProviderStore,
+  resolveProviderSpec,
+  validateStoredProvider,
+  writeProviderStore,
+} from "../lib/providers.ts"
 import { computeCost, formatUSD } from "../lib/pricing.ts"
 import { runIsolationChecks, type IsolationReport } from "../sandbox/isolation.ts"
 import { onboard } from "../secrets/onboard.ts"
@@ -904,12 +913,14 @@ ${command}
   // Authorization header (measured: five tool calls, six requests, no auth header). The
   // native provider cannot: without the key there is no model. Say which case this is
   // instead of one message for both.
-  const noCredentialNotice = resolvedModel.native
-    ? `no ${DEEPSEEK.envVar}, so the agent has no model to call.\n` +
-      `  export ${DEEPSEEK.envVar}=sk-...   then run moat again\n` +
-      "  or pass --credential-env NAME if it lives under a different name"
-    : `no credential injected, so requests to ${baseUrl} will carry no Authorization header. ` +
-      "If that endpoint needs one, pass --credential-env NAME (or --credential VALUE)."
+  const wantVar = provider.envVar ?? DEEPSEEK.envVar
+  const noCredentialNotice =
+    provider.id === DEEPSEEK.id
+      ? `no ${wantVar}, so the agent has no model to call.\n` +
+        `  export ${wantVar}=sk-...   then run moat again\n` +
+        "  or pass --credential-env NAME if it lives under a different name"
+      : `no credential injected, so requests to ${baseUrl} will carry no Authorization header. ` +
+        `If that endpoint needs one, set ${wantVar} or pass --credential-env NAME (or --credential VALUE).`
   // The value is on the host command line when it is passed this way: every local user reads
   // argv through ps, and the shell keeps it in history. Say so where it is passed, not only in
   // the risk notice after the fact.
@@ -930,10 +941,10 @@ ${command}
       baseUrl,
       model: resolvedModel.modelID,
       ttlSeconds,
-      // DeepSeek gets the key under the name its API and Codex's env_key use. A custom
-      // endpoint gets it under moat's own name, which the rendered provider
-      // block references as {env:MOAT_INJECTED_CREDENTIAL}.
-      targetEnvVars: resolvedModel.native ? [DEEPSEEK.envVar] : [],
+      // The key goes into the box under the name this provider's own client expects: the
+      // variable the user configured, or the default provider's name, or (for an endpoint that
+      // declared none) moat's own name, which the rendered provider block references.
+      targetEnvVars: credentialVarNames(provider),
     })
     if (!credential && interactive) {
       // At a terminal, do not explain what is missing: ask for it. The key is
@@ -946,7 +957,7 @@ ${command}
           baseUrl,
           model: resolvedModel.modelID,
           ttlSeconds,
-          targetEnvVars: resolvedModel.native ? [DEEPSEEK.envVar] : [],
+          targetEnvVars: credentialVarNames(provider),
         })
       }
     }
@@ -956,11 +967,11 @@ ${command}
     } else {
       log.warn(credentialRiskNotice(credential, egress))
     }
-  } else if (!resolvedModel.native) {
-    // --no-credential is deliberate and silent for the native provider (there is no key,
-    // and the user asked for that). A custom endpoint still deserves the note, because
-    // "no Authorization header" is a property of the requests, not a missing key — and
-    // this is the mode SPEC §1.3 recommends for a box with nothing stealable in it.
+  } else if (provider.id !== DEEPSEEK.id) {
+    // --no-credential is deliberate and silent for the default provider (there is no key, and
+    // the user asked for that). Any other endpoint deserves the note, because "no Authorization
+    // header" is a property of the requests rather than a missing key — and this is the mode
+    // SPEC §1.3 recommends for a box with nothing stealable in it.
     log.warn(noCredentialNotice)
   }
 
@@ -1007,7 +1018,7 @@ ${command}
   // key *is* the model. A custom endpoint can work with no credential at all
   // (measured against a local stub: five tool calls, six requests, no auth header),
   // and this guard used to refuse the very path its own message recommended.
-  if (task.length > 0 && !credential && resolvedModel.native) {
+  if (task.length > 0 && !credential && provider.id === DEEPSEEK.id) {
     log.fail(
       `no ${DEEPSEEK.envVar}, so the agent has no model to call.\n` +
         `  export ${DEEPSEEK.envVar}=sk-...   then run it again\n` +
@@ -1024,15 +1035,31 @@ ${command}
   // adds no second sandbox next to moat's, and the brief is what tells the agent where it is.
   // A stale one from a cached image or an environment created days ago is a bug that already
   // happened once, so neither is left to provisioning.
+  // The provider block, the model id and the catalog are all rendered from the resolved
+  // provider. Every one of these used to be DeepSeek's: the config key was the literal
+  // `deepseek-moat`, the block's `name` was the literal `"DeepSeek"`, the key variable was
+  // `DEEPSEEK_API_KEY`, and the catalog was the vendored DeepSeek file — so a box pointed at
+  // any other endpoint was described to itself and to the runtime as DeepSeek.
   installCodexFiles(paths.rootfs, {
     config: renderCodexConfig({
       model: resolvedModel.modelID,
-      providerID: "deepseek-moat",
+      providerID: provider.codexProviderID,
+      providerLabel: provider.label,
       baseURL: baseUrl,
-      // The native provider's key is read from its own variable; a custom endpoint reads moat's.
-      // With --no-credential there is nothing to read, so no env_key is written at all.
-      envKey: resolvedModel.native ? DEEPSEEK.envVar : credential ? "MOAT_INJECTED_CREDENTIAL" : undefined,
+      wireApi: provider.wireApi,
+      // The key's variable is the provider's own when it declares one, and moat's injected name
+      // otherwise. With --no-credential there is nothing to read, so no env_key is written at all
+      // rather than pointing Codex at a name nothing sets.
+      envKey: provider.envVar ?? (credential ? "MOAT_INJECTED_CREDENTIAL" : undefined),
       reasoningEffort: effortFlag,
+      contextWindow: resolvedModel.meta?.context,
+      maxOutputTokens: resolvedModel.meta?.output,
+    }),
+    // The catalog describes the model this boot configured, so the box never advertises a
+    // context window or a reasoning ladder belonging to a different one.
+    catalog: renderModelCatalog({
+      model: resolvedModel.modelID,
+      displayName: resolvedModel.modelID,
       contextWindow: resolvedModel.meta?.context,
       maxOutputTokens: resolvedModel.meta?.output,
     }),
@@ -2113,6 +2140,150 @@ async function cmdModels(argv: string[]): Promise<number> {
   return 0
 }
 
+/**
+ * Inside the box, which variable names carry this provider's key?
+ *
+ * The provider's own name when it declared one (`ACME_API_KEY`), otherwise the default
+ * provider's, otherwise moat's own name. Returning several means the key is present under each,
+ * which is what lets a provider client find its own variable while moat's config references
+ * moat's — the box has one credential, and the names it answers to are configuration.
+ *
+ * Moat's own name is always included when a credential is injected at all, because the rendered
+ * provider block references it for any provider that declared no key variable.
+ */
+function credentialVarNames(provider: ResolvedProvider): string[] {
+  const names = new Set<string>()
+  if (provider.envVar) names.add(provider.envVar)
+  else if (provider.id === DEEPSEEK.id) names.add(DEEPSEEK.envVar)
+  names.add("MOAT_INJECTED_CREDENTIAL")
+  return [...names]
+}
+
+/**
+ * `moat provider` — configure the providers moat can be pointed at.
+ *
+ * Phase 1's unlock. Before it, the provider was DeepSeek and the only way to another endpoint
+ * was `--base-url` on every command, which also meant every boot re-derived a provider id that
+ * was not the user's. A provider is now something the user writes down: an id, a label, an
+ * address, and the *name* of the environment variable its key lives in.
+ *
+ * The key's value is never written here, only the variable's name — the same rule the rest of
+ * moat follows, and what lets this file be readable without leaking anything.
+ */
+async function cmdProvider(argv: string[]): Promise<number> {
+  const p = parse(argv, SPEC, "provider")
+  const json = flag<boolean>(p, "json") ?? false
+  // `moat provider add acme` and `moat provider acme` are both spellings of the same thing:
+  // the verbs are positional, so a leading `add`/`set` is the verb and the id is what follows.
+  // Reading `_[0]` as the id made `moat provider add acme` configure a provider called "add",
+  // which the `--json` output showed and nothing complained about — the id is a TOML key, and
+  // "add" is a perfectly valid one.
+  const verbs = new Set(["add", "set", "show", "list", "rm", "remove"])
+  const words = [...p._]
+  const verb = words.length > 0 && verbs.has(words[0]!) ? words.shift()! : undefined
+  if (verb === "remove" || verb === "rm") p.flags.remove = true
+  if (verb === "list") words.length = 0
+  const id = words[0]
+
+  if (!id) {
+    const specs = listProviderSpecs()
+    if (json) {
+      log.emit(
+        specs.map((spec) => ({
+          id: spec.id,
+          label: spec.label,
+          baseUrl: spec.baseUrl ?? null,
+          envVar: spec.envVar ?? null,
+          wireApi: spec.wireApi ?? "responses",
+          defaultModel: spec.defaultModel ?? null,
+          builtIn: spec.id === DEEPSEEK.id,
+        })),
+      )
+      return 0
+    }
+    log.info("")
+    log.info(`${log.bold("providers")} moat can be pointed at with --provider, or --base-url for one it does not know`)
+    for (const spec of specs) {
+      const builtIn = spec.id === DEEPSEEK.id ? log.dim("  (the default)") : ""
+      log.info(`  ${spec.id.padEnd(12)} ${(spec.baseUrl ?? log.yellow("no endpoint configured")).padEnd(34)} ${spec.label}${builtIn}`)
+    }
+    log.info("")
+    log.info(`  add one:   moat provider add <id> --base-url <url> [--env-var NAME] [--model ID] [--wire-api responses|chat]`)
+    log.info(`  use one:   moat up --provider <id> --model <id>`)
+    log.info(`  remove:    moat provider remove <id>`)
+    log.info("")
+    log.info(
+      `  ${log.dim("--env-var names the host variable holding the key. The value is never written to disk.")}`,
+    )
+    return 0
+  }
+
+  if (flag<boolean>(p, "remove")) {
+    const store = readProviderStore()
+    if (!(id in store)) log.fail(`no configured provider "${id}"`)
+    delete store[id]
+    writeProviderStore(store)
+    log.success(`removed provider ${id}`)
+    return 0
+  }
+
+  const baseUrl = flag<string>(p, "base-url")
+  const envVar = flag<string>(p, "env-var")
+  const model = flag<string>(p, "model")
+  const wireApi = flag<string>(p, "wire-api")
+  if (baseUrl === undefined && envVar === undefined && model === undefined && wireApi === undefined) {
+    // Asking about one provider rather than adding it.
+    const spec = resolveProviderSpec(id)
+    if (!spec) log.fail(`no configured provider "${id}"`)
+    if (json) {
+      log.emit({ id: spec!.id, label: spec!.label, baseUrl: spec!.baseUrl ?? null, envVar: spec!.envVar ?? null, wireApi: spec!.wireApi ?? "responses", defaultModel: spec!.defaultModel ?? null })
+      return 0
+    }
+    log.info("")
+    log.info(`  ${log.bold(spec!.id)}  ${spec!.label}`)
+    log.info(`  endpoint    ${spec!.baseUrl ?? log.yellow("none configured")}`)
+    log.info(`  key var     ${spec!.envVar ?? log.dim("(moat's own name)")}`)
+    log.info(`  wire api    ${spec!.wireApi ?? "responses"}`)
+    log.info(`  model       ${spec!.defaultModel ?? log.dim("(provider default)")}`)
+    log.info("")
+    return 0
+  }
+
+  try {
+    assertProviderID(id)
+  } catch (error) {
+    log.fail((error as Error).message)
+  }
+  if (baseUrl !== undefined) {
+    const problem = checkBaseUrl("base-url", baseUrl)
+    if (problem) log.fail(problem)
+  }
+  if (envVar !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(envVar)) {
+    log.fail(`--env-var must be an environment variable name (letters, digits, underscore): ${envVar}`)
+  }
+  if (wireApi !== undefined && wireApi !== "responses" && wireApi !== "chat") {
+    log.fail(`--wire-api must be "responses" or "chat": ${wireApi}`)
+  }
+
+  const store = readProviderStore()
+  const existing = store[id]
+  const entry = validateStoredProvider(id, {
+    ...existing,
+    id,
+    label: existing?.label ?? id,
+    ...(baseUrl !== undefined ? { baseUrl } : {}),
+    ...(envVar !== undefined ? { envVar } : {}),
+    ...(model !== undefined ? { defaultModel: model } : {}),
+    ...(wireApi !== undefined ? { wireApi } : {}),
+  })
+  if (!entry) log.fail(`could not store provider "${id}": the configuration did not validate`)
+  store[id] = entry!
+  writeProviderStore(store)
+  if (json) log.emit({ id: entry!.id, label: entry!.label, baseUrl: entry!.baseUrl ?? null, envVar: entry!.envVar ?? null, wireApi: entry!.wireApi ?? "responses", defaultModel: entry!.defaultModel ?? null })
+  else log.success(`configured provider ${id}${entry!.baseUrl ? ` at ${entry!.baseUrl}` : ""}`)
+  return 0
+}
+
 /** `moat profiles`, what the sandbox can be given. */
 async function cmdProfiles(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
@@ -2431,6 +2602,8 @@ async function main(): Promise<number> {
         return await cmdModels(rest)
       case "profiles":
         return await cmdProfiles(rest)
+      case "provider":
+        return await cmdProvider(rest)
       default:
         log.fail(`unknown command: ${command}\n\n${HELP}`)
     }

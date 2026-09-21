@@ -39,12 +39,84 @@ export const DEEPSEEK = {
   defaultEffort: "high",
 } as const
 
+/**
+ * A provider moat can be pointed at: its name, its address, and the variable its key
+ * arrives in.
+ *
+ * This is the shape `--base-url` has always produced, named. Phase 1's unlock is that the
+ * *identity* is configurable rather than DeepSeek's: before it, every rendered config carried
+ * `name = "DeepSeek"` in its `[model_providers.*]` block no matter what it was talking to, and
+ * the provider id was the literal `deepseek-moat`.
+ */
+export type ProviderSpec = {
+  /** The provider id. Also the prefix in the `provider/model` string and the config key. */
+  id: string
+  label: string
+  /** The endpoint, when the provider has one. A provider configured without it needs --base-url. */
+  baseUrl?: string
+  /**
+   * The environment variable this provider's key is expected in.
+   *
+   * Set for a known provider so a user with `ANTHROPIC_API_KEY` in their environment does not
+   * have to rename it. Unset means moat's own name is used.
+   */
+  envVar?: string
+  /** Which wire API the endpoint speaks. `responses` unless it only speaks chat completions. */
+  wireApi?: "responses" | "chat"
+  /** The model to use when the user names none. */
+  defaultModel?: string
+  /** A pre-validated `[model_providers.<id>]` key, when the id itself is not one. */
+  codexProviderID?: string
+}
+
 /** Used when `--base-url` points somewhere else. */
 export const CUSTOM_ENDPOINT = {
   id: "moat",
   label: "custom OpenAI-compatible endpoint",
   npm: "@ai-sdk/openai-compatible",
 } as const
+
+/**
+ * The spec for an endpoint given only as an address.
+ *
+ * Its id is fixed rather than derived from the host: the id is also the `[model_providers.<id>]`
+ * TOML key and the prefix in `provider/model`, and a hostname is neither of those (it can carry
+ * dots and a port). The host goes in the provider's *label*, where a human reads it, and in the
+ * base URL, where the runtime reads it.
+ */
+export function customEndpoint(baseUrl: string): ProviderSpec {
+  let host = baseUrl
+  try {
+    host = new URL(baseUrl).host
+  } catch {
+    /* a caller that got this far validated it; the label is cosmetic */
+  }
+  return {
+    id: CUSTOM_ENDPOINT.id,
+    label: `${CUSTOM_ENDPOINT.label} (${host})`,
+    baseUrl,
+    wireApi: "responses",
+  }
+}
+
+/**
+ * A `[model_providers.<id>]` key Codex will accept.
+ *
+ * The rendered block is `[model_providers.${id}]` in TOML, so anything that is not a bare key —
+ * a dot, a space, a quote, a newline — either breaks the parse or, worse, appends a section the
+ * user did not ask for. A provider id comes from a flag or from state, so it is checked rather
+ * than trusted. This is the same rule `renderCodexConfig` applies, in the place that can name
+ * the offending value.
+ */
+export function checkProviderID(id: string): string {
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+    throw new Error(
+      `invalid provider id "${id}": a provider id becomes a TOML key (model_providers.${id}), ` +
+        "so it may contain only letters, digits, dashes and underscores",
+    )
+  }
+  return id
+}
 
 /** Shown when the catalog cannot be reached. The catalog is the real source. */
 export const FALLBACK_MODELS = [

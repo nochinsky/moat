@@ -4,8 +4,8 @@ import { test } from "node:test"
 
 import {
   CATALOG_INSTRUCTIONS_SHA256,
-  CODEX_CATALOG,
   catalogAllEffortLevels,
+  catalogEntry,
   describeCodexTurn,
   parseCodexEvents,
   renderCodexConfig,
@@ -62,6 +62,7 @@ test("the rendered config turns approvals and codex's own sandbox off, per provi
   const config = renderCodexConfig({
     model: "deepseek-v4-pro",
     providerID: "deepseek-moat",
+    providerLabel: "Test Provider",
     baseURL: "https://api.deepseek.com",
     envKey: "DEEPSEEK_API_KEY",
     contextWindow: 131072,
@@ -90,40 +91,37 @@ test("the rendered config turns approvals and codex's own sandbox off, per provi
   assert.match(config, /^wire_api = "responses"$/m)
   // The file the agent can read must never carry the key itself.
   assert.ok(!/sk-/.test(config))
-  const withoutWindow = renderCodexConfig({ model: "m", providerID: "p", baseURL: "http://x", envKey: "K" })
+  const withoutWindow = renderCodexConfig({ model: "m", providerID: "p", providerLabel: "Test Provider", baseURL: "http://x", envKey: "K" })
   assert.ok(!/model_context_window/.test(withoutWindow))
   assert.ok(!/model_reasoning_effort/.test(withoutWindow), "no effort asked for means no effort rendered")
   assert.match(withoutWindow, /^base_url = "http:\/\/x"$/m)
-  const low = renderCodexConfig({ model: "m", providerID: "p", baseURL: "http://x", envKey: "K", reasoningEffort: "low" })
+  const low = renderCodexConfig({ model: "m", providerID: "p", providerLabel: "Test Provider", baseURL: "http://x", envKey: "K", reasoningEffort: "low" })
   assert.match(low, /^model_reasoning_effort = "low"$/m)
 })
 
-test("the vendored catalog carries codex's own built-in prompt, so it changes metadata only", () => {
+test("a rendered entry carries codex's own prompt, whatever the model", () => {
   // Codex refuses an entry with neither base_instructions nor model_messages.instructions_template
   // (measured; see the comment in bundle/codex.ts), so the field stays. It must stay the prompt
-  // the pinned binary sends for a model it has no metadata for, or installing the catalog would
-  // silently change the agent's system prompt. The sha is the pin; a refreshed catalog that swaps
-  // the prompt fails here instead of reaching the wire.
-  for (const model of CODEX_CATALOG.models) {
+  // the pinned binary sends for a model it has no metadata for, or installing a catalog would
+  // silently change the agent's system prompt. The sha is the pin; a refresh that swaps the
+  // prompt fails here instead of reaching the wire. The prompt is a property of the *runtime*,
+  // not of the model, so it is the same for every slug — which is what makes rendering per-model
+  // metadata safe.
+  const first = catalogEntry("deepseek-flash")
+  const other = catalogEntry("llama-3.3-70b")
+  for (const model of [first, other]) {
     const sha = crypto.createHash("sha256").update(model.base_instructions).digest("hex")
     assert.equal(sha, CATALOG_INSTRUCTIONS_SHA256, model.slug + " base_instructions")
+    assert.equal("model_messages" in model, false, "model_messages stays out: it is a second prompt")
   }
-  assert.equal(
-    CODEX_CATALOG.models[0]!.base_instructions,
-    CODEX_CATALOG.models[1]!.base_instructions,
-    "the built-in prompt is model-independent (measured)",
-  )
-  assert.ok(
-    CODEX_CATALOG.models.every((model) => !("model_messages" in model)),
-    "model_messages stays dropped: its instructions_template is the same prompt",
-  )
-  // The levels --effort is validated against come from the catalog, not a list in the CLI.
-  assert.deepEqual(catalogAllEffortLevels(), ["high", "low", "max"])
+  assert.equal(first.base_instructions, other.base_instructions, "the built-in prompt is model-independent")
+  // The levels --effort is validated against come from the rendered metadata, not a list in the CLI.
+  assert.deepEqual(catalogAllEffortLevels(), ["low", "high", "max"])
 })
 
 test("a provider id that is not a TOML key is refused rather than quoted wrongly", () => {
   assert.throws(
-    () => renderCodexConfig({ model: "m", providerID: "bad id", baseURL: "http://x", envKey: "K" }),
+    () => renderCodexConfig({ model: "m", providerID: "bad id", providerLabel: "Test Provider", baseURL: "http://x", envKey: "K" }),
     /invalid codex provider id/,
   )
 })
@@ -139,6 +137,7 @@ test("a token count that is not a positive integer never reaches the TOML bare",
     const config = renderCodexConfig({
       model: "m",
       providerID: "p",
+      providerLabel: "Test Provider",
       baseURL: "http://x",
       envKey: "K",
       contextWindow: value as number,
@@ -151,7 +150,14 @@ test("a token count that is not a positive integer never reaches the TOML bare",
     assert.match(config, /^approval_policy = "never"$/m)
   }
   // The honest values still render, and as integers.
-  const good = renderCodexConfig({ model: "m", providerID: "p", baseURL: "http://x", contextWindow: 131072, maxOutputTokens: 32768 })
+  const good = renderCodexConfig({
+    model: "m",
+    providerID: "p",
+    providerLabel: "Test Provider",
+    baseURL: "http://x",
+    contextWindow: 131072,
+    maxOutputTokens: 32768,
+  })
   assert.match(good, /^model_context_window = 131072$/m)
   assert.match(good, /^model_max_output_tokens = 32768$/m)
 })

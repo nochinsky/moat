@@ -6,6 +6,7 @@ import path from "node:path"
 import { fingerprint } from "../lib/hash.ts"
 import { credentialsFile } from "../lib/paths.ts"
 import { DEEPSEEK } from "../lib/provider.ts"
+import { resolveProviderSpec } from "../lib/providers.ts"
 
 /**
  * The credential axiom, in code.
@@ -154,7 +155,7 @@ export function findCredential(opts: MintOptions): { provider: string; credentia
     }
   }
 
-  for (const name of CREDENTIAL_ENV_NAMES) {
+  for (const name of credentialEnvNames(opts.provider)) {
     const value = process.env[name]
     if (!value) continue
     const fromStore = store.moat
@@ -338,6 +339,25 @@ export function toSandboxEnv(minted: MintedCredential): Record<string, string> {
  */
 export function credentialCandidates(envVars: string[]): string[] {
   return ["MOAT_CREDENTIAL", ...envVars]
+}
+
+/**
+ * The environment variable names moat will look in for this provider's key.
+ *
+ * DeepSeek's name and moat's own were the only two, which was correct while DeepSeek was the only
+ * provider. A user who configured a provider whose key lives in `ACME_API_KEY` had to rename it or
+ * pass `--credential-env` on every command, and the failure when they did neither was the generic
+ * "no credential" message naming DeepSeek's variable — a message about a provider they were not
+ * using. The configured provider's own name comes first; the default provider's name stays in the
+ * list because moat's onboarding still stores keys under it.
+ */
+export function credentialEnvNames(provider?: string): string[] {
+  const names = [...CREDENTIAL_ENV_NAMES]
+  if (provider && provider !== DEEPSEEK.id) {
+    const spec = resolveProviderSpec(provider)
+    if (spec?.envVar) names.unshift(spec.envVar)
+  }
+  return [...new Set(names)]
 }
 
 /** Longest TTL a JavaScript Date can still represent as a real instant. */
