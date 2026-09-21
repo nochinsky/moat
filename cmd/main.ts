@@ -2321,6 +2321,35 @@ async function cmdProvider(argv: string[]): Promise<number> {
   return 0
 }
 
+/**
+ * `moat demo` — the product claim, runnable keyless.
+ *
+ * The work is in `cmd/demo.ts`; this is the argument handling, so the demo cannot be reached
+ * with a flag it does not read and the top-level failure path is the CLI's usual one.
+ */
+async function cmdDemo(argv: string[]): Promise<number> {
+  const p = parse(argv, SPEC, "demo")
+  const dir = flag<string>(p, "dir")
+  const timeoutSeconds = positiveIntFlag(p, "timeout", 300)
+  const { runDemo } = await import("./demo.ts")
+  log.info("")
+  log.info(`${log.bold("moat demo")} three-way attribution, on a real sandbox, with no API key`)
+  log.info("")
+  const result = await runDemo({
+    ...(dir ? { dir } : {}),
+    keep: flag<boolean>(p, "keep") ?? false,
+    timeoutSeconds,
+  })
+  const total = result.steps.reduce((sum, step) => sum + step.ms, 0)
+  log.info("")
+  log.info(`  ${log.dim(result.steps.map((step) => `${step.name} ${(step.ms / 1000).toFixed(1)}s`).join("  "))}`)
+  log.info(`  ${log.dim(`total ${(total / 1000).toFixed(1)}s (warm cache; a cold one downloads the image first)`)}`)
+  if (flag<boolean>(p, "keep")) log.info(`  ${log.dim(`left in place: ${result.dir}`)}`)
+  else log.info(`  ${log.dim(`the scratch project was removed; --keep leaves it in place`)}`)
+  log.info("")
+  return 0
+}
+
 /** `moat profiles`, what the sandbox can be given. */
 async function cmdProfiles(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
@@ -2367,6 +2396,7 @@ Usage: moat <command> [options]
   moat run "<task>"      boot if needed, do the task, stream the work
   moat take              review what the agent did; runs the project's own checks
   moat verify            just run those checks against the sandbox, no fetching
+  moat demo              see the whole thing work: three-way attribution, no API key
   moat down              stop the sandbox; nothing is lost
   moat status            what is running, on which model, with how much time left
 
@@ -2641,6 +2671,8 @@ async function main(): Promise<number> {
         return await cmdProfiles(rest)
       case "provider":
         return await cmdProvider(rest)
+      case "demo":
+        return await cmdDemo(rest)
       default:
         log.fail(`unknown command: ${command}\n\n${HELP}`)
     }

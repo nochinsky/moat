@@ -1,0 +1,13 @@
+--- $ node /home/user/Projects/moat/cmd/main.ts models
+--- exit 0
+--- stdout ---
+--- stderr ---
+
+DeepSeek  env=DEEPSEEK_API_KEY  https://api.deepseek.com
+  model                          context  output  tools
+  deepseek-v4-flash-vision-exp      1M    384k  yes
+  deepseek-v4-flash                 1M    384k  yes
+  deepseek-v4-pro                   1M    384k  yes
+ *deepseek-flash                    1M    384k  yes
+
+  * = default. Override with: moat run --model <id> "..."

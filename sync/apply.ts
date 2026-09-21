@@ -78,7 +78,9 @@ export type PlannedChange = {
 }
 
 export type ApplyPlan = {
+  /** Every changed path, conflicts included. */
   changes: PlannedChange[]
+  /** The conflicting rows of `changes`, in the same order. A subset, not a second list. */
   conflicts: PlannedChange[]
   /** Files the agent produced that would become new files on the host. */
   added: number
@@ -667,6 +669,42 @@ export async function applyPlan(p: EnvPaths, plan: ApplyPlan): Promise<{ applied
   }
 
   return { applied, skipped }
+}
+
+/**
+ * Every changed path, classified: the agent's, yours, or both.
+ *
+ * The classification is not computed here — it is already in the plan, in the `conflict` flag and
+ * the `note` that the comparison above wrote. This maps it into the three words a person reads,
+ * so `moat take` and `moat demo` present what the planner decided rather than their own opinion
+ * of it. A second classification would be free to disagree with the one that decides what gets
+ * written, and the disagreement would show up as a file the user was told was theirs and then
+ * overwritten.
+ *
+ * "yours" is derived rather than compared: the planner only lists paths the *agent* touched, so
+ * a path it flags as the user's is one the agent also changed. A file only you changed is not in
+ * the plan at all — there is nothing to do about it — which is why it cannot appear here.
+ */
+export function planVerdict(plan: ApplyPlan): { path: string; verdict: "agent" | "you" | "both" | "conflict"; detail: string }[] {
+  const rows: { path: string; verdict: "agent" | "you" | "both" | "conflict"; detail: string }[] = []
+  // `plan.conflicts` is a *subset* of `plan.changes` (see the type), so walking both listed every
+  // conflict twice. A path appears once in a plan by construction — the planner builds one row per
+  // changed path — so deduplicating here cannot hide a second verdict for the same file.
+  const seen = new Set<string>()
+  for (const change of [...plan.changes, ...plan.conflicts]) {
+    if (seen.has(change.path)) continue
+    seen.add(change.path)
+    const note = change.note ?? ""
+    const verdict = change.conflict
+      ? "conflict"
+      : change.kind === "merge"
+        ? "both"
+        : /^you changed this file/.test(note)
+          ? "you"
+          : "agent"
+    rows.push({ path: change.path, verdict, detail: note })
+  }
+  return rows.sort((a, b) => (a.path < b.path ? -1 : 1))
 }
 
 export function describePlan(plan: ApplyPlan): string[] {

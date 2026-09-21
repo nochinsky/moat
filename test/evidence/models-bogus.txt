@@ -2,4 +2,5 @@
 --- exit 1
 --- stdout ---
 --- stderr ---
-✗ no configured provider "bogus". Known: deepseek   (moat provider)
+✗ no configured provider "bogus": the argument to `moat models` must be a provider moat knows.
+  known: deepseek   (add one with `moat provider add`)

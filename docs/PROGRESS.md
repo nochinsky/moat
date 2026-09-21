@@ -636,3 +636,106 @@ Three things fell out of doing it properly rather than patching the symptom:
 - `lib/catalog.ts` is still the only source for a *list* of models. That is the right place
   for it — enumerating what a provider defines is a dataset question — and it is now consumed
   through the facts record rather than beside it.
+
+
+---
+
+## Session 2, continued — Phase 2, `moat demo`
+
+### The gate PASSES
+
+**The gate: runs with no credential in the environment; output captured in `test/evidence/` by
+running the suite.** `test/e2e-demo.sh` reads `checks passed: 9, failed: 0`, having run the demo
+under `env -u DEEPSEEK_API_KEY -u MOAT_CREDENTIAL -u ANTHROPIC_API_KEY -u OPENAI_API_KEY`, and the
+whole run took **8.4 seconds** against the documented two-minute warm budget.
+
+What the suite asserts, rather than that the command exited 0:
+
+```
+pass  the demo              ran to completion with no credential in the environment (exit 0)
+pass  classification: agent    the demo reported an agent path
+pass  classification: conflict the demo reported a conflict path
+pass  the three-way split   app.js is the agent's alone; notes.txt is yours and the agent's, and
+                            the planner says so
+pass  the host tree         byte-identical before the agent ran and after its work was fetched
+pass  the accept step       changed the tree, which is the step the user asked for
+pass  the conflict          your file is exactly as you left it, with no conflict markers in it
+pass  the accepted change   the agent's app.js change was applied
+pass  the warm budget       the run took 8.4s, inside the two-minute budget
+```
+
+### It is not a puppet show, and that took work to make true
+
+The program's rule is that the demo must drive the real apply path and must not print attribution
+the code did not compute. So the demo *arranges* the scenario and prints what `planApply`
+returns:
+
+- `cmd/demo.ts` writes a fixture, commits it, makes one uncommitted change of "yours", boots a
+  real sandbox, drives the **real pinned Codex** against the demo's own stub script, fetches the
+  agent's one ref, and then calls the real `planApply` / `planVerdict` / `applyPlan`.
+- `planVerdict` (`sync/apply.ts`) is new and is a *mapper*, not a second classifier: the three
+  words come from the plan's own `conflict` flag and the note the comparison wrote. A second
+  classification would be free to disagree with the one that decides what gets written.
+
+### The finding: the baseline was the dirty working tree, and it silently disabled the product
+
+Building the demo exposed a defect the whole test suite had missed, because every existing test
+sets the baseline to `HEAD`:
+
+`recordBaseline` did `git add -A` and committed the result, so the baseline was the working tree
+**with your uncommitted changes folded in**. `planApply` decides whether a file is yours by
+comparing the host against the baseline — so a file you had *already* edited compared equal to a
+dirty baseline and the agent's version went over your work as a plain "update", with no conflict
+and nothing said. Measured: the file came back with your edit gone, reported as
+`applied 2 change(s); skipped 0`, while SPEC §2.2 promises exactly the opposite for that case.
+
+A dirty working tree is the normal state of a repository somebody is working in, so this was not
+an edge case. It was the common one, and it disabled the attribution the product is built on —
+which is the thesis Phase 3 exists to surface. **Nothing in the suite caught it, because
+`test/unit/apply.test.ts` and every other apply test do `git(work, "update-ref",
+"refs/moat/baseline", "HEAD")` and never record a baseline the way a boot does.**
+
+The fix records **HEAD**. The working tree still travels with the copy-in unchanged, so the agent
+sees your work; only what counts as "before" changes. `test/unit/baseline-content.test.ts` holds
+it, through the real boot sequence (`copyIn` → `ensureSandboxRepo` → `recordBaseline`), and both
+halves were checked by reintroducing the old rule and watching them fail. The end-to-end proof is
+the demo itself: before the fix `notes.txt` merged and was written; after it, `notes.txt` is a
+conflict, is not written, and your line is intact.
+
+**A related trap found while writing that test, documented rather than fixed:** `copy-in` of a
+repository with no commits yet copies no working tree at all. `git clone` of an unborn HEAD brings
+the repository and none of the files, so a project somebody has `git init`-ed, filled and not
+committed to arrives in the sandbox **empty**, with nothing said. Pinned by a test that asserts the
+current behaviour so a future fix has to be deliberate.
+
+### Three defects in the demo itself, all found by running it
+
+1. **The digest was measured at the wrong point.** The demo compared the host tree before and
+   after the *apply*, which is the step where the user said yes, so of course it changes. It now
+   measures the promise where the promise is: before anything, and after the agent's work has been
+   fetched. Those two are identical; the third digest is reported separately as the result of
+   accepting.
+2. **The teardown never ran.** The cleanup was in a `finally` that referenced a variable defined
+   later in the `try`, so `moat destroy` was never called and every run leaked its environment.
+   Three leaked environments were still alive, and one of them made a later run's agent talk to a
+   stub that no longer existed — which surfaced as **300 seconds** of Codex reporting
+   "Reconnecting... waiting for network", a message that reads like a sandbox network fault rather
+   than a dead process on the host. Fixed, and the demo now probes the stub's endpoint before
+   spending a boot on it, so that failure is immediate and accurate.
+3. **The conflict was listed twice.** `plan.conflicts` is a subset of `plan.changes`, so walking
+   both printed every conflict twice. `planVerdict` deduplicates and the type now says the
+   relationship.
+
+### What the demo deliberately is not
+
+The model is a stub, and the demo says so: it prints that the box, the runtime, the tools, the
+commits, the fetch and the merge are real, and the *decisions* are somebody else's by design. What
+is demonstrated is the harness around the model, which is the part moat owns.
+
+### Verified
+
+- `npm run test:unit`: **228 pass, 0 fail** (four new in `test/unit/baseline-content.test.ts`).
+- `bash test/e2e-demo.sh`: 9 checks, 0 failed, 8.4s warm.
+- The baseline sabotage: restoring the `add -A` rule fails two tests, and the demo then writes the
+  conflicting file.
+- Every suite is wired into `package.json` (`test:demo`) and listed in the README and `AGENTS.md`.

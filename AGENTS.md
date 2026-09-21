@@ -85,6 +85,7 @@ bash test/e2e-codex.sh    # the acceptance list, against a keyless model stub
 bash test/e2e-extras.sh   # snapshots, apply, credential expiry, state and process traps
 bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced, default (no key)
 bash test/e2e-provider.sh # a named, non-DeepSeek provider end to end, no credential in the image
+bash test/e2e-demo.sh     # `moat demo`: three-way attribution, keyless
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
 ```
 
@@ -525,6 +526,20 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   **the model id** is always a fact. An unknown model is not an error — that is the `--base-url`
   case the whole suite runs on — so it boots with the id as its label and no declared limits, and
   says so.
+* **The baseline is the commit, not the working tree with your uncommitted work in it.**
+  `recordBaseline` (`sync/copyin.ts`) records **HEAD**. It used to `git add -A` and commit the
+  result, which reads like "exactly what was copied" and silently disabled the product's central
+  claim on the most common state a repository is in: `planApply` decides whether a file is yours
+  by comparing the host against the baseline, so a file you had *already* edited compared equal to
+  a dirty baseline and the agent's version went over your work as a plain "update", with no
+  conflict and nothing said — contradicting SPEC §2.2. Measured before the fix: your edit gone,
+  `applied 2 change(s); skipped 0`. The working tree still travels with the copy-in unchanged, so
+  the agent sees your work; only what counts as "before" changed. With no HEAD (a repository
+  nobody has committed to) the baseline is the empty tree, and `test/unit/baseline-content.test.ts`
+  holds all of it. Related trap, same file: **`copy-in` of a repository with no commits yet copies
+  no working tree at all** — `git clone` of an unborn HEAD brings the repository and none of the
+  files — so such a project arrives in the sandbox empty and nothing says so. That one is
+  documented by a test rather than fixed.
 * **A missing runtime binary is repaired, never re-provisioned.** The agent is root in its
   own rootfs, so it can `rm /usr/local/bin/codex`, and an environment made by an older
   moat never had it. The next boot copies it into the live rootfs through

@@ -8,6 +8,7 @@ Usage: moat <command> [options]
   moat run "<task>"      boot if needed, do the task, stream the work
   moat take              review what the agent did; runs the project's own checks
   moat verify            just run those checks against the sandbox, no fetching
+  moat demo              see the whole thing work: three-way attribution, no API key
   moat down              stop the sandbox; nothing is lost
   moat status            what is running, on which model, with how much time left
 

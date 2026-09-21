@@ -359,8 +359,34 @@ export async function recordBaseline(p: EnvPaths): Promise<string | null> {
     GIT_COMMITTER_NAME: "moat",
     GIT_COMMITTER_EMAIL: "moat@localhost",
   }
+  // The baseline is the commit the project was at, **not** the working tree with its
+  // uncommitted changes folded in.
+  //
+  // It used `add -A` and committed the result, which made the baseline a snapshot of the user's
+  // dirty tree. That reads like "exactly what was copied" and it breaks the one thing the
+  // baseline exists for. `planApply` compares three trees -- base, the agent's sandbox, the
+  // host -- and asks whether *you* changed a file by comparing the host against the base. With a
+  // dirty base, a file you had already edited compared equal to the base, so the agent's version
+  // was written over your work as an "update" with no conflict and nothing said. Measured: a
+  // file edited on the host before copy-in and rewritten by the agent came back with your edit
+  // gone, `applied 2 change(s); skipped 0`. SPEC section 2.2 promises the opposite for exactly
+  // that case.
+  //
+  // A dirty working tree is the normal state of a repository somebody is working in, so this was
+  // not an edge case: it was the common one, and it silently disabled the attribution the
+  // product is built on.
+  //
+  // HEAD is the honest baseline: it is what the project was before either side touched it, and
+  // the user's uncommitted work is *theirs*, on the "mine" side of the merge, which is where the
+  // comparison can see it. The working tree still travels with the copy-in unchanged, so the
+  // agent sees the user's work; only what counts as "before" changes.
+  const head = await sandboxGit(p.work, ["rev-parse", "--verify", "--quiet", "HEAD"], { env, allowFailure: true })
   await sandboxGit(p.work, ["read-tree", "HEAD"], { env, allowFailure: true })
-  await sandboxGit(p.work, ["add", "-A"], { env })
+  if (head.code !== 0 || head.stdout.trim().length === 0) {
+    // No HEAD: a repository with no commit yet. There is nothing to record as "before", so the
+    // tree is the baseline, which is what the old code did for every case.
+    await sandboxGit(p.work, ["add", "-A"], { env })
+  }
   const tree = await sandboxGit(p.work, ["write-tree"], { env, allowFailure: true })
   if (tree.code !== 0) return null
   const commit = await sandboxGit(p.work, ["commit-tree", tree.stdout.trim(), "-m", "moat: state copied from the host"], {

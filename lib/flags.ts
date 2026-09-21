@@ -43,6 +43,8 @@ export const SPEC: Spec = {
   all: "boolean",
   checkout: "boolean",
   name: "string",
+  dir: "string",
+  keep: "boolean",
   "env-var": "string",
   "wire-api": "string",
   remove: "boolean",
@@ -58,7 +60,6 @@ export const SPEC: Spec = {
   "dry-run": "boolean",
   force: "boolean",
   quiet: "boolean",
-  keep: "boolean",
 }
 
 /**
@@ -118,6 +119,7 @@ export const COMMAND_FLAGS: Record<string, readonly string[]> = {
   models: ["json", "refresh"],
   provider: ["remove", "base-url", "env-var", "wire-api", "model", "json"],
   profiles: ["json"],
+  demo: ["dir", "keep", "timeout"],
 }
 
 /** A flag that does not exist, or one this command does not read. */

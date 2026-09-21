@@ -1,0 +1,13 @@
+{
+  "model": "deepseek-flash",
+  "turns": [
+    {
+      "tool": {
+        "cmd": "cd /work && printf '%s\\n' 'What this is: a demo of three-way attribution.' 'Second line: the agent rewrote this one.' 'Third line: untouched.' > notes.txt && printf '%s\\n' 'export const greeting = (name) => `Hi, ${name}!`' > app.js && git add -A && git -c user.email=demo@example.com -c user.name=demo commit -qm 'agent: rewrite the greeting and the second line' && git log --oneline -1"
+      }
+    },
+    {
+      "text": "Rewrote app.js and the second line of notes.txt, and committed both."
+    }
+  ]
+}

@@ -19,7 +19,8 @@
     "test:unit": "node --test test/unit/*.test.ts",
     "test:e2e": "bash test/e2e-codex.sh",
     "test:extras": "bash test/e2e-extras.sh",
-    "test:provider": "bash test/e2e-provider.sh"
+    "test:provider": "bash test/e2e-provider.sh",
+    "test:demo": "bash test/e2e-demo.sh"
   },
   "devDependencies": {
     "@types/node": "^24.13.5",
