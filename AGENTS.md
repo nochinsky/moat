@@ -71,7 +71,8 @@ bundle/          the rendered Codex config, the agent brief, the event parser
 lib/             provider, models.dev catalog, pricing, host probe, hashing
 test/            the keyless model stubs, the pty suites, and the evidence they write
 docs/            SPEC (the contract), VERIFICATION (the evidence),
-                 HISTORY (how the project got here)
+                 HISTORY (how the project got here), SEAM (the agent-harness
+                 interface a second runtime would have to satisfy)
 ```
 
 ## Running it

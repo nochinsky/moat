@@ -4,8 +4,13 @@ The contract for this work is `docs/PROGRAM.md`; `AGENTS.md` is the standing con
 the codebase. This file is the resume point: it says **which phase is in progress**, whether
 that phase's gate has passed, and what a session with no memory needs to know to continue.
 
-**Current phase: 3 (the review surface) — GATE PASSED.**
-**Next: phase 4 (name the harness seam, then spike ACP). Not started.**
+**Current phase: 4 (the harness seam, and a spike) — GATE PASSED.**
+**Next: phase 5 (make it reachable: publishable package, `npx`-able, README rewritten). Not started.**
+
+Phase 4's two deliverables are in: the seam is written down in `docs/SEAM.md` (documentation
+only, no behaviour change), and the ACP spike is answered in the session-4 report at the end of
+this file, with a recommendation **not** to migrate in this program. The one thing it could not
+settle is recorded there as an open question rather than as a result.
 
 The published history was rewritten on the owner's instruction (session 3, at the end of this
 file): 22 session passwords were in `main`'s history and are now gone from the public repository,
@@ -988,3 +993,162 @@ the repository now carry the rewritten session identifiers.
 The `onboard.txt` guard was checked directly rather than by hoping the suite would exercise it: the
 suites run keyless, so section J skips and never writes the file. Writing one by hand showed
 `git check-ignore` matching it and `git status` ignoring it.
+
+---
+
+## Session 4 — Phase 4: the seam named, and the ACP spike
+
+### The seam
+
+Written down in `docs/SEAM.md`, with no behaviour change anywhere: one new documentation file.
+The short version is that the seam is a **batch** one. The host hands the box a shell script
+(`codexExecBody`), the script prints one JSON object per line on stdout, and
+`parseCodexEvents` turns the finished stream into a `CodexTurn`. `runInSandbox` — the only
+thing that runs the box — contains no reference to Codex outside comments, so the runtime is
+already swappable in principle.
+
+Three properties of the payload contract are load-bearing and were already true:
+`usage.input` is the cache-*miss* count (the wire's `input_tokens` **includes** cached tokens,
+and charging it raw over-reported a mostly-cached turn by about ten times); a *notice* is not
+an error; unknown event types are ignored rather than guessed at.
+
+The edges the exercise exposed, none of which moat has today: no mid-turn interaction, no
+approval channel, no session protocol, no usage until the turn ends. Those are precisely what
+a protocol like ACP adds, which is why the phase pairs the two.
+
+### The spike: what I actually ran
+
+Not a reading exercise. A ~400-line throwaway ACP client (`client.mjs`, `modes.mjs`,
+`diag.mjs`), the real `@agentclientprotocol/codex-acp` adapter, and moat's own pinned Codex
+binary, driven **inside a moat sandbox** with a keyless Responses stub on the box's own
+loopback. Nothing from the spike is committed to moat.
+
+The protocol detail worth writing down first, because it is easy to get wrong: ACP's stdio
+transport is **newline-delimited JSON-RPC**, not LSP's `Content-Length` framing. "Messages are
+delimited by newlines and MUST NOT contain embedded newlines"
+([transports.mdx](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/v2/transports.mdx)).
+
+Measured in the box, all of it over stdio with no port anywhere:
+
+```
+initialize      -> protocolVersion 1; agent @agentclientprotocol/codex-acp 1.12.0
+                   authMethods: ["api-key"]
+                   capabilities: loadSession, session/{resume,list,close,delete,fork,
+                                 additionalDirectories,subagents}
+authenticate    -> { method: "api-key", ok: true }        (CODEX_API_KEY in the env)
+session/new     -> sessionId + models + modes + configOptions
+session/prompt  -> stopReason "end_turn"
+                   session/update: available_commands_update, session_info_update x3,
+                                   agent_message_chunk x3
+```
+
+`session/new` also reports `configOptions` for `mode`, `model`, `reasoning_effort` and
+`collaboration_mode` — moat's `--model` and `--effort` arrive intact, and the adapter offers
+`mock-model[low|high|max]`.
+
+### The four questions
+
+**1. Does it work in the box with no port and no server?** **Yes.** The adapter is an ACP
+*agent server* in the protocol sense only: it is a subprocess reading stdin and writing stdout.
+It launches `codex app-server` as a child over pipes. Nothing binds, nothing listens, no socket
+and no daemon — so AGENTS.md invariant 6 ("the agent loop, its tools and the filesystem live
+inside the box … there is no server in the box and nothing is proxied") survives adoption as
+written. The whole turn above ran with the stub on the box's own loopback and no host
+reachability at all.
+
+**2. Is `session/request_permission` answerable entirely by the client?** **The client is the
+only party that can answer it, and answering needs no config file** — but I could not make the
+adapter ask under moat's configuration, and I am reporting that rather than papering over it.
+
+What is established:
+- The adapter emits the request from `handleCommandExecution`, `handleFileChange`,
+  `handlePermissionsRequest` and plan approval, with the option sets in the bundle:
+  `allow_once` ("Yes, proceed"), `allow_always` ("Yes, and don't ask again for this command
+  in this session"), `reject_once` ("No, and tell Codex what to do differently"). The
+  decision returned is the client's chosen `optionId`; there is no other input.
+- The adapter **overrides `approval_policy` per turn**: `runTurn({ approvalPolicy:
+  agentMode.approvalPolicy, … })`. Its three modes are a table in the bundle —
+  `read-only` = `on-request` + `workspace-write`, `agent` = `on-request` + `auto_review` +
+  `workspace-write` (the **default**), `agent-full-access` = `never` + `danger-full-access`.
+- A hand-written config's `approval_policy` is therefore *not* what decides whether the box
+  asks. moat's "never ask" would become a property of the mode the client selects, which is
+  arguably stronger than a rendered file — but it is a different mechanism and it changes the
+  default.
+- What I could not trigger: with the stub as the model, the tool call never reached the
+  approval path. In `read-only` mode the scripted command did **not** run and **no** request
+  was sent; in `agent` and `agent-full-access` it did not run either, and the agent still
+  reported "Ran the command." I did not establish where that call was dropped. A stub cannot
+  answer this, and forcing it would need a real model turn aimed at a restricted path.
+  **This is the one open question, and it is the one that matters most for a migration.**
+
+**3. What third-party adapters would we depend on, and can they be digest-pinned?**
+`@agentclientprotocol/codex-acp` is official (published under the
+`agentclientprotocol` npm scope, [repo](https://github.com/agentclientprotocol/codex-acp)),
+prebuilt as **one 1.27 MB bundled file** with no `node_modules`, and its published digest
+matches its tarball exactly — I verified
+`sha512-au6YcgvZmoUMuFrJlSYfJrHEB9SW4YHwUUS8fchYBIY2uwq/lJXwebgP4di9ANJulmr+mv2FE0CraY1agi5YYg==`
+by recomputing it. So it pins exactly the way `lib/pins.ts` pins everything else, with no
+build step.
+
+Two things it drags in that moat does not have today:
+- **It is a Node program.** The default moat image has **no `node`** — `node` is in the
+  `node` *profile*, not `BASE_PACKAGES`. This is measured, not inferred: in a box booted
+  without the profile, `sh -c 'node --version'` prints `sh: node: not found`, and with
+  `--profile node` it prints `v22.23.2`. Adoption therefore forces a choice: add Node to the
+  base image for every box, or make ACP a mode that requires the profile.
+- **Its bundled Codex is a second runtime.** It depends on `@openai/codex ^0.154.0` and spawns
+  `@openai/codex/bin/codex.js app-server` unless `CODEX_PATH` is set. Setting
+  `CODEX_PATH=/usr/local/bin/codex` makes it drive **moat's pinned binary** instead, and that
+  worked here — `codex 0.155.1` has the `app-server` subcommand and completed the handshake and
+  the turn. Without `CODEX_PATH` it dies immediately with `Cannot find module
+  '@openai/codex/bin/codex.js'`, which I hit by accident and is worth knowing.
+
+**4. What breaks?**
+
+- **The image grows.** Node in every box, or ACP that only works with one profile.
+- **`moat run`'s event path is replaced, not extended.** `parseCodexEvents` reads
+  `codex exec --json`; ACP speaks `session/update` with a different event vocabulary, so the
+  parser, the tool-row model and the pricing hand-off would all be rewritten. The seam document
+  is what makes that a contained change rather than a rewrite of callers.
+- **The model catalog and prompt pin are Codex-specific.** `bundle/codex-prompt.ts`,
+  `bundle/model-catalog.ts` and the `base_instructions` pin describe the *pinned binary's*
+  behaviour; a different runtime means a different set of equivalents.
+- **Auth becomes a protocol step.** `authenticate` requires `CODEX_API_KEY` or
+  `OPENAI_API_KEY` in the environment (measured: without it, `session/new` fails
+  `{"code":-32000,"message":"Authentication required"}`). moat injects a *named* variable per
+  provider, so adoption needs a mapping from the provider's variable to the adapter's.
+- **`NO_BROWSER=1` is required.** The adapter otherwise advertises the ChatGPT browser login,
+  which cannot work in a box. This is exactly the class of thing a wrong default hides.
+- **New surface with no moat equivalent**: `session/{list,resume,fork,delete}`, subagent
+  sessions, MCP over HTTP, terminal passthrough (`terminal/create`, `fs/read_text_file`) —
+  all of which a client may simply not implement, but each is a decision.
+
+### Recommendation
+
+**Do not migrate in this program; keep the hand-written Codex adapter.** That is what
+`docs/PROGRAM.md` instructs, and the spike gives it an evidence-backed reason rather than
+merely following orders:
+
+1. Nothing moat needs today is blocked by the current seam. The four things ACP would add —
+   mid-turn interaction, an approval channel, sessions, streaming usage — are things moat
+   deliberately does not do (it answers approval with a rendered `approval_policy = "never"`
+   and gives the box full access, because the box *is* the boundary).
+2. The cost is concrete and lands on every user: Node in the base image, and a second agent
+   runtime to keep pinned alongside the one that exists.
+3. The one question that decides whether it is even a good fit could not be settled here: I
+   could not make the adapter ask for permission under moat's configuration, so the claim
+   "moat keeps its never-ask stance at the protocol level" is **not verified**. Migrating on an
+   unverified premise is the thing this program is most explicit about not doing.
+
+**If** a next program takes this up, the order that follows from the measurements is:
+(1) settle the permission question with a real model against a restricted path;
+(2) decide `node` in `BASE_PACKAGES` versus an ACP-only profile;
+(3) pin the adapter by the digest above in `lib/pins.ts` and render `CODEX_PATH`, `CODEX_API_KEY`
+and `NO_BROWSER` on every boot the way the config is rendered today;
+(4) write the second adapter behind the `docs/SEAM.md` interface and keep
+`parseCodexEvents` until a turn's cost footer matches to the cent on both paths.
+
+**One thing the spike did settle, and it is worth keeping regardless of ACP:** the adapter
+drives `codex app-server`, and moat's pinned binary speaks it. That is a supported,
+stdio-only, port-free control channel into the runtime moat already ships — a useful fallback
+for mid-turn control that does not require adopting ACP at all.
