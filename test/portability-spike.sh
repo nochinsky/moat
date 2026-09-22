@@ -99,24 +99,85 @@ if [ -z "$FOUND_CTR" ]; then
   say "    Debian/Ubuntu:  sudo apt-get install -y podman"
   say "    Fedora:         sudo dnf install -y podman"
   say "  then:           bash test/portability-spike.sh"
-elif [ "$FOUND_CTR" = "podman" ] || [ "$FOUND_CTR" = "docker" ]; then
-  if $FOUND_CTR info >/dev/null 2>&1; then
-    mark MEASURED "$FOUND_CTR is usable by this user" "rootless, no sudo"
-    if $FOUND_CTR run --rm --rootfs /tmp alpine true >/dev/null 2>&1; then
-      mark MEASURED "--rootfs accepts a plain directory" "a persistent rootfs is possible"
-    else
-      mark UNKNOWN "--rootfs could not be tested (no image, or not supported)" "try: $FOUND_CTR run --rm --rootfs /tmp sh -c true"
-    fi
-    mark NOT-MEASURED "whether a container rootfs survives between boots" "moat's rootfs is persistent and agent-writable; a container image is not"
-  else
-    mark BLOCKED "$FOUND_CTR is installed but unusable by this user" "likely root-only; try rootless setup, or run as root"
-  fi
-else
+elif [ "$FOUND_CTR" != "podman" ] && [ "$FOUND_CTR" != "docker" ]; then
   mark UNKNOWN "$FOUND_CTR is present" "not a runtime this spike knows how to probe"
+elif ! $FOUND_CTR info >/dev/null 2>&1; then
+  mark BLOCKED "$FOUND_CTR is installed but unusable by this user" "likely root-only; try rootless setup, or run as root"
+else
+  mark MEASURED "$FOUND_CTR is usable by this user" "rootless, no sudo"
+  # The five questions that decide whether a container can stand in for the unshare path. Measured
+  # on a real rootfs directory, because the answer to the first one is what the whole option turns
+  # on — and because reading it off a design document is how the first version of this got it wrong.
+  IMG="${PROBE_IMAGE:-docker.io/library/alpine:3.21}"
+  ROOTFS="$(mktemp -d "${TMPDIR:-/tmp}/moat-ctr-rootfs-XXXXXX")"
+  if ! $FOUND_CTR pull -q "$IMG" >/dev/null 2>&1; then
+    mark UNKNOWN "could not pull $IMG" "no network, or the registry is unreachable — set PROBE_IMAGE to one you have"
+  else
+    CID="$($FOUND_CTR create "$IMG" true 2>/dev/null)"
+    # `-x "$ROOTFS/bin/sh"` is the wrong test: Alpine's `/bin/sh` is a symlink to an absolute
+    # `/bin/busybox`, which resolves against the *host* once extracted, so the check fails for a
+    # reason that has nothing to do with the extraction. A directory is enough; the `--rootfs` probe
+    # below is what actually proves the tree is usable.
+    if [ -n "$CID" ] && $FOUND_CTR export "$CID" 2>/dev/null | tar -x -C "$ROOTFS" 2>/dev/null && [ -d "$ROOTFS/bin" ] && [ -d "$ROOTFS/etc" ]; then
+      $FOUND_CTR rm "$CID" >/dev/null 2>&1
+
+      # 1. Can a plain directory be the rootfs at all?
+      if $FOUND_CTR run --rm --rootfs "$ROOTFS" /bin/sh -c true >/dev/null 2>&1; then
+        mark MEASURED "--rootfs accepts a plain directory" "moat's rootfs is a directory, not an image"
+      else
+        mark BLOCKED "--rootfs did not accept a plain directory" "a portable backend would have to convert the rootfs to an image, which loses it between boots"
+      fi
+
+      # 2. Does a write inside PERSIST into that directory? (moat's agent owns its rootfs.)
+      inner_uid="$($FOUND_CTR run --rm --rootfs "$ROOTFS" /bin/sh -c 'echo w > /moat-probe && id -u' 2>/dev/null | tail -1)"
+      if [ -f "$ROOTFS/moat-probe" ]; then
+        mark MEASURED "an agent's writes persist into it" "inside uid=$inner_uid; the file survived the container"
+      else
+        mark BLOCKED "a write inside did not reach the directory" "the rootfs would not survive between boots"
+      fi
+
+      # 3. Its own namespaces, compared with this host's, by inode.
+      box=""; for n in pid mnt user net uts ipc; do
+        b="$($FOUND_CTR run --rm --rootfs "$ROOTFS" /bin/sh -c "readlink /proc/self/ns/$n" 2>/dev/null | tail -1)"
+        h="$(readlink /proc/self/ns/$n)"
+        [ -n "$b" ] && [ "$b" != "$h" ] && box="$box $n"
+      done
+      if [ "$(printf '%s' "$box" | wc -w)" = "6" ]; then
+        mark MEASURED "all six namespaces differ from the host" "$(printf '%s' "$box" | sed 's/^ //')"
+      else
+        mark PARTIAL "not every namespace differed" "differed:${box:- none}"
+      fi
+
+      # 4. The device nodes moat binds from the host by hand — does the runtime already have them?
+      if $FOUND_CTR run --rm --rootfs "$ROOTFS" /bin/sh -c 'echo x > /dev/null' >/dev/null 2>&1; then
+        mark MEASURED "/dev is populated by the runtime" "moat's six host device binds would not be needed"
+      else
+        mark UNKNOWN "> /dev/null did not work inside" "the runtime's /dev may need the same treatment moat gives it"
+      fi
+
+      # 5. Is any host data reachable? (moat's central promise, and it must not depend on the path.)
+      # The host's home PATH, not `$HOME` inside: the container's `$HOME` is `/root`, which exists
+      # in every rootfs, so asking for `$HOME` there reports the container's own home as if it were
+      # the host's. This asked the wrong question once already.
+      HOST_HOME="$HOME"
+      home_inside="$($FOUND_CTR run --rm --rootfs "$ROOTFS" /bin/sh -c "ls -d '$HOST_HOME' 2>/dev/null || echo none" 2>/dev/null | tail -1)"
+      if [ "$home_inside" = "none" ]; then
+        mark MEASURED "the host's home is not inside" "and no host data is mounted"
+      else
+        mark BLOCKED "the host's home is visible inside" "$home_inside"
+      fi
+
+      # 6. Network modes available to a portable backend.
+      lo_only="$($FOUND_CTR run --rm --network=none --rootfs "$ROOTFS" /bin/sh -c 'cat /proc/net/dev | tail -n +3 | wc -l' 2>/dev/null | tail -1)"
+      mark MEASURED "network modes are the runtime's own" "--network=none gives ${lo_only:-?} interface(s); the allowlist story changes shape"
+    else
+      mark UNKNOWN "could not unpack $IMG into a directory" "the export or extraction failed"
+    fi
+  fi
+  rm -rf "$ROOTFS" 2>/dev/null || true
 fi
 say ""
 
-# ---------------------------------------------------------------------------
 say "== 5. the microVM path (moat v1)"
 say ""
 if [ -e /dev/kvm ]; then
