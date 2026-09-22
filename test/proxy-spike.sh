@@ -74,6 +74,8 @@ fi
 cat > "$SCRATCH/recorder.py" <<'PY'
 import socket, sys, threading
 port, log = int(sys.argv[1]), sys.argv[2]
+addr = sys.argv[3] if len(sys.argv) > 3 else "127.0.0.1"
+code = int(sys.argv[4]) if len(sys.argv) > 4 else 502
 open(log, "w").close()
 def handle(c):
     try:
@@ -81,14 +83,14 @@ def handle(c):
         line = c.recv(8192).split(b"\r\n", 1)[0].decode("utf8", "replace").strip()
         with open(log, "a") as f:
             f.write(line + "\n")
-        c.sendall(b"HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\n\r\n")
+        c.sendall(b"HTTP/1.1 %d %s\r\ncontent-length: 0\r\n\r\n" % (code, b"OK" if code == 200 else b"Bad Gateway"))
     except Exception:
         pass
     finally:
         c.close()
 s = socket.socket()
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind(("127.0.0.1", port))
+s.bind((addr, port))
 s.listen(32)
 while True:
     conn, _ = s.accept()
@@ -170,6 +172,70 @@ for RT in codex claude; do
   say ""
 done
 
+# ---------------------------------------------------------------------------
+# Where can the proxy live? It has to be reachable from the box, and the box's other two egress
+# modes close the host's loopback deliberately — so "the host's namespace, on 127.0.0.1" is the one
+# placement most likely not to work.
+say "== where a proxy can live: the box's other egress modes, and the host's addresses"
+say ""
+HOSTIP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+if [ -z "$HOSTIP" ]; then
+  mark BLOCKED "this host has no non-loopback address" "there is nothing to place a listener on"
+else
+  DIR="$SCRATCH/project-isolated"
+  rm -rf "$DIR"; mkdir -p "$DIR"
+  (
+    cd "$DIR"
+    git init -q -b main . >/dev/null 2>&1
+    git config user.email spike@example.com
+    git config user.name spike
+    printf '{"name":"isolated","scripts":{"test":"true"}}\n' > package.json
+    git add -A && git commit -qm base
+  )
+  if ( cd "$DIR" && $MOAT up --quiet --egress isolated --no-detect --model deepseek-flash \
+        --base-url "http://127.0.0.1:$ENDPOINT_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL ) > "$SCRATCH/up-isolated.log" 2>&1; then
+    say "  a listener on the host's own address $HOSTIP:$ENDPOINT_PORT (recording)"
+    python3 "$SCRATCH/recorder.py" "$ENDPOINT_PORT" "$SCRATCH/host.log" "$HOSTIP" 200 > "$SCRATCH/host.out" 2>&1 &
+    PIDS+=($!)
+    sleep 1
+    if curl -s -o /dev/null --max-time 3 "http://$HOSTIP:$ENDPOINT_PORT/" 2>/dev/null; then
+      mark MEASURED "control: the host reaches its own $HOSTIP" "so a refusal below is not a dead listener"
+    else
+      mark UNKNOWN "control: the host cannot reach its own $HOSTIP" "the rows below mean nothing"
+    fi
+    OUT=$( cd "$DIR" && $MOAT exec -- sh -c "
+      timeout 6 wget -q -O /dev/null http://1.1.1.1/ && echo outbound=OK || echo outbound=no
+      timeout 5 wget -q -O /dev/null http://$HOSTIP:$ENDPOINT_PORT/ && echo hostaddr=REACHED || echo hostaddr=refused
+      timeout 5 wget -q -O /dev/null http://10.0.2.2:$ENDPOINT_PORT/ && echo gateway=REACHED || echo gateway=refused
+    " 2>/dev/null )
+    say "$(printf '%s\n' "$OUT" | sed 's/^/    /')"
+    say ""
+    if printf '%s' "$OUT" | grep -q "outbound=no"; then
+      mark UNKNOWN "the isolated box has no uplink at all" "nothing here is about the proxy"
+    elif printf '%s' "$OUT" | grep -q "gateway=REACHED"; then
+      mark BLOCKED "the host's loopback is reachable from an isolated box" "that is the property --disable-host-loopback exists for, and it is broken"
+    elif printf '%s' "$OUT" | grep -q "hostaddr=REACHED"; then
+      mark MEASURED "a host-side proxy IS reachable from an isolated box — on the host's non-loopback address" "the loopback stays closed; the listener is on the LAN, so it has to be bound and authenticated deliberately"
+    else
+      mark MEASURED "a host-side proxy is NOT reachable from an isolated box" "the proxy would have to live inside the box or in its namespace instead"
+    fi
+    # The placement that would avoid all of that: a host process in the box's own namespace. It is
+    # how slirp4netns appeared to work, and it does not: slirp runs in the HOST's namespace and
+    # creates the tap from outside.
+    BOXPID=$( cd "$DIR" && $MOAT status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("pid") or "")' )
+    if [ -n "$BOXPID" ] && command -v nsenter >/dev/null 2>&1; then
+      if nsenter --target "$BOXPID" --net -- true 2>/dev/null; then
+        mark MEASURED "an ordinary process CAN enter the box's network namespace" "a proxy could be a host-side sibling of the box's loopback"
+      else
+        mark MEASURED "an ordinary process CANNOT enter the box's network namespace" "$(nsenter --target "$BOXPID" --net -- true 2>&1 | tail -1)"
+      fi
+    fi
+  else
+    mark BLOCKED "the isolated box did not boot" "$(tail -1 "$SCRATCH/up-isolated.log")"
+  fi
+fi
+say ""
+
 say "=================================================================="
 say "What this run measured, and what it did not"
 say "=================================================================="
@@ -177,9 +243,12 @@ say ""
 say "  measured    whether each runtime's own HTTP client sends its model traffic through a proxy"
 say "              when HTTP_PROXY/HTTPS_PROXY/ALL_PROXY are set in the box, against a control with"
 say "              none set, and which other hosts each runtime also talks to"
+say "  measured    where a proxy can live, for the box's other two egress modes: an isolated"
+say "              box refuses the host's loopback on both routes, but reaches the host's"
+say "              non-loopback address, and an ordinary process cannot enter the box's namespace"
 say "  not measured  that moat can *set* those variables: MOAT_SANDBOX_ENV accepts only MOAT_ names"
 say "              (sandbox/launcher.ts), so a proxy is a managed-env change rather than config;"
-say "              whether a proxy is reachable from a box under filtered/isolated egress, where the"
-say "              host's loopback is closed; and nothing about a microVM backend — docs/MICROVM.md"
-say "              §5 has that open question"
+say "              the same placement question under a container or microVM backend"
+say "              (docs/MICROVM.md §4–§5); and what the policy should do to the vendor hosts"
+say "              each runtime also calls"
 say ""

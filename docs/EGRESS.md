@@ -52,15 +52,34 @@ environment on a boot. That is a small change, but it is a change to moat rather
 configuration, and it is why this reading had to be taken with the variables set by hand inside the
 box.
 
-## 4. What this does not decide
+## 4. Where the proxy can live, and what is still open
 
-* **Whether a proxy is reachable from a box whose egress is `filtered` or `isolated`.** The reading
-  above uses `--egress open`, the one mode where the host's loopback is reachable from the box.
-  Both other modes close it, deliberately — that is the property being bought — so a proxy in the
-  host's namespace would be unreachable from them, and a proxy *in the box's namespace* is a
-  different design. This is the first thing to measure next.
-* **The v1 half.** A microVM's datapath is `libkrun`'s, with its own gateway, and `docs/MICROVM.md`
-  §4–§5 has what is measured and what is not.
+* **Where the proxy can live — measured.** The §1 reading uses `--egress open`, the one mode where
+  the host's loopback is reachable from the box. Under `isolated` (the stricter of the other two),
+  taken from `test/proxy-spike.sh` with a listener on the host's own address as the control:
+
+  ```
+  outbound to 1.1.1.1     : OK          the box has a working uplink
+  host's loopback         : refused    127.0.0.1 and slirp's 10.0.2.2 gateway, both
+  host's non-loopback     : REACHED    192.168.1.236:47421 — the LAN address
+  ```
+
+  So the loopback really is closed and a host-side proxy is still reachable — on the host's
+  **non-loopback** address. `filtered` can allowlist exactly that address and port rather than
+  taking `--allow-host-loopback`, which would open the whole thing. Two consequences, neither
+  settled: the listener is on the LAN, so it has to be bound to a deliberate address and
+  authenticate its callers instead of trusting "only the box can reach it"; and the box can already
+  reach the host as a LAN machine, which is a property of `isolated` worth saying out loud — it was
+  never a LAN firewall, and SPEC §7.3 already says the filter is a policy rather than a jail.
+
+  The alternatives are worse or unavailable. **A host process cannot enter the box's network
+  namespace**: `nsenter --target <pid> --net` answers `Operation not permitted`, and slirp4netns is
+  not doing that either — measured, it runs in the *host's* namespace (`net:[4026531833]`) and
+  creates the tap from outside. **A proxy inside the box** would be agent-visible and
+  agent-killable, which is the thing invariant 6's reason forbids.
+* **The same question under the other backends.** This is all the `unshare` backend. Whether a
+  container backend's default network or a microVM's datapath can carry a host-side proxy is
+  `docs/MICROVM.md` §4–§5, where a passt-backed box has a real uplink and a closed host loopback.
 * **The proxy's own threat model.** A terminating proxy sees every request and holds the credential
   it injects. That is a new class of component in moat — the first that terminates egress on the
   host — and `AGENTS.md` invariant 6 ("there is no server in the box and nothing is proxied") would
@@ -69,18 +88,26 @@ box.
 * **What happens to a request the policy refuses.** "The agent cannot reach that host" is a policy;
   what the agent *does* about it — surface an error, retry, abandon the turn — is unmeasured.
 
-## 5. Two harness lessons, both of which were bugs in this spike
+## 5. Three harness lessons, all of them bugs in this spike
 
-Recorded because they are the failure modes a measurement tool has, not the ones a probe has:
+Recorded because they are the failure modes a *measurement tool* has, and each one produced a
+confident wrong answer before it was found:
 
 * **A check that fails on success.** `grep -c` prints `0` *and exits 1* when nothing matches, so
   `$(grep -c . log || echo 0)` produced two lines, every comparison against `"0"` was true, and the
-  first version of the script reported `UNKNOWN — the control is not a control` for a control whose
-  log was empty. That is verbatim the trap `AGENTS.md` records for the checks runner; the fix is a
-  `count()` that keeps grep's printed zero and only falls back for a missing file.
+  first version reported `UNKNOWN — the control is not a control` for a control whose log was
+  empty. Verbatim the trap `AGENTS.md` records for the checks runner; the fix is a `count()` that
+  keeps grep's printed zero and only falls back for a missing file.
+* **Reachability inferred from an HTTP status.** The placement listener answered 502, and busybox
+  `wget` exits **8** for an error response — so a box that *did* reach the host's address was
+  recorded as `refused`. The run contradicted a standalone probe using `python3 -m http.server`
+  (which answers 200), and the contradiction is what exposed it. The recorder now takes its status
+  code as an argument, and only the placement listener answers 200, so `wget` exiting 0 means the
+  connection arrived.
 * **A control has to be a precondition, not a footnote.** The Claude leg first ran the CLI without
   `ANTHROPIC_BASE_URL`, which moat's `run` path sets and `moat exec` does not — so Claude talked to
-  its own default host and the run would have reported a confident result about nothing. The
-  script now refuses to conclude anything unless the *no-proxy* leg reached the endpoint.
+  its own default host and the run would have reported a confident result about nothing. The script
+  now refuses to conclude anything unless the *no-proxy* leg reached the endpoint.
 
-Both were found by running the thing, which is the only way either is found.
+All three were found by running the thing and disbelieving the result, which is the only way any of
+them is found.

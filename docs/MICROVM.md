@@ -97,9 +97,10 @@ Two consequences worth keeping:
   be *used* by the agent's HTTP client, and both runtimes do use one: with the standard variables
   set in the box, Codex's model request and Claude's both arrive at a recording proxy and not at the
   configured endpoint, each leg with a no-proxy control. `docs/EGRESS.md` §1 has the readings and
-  `test/proxy-spike.sh` takes them. What is *not* settled is whether such a proxy is reachable from a
-  box whose egress is `filtered` or `isolated` — both close the host's loopback deliberately — and
-  that is now the first open question, in `docs/EGRESS.md` §4.
+  `test/proxy-spike.sh` takes them. Where such a proxy can live is measured too: an isolated box
+  refuses the host's loopback but *does* reach the host's non-loopback address, so a host-side proxy
+  is viable there while the loopback stays closed — `docs/EGRESS.md` §4. What is open under a
+  microVM is the datapath itself (§4 above).
 * **Whether `filtered`'s nftables allowlist has a v1 equivalent.** A v0 box owns its netns, which is
   why `nft` works there and why SPEC §7.3 calls the filter a policy rather than a jail. A guest
   kernel's netns is not a host netns, and whether the same ruleset means anything in a VM is
