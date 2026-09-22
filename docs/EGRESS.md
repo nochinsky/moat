@@ -351,8 +351,38 @@ What that costs and what it does not settle:
   in the proxy's log, because a dropped packet reads as a slow network rather than a refusal. The
   ruleset therefore carries one deliberate accept rule naming the proxy's address and port, and
   `test/unit/egress.test.ts` pins it — including that it admits nothing else beyond the allowlist.
-* **The state-driven boots are not proxied, and the hang is now characterised rather than merely
-  unexplained.** Wiring it was written, measured, and walked back twice. The second attempt caught the
+* **The state-driven boots are not proxied: the flake is the first boot after `up`, and an empty log
+  does not mean what I said it meant.** Wiring it was written, measured, and walked back a third time.
+  What the third attempt got, on six fresh environments with exactly one `moat exec -- sh -c 'echo hi'`
+  each:
+
+  ```
+  attempt 1: exit=124   last stage: none   output: (empty)
+  attempt 2: exit=124   last stage: none   output: (empty)
+  attempt 3: exit=0     last stage: entering the sandbox
+  attempt 4: exit=124   last stage: none   output: (empty)
+  attempt 5: exit=124   last stage: none   output: (empty)
+  attempt 6: exit=0     last stage: entering the sandbox
+  hangs: 4 / 6
+  ```
+
+  So it is **4 in 6 for a fresh environment's first boot**, not the 1-in-8 the earlier run suggested —
+  that run's later attempts reused an environment that had already booted once.
+
+  And the empty output is **not** evidence that the boot never reached its command, which is what I
+  wrote last round. The host only surfaces a boot's captured output when the boot returns, and this
+  path's setup (the datapath, the topology, the proxy) runs *before* the output reader is attached — so
+  a boot whose output is sitting unread in the pipe prints nothing to a log either. The stage markers
+  added here are therefore blind to this flake: they report the boot, and the thing that is stuck is
+  ahead of them.
+
+  The next step is named by that, and it is two changes rather than a guess: **attach the output reader
+  before the setup runs** (a boot's output should never be swallowed while the host works), and **log
+  the setup's own stages on the host** — the topology's holder, the link, the second datapath, the
+  proxy, and the readiness wait — so a stuck boot's *host* names its stage, which is the side that is
+  stuck.
+
+* **The old text of this bullet, kept because it was wrong:** Wiring it was written, measured, and walked back twice. The second attempt caught the
   flake with a dump, on a proxied environment and `moat exec -- sh -c 'echo hi'` run eight times:
 
   ```

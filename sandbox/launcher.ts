@@ -223,9 +223,16 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
   lines.push(`mount -t tmpfs -o mode=755,nosuid,nodev tmpfs "$N/run"`)
   // A copy, not a mount: the sandbox needs a resolver and has no host netns of its own.
   lines.push(`cp /etc/resolv.conf "$N/etc/resolv.conf" 2>/dev/null || true`)
+  // Stage markers from here on, and they exist because of a measurement rather than tidiness: a
+  // proxied `moat exec` hung once in eight runs, first boot after `up`, with the proxy up and its
+  // log showing it had started — and the boot's own output was *zero bytes*, so the stage it was
+  // stuck in could not be named. Everything before this point either succeeds or prints its own
+  // refusal; everything after it was silent. Now a stuck boot says where.
+  lines.push('echo "[moat] boot: mounts are up, network next"')
   if (opts.waitForTap) {
     // The sandbox is in its own network namespace. slirp4netns attaches tap0
     // from the host, and the box resolves through slirp, not the host resolver.
+    lines.push('echo "[moat] boot: waiting for the datapath"')
     lines.push("i=0")
     lines.push("while ! grep -q tap0 /proc/net/dev; do")
     lines.push("  i=$((i+1))")
@@ -237,6 +244,7 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
   if (opts.waitForLink) {
     // A boot that cannot get its link must not run anyway: it would come up with a proxy in its
     // environment and no way to reach it, which reads as a broken network rather than a failed boot.
+    lines.push('echo "[moat] boot: waiting for the proxy link"')
     lines.push("i=0")
     lines.push(`while ! grep -q ${opts.waitForLink} /proc/net/dev; do`)
     lines.push("  i=$((i+1))")
@@ -245,6 +253,7 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
     lines.push("done")
   }
   if (opts.egressRules) {
+    lines.push('echo "[moat] boot: applying the egress policy"')
     // A policy that fails to load must stop the boot: running unfiltered while
     // the environment claims to be filtered is worse than not booting at all.
     //
@@ -283,6 +292,7 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
   // a cwd above the new root would let `..` walk the host tree. `unset OLDPWD` is not tidiness:
   // dash's `cd` exports it, the box would inherit the host's previous directory, and
   // `moat doctor`'s env diff reports it as a host variable in the sandbox (measured).
+  lines.push('echo "[moat] boot: entering the sandbox"')
   const innerPath = `/.moat/${path.basename(entry)}`
   lines.push(`exec chroot "$N" /bin/sh -c ${shellQuote(`cd / && unset OLDPWD && exec ${innerPath}`)}`)
   return `${lines.join("\n")}\n`

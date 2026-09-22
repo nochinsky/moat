@@ -402,11 +402,12 @@ async function egressRuntime(state: EnvState, paths: EnvPaths): Promise<EgressRu
   if (state.egress === "filtered") await ensureFilterTool(paths)
   const provider = providerHost(state.providerBaseUrl ?? DEEPSEEK.baseUrl)
   const hosts = [...defaultAllowHosts(provider), ...(state.egressAllow ?? [])]
-  // NOT proxied yet, and deliberately. It was written, hung once in eight runs, and was walked back
-  // again: the reading is in docs/EGRESS.md §7 — first run after `up` only, the proxy started and
-  // served, and the boot never reached its own command (0 bytes of output) even though both of the
-  // boot's waits are bounded and print when they fail. A rare hang in `exec` is worse than an
-  // unproxied check, so nothing claims a policy it is not honouring.
+  // NOT proxied yet. This was written and walked back a third time, and the reason is now a sound
+  // measurement rather than an inference: see docs/EGRESS.md §7. In short, the flake is the *first*
+  // boot after `up` (4 hangs in 6 fresh environments), and its empty log says nothing about the boot —
+  // the host writes a boot's captured output only when the boot returns, and this path's setup runs
+  // *before* the reader is attached. So the stuck side is the host, and the stage markers cannot see
+  // it until the reader is moved ahead of the setup.
   const runtime = await runtimeForEgress(state.egress, {
     rootfs: paths.rootfs,
     allowHosts: hosts,
@@ -676,7 +677,6 @@ async function cmdUp(argv: string[]): Promise<number> {
   // `docs/EGRESS.md` has the measurements this rests on, and both refusals below are combinations
   // that cannot work rather than preferences.
   const egressProxyFlag = flag<boolean>(p, "egress-proxy")
-  // Per-invocation for now: recording it and honouring it on every boot is the step that hung.
   const egressProxy = egressProxyFlag ?? false
   const proxyAllow: string[] = []
   if (egressProxyFlag) {
