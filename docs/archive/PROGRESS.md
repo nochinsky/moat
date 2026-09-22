@@ -1629,4 +1629,62 @@ No seam, no adapter, no `--runtime`, no parser, and **no behaviour change** — 
 `npm run test:unit` (263) are untouched. What this session produced is a corrected measurement and
 the artefacts a parser will be written against.
 
+---
+
+## Session 10 — the stub, the captured turn, and the parser
+
+Session 9 ended with the thing that was missing: "a turn against a stub". This session built it,
+because a parser written against a *summary* of the stream is the guess the project keeps refusing
+to make — and the summary in `RUNTIMES.md` did not describe a tool turn at all.
+
+### The pipeline, in the order the project insists on
+
+1. **A keyless stub** of the Anthropic Messages API (an SSE server on the host's loopback, serving
+   one `tool_use` for the first request and a closing `text` once the tool result comes back).
+2. **A real turn** from the pinned binary inside a real box, `--egress open` so the box can reach
+   the host's loopback, `ANTHROPIC_BASE_URL` pointing at the stub.
+3. **The capture**, and only then the parser.
+
+The turn, measured:
+
+```
+system/init
+assistant   content=['text']
+assistant   content=['tool_use']          <- Bash: echo stub-tool-ran
+user        content=['tool_result']       <- "stub-tool-ran": the command really ran
+assistant   content=['text']
+result/success  is_error=False  permission_denials=[]  cost=0.0026825
+```
+
+`permission_denials=[]`, `is_error=false`, and a `Bash` command that actually executed. That is the
+whole Phase 2 policy question answered by measurement: **invariant 3 holds under an allowlist**, and
+"never blocked" is a *reading* — the field is right there on the `result` event.
+
+### What landed
+
+* `bundle/turn.ts` — the payload contract, lifted out of `bundle/codex.ts` where it was
+  `CodexTurn`. `docs/SEAM.md` §2.3 already named this shape as what a second runtime must produce;
+  it now has one definition instead of one definition and a lookalike, and `lib/pricing.ts` prices
+  it without knowing which agent produced it. `CodexTurn`/`describeCodexTurn` survive as aliases so
+  the Codex-facing call sites keep their names.
+* `bundle/claude.ts` — `parseClaudeEvents`, written against the capture above, with the two
+  Claude-specific traps handled where they belong (in the parser, not the footer): `input_tokens`
+  is the miss count already, so it is **not** reduced by the cache the way Codex's must be; and
+  `thinking_tokens` is lifted **out** of `output_tokens` rather than counted twice.
+* `test/unit/claude-runtime.test.ts` — the captured turn, the thinking map, the denial notice, the
+  auth failure, and the non-JSON/unknown-event tolerance.
+
+Verified: `npm run test:unit` at **268 tests, 268 pass, 0 fail**; typecheck clean. Both traps were
+proved to bite by reintroducing them — copying Codex's cache subtraction fails
+`a captured Claude turn parses into the shared shape`; counting output without lifting thinking
+fails `thinking tokens are lifted out of output rather than counted twice`; both pass again when
+restored.
+
+### Not done, and why
+
+No `--runtime`, no body script, no config/brief renderer, no e2e — the stub still lives in a scratch
+directory rather than `stub/`, because committing it before anything wires a Claude runtime would
+add an asset nothing reads. The next session renders the body and the policy, wires the flag, moves
+the stub in, and adds the e2e section that turns this capture into a suite check.
+
 

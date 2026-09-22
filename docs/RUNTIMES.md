@@ -179,14 +179,48 @@ turning permission checks off.
    `output_tokens` includes `thinking_tokens` still has to be measured against a real turn (the
    capture has thinking at 0, which proves nothing).
 
-### What is still unmeasured, and what it blocks
+### The tool turn, measured — this is the answer
 
-Not measured: whether an allowlisted tool call actually runs **without** a denial, and what
-`--permission-mode dontAsk` does to a tool call that would otherwise prompt (the docs say *deny*;
-the `permission_denials` field is how that would be caught). Both need a turn against a stub, which
-is the next step — the stream shape above is everything a parser needs to be written against, and
-the stub is what turns "the flags are accepted" into "a turn completes and no tool was denied".
+The open question was whether an allowlisted call actually runs **un-denied**. Measured with a
+keyless stub of the Messages API on the host's loopback, `--egress open`, and a real box:
 
-The decision this leaves for the owner is smaller than it looked: **keep invariant 3, do not touch
-the user namespace, and render the tool allowlist as policy** — with the caveat that moat would now
-be *choosing* the agent's tools, which is a promise it does not currently make for Codex.
+```
+$ printf 'run the check' | ANTHROPIC_BASE_URL=http://127.0.0.1:5611 ANTHROPIC_API_KEY=stub-key \
+      claude -p --output-format stream-json --verbose --permission-mode acceptEdits --allowedTools Bash
+system/init
+assistant   content=['text']
+assistant   content=['tool_use']          <- Bash: echo stub-tool-ran
+user        content=['tool_result']       <- "stub-tool-ran": the command really ran
+assistant   content=['text']
+result/success  is_error=False  permission_denials=[]  cost=0.0026825
+```
+
+`permission_denials=[]` with `is_error=false` while a `Bash` command executed: **"never asks" holds,
+and "never blocked" is a reading** rather than a promise. The captured shapes the parser is written
+against, with the fields it reads:
+
+```
+system/init   { cwd, model, permissionMode, tools:[…], apiKeySource }
+assistant     { message: { content: [ {type:"text",text} | {type:"tool_use",id,name,input} ],
+                           usage: { input_tokens, output_tokens,
+                                    cache_read_input_tokens, cache_creation_input_tokens },
+                           error?, is_api_error_message? } }
+user          { message: { content: [ {type:"tool_result", tool_use_id, content, is_error} ] } }
+result        { subtype, is_error, num_turns, total_cost_usd, permission_denials:[],
+                result, stop_reason, usage: { …, output_tokens_details:{thinking_tokens} } }
+```
+
+The numbers also settle the trap from the section above: the `result` usage was
+`input_tokens: 360`, `cache_read_input_tokens: 40`, `cache_creation_input_tokens: 10`,
+`output_tokens: 32` — the sum of the turn's two requests, with the cache reported **separately**. So
+`input_tokens` *is* the miss count for Claude; a parser that subtracted the cache the way Codex's
+must would have reported 320 and undercounted.
+
+Still unmeasured: whether `output_tokens` **includes** `thinking_tokens` (the turn had thinking at
+0, which proves nothing), and what `dontAsk` does to a call that would otherwise prompt. Both are
+pinned in one place — `bundle/claude.ts` and `test/unit/claude-runtime.test.ts` — so the first real
+turn with a thought can flip them without touching anything else.
+
+The decision this leaves is smaller than it looked: **keep invariant 3, do not touch the user
+namespace, and render the tool allowlist as policy** — with the caveat that moat would now be
+*choosing* the agent's tools, which is a promise it does not currently make for Codex.
