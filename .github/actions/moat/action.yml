@@ -1,0 +1,67 @@
+name: moat
+description: >-
+  Run a coding agent unattended in a disposable Linux sandbox and produce a reviewable diff
+  without the agent ever touching the working tree. Requires a host with unprivileged user
+  namespaces — a self-hosted runner, not a GitHub-hosted one (see docs/CI.md).
+author: nochinsky
+
+inputs:
+  task:
+    description: The prompt to run. Required.
+    required: true
+  moat-args:
+    description: >-
+      Extra flags for `moat run`, space-separated, e.g. "--profile node --runtime claude
+      --max-tokens 200000".
+    required: false
+    default: ""
+  output-dir:
+    description: Where the task log, the doctor report and the review are written.
+    required: false
+    default: moat-ci
+  moat:
+    description: How to invoke the CLI. Override when running moat from a checkout.
+    required: false
+    default: npx -y moat-sandbox
+  upload-artifact:
+    description: Upload the output directory as a workflow artifact named `moat-review`.
+    required: false
+    default: "true"
+
+outputs:
+  review:
+    description: Path to the review file (the three-way classification and the checks).
+    value: ${{ steps.run.outputs.review }}
+
+runs:
+  using: composite
+  steps:
+    # Node is what runs moat itself. The *sandbox* needs no runtime of its own beyond the image
+    # moat provisions, and needs no container runtime at all.
+    - name: node
+      uses: actions/setup-node@v5
+      with:
+        node-version: "24"
+
+    # The refusal lives in the script, not here: a composite action is YAML nobody can run
+    # locally, and "this host cannot sandbox" is a branch that has to be provable.
+    # `test/ci-entrypoint.test.sh` runs both branches with a fake CLI.
+    - name: run the task and the review
+      id: run
+      shell: bash
+      env:
+        MOAT: ${{ inputs.moat }}
+        TASK: ${{ inputs.task }}
+        MOAT_ARGS: ${{ inputs.moat-args }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: |
+        bash "${{ github.action_path }}/../../scripts/ci/run-task.sh"
+        echo "review=$OUTPUT_DIR/review.txt" >> "$GITHUB_OUTPUT"
+
+    - name: upload the review
+      if: ${{ always() && inputs.upload-artifact == 'true' }}
+      uses: actions/upload-artifact@v5
+      with:
+        name: moat-review
+        path: ${{ inputs.output-dir }}
+        if-no-files-found: warn
