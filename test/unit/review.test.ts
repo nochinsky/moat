@@ -300,3 +300,30 @@ test("a path outside the project directory is refused, not written", async (t) =
   assert.match(result.skipped[0]!.reason, /outside the project directory/)
   assert.equal(fs.existsSync(path.join(path.dirname(f.host), "escape.txt")), false)
 })
+
+test("a partial accept carries the agent's final newline with the hunk that reaches the end", async (t) => {
+  // The host file has no trailing newline and the agent's does; the changes at line 3 and line 40 are
+  // far enough apart to be two hunks. Taking only the end-of-file hunk must write the agent's last
+  // line *and* the newline that came with it, while leaving line 3 as the host's own. This is the
+  // shape a partial accept used to get wrong: `applyHunks` always kept the destination's ending, so
+  // the accepted end-of-file hunk silently lost the agent's last byte — a one-byte difference
+  // between what the user reviewed and what landed. `--hunks 2` reaches exactly this path.
+  const hostFile = numbered(40).slice(0, -1) // numbered(), without its trailing newline
+  assert.ok(!hostFile.endsWith("\n"), "the fixture's point is a host file with no final newline")
+  const f = await booted(t, { "notes.txt": hostFile })
+  agentWorks(f, { "notes.txt": edited(40, { 3: "line 3: the agent", 40: "line 40: the agent" }) })
+
+  const plan = await planApply(f.paths)
+  const row = (await reviewPlan(f.paths, plan)).find((r) => r.path === "notes.txt")!
+  assert.equal(row.hunks.length, 2, "the two changes are far enough apart to be separate hunks")
+
+  const result = await applySelection(f.paths, plan, [{ path: "notes.txt", accepted: [1] }])
+  assert.deepEqual(result.skipped, [])
+  assert.equal(result.applied.length, 1)
+  assert.equal(result.applied[0]!.mode, "partial")
+  const after = fs.readFileSync(path.join(f.host, "notes.txt"), "utf8")
+  assert.match(after, /line 40: the agent/)
+  assert.doesNotMatch(after, /line 3: the agent/)
+  assert.equal(after.split("\n").filter((line) => line !== "").length, 40, "still forty lines")
+  assert.ok(after.endsWith("\n"), "the accepted end-of-file hunk brought the agent's newline")
+})

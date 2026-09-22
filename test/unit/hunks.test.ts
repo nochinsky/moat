@@ -92,6 +92,54 @@ test("a trailing newline is a property of the file, not of the hunk", async () =
   assert.equal(joinLines([], true), "")
 })
 
+test("accepting every hunk reproduces the proposal byte for byte, its final newline included", async () => {
+  // The round trip `applyHunks(dest, hunksBetween(dest, proposed), all) === proposed` is the whole
+  // contract of the pair, and the ending is the half a destination-anchored hunk gets wrong: git
+  // carries a change to the last byte as `\ No newline at end of file`, attached to the hunk that
+  // reaches the end, and the markers below are exactly the shapes where the two endings disagree.
+  const pairs: [string, string][] = [
+    ["c\na", "\n"], // the destination's ending removed altogether
+    ["a\nb\nc", "a\nb\nc\nd\n"], // no ending -> one, with a line added
+    ["a\nb\nc\n", "a\nb\nc"], // one ending -> none, with nothing else touched
+    ["", "a\nb"], // an empty destination, inserted without a trailing newline
+    ["one\ntwo\nthree", "one\nTWO\nthree\n"],
+    ["one\ntwo\nthree\n", "one\nTWO\nthree"],
+  ]
+  for (const [dest, proposed] of pairs) {
+    const hunks = (await hunksBetween(dest, proposed))!
+    const all = new Set(hunks.map((_, index) => index))
+    assert.equal(applyHunks(dest, hunks, all), proposed, `round-trip: ${JSON.stringify(dest)} -> ${JSON.stringify(proposed)}`)
+    // Nothing accepted is still the destination, byte for byte — including its ending.
+    assert.equal(applyHunks(dest, hunks, new Set()), dest)
+  }
+})
+
+test("the final newline follows the hunk that reaches the end of the file", async () => {
+  // Two far-apart changes, and the proposal adds a trailing newline the destination lacks. The
+  // accepted end-of-file hunk must bring the proposal's ending with it; rejecting it must leave the
+  // destination's own ending alone. This is the case a partial accept got wrong: the change at
+  // `line 20` was written but the newline that came with it was silently the file's own.
+  const dest = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join("\n") // no trailing newline
+  const proposed =
+    "line 1 changed\n" + Array.from({ length: 18 }, (_, i) => `line ${i + 2}`).join("\n") + "\nline 20 changed\n"
+  const hunks = (await hunksBetween(dest, proposed))!
+  assert.equal(hunks.length, 2, "the two changes are far enough apart to be separate hunks")
+
+  const endOnly = applyHunks(dest, hunks, new Set([1]))
+  assert.match(endOnly, /line 20 changed/)
+  assert.doesNotMatch(endOnly, /line 1 changed/)
+  assert.ok(endOnly.endsWith("\n"), "taking the end-of-file hunk takes the proposal's newline")
+
+  const topOnly = applyHunks(dest, hunks, new Set([0]))
+  assert.match(topOnly, /line 1 changed/)
+  assert.doesNotMatch(topOnly, /line 20 changed/)
+  assert.ok(!topOnly.endsWith("\n"), "leaving the end-of-file hunk out leaves the destination's ending")
+
+  // And taking both is the proposal itself, ending included, which the two halves above must agree
+  // with rather than contradict.
+  assert.equal(applyHunks(dest, hunks, new Set([0, 1])), proposed)
+})
+
 test("a whole-file replacement is one hunk and can be refused", async () => {
   // `add` arrives as an empty destination, and a rewrite with nothing in common is one hunk.
   const hunks = (await hunksBetween("", "brand new\nfile\n"))!
