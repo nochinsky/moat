@@ -2,11 +2,12 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-22-17-44:refs/moat/moat-session-2026-09-22-17-44
-✓ fetched moat-session-2026-09-22-17-44 -> refs/moat/moat-session-2026-09-22-17-44 (1ee66eb472b1)
-  1 commit(s) reachable, HEAD 1ee66eb472b1 -> 1ee66eb472b1
-    1ee66eb472b1  initial project
+→ copy-out: git fetch /home/user/.moat/envs/18620c2c4f34/rootfs/work +refs/heads/moat-session-2026-09-22-22-36:refs/moat/moat-session-2026-09-22-22-36
+! copy-out: fetch: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
+✓ fetched moat-session-2026-09-22-22-36 -> refs/moat/moat-session-2026-09-22-22-36 (5a05dd484d34)
+  1 commit(s) reachable, HEAD 5a05dd484d34 -> 5a05dd484d34
+    5a05dd484d34  initial project
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-22-17-44
-  apply with:    moat apply moat-session-2026-09-22-17-44  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-22-22-36
+  apply with:    moat apply moat-session-2026-09-22-22-36  (or --checkout)

@@ -1,149 +1,162 @@
 # Handoff: picking moat up on a new machine
 
-You are the next agent on this project. This document is a **point-in-time handoff** written when
-the work moved from a WSL2 host to a native Arch Linux one. Read it, then read `AGENTS.md` — that
-one is the standing contract and outranks this file wherever they disagree.
+You are the next agent on this project. This document is a **point-in-time handoff**, rewritten after the
+egress phase — the previous one was written when the work moved from a WSL2 host to this Arch Linux one,
+and it is in `docs/archive/` if you want to see what has and has not moved since. Read this, then read
+`AGENTS.md` — that one is the standing contract and outranks this file wherever they disagree.
 
 ---
 
 ## 1. What this is, in one paragraph
 
-moat runs an AI coding agent inside a disposable Linux sandbox and lets a human review what it did
-hunk by hunk before any of it reaches their tree. The sandbox is the means; **the review is the
-product** — the baseline, the three-way merge, and per-hunk accept are what nothing else does. The
-project is unusually rigorous about evidence: `docs/VERIFICATION.md` is the authority on what is
-verified, `docs/TRUST.md` is generated from it, and `docs/PROGRESS.md` is the status page.
+moat runs an AI coding agent inside a disposable Linux sandbox. The product, in `AGENTS.md`'s words, is
+**autonomy without prompts, bought by making the blast radius a box instead of a home directory** — the
+agent gets a copy of the project, a package manager, a network policy, and no permission prompts. What
+makes its output acceptable is the review surface: a recorded baseline, a three-way apply, and per-hunk
+accept, so nothing reaches your tree until you say so. The project is unusually rigorous about evidence:
+`docs/VERIFICATION.md` is the authority on what is verified, `docs/TRUST.md` is generated from it, and
+`docs/PROGRESS.md` is the status page.
 
 ## 2. State right now
 
-* `main` at the handoff is fully pushed — `git log --oneline -1` should read
-  `portability-spike: name the distros people actually use`, on top of
-  `doctor: the backend facts in --json too`. Twenty PRs (#1–#20) are merged; none open.
-* `npm run test:unit` → **278 tests, 0 fail**, no sandbox needed. `npm run typecheck` clean.
-* `bash test/e2e-extras.sh` → **53 checks, 0 failed** (needs user namespaces).
-* The acceptance suite is `bash test/e2e-codex.sh`; the others are listed in `AGENTS.md` under
-  *Running it*. Raw output lands in `test/evidence/`, which is committed and quoted by
-  `docs/VERIFICATION.md` — regenerate it by running the suites, never by hand.
-* Six phase-programs from the original plan are **shipped**: coherence-checked accept, a second
-  agent runtime (Claude Code), spend ceilings that kill a turn mid-stream, portability measurement,
-  a CI action, and a machine-readable review + generated trust page.
+* **`main` is 30 commits ahead of `origin/main` and unpushed.** That is the headline of this handoff: the
+  whole egress phase exists only on this machine. `git log --oneline origin/main..HEAD` is the list.
+* `npm run test:unit` → **295 tests, 0 fail**, no sandbox needed. `npm run typecheck` clean.
+* `bash test/e2e-extras.sh` → **53 checks, 0 failed**, including the container backend, on this machine.
+* `bash test/e2e-egress.sh` → green, including the proxied confinement and its unproxied control.
+* The acceptance suite is `bash test/e2e-codex.sh`; the others are listed in `AGENTS.md` under *Running
+  it*. Raw output lands in `test/evidence/`, which is committed and quoted by `docs/VERIFICATION.md` —
+  regenerate it by running the suites, never by hand.
+* **Run the suites one at a time.** They bind fixed ports and one asserts a 6-second credential TTL; run
+  concurrently they flake, and this handoff exists partly because a previous instance read that flake as a
+  real failure.
+* Since the last handoff: the egress phase is done. A proxy moat owns, in a namespace of its own, decides
+  egress by name and port, resolves names for boxes that no longer resolve anything, refuses out loud, and
+  — with `--egress-proxy` — is the only path out. `docs/EGRESS.md` §7 has every measurement.
 
 ## 3. The first twenty minutes on this machine
 
 ```bash
 npm install
-npm run test:unit        # expect 278 pass, ~3s, no sandbox
-./cmd/main.ts doctor     # expect: userns=yes, and a "backends" line naming container if podman is installed
-bash test/portability-spike.sh   # takes ~30s; reads the host's real capabilities
-sudo pacman -S podman            # if the spike reports no container runtime
-bash test/portability-spike.sh   # again: §4 should now measure seven properties
+npm run test:unit        # expect 295 pass, ~3s, no sandbox
+./cmd/main.ts doctor     # expect userns=yes, kvm=yes, and a "backends" line naming container
+bash test/portability-spike.sh   # reads the host's real capabilities
 bash test/e2e-codex.sh           # the acceptance suite — ~560 MB of downloads on a cold cache
 ```
 
-The **cold cache costs ~560 MB** (Alpine minirootfs, the pinned Codex binary, slirp4netns). Once
-warm, a boot is a few seconds.
+The **cold cache costs ~560 MB** (Alpine minirootfs, the pinned Codex binary, slirp4netns). Once warm, a
+boot is a few seconds.
 
-`./cmd/main.ts doctor` is the fastest way to know whether this host can run anything at all. If
-`userns` is no, stop and say so — moat has **no host fallback** by design.
+`ip(8)` (iproute2) is needed for `--egress-proxy` and `moat up` refuses without it, naming the tool. It is
+not needed for anything else.
+
+`./cmd/main.ts doctor` is the fastest way to know whether this host can run anything at all. If `userns`
+is no, stop and say so — moat has **no host fallback** by design.
 
 ## 4. How this repository expects you to work
 
-These are not preferences; the whole codebase is built on them, and a change that ignores them
-will read as foreign here.
+These are not preferences; the whole codebase is built on them, and a change that ignores them will read
+as foreign here.
 
-1. **Measure before you claim.** Every assertion in the docs has a capture or a command behind it.
-   When we discovered Claude Code could not use `--dangerously-skip-permissions` as root, the fix
-   came from running the binary in a real box, not from reading a flag list.
-2. **A check that cannot fail is not a check.** When you add a test, revert the fix and watch the
-   test fail, then restore it. Several guards in this repository were written, found incapable of
-   failing, and rewritten.
-3. **Never weaken a check to make it pass.** If a gate cannot pass, say so in the open. That is a
-   written stop condition of the project.
+1. **Measure before you claim.** Every assertion in the docs has a capture or a command behind it. When we
+   discovered Claude Code could not use `--dangerously-skip-permissions` as root, the fix came from
+   running the binary in a real box, not from reading a flag list.
+2. **A check that cannot fail is not a check.** When you add a test, revert the fix and watch the test
+   fail, then restore it. Several guards here were written, found incapable of failing, and rewritten.
+3. **Never weaken a check to make it pass.** If a gate cannot pass, say so in the open. That is a written
+   stop condition of the project. (A `|| true` after a failing check found in this session is the shape to
+   look for — it hides the failure and leaves the check green.)
 4. **Do not hand-maintain numbers.** Counts belong in the capture and in the tool's own output.
-   `docs/TRUST.md` is generated (`node scripts/trust.mjs`; `--check` fails if it is stale) for
-   exactly this reason, and `SPEC.md` once promised "15 isolation assertions" while the tool printed
-   14, 16 and 17.
-5. **One concern per PR**, with evidence, and a journal entry in `docs/archive/PROGRESS.md` when
-   behaviour changed. `test/evidence/` is regenerated by running the suites.
-6. **State limitations loudly.** The README has a "what it does not do" section and the docs have a
-   "not verified" table; both are load-bearing. Do not soften them.
+   `docs/TRUST.md` is generated (`node scripts/trust.mjs`; `--check` fails if it is stale), and prose
+   counts go stale: this session found a suite's "runs three boots" that had become five, and a phase
+   document that promised "15 isolation assertions" while the tool printed 14, 16 and 17.
+5. **One concern per PR**, with evidence, and a journal entry in `docs/archive/PROGRESS.md` when behaviour
+   changed. `test/evidence/` is regenerated by running the suites.
+6. **State limitations loudly.** The README has a "what it does not do" section and the docs have a "not
+   verified" table; both are load-bearing. Do not soften them.
+7. **When a reading surprises you, read what the tool generated before you theorise.** The script a boot
+   actually ran is on disk (`rootfs/.moat/entry-*.sh`), the probe a doctor built can be printed, and the
+   logs name their stages (`logs/setup.log`, `[moat] boot: …`). In this session a missing newline in a
+   generated script produced three confident wrong diagnoses — readiness, then a first-connection effect,
+   then a proxy that was not listening — and the broken line was visible in the generated file the whole
+   time.
 
-Long commands: the shell here caps a foreground command at about **two minutes**. Use background
-plus polling for suites, cold boots and container pulls.
+Long commands: the shell here caps a foreground command at about **two minutes**. Use background plus
+polling for suites, cold boots and container pulls.
 
-## 5. Traps that cost the previous instance real time
+## 5. Traps that cost real time
 
-Read these before touching the sandbox or the container backend.
+Read these before touching the sandbox, egress or the container backend. The previous handoff's list is
+still true and is repeated here with what this session added, because a trap that is not written down is
+paid for twice.
 
-* **Never loop `moat destroy` over `~/.moat/envs/*`.** It destroys *every* environment on the
-  machine, not the test ones you meant. This happened, and it cost the owner two environments
-  (their source trees were untouched — moat never writes to the real project — but sandbox state
-  and any unfetched agent work in those boxes were gone). Target environments by project path, or
-  destroy the one whose `state.json` names the project you created.
-* **A test that exercises the easy flag hides a broken default.** The container backend was declared
-  verified while every test used `--egress isolated` — the one mode that applies no ruleset — and
-  `filtered` (the default) failed at boot. Test the **default** path.
-* **Probes lie; check them against something already known.** Three probes written here were wrong:
-  a mount point that did not exist inside the namespace; `-x bin/sh` on an Alpine rootfs where
-  `/bin/sh` is a symlink to an absolute `/bin/busybox`; and asking for `$HOME` *inside* a container,
-  where it is `/root` and always exists. Each reported a confident wrong answer. The spike prints
-  `MEASURED`/`BLOCKED`/`UNKNOWN` **per assertion** for this reason.
-* **`podman run --rootfs` is a *boolean* flag**: the rootfs path is the first *positional*, so an
-  option placed after it becomes part of the **command**. `crun: executable file '--env' not found
-  in $PATH` was the symptom. Options precede the rootfs; `test/unit/backend.test.ts` pins it.
-* **A container belongs to its runtime, not to the client.** Killing the `podman run` process leaves
-  the box running while `state.json` says stopped. `moat down` stops it through the runtime, by a
-  name derived from the environment id.
-* **Ephemeral boots must not be named.** moat runs tasks, checks and `moat exec` *alongside* the
-  long-running box by design, so only the keepalive gets a stable name. A name on every boot
-  collides and surfaces as podman's exit code 125.
-* **`filtered` needs `CAP_NET_ADMIN` in the box's own netns**, which a rootless container's root
-  does not have by default. `--cap-add=net_admin` is added for that mode and no other.
-* **Two writers, one file.** The long-running container writes its log through the *rootfs*
-  descriptor (opened on the host through the guard), not through a pipe: a piped mirror kept the
-  host's event loop alive and `moat up` never exited — with the boot already finished.
-* **`test/e2e-extras.sh` used to scrub every suite's evidence**, rewriting four unrelated captures
-  with a bare path substitution. It now scrubs only files newer than its own start; if you see
-  unrelated evidence diffs, that is the shape to look for.
+* **Never loop `moat destroy` over `~/.moat/envs/*`.** It destroys *every* environment on the machine,
+  not the test ones you meant. Target environments by project path.
+* **`git add -A` sweeps in more than the project.** This session committed 213 files of agent host scratch
+  (`.reasonix/tasks/…`, background-job output) across several commits before noticing. Add paths, or check
+  `git status` before committing.
+* **The doctor's probe is part of the measurement.** It has to model the box the agent gets, not a fuller
+  one: twice now it has been wrong in that direction (`injectedVarNames` injected credential names a
+  `--no-credential` box never had; `runIsolationChecks` dropped the `egressProxy` its caller passed, so it
+  measured an unproxied box). And it must know what moat *itself* injects — a proxied box has `HTTP_PROXY`
+  by design, and the forbidden-variable list called that a host leak until it was taught otherwise,
+  deriving the names from the same function the boot uses (`Object.keys(proxyEnv())`).
+* **A proxied boot has no `tap0` and no default route, on purpose.** Its namespace holds `lo` and the link
+  to the proxy. Any readiness wait for a tap, or probe that resolves a name in the box, is reading a
+  working box as broken.
+* **`--egress-proxy` is recorded in `state.json` and persists** for the environment it was chosen for, so
+  re-booting that environment without the flag is not a control — a control is a fresh environment.
+* **`podman run --rootfs` is a *boolean* flag**: the rootfs path is the first *positional*, so an option
+  placed after it becomes part of the **command**. Options precede the rootfs.
+* **A container belongs to its runtime, not to the client.** Killing the `podman run` process leaves the
+  box running while `state.json` says stopped; `moat down` stops it through the runtime.
+* **`filtered` needs `CAP_NET_ADMIN` in the box's own netns**, which a rootless container's root does not
+  have by default. `--cap-add=net_admin` is added for that mode and no other.
+* **Probes lie; check them against something already known.** Three probes written by a previous instance
+  were wrong in the same way: a mount point that did not exist, `-x bin/sh` where `/bin/sh` is a symlink,
+  and `$HOME` inside a container where it is always `/root`.
+* **`test/e2e-extras.sh` scrubs only the evidence files newer than its own start.** If you see unrelated
+  evidence diffs, that is the shape to look for.
 
 ## 6. What is not done
 
 Ordered by how much they matter, and none of them is a surprise the docs hide:
 
-1. **v1: a microVM.** Namespaces are v0. `/dev/kvm` exists on this host but was not accessible to
-   the user, so the path is unmeasured. **On Arch, `sudo gpasswd -a $USER kvm` and a re-login makes
-   it measurable — this is the one item the machine switch unlocks.**
-2. **Egress policy, second half.** The allowlist is an IP snapshot taken at boot: a rotating CDN
-   address drops out until the next `moat up`, ports cannot be expressed per host, and DNS remains
-   an outbound channel. Closing it means a resolving proxy moat owns.
+1. **v1: a microVM.** Namespaces are v0. This *is* measurable on this machine now — `/dev/kvm` is
+   accessible, `krun`/`libkrun` are installed, and `test/microvm-spike.sh` with `docs/MICROVM.md` hold
+   what was measured (a guest kernel booting under krun, and how long it took against a container). The
+   step that is left is a *backend*, not more measurement.
+2. **The default egress policy is still the unproxied one, on purpose.** `--egress-proxy` closes all three
+   holes a boot-time IP snapshot has (a rotating address, per-host ports, DNS as an outbound channel) and
+   makes the policy the only path — but it needs `ip(8)` on the host and refuses without it, and the
+   default's whole property is that it runs on a bare host. Flipping it, or degrading silently when `ip`
+   is absent, is a product decision for the owner. `AGENTS.md` records it as a decision.
 3. **Provider-side credential scoping** — short-lived, spend-capped tokens instead of a borrowed
    long-lived key. A per-turn ceiling exists; nothing caps a sequence of runs.
-4. **Byte paths for file names that are not valid UTF-8.** `assertAddressableNames` refuses them
-   with a clear message rather than silently dropping them.
-5. **Tool-set curation.** Under Codex moat does not choose the tool list; the box bounds it.
-   Claude's `--allowedTools` is a first answer, and `--bare` is unmeasured.
-6. **An unnamed flake.** One unit run in this session reported `1 fail`, and it did not reproduce in
-   27 further runs. It was not papered over. If it recurs, the timing-sensitive files are
-   `checks-runner`, `hash-tree`, `boot-marker`, `stop-slirp`, `pid-identity` — and the failing test's
-   name is in the output, so capture it.
-7. **Phase 6's publishing half.** `docs/TRUST.md` is ready to be turned outward; that is the owner's
-   call and their channels, not a code task.
+4. **Byte paths for file names that are not valid UTF-8.** `assertAddressableNames` refuses them with a
+   clear message rather than silently dropping them.
+5. **Tool-set curation.** Under Codex moat does not choose the tool list; the box bounds it. Claude's
+   `--allowedTools` is a first answer, and `--bare` is unmeasured.
+6. **The flake, now with a name.** `test/unit/interactive-term.test.ts`, "an interactive boot advertises
+   the host terminal type, sanitised" — it failed twice in this session while other suites were running
+   and passed every time it was run alone. The previous handoff had the flake without the name; this is
+   probably it. It is a pty test, so concurrency is the first hypothesis.
+7. **A defect an earlier session found and did not fix.** A *second turn* on an environment is refused by
+   the credential guard, because Codex writes `MOAT_INJECTED_CREDENTIAL` into
+   `/root/.codex/shell_snapshots/`. Not re-verified here — verify before trusting the description.
+8. **Phase 6's publishing half.** `docs/TRUST.md` is ready to be turned outward; that is the owner's call
+   and their channels, not a code task.
 
-## 7. Re-verify the container backend on this machine
+## 7. The container backend
 
-The container backend was measured on **podman 5.7.0 / WSL2**. Arch's podman will likely be newer,
-and the `--rootfs` parsing that caused one of the three bugs is exactly the kind of thing that can
-move between versions:
+The previous handoff measured it on podman 5.7.0 / WSL2 and asked for it to be re-verified on this
+machine. It has been, once: `bash test/e2e-extras.sh` runs the **default** egress against a real container
+and passed at this handoff. `bash test/portability-spike.sh` reads the host's container facts in seconds.
 
-```bash
-bash test/portability-spike.sh   # §4 in seconds
-bash test/e2e-extras.sh          # §AO runs the DEFAULT egress against a real container
-```
+If §4 of the spike or the container check of extras disagrees with this document, believe the machine.
+`docs/PORTABILITY.md` §3 records what was measured and where; **docker is accepted by the same code path
+and is still not verified anywhere**, because no host with docker has taken the reading.
 
-If §4 or §AO disagrees with what this document says, believe the machine. `docs/PORTABILITY.md` §3
-records what was measured and where; **docker is accepted by the same code path and is not verified
-anywhere**, because no host with docker has taken the reading.
-
-One more: **the container backend is opt-in and the default is unchanged.** Do not make the
-container backend the default without a deliberate decision — the default's whole property is that
-it runs on a bare host.
+One more, unchanged and worth repeating: **the container backend is opt-in and the default is
+unchanged.** Do not make it the default without a deliberate decision — the default's whole property is
+that it runs on a bare host.

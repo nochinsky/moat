@@ -2,12 +2,18 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 [moat] runtime ready (pid 1)
 [moat] the injected credential expires in 14400s; the box stops then
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 [moat] runtime ready (pid 1)
 [moat] the injected credential expires in 14400s; the box stops then
 Terminated
 [moat] injected credential expired; stopping the sandbox
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 [moat] runtime ready (pid 1)
 [moat] the injected credential expires in 6s; the box stops then
 [moat] injected credential expired; stopping the sandbox

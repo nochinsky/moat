@@ -6,7 +6,7 @@
 0
 no-host-home
 --- $ moat verify
-  pass  npm test                 0.4s
+  pass  npm test                 0.3s
 --- $ moat down
   resume with: moat up
   remove with: moat destroy

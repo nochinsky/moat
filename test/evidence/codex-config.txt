@@ -1,6 +1,10 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c codex --version; cat /root/.codex/config.toml; head -1 /root/.codex/AGENTS.md; command -v opencode >/dev/null && echo "opencode PRESENT" || echo "opencode absent"
 --- exit 0
 --- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: waiting for the datapath
+[moat] boot: applying the egress policy
+[moat] boot: entering the sandbox
 codex-cli 0.155.1
 model = "deepseek-flash"
 model_provider = "deepseek"

@@ -2,6 +2,7 @@
 --- exit 1
 --- stdout ---
 --- stderr ---
+! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
 
   agent    agent.txt  add
     hunk 1  a new file

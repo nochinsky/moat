@@ -2,13 +2,15 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/376d0bba6c50/rootfs/work +refs/heads/moat-session-2026-09-22-17-46:refs/moat/moat-session-2026-09-22-17-46
+→ copy-out: git fetch /home/user/.moat/envs/376d0bba6c50/rootfs/work +refs/heads/moat-session-2026-09-22-22-38:refs/moat/moat-session-2026-09-22-22-38
+! copy-out: fetch: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
 
-moat-session-2026-09-22-17-46  1 commit(s), 53c78b0f7752
-  53c78b0f77  base
+moat-session-2026-09-22-22-38  1 commit(s), 8ccd4a00a5a8
+  8ccd4a00a5  base
+! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
 → verifying: npm run test
 
-  FAIL  npm test                 0.3s
+  FAIL  npm test                 0.2s
       $ npm run test
       > escape-check@1.0.0 test
       > node escape.js
@@ -18,7 +20,7 @@ moat-session-2026-09-22-17-46  1 commit(s), 53c78b0f7752
 
   checks:  npm test FAILED (exit 1)
   your working tree is untouched
-  review:  git log refs/moat/moat-session-2026-09-22-17-46
+  review:  git log refs/moat/moat-session-2026-09-22-22-38
   accept:  moat apply   (three-way merge into your tree)
-           moat apply moat-session-2026-09-22-17-46 --checkout   (or switch to the agent's branch)
-  reject:  git update-ref -d refs/moat/moat-session-2026-09-22-17-46
+           moat apply moat-session-2026-09-22-22-38 --checkout   (or switch to the agent's branch)
+  reject:  git update-ref -d refs/moat/moat-session-2026-09-22-22-38

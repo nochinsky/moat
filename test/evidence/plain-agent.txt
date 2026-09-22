@@ -1,5 +1,7 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c cd /work && echo "made inside the box" > agent.txt && git add -A && git -c user.email=a@b -c user.name=a commit -qm "agent: add agent.txt" && git log --oneline -1
 --- exit 0
 --- stdout ---
-de0d353 agent: add agent.txt
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
+9de1330 agent: add agent.txt
 --- stderr ---

@@ -7,14 +7,14 @@ profiles: everything requested is already installed
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 01bc0dcde3c3588d (dirty tree: 1 modified, 0 untracked)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-22-17-45
-✓ sandbox up, warm start 245ms (image reused)
+agent branch: moat-session-2026-09-22-22-37
+✓ sandbox up, warm start 247ms (image reused)
 
   project    /home/user/moat-demo/branchloss
   env        /home/user/.moat/envs/bec7e614d182
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-22T21:45:35.091Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-23T02:37:18.619Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

@@ -1,4 +1,5 @@
 --- $ moat apply --only config.txt             (the subset whose check fails)
+! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
 
   agent    config.txt  modify
     hunk 1  a new file
@@ -12,6 +13,9 @@
       + grep -q "^2$" config.txt
 
 → verifying the accepted subset: npm run test
+[moat] boot: mounts are up, network next
+[moat] boot: waiting for the datapath
+[moat] boot: entering the sandbox
 $ npm run test
 
 > test
@@ -19,7 +23,9 @@ $ npm run test
 
 [moat] exit 1
 
-  FAIL  npm test                 0.3s
+  FAIL  npm test                 0.1s
+      [moat] boot: waiting for the datapath
+      [moat] boot: entering the sandbox
       $ npm run test
       > test
       > sh test.sh
@@ -31,6 +37,7 @@ $ npm run test
 --- exit 1   config.txt after = 1
 
 --- $ moat apply --only config.txt --no-verify  (the same subset, verification off)
+! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
 
   agent    config.txt  modify
     hunk 1  a new file

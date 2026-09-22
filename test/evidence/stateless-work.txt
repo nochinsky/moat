@@ -1,5 +1,7 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c cd /work && printf 'agent work\n' > precious.txt && git add -A && git -c user.email=agent@moat.invalid -c user.name=agent commit -qm 'agent: work the host has never seen' && git rev-parse HEAD
 --- exit 0
 --- stdout ---
-cbb8f2304d1fd33e47abd1e5f4a9087673acfdff
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
+d50e4907b65e86dd917f616b0c1509939599d4d7
 --- stderr ---

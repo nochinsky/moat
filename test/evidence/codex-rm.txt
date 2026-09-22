@@ -1,5 +1,9 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c rm -f /usr/local/bin/codex; command -v codex || echo "codex gone"; echo keep > /work/KEEP.txt; mkdir -p /work/sub && echo deep > /work/sub/DEEP.txt
 --- exit 0
 --- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: waiting for the datapath
+[moat] boot: applying the egress policy
+[moat] boot: entering the sandbox
 codex gone
 --- stderr ---

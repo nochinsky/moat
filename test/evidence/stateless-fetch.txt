@@ -3,14 +3,16 @@
 --- stdout ---
 --- stderr ---
 → copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/main:refs/moat/main
-→ copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/moat-session-2026-09-22-17-45:refs/moat/moat-session-2026-09-22-17-45
-✓ fetched main -> refs/moat/main (0306690fd71c)
-  1 commit(s) reachable, HEAD 0306690fd71c -> 0306690fd71c
-    0306690fd71c  init
-✓ fetched moat-session-2026-09-22-17-45 -> refs/moat/moat-session-2026-09-22-17-45 (cbb8f2304d1f)
-  2 commit(s) reachable, HEAD 0306690fd71c -> 0306690fd71c
-    cbb8f2304d1f  agent: work the host has never seen
-    0306690fd71c  init
+! copy-out: fetch: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
+→ copy-out: git fetch /home/user/.moat/envs/47af90427aba/rootfs/work +refs/heads/moat-session-2026-09-22-22-36:refs/moat/moat-session-2026-09-22-22-36
+! copy-out: fetch: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
+✓ fetched main -> refs/moat/main (bf9499a2b942)
+  1 commit(s) reachable, HEAD bf9499a2b942 -> bf9499a2b942
+    bf9499a2b942  init
+✓ fetched moat-session-2026-09-22-22-36 -> refs/moat/moat-session-2026-09-22-22-36 (d50e4907b65e)
+  2 commit(s) reachable, HEAD bf9499a2b942 -> bf9499a2b942
+    d50e4907b65e  agent: work the host has never seen
+    bf9499a2b942  init
 
   the host working tree was recomputed and is byte-identical
   inspect with:  git log refs/moat/main

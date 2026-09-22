@@ -2,16 +2,16 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/345dfb73d559/rootfs/work +refs/heads/moat-session-2026-09-22-17-45:refs/moat/moat-session-2026-09-22-17-45
+→ copy-out: git fetch /home/user/.moat/envs/345dfb73d559/rootfs/work +refs/heads/moat-session-2026-09-22-22-37:refs/moat/moat-session-2026-09-22-22-37
 ! 1 file(s) in the branch just fetched contain the credential moat injected into the sandbox:
     leaked.env
   The agent has to read that value to call the model, and it can write it anywhere. moat names it instead of dropping it: review (or delete) the file before you commit or push, and rotate the key if that content has already reached a remote.
-✓ fetched moat-session-2026-09-22-17-45 -> refs/moat/moat-session-2026-09-22-17-45 (996eef1e77f1)
-  3 commit(s) reachable, HEAD b945a5ca25d4 -> b945a5ca25d4
-    996eef1e77f1  oops, the key
-    732fbef1b4a6  clean change
-    b945a5ca25d4  init
+✓ fetched moat-session-2026-09-22-22-37 -> refs/moat/moat-session-2026-09-22-22-37 (5833d2bda306)
+  3 commit(s) reachable, HEAD df2cc12848bc -> df2cc12848bc
+    5833d2bda306  oops, the key
+    c553e6f54814  clean change
+    df2cc12848bc  init
 
   the host working tree was recomputed and is byte-identical
-  inspect with:  git log refs/moat/moat-session-2026-09-22-17-45
-  apply with:    moat apply moat-session-2026-09-22-17-45  (or --checkout)
+  inspect with:  git log refs/moat/moat-session-2026-09-22-22-37
+  apply with:    moat apply moat-session-2026-09-22-22-37  (or --checkout)

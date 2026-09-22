@@ -3,6 +3,8 @@
 --- stdout ---
 --- stderr ---
 → running npm run test inside the sandbox
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 $ npm run test
 
 > test
@@ -10,5 +12,5 @@ $ npm run test
 
 [moat] exit 0
 
-  pass  npm test                 3.2s
+  pass  npm test                 3.1s
 

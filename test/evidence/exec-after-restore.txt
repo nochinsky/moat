@@ -1,12 +1,13 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c echo 'in-sandbox /opt after restore:'; ls /opt; echo '--- /work preserved? ---'; ls /work; echo '--- agent commit still present? ---'; git -C /work log --oneline -1
 --- exit 0
 --- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 in-sandbox /opt after restore:
-moat-extra
 --- /work preserved? ---
 package.json
 src
 test
 --- agent commit still present? ---
-71ac120 initial project
+5a05dd4 initial project
 --- stderr ---

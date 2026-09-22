@@ -1,11 +1,13 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c git -C /work branch; echo "--- all commits ---"; git -C /work log --oneline --all | head -4
 --- exit 0
 --- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
   experiment
   main
-* moat-session-2026-09-22-17-45
+* moat-session-2026-09-22-22-37
 --- all commits ---
-dd98530 important work on a side branch
-dfa25f9 moat: state copied from the host
-091767e base
+f602ebb important work on a side branch
+79e138e moat: state copied from the host
+a965d6d base
 --- stderr ---

@@ -1,6 +1,8 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c cat /work/src/sum.js; git -C /work log --oneline -1
 --- exit 0
 --- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 export const sum = (a, b) => a + b
-f2d427b fix: sum adds
+b98cfe4 fix: sum adds
 --- stderr ---
