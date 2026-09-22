@@ -83,7 +83,9 @@ docs/            SPEC (the contract), VERIFICATION (the evidence),
                  runtime would have to satisfy), RUNTIMES (what a second runtime
                  costs, and why ACP is not the shortcut), PORTABILITY (what is
                  measured about running moat outside Linux, and what a container
-                 backend would cost), HANDOFF (a point-in-time handoff for whoever picks
+                 backend would cost), MICROVM (what a KVM-backed box costs and what its
+                 datapath would need — measured on a host that has `/dev/kvm`), HANDOFF (a
+                 point-in-time handoff for whoever picks
                  the project up next; read it before AGENTS.md if you are that), TRUST
                  (generated from the evidence — the
                  verified/not-verified page), CI (running moat in a pipeline, and why a
@@ -802,9 +804,18 @@ Not built, in rough order of how much they matter:
   resolving proxy moat owns, not a bigger ruleset.
 * **Provider-side credential scoping**: short-lived, spend-capped tokens minted per boot,
   instead of borrowing a long-lived key.
-* **Cost ceilings.** The turn footer reports what a turn cost; nothing stops it.
-* **v1: a microVM.** The current isolation is namespaces, which is v0. `/dev/kvm` exists
-  on this host but is not accessible to the user.
+* **Spend caps beyond a turn.** A turn's ceiling is enforced on the stream
+  (`--max-tokens`/`--max-cost`, and *Traps* records how, including the two ways that check
+  was wrong first). What is missing is the aggregate: nothing caps a *sequence* of runs — a
+  boot, a session, a day — and the ceiling a user actually wants belongs on the credential
+  rather than on one turn, which is the item above.
+* **v1: a microVM.** The current isolation is namespaces, which is v0. The path is now
+  *measured* instead of assumed: `/dev/kvm` is usable on this host, moat's own Alpine rootfs
+  boots behind its own kernel for ~400 ms of boot and ~28 MB of runtime, and `/dev` comes
+  from the guest — `docs/MICROVM.md` records the readings and `test/microvm-spike.sh` takes
+  them on any host. The backend is not built, and the hard part turned out to be the
+  datapath rather than the microVM: moat's modes map to the runtime's *default* network, and
+  a microVM's default gives the box no uplink at all.
 * **Byte paths for file names that are not valid UTF-8.** `assertAddressableNames` refuses
   them today with a clear message instead of an ENOENT for a file that exists; supporting
   them means Buffer paths through hashing, the untracked-file pass and apply's tree reads,
