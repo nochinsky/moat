@@ -2163,3 +2163,62 @@ identical in a summary line.
 
 No behaviour changed: a script gained seven probes, a page was corrected, and one capture was added.
 `npm run test:unit` at 274; typecheck clean; `docs/TRUST.md` still current.
+
+---
+
+## Session 19 — the container backend: the seam, and the egress answer
+
+Option A, first slice. The seam is in the tree and the mapping is measured; nothing selects it yet.
+
+### The measurement that shaped the mapping
+
+Before writing the seam I took the reading that decides the egress model, because it is where a
+container backend differs most from the `unshare` path:
+
+```
+host control:                              200
+from a DEFAULT rootless container:         "can't connect to remote host (127.0.0.1): Connection refused"
+from --network=none:                       refused (nothing at all)
+```
+
+**A default rootless container cannot reach the host's loopback.** That is precisely the property
+moat buys today with `slirp4netns --disable-host-loopback`, and it means the container backend needs
+**no datapath of its own** — no slirp binary to pin, download or start. The mapping falls out:
+
+| moat's egress | container backend |
+| --- | --- |
+| `open` | `--network=host` |
+| `isolated` | the runtime's default network (host loopback refused, measured) |
+| `filtered` | the same, plus moat's nftables ruleset applied **inside** the box — not wired yet |
+
+### What landed
+
+* **`sandbox/backend.ts`** — the seam, kept deliberately narrow: a backend answers *what command,
+  with what environment, runs this script against this rootfs*, and nothing else changes, because the
+  container backend was measured to give the rootfs, the namespaces, `/dev` and the closed loopback.
+  `resolveBackend` refuses a name moat does not ship rather than falling back to the default — the
+  same discipline as `--runtime`.
+* **`sandbox/launcher.ts`** — the three spawn sites (`runInSandbox`, `runInteractive`,
+  `startSandbox`) now ask one function for the boot command. No outer script is written for a
+  container: the mount table, the chroot and the device nodes are the runtime's job, which is the
+  whole point. `needsSlirp` follows the plan instead of the egress mode.
+* **The long-running box's log, without fd 3.** The unshare path opens the rootfs boot log through
+  the guard and hands it to the boot script as descriptor 3, which the script dups. A container has
+  no boot script to hand it to, so the **host** mirrors what the runtime prints into that same file,
+  through the same guard. The invariant is unchanged in both cases: the box holds no host
+  descriptor, and `moat logs sandbox` reads the same path.
+* **The runtime process gets the host environment; the box gets `--env`.** podman needs `HOME` and
+  `XDG_RUNTIME_DIR` to find its own storage, and nothing from the host reaches the box by that
+  route — invariant 5 is about the box, not about the daemon moat asks to build it.
+
+Verified: `npm run test:unit` at **278 tests, 278 pass, 0 fail** (four new in
+`test/unit/backend.test.ts`), typecheck clean, and the default is unchanged — `unshare` is still
+what every existing suite exercises. The mapping test was proved to bite by making `isolated` map to
+the host's namespace: 1 failed, 4 passed when restored.
+
+### Not wired yet, deliberately
+
+**Nothing selects the container backend**: there is no `--backend` flag, `state.json` has no
+`backend` field, and `filtered` has no place to put its ruleset. That is the next slice, and the
+order matters — the egress question above is answered, so what remains is plumbing rather than
+design.
