@@ -304,10 +304,52 @@ What that increment deliberately does **not** cover, so nobody reads the above a
   I said the next step would be to split the ruleset — admit the proxy's traffic by uid, confine the
   box to its loopback. **That cannot work**, and the reading is why: the proxy is uid **0** inside the
   box, the same principal as the box's root (§4), so there is nothing for a ruleset to match on. The
-  split has to be *structural* instead: give the proxy a network namespace of its own and connect it
-  to the box by a link the ruleset can name (a veth pair), so the proxy's egress is its own policy and
-  the box's ruleset confines the box to the proxy. Until that exists, `--egress-proxy` on `filtered`
-  buys **refusals by name** and not yet the retirement of the boot-time IP snapshot.
+  split has to be *structural* instead, and the topology for it is measured to be **buildable and
+  working** — see §7a. Until it is built, `--egress-proxy` on `filtered` buys **refusals by name** and
+  not yet the retirement of the boot-time IP snapshot.
+
+### 7a. The structural split: measured buildable, not yet built
+
+The design is two network namespaces instead of one: the **box** keeps only a link to the proxy (its
+own slirp is *removed*, so its loopback and that link are all it has, and it needs no ruleset to
+confine it), and the **proxy** gets a namespace of its own with slirp as *its* uplink and no ruleset at
+all — the proxy is the policy. What has to be true first is that a rootless moat can build that
+topology at all, and it can, measured on a live box:
+
+```
+# the second namespace, created from inside the box's USER namespace so that one userns owns both
+nsenter -t <boxPid> --user --net --preserve-credentials -- sh -c 'exec unshare --net -- sleep 300'
+  holder netns net:[4026533547]   userns user:[4026533187]
+  box    netns net:[4026533192]   userns user:[4026533187]      # same userns: the move is permitted
+
+# the pair, created through the box's namespaces (the host's ip, uid 0 there) and split
+nsenter -t <boxPid> … -- ip link add vethp type veth peer name vethb     # exit 0
+nsenter -t <boxPid> … -- ip link set vethb netns <holderPid>             # exit 0
+nsenter -t <boxPid> … -- sh -c 'ip addr add 10.0.9.1/30 dev vethp; ip link set vethp up'
+nsenter -t <holderPid> … -- sh -c 'ip addr add 10.0.9.2/30 dev vethb; ip link set vethb up'
+
+# and it carries traffic, with a control
+from inside the box's namespace -> 10.0.9.2:49003 : REACHED (HTTP/1.0 200 OK)
+from inside the box's namespace -> 10.0.9.2:49004 : ConnectionRefusedError   (nothing behind it)
+```
+
+What that costs and what it does not settle:
+
+* **`ip` (iproute2) becomes a host requirement.** It is invoked through the box's namespaces rather
+  than installed in the image, so the image is unchanged — but the host's default path stops being
+  "util-linux and nothing else", and `moat doctor` should report it the way it reports `unshare` and
+  `chroot`. That is a deliberate, reportable change rather than a hidden one.
+* **Building it and running it are different things.** Above is the topology, built by hand on a live
+  box. Not yet measured: slirp attached to the *proxy's* namespace instead of the box's; the small
+  ruleset that lets the box reach only the proxy; the proxy doing its real work from there (it resolves
+  through a resolver that must now be slirp's *in that namespace*); the veth's and the second
+  namespace's lifecycle — they must be reaped with the box the way slirp is, or a boot that dies
+  out of band leaves them behind; and what the box's profile installs do when their only egress is the
+  proxy.
+* One trap worth repeating, because I hit it twice taking these readings: **every boot has its own
+  network namespace** (§4). Building the topology in the keepalive's namespace and then dialing from
+  `moat exec` measures two different namespaces, and the honest answer there is "refused" for a
+  topology that works.
 * **`moat exec`, `moat verify` and `moat take` are not proxied.** The policy arrives as a flag on
   `up`/`run`; those commands read egress from `state.json`, so the policy has to become an
   environment property (recorded, like `egress` and `egressAllow`) before they can carry it. Until
