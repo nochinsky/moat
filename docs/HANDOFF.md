@@ -141,9 +141,20 @@ Ordered by how much they matter, and none of them is a surprise the docs hide:
    the host terminal type, sanitised" — it failed twice in this session while other suites were running
    and passed every time it was run alone. The previous handoff had the flake without the name; this is
    probably it. It is a pty test, so concurrency is the first hypothesis.
-7. **A defect an earlier session found and did not fix.** A *second turn* on an environment is refused by
-   the credential guard, because Codex writes `MOAT_INJECTED_CREDENTIAL` into
-   `/root/.codex/shell_snapshots/`. Not re-verified here — verify before trusting the description.
+7. **A carried-forward defect that does not reproduce.** An earlier session recorded that a *second turn*
+   on an environment is refused by the credential guard, because Codex writes `MOAT_INJECTED_CREDENTIAL`
+   into `/root/.codex/shell_snapshots/`. Measured against the pinned runtime (codex 0.155.1) on both
+   credential paths — a custom `--credential-env`, and a literal `--credential`, which injects under moat's
+   own name — and it does not: two turns behaved identically on each, reaching the provider and taking its
+   401, on an environment that was never refused.
+
+   The claim it was sitting on top of is the one worth having checked, and it is stronger than the defect:
+   **the credential's value is in no file inside the box** — a distinctive value, searched across the whole
+   rootfs, on both paths — and nothing in there names `MOAT_INJECTED_CREDENTIAL` either. That is
+   `AGENTS.md`'s "the sandbox stores a fingerprint, never the key", holding under a probe rather than by
+   assertion. The limit of the reading: these turns end at the provider's 401 because there is no key on
+   this machine, so a *successful* long turn's file activity is not covered. If the refusal ever does show
+   up, the rendered config is the first thing to look at, not the credential path.
 8. **Phase 6's publishing half.** `docs/TRUST.md` is ready to be turned outward; that is the owner's call
    and their channels, not a code task.
 
