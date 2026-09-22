@@ -32,14 +32,24 @@ const PREFIX = 30
 
 /** Run through a target's user and network namespaces, the way the proxy itself is placed. */
 function inNamespaces(targetPid: number, command: string[]): { code: number; output: string } {
-  const result = spawnSync("nsenter", ["--target", String(targetPid), "--user", "--net", "--preserve-credentials", "--", ...command], {
-    encoding: "utf8",
-  })
+  // Bounded, and that is not decoration: this runs on the host while a boot waits for the link it is
+  // building, so an unbounded call that blocks is a boot that hangs rather than a boot that fails —
+  // and the failure it produces names the command that blocked. The same rule as the in-box probes,
+  // which are wrapped in `timeout` for the same reason.
+  const result = spawnSync(
+    "nsenter",
+    ["--target", String(targetPid), "--user", "--net", "--preserve-credentials", "--", ...command],
+    { encoding: "utf8", timeout: 10_000 },
+  )
+  if (result.error && (result.error as NodeJS.ErrnoException).code === "ETIMEDOUT") {
+    return { code: -1, output: `nsenter ${command.join(" ")} did not return within 10s` }
+  }
   return { code: result.status ?? -1, output: `${result.stdout ?? ""}${result.stderr ?? ""}`.trim() }
 }
 
 function ipAvailable(): boolean {
-  return spawnSync("ip", ["-V"], { encoding: "utf8" }).status === 0
+  // Bounded too: a hung `ip` here would hang the boot that is waiting for the link.
+  return spawnSync("ip", ["-V"], { encoding: "utf8", timeout: 5000 }).status === 0
 }
 
 export type ProxyNetnsHandle = {

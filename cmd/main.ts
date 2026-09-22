@@ -402,12 +402,11 @@ async function egressRuntime(state: EnvState, paths: EnvPaths): Promise<EgressRu
   if (state.egress === "filtered") await ensureFilterTool(paths)
   const provider = providerHost(state.providerBaseUrl ?? DEEPSEEK.baseUrl)
   const hosts = [...defaultAllowHosts(provider), ...(state.egressAllow ?? [])]
-  // NOT proxied yet, and deliberately: reading the policy out of the state and building the proxy's
-  // topology for these boots was written and hung — `moat exec -- sh -c 'echo hi'` completed on one
-  // run and sat for its whole timeout on another, with the same code and the same environment, and
-  // the cause is not yet known. A hang in `exec` is worse than an unproxied check, so the policy is
-  // not recorded as in force: state.egressProxy stays false until the state-driven boots are measured
-  // to work the way the turn's boot does. docs/EGRESS.md §7 has the reproduction.
+  // NOT proxied yet, and deliberately. It was written, hung once in eight runs, and was walked back
+  // again: the reading is in docs/EGRESS.md §7 — first run after `up` only, the proxy started and
+  // served, and the boot never reached its own command (0 bytes of output) even though both of the
+  // boot's waits are bounded and print when they fail. A rare hang in `exec` is worse than an
+  // unproxied check, so nothing claims a policy it is not honouring.
   const runtime = await runtimeForEgress(state.egress, {
     rootfs: paths.rootfs,
     allowHosts: hosts,
@@ -677,8 +676,7 @@ async function cmdUp(argv: string[]): Promise<number> {
   // `docs/EGRESS.md` has the measurements this rests on, and both refusals below are combinations
   // that cannot work rather than preferences.
   const egressProxyFlag = flag<boolean>(p, "egress-proxy")
-  // The flag is per-invocation for now, not a recorded property of the environment: recording it and
-  // honouring it on every boot is the step that hung (see egressRuntime above).
+  // Per-invocation for now: recording it and honouring it on every boot is the step that hung.
   const egressProxy = egressProxyFlag ?? false
   const proxyAllow: string[] = []
   if (egressProxyFlag) {

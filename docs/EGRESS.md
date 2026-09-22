@@ -351,6 +351,29 @@ What that costs and what it does not settle:
   in the proxy's log, because a dropped packet reads as a slow network rather than a refusal. The
   ruleset therefore carries one deliberate accept rule naming the proxy's address and port, and
   `test/unit/egress.test.ts` pins it — including that it admits nothing else beyond the allowlist.
+* **The state-driven boots are not proxied, and the hang is now characterised rather than merely
+  unexplained.** Wiring it was written, measured, and walked back twice. The second attempt caught the
+  flake with a dump, on a proxied environment and `moat exec -- sh -c 'echo hi'` run eight times:
+
+  ```
+  run 1: exit=124   <-- hung
+  run 2..8: exit=0
+  hangs: 1 / 8
+  at the hang: the proxy had started and was serving ("listening on 10.0.9.2:41417", then
+  "stopping on SIGTERM" 25 seconds later, when the timeout killed it), the holder's pidfile existed,
+  and run 1's own log was **0 bytes** — the boot never reached its command. Run 2's log said "hi".
+  ```
+
+  So: **the first run after `up`, only** — and the boot is stuck in the silent part of the boot script,
+  because *both* of its waits are bounded (ten seconds each) and both print when they give up. The
+  boot-side waits, the ruleset application and the chroot are the stages between the proxy starting and
+  the command running, and nothing there reports anything. The next step is to instrument the boot
+  stages themselves — a marker per stage, written where the host can read it — so the stuck stage names
+  itself instead of being inferred. The host's calls were bounded in the same commit that found this
+  (`spawnSync` to `nsenter`/`ip` now have a ten-second `timeout`), which is right regardless: the host
+  was not the thing that hung, and an unbounded call to something that can block is the rule this repo
+  already records for the in-box probes.
+
 * **The state-driven boots are not proxied, and that is deliberate for now.** `moat exec`, `verify`,
   `take` and the doctor's probe read egress from `state.json`; the proxy's policy is per-invocation, so
   those boots are built without it. Wiring it — recording the policy and building the topology for
