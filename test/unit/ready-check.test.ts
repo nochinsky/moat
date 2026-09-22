@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -91,6 +91,69 @@ test("a log that cannot be read yet is not a failure on its own", async () => {
   }
 })
 
+/** `realpathSync`, or null when ldd named something that is not a file on this host. */
+function realPathOrNull(p: string | undefined): string | null {
+  if (!p) return null
+  try {
+    return fs.realpathSync(p)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Copy `/bin/sh` and every shared object it loads into a rootfs, at the paths the shell
+ * itself asks for.
+ *
+ * The list used to be written down here — `/lib/x86_64-linux-gnu/libc.so.6` and
+ * `/lib64/ld-linux-x86-64.so.2` — which is a host assumption wearing a test. `/bin/sh`
+ * is `dash` on Debian and `bash` on Arch, and `bash` needs `libreadline.so.8` and
+ * `libncursesw.so.6` as well; the multiarch libc path does not exist on Arch, so the
+ * `continue` below it skipped the only library that was named and the model got no libc
+ * at all. Measured on Arch: the boot under test died with
+ * `libreadline.so.8: cannot open shared object file` instead of the credential line, so
+ * the test failed for a reason that had nothing to do with what it measures. Read the
+ * dependencies off the shell instead of guessing them.
+ */
+function copyShellRuntime(rootfs: string): void {
+  const sh = fs.realpathSync("/bin/sh")
+  fs.copyFileSync(sh, path.join(rootfs, "bin/sh"))
+  fs.chmodSync(path.join(rootfs, "bin/sh"), 0o755)
+
+  const ldd = spawnSync("ldd", [sh], { encoding: "utf8" })
+  const report = `${ldd.stdout ?? ""}${ldd.stderr ?? ""}`
+  const copied = new Set<string>()
+  for (const line of report.split("\n")) {
+    // Two shapes, and both matter:
+    //   libreadline.so.8 => /usr/lib/libreadline.so.8 (0x00007f…)
+    //   /lib64/ld-linux-x86-64.so.2 (0x00007f…)
+    // The first is a bare soname, and the path ldd resolved it to is the one to write: which
+    // directories the loader searches is a property of the loader, and we copy that too, so the
+    // same path is searched inside the rootfs. (Its `ld.so.cache` is not copied, so a library
+    // reachable *only* through the cache would be missed — the guard in the test below is what
+    // turns that into a sentence naming the shell rather than a mystery.)
+    //
+    // The second is the interpreter, which the ELF header names by absolute path, so it has to
+    // exist at *that* path inside the rootfs as well as at the one ldd resolved it to.
+    const parsed = /^\s*(\S+)\s*(?:=>\s*(\S+))?\s*\(0x[0-9a-f]+\)\s*$/i.exec(line)
+    const resolved = parsed?.[2]
+    const named = parsed?.[1]
+    // `linux-vdso.so.1 (0x…)` is a virtual DSO with no file behind it: named, not a path.
+    const source = realPathOrNull(resolved) ?? (named?.startsWith("/") ? realPathOrNull(named) : null)
+    if (!source) continue
+    for (const dest of [resolved, named?.startsWith("/") ? named : null]) {
+      if (!dest) continue
+      const target = path.join(rootfs, dest)
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.copyFileSync(source, target)
+      copied.add(dest)
+    }
+  }
+  // A shell with no libraries under it is not a model of anything: fail here, where the message
+  // can say so, rather than leaving the boot under test to die with the loader's own complaint.
+  assert.ok(copied.size > 0, `ldd reported no libraries for ${sh}: ${report.trim()}`)
+}
+
 /**
  * A throwaway rootfs with just enough of a userspace for `/bin/sh` to start.
  *
@@ -106,14 +169,7 @@ function throwawayEnv(t: { after: (fn: () => void) => void }): EnvPaths {
   for (const dir of ["bin", "etc", "proc", "dev", "tmp", "run", "var/log/moat", ".moat", "usr/bin", "usr/sbin", "sbin"]) {
     fs.mkdirSync(path.join(rootfs, dir), { recursive: true })
   }
-  fs.copyFileSync("/bin/sh", path.join(rootfs, "bin/sh"))
-  fs.chmodSync(path.join(rootfs, "bin/sh"), 0o755)
-  for (const dep of ["/lib/x86_64-linux-gnu/libc.so.6", "/lib64/ld-linux-x86-64.so.2"]) {
-    if (!fs.existsSync(dep)) continue
-    const dest = path.join(rootfs, dep)
-    fs.mkdirSync(path.dirname(dest), { recursive: true })
-    fs.copyFileSync(fs.realpathSync(dep), dest)
-  }
+  copyShellRuntime(rootfs)
   fs.mkdirSync(path.join(root, "logs"), { recursive: true })
   fs.mkdirSync(path.join(root, "mnt"), { recursive: true })
   return {
@@ -148,6 +204,23 @@ test("a real boot whose entry script dies early is not reported as up", async (t
     t.skip("no unprivileged user namespaces here")
     return
   }
+
+  // The model has to be able to start a shell at all, or the assertion below measures the
+  // copied shell's missing libraries rather than the boot path. This is the guard the
+  // Debian-shaped dependency list needed: on a host where `/bin/sh` is bash it copied no
+  // libreadline, and the boot died with "error while loading shared libraries" instead of
+  // the credential line. Checked here rather than assumed, so the next distro that moves
+  // the runtime fails with a sentence that names it.
+  const shellProbe = spawnSync(
+    "unshare",
+    ["--user", "--map-root-user", "chroot", p.rootfs, "/bin/sh", "-c", "exit 0"],
+    { encoding: "utf8" },
+  )
+  assert.equal(
+    shellProbe.status,
+    0,
+    `the throwaway rootfs cannot run its own shell, so it is not a model of the box: ${shellProbe.stderr?.trim()}`,
+  )
 
   const sandbox = await startSandbox(
     p,
