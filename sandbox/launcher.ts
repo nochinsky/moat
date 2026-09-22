@@ -5,6 +5,7 @@ import path from "node:path"
 
 import type { EnvPaths } from "../lib/paths.ts"
 import { SLIRP_DNS, ownNetns, type EgressMode } from "../lib/pins.ts"
+import { containerRuntime, containerPlan, type BackendId } from "./backend.ts"
 import { ensureRootfsDir, openRootfsFileForAppend, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { shellQuote } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
@@ -333,6 +334,35 @@ export function writeInnerScript(p: EnvPaths, body: string): string {
 export type SandboxEnv = Record<string, string | undefined>
 
 /**
+ * The command that boots the box, whichever backend is in use.
+ *
+ * The unshare path needs its outer script (mount table, device binds, chroot); a container runtime
+ * does all of that itself, so its plan runs the *inner* script directly. This is the one place that
+ * knows the difference, which is why the three spawn sites below are one line each.
+ *
+ * The runtime process gets the **host** environment, not the box's: podman needs `HOME` and
+ * `XDG_RUNTIME_DIR` to find its own storage, and the box's environment is what `--env` lists.
+ * Nothing from the host reaches the box by this route — that is invariant 5, and it is about the
+ * box, not about the daemon moat asks to build it.
+ */
+function bootCommand(
+  p: EnvPaths,
+  opts: { backend?: BackendId; inner: string; outer: string; egress?: EgressMode; env?: SandboxEnv; isolated: boolean },
+): { command: string; args: string[]; env: NodeJS.ProcessEnv; needsSlirp: boolean } {
+  if (opts.backend === "container") {
+    const plan = containerPlan(p, opts.inner, { egress: opts.egress, env: opts.env })
+    return { command: plan.command, args: plan.args, env: process.env, needsSlirp: false }
+  }
+  const isolated = opts.isolated
+  return {
+    command: "unshare",
+    args: unshareArgs(opts.outer, { net: isolated }),
+    env: sandboxEnv(opts.env),
+    needsSlirp: isolated,
+  }
+}
+
+/**
  * The terminal type an *interactive* boot should advertise.
  *
  * `sandboxEnv` fixes `TERM=dumb`, which is right for a boot nobody is watching — a script, a
@@ -485,6 +515,8 @@ const OUTPUT_TAIL = 512 * 1024
 
 export type SandboxRunOptions = {
   env?: SandboxEnv
+  /** Which backend boots this box: the default `unshare` path, or a container runtime. */
+  backend?: BackendId
   onOutput?: (chunk: string) => void
   timeoutMs?: number
   egress?: EgressMode
@@ -509,17 +541,21 @@ export async function runInSandbox(
   innerBody: string,
   opts: SandboxRunOptions = {},
 ): Promise<RunInSandboxResult> {
-  const isolated = bootIsolation(opts)
+  const containerBackend = opts.backend === "container"
+  const isolated = containerBackend ? false : bootIsolation(opts)
   const inner = writeInnerScript(p, innerBody)
-  const boot = writeOuterScript(p, { innerScript: inner, waitForTap: isolated, egressRules: opts.egressRules })
-  const child = spawn("unshare", unshareArgs(boot, { net: isolated }), {
-    env: sandboxEnv(opts.env),
+  // No outer script for a container: the mount table, the chroot and the device nodes are the
+  // runtime's job, which is the entire reason the backend is worth having.
+  const boot = containerBackend ? "" : writeOuterScript(p, { innerScript: inner, waitForTap: isolated, egressRules: opts.egressRules })
+  const plan = bootCommand(p, { backend: opts.backend, inner, outer: boot, egress: opts.egress, env: opts.env, isolated })
+  const child = spawn(plan.command, plan.args, {
+    env: plan.env,
     stdio: ["ignore", "pipe", "pipe"],
   })
 
   let slirp: { stop: () => void } | null = null
   try {
-    if (isolated) {
+    if (plan.needsSlirp) {
       const egress = await import("./egress.ts")
       const ready = child.pid ? await waitForNewNetns(child.pid) : false
       if (!ready) throw new Error("the sandbox did not enter its network namespace")
@@ -591,18 +627,28 @@ export async function runInteractive(
   innerBody: string,
   opts: SandboxRunOptions = {},
 ): Promise<number> {
-  const isolated = bootIsolation(opts)
+  const containerBackend = opts.backend === "container"
+  const isolated = containerBackend ? false : bootIsolation(opts)
   const inner = writeInnerScript(p, innerBody)
-  const boot = writeOuterScript(p, { innerScript: inner, waitForTap: isolated, egressRules: opts.egressRules })
-  const child = spawn("unshare", unshareArgs(boot, { net: isolated }), {
+  const boot = containerBackend ? "" : writeOuterScript(p, { innerScript: inner, waitForTap: isolated, egressRules: opts.egressRules })
+  // An interactive boot is the one case where the terminal type has to come from the terminal:
+  // TERM=dumb makes Codex's TUI ask "Continue anyway?" before it starts. A container gets it as an
+  // --env argument like every other variable; the unshare path puts it in the process environment.
+  const plan = bootCommand(p, {
+    backend: opts.backend,
+    inner,
+    outer: boot,
+    egress: opts.egress,
+    env: { TERM: interactiveTerm(), ...opts.env },
+    isolated,
+  })
+  const child = spawn(plan.command, plan.args, {
     stdio: "inherit",
-    // An interactive boot is the one case where the terminal type has to come from the
-    // terminal: TERM=dumb makes Codex's TUI ask "Continue anyway?" before it starts.
-    env: sandboxEnv({ TERM: interactiveTerm(), ...opts.env }),
+    env: plan.env,
   })
   let slirp: { stop: () => void } | null = null
   try {
-    if (isolated) {
+    if (plan.needsSlirp) {
       const egress = await import("./egress.ts")
       const ready = child.pid ? await waitForNewNetns(child.pid) : false
       if (!ready) throw new Error("the sandbox did not enter its network namespace")
@@ -635,6 +681,8 @@ export type SandboxProcess = {
 }
 
 export type SandboxStartOptions = {
+  /** Which backend boots this box: the default `unshare` path, or a container runtime. */
+  backend?: BackendId
   egress?: EgressMode
   /** Path to the slirp4netns binary; required when egress is isolated. */
   slirpBinary?: string
@@ -649,33 +697,52 @@ export async function startSandbox(
   env: SandboxEnv,
   opts: SandboxStartOptions = {},
 ): Promise<SandboxProcess> {
-  const isolated = bootIsolation(opts)
+  const containerBackend = opts.backend === "container"
+  const isolated = containerBackend ? false : bootIsolation(opts)
   const inner = writeInnerScript(p, innerBody)
-  // The boot log lives inside the rootfs, so the long-running box does not hold
-  // an append fd on a host file outside itself. It is opened here, through the
-  // guard, and passed as fd 3: the script dups it rather than resolving the path.
+  // The boot log lives inside the rootfs, so the long-running box never holds an append fd on a
+  // host file outside itself — opened here, through the guard. The unshare path passes it to the
+  // boot script as fd 3, which the script dups; a container has no boot script to hand it to, so
+  // the *host* mirrors what the runtime prints into that same file. Either way the box holds no
+  // host descriptor, and `moat logs sandbox` reads the same path.
   const bootFd = openRootfsFileForAppend(p.rootfs, "/var/log/moat/boot.log", 0o600)
-  const boot = writeOuterScript(p, {
-    innerScript: inner,
-    bootLog: true,
-    waitForTap: isolated,
-    egressRules: opts.egressRules,
-  })
+  const boot = containerBackend
+    ? ""
+    : writeOuterScript(p, { innerScript: inner, bootLog: true, waitForTap: isolated, egressRules: opts.egressRules })
   fs.mkdirSync(p.logs, { recursive: true })
   const logFile = path.join(p.logs, "sandbox.log")
   const fd = fs.openSync(logFile, "a", 0o600)
-  const child = spawn("unshare", unshareArgs(boot, { net: isolated }), {
-    env: sandboxEnv(env),
-    stdio: ["ignore", fd, fd, bootFd],
+  const plan = bootCommand(p, { backend: opts.backend, inner, outer: boot, egress: opts.egress, env, isolated })
+  const child = spawn(plan.command, plan.args, {
+    env: plan.env,
+    stdio: containerBackend ? ["ignore", "pipe", "pipe"] : ["ignore", fd, fd, bootFd],
     detached: true,
   })
+  if (containerBackend) {
+    const mirror = (chunk: Buffer) => {
+      try {
+        fs.writeSync(bootFd, chunk)
+        fs.writeSync(fd, chunk)
+      } catch {
+        /* the box is gone, or the fd is closed on its way out */
+      }
+    }
+    child.stdout?.on("data", mirror)
+    child.stderr?.on("data", mirror)
+    child.on("close", () => {
+      try { fs.closeSync(bootFd) } catch { /* already closed */ }
+      try { fs.closeSync(fd) } catch { /* already closed */ }
+    })
+  }
   child.unref()
-  fs.closeSync(fd)
-  fs.closeSync(bootFd)
+  if (!containerBackend) {
+    fs.closeSync(fd)
+    fs.closeSync(bootFd)
+  }
   if (!child.pid) throw new Error("failed to spawn sandbox: no pid")
 
   let slirp: SandboxProcess["slirp"] = null
-  if (isolated) {
+  if (plan.needsSlirp) {
     const egress = await import("./egress.ts")
     const ready = await waitForNewNetns(child.pid)
     if (!ready) {

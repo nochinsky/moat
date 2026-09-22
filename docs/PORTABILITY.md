@@ -74,6 +74,23 @@ MEASURED  the host's home is not inside — and no host data is mounted
 MEASURED  network modes are the runtime's own — --network=none gives 1 interface(s)
 ```
 
+and one more, taken because it decides how egress maps rather than because it was convenient: **a
+default rootless container is refused on the host's loopback** (a control from the host answered
+`200`; the container got `Connection refused`). That matters more than it looks — the property moat
+currently buys with `slirp4netns --disable-host-loopback` is the runtime's **default**, so the
+container backend needs **no datapath of its own at all**:
+
+| moat's egress | container backend |
+| --- | --- |
+| `open` | `--network=host` — the same meaning, and the same warning |
+| `isolated` | the runtime's default network: outbound, host loopback **refused** (measured) |
+| `filtered` | the same, plus moat's nftables ruleset applied inside — **not wired yet** |
+
+The seam for this now exists in the tree (`sandbox/backend.ts`, and the three spawn sites in
+`sandbox/launcher.ts` ask it for the boot command). It is a pure addition: `unshare` is still the
+default and nothing chooses `container` yet, which is the next slice — along with placing
+`filtered`'s ruleset inside the box, where the unshare path applies it from the outer script.
+
 So four of the things this document previously listed as costs are **not costs**:
 
 * **the persistent directory rootfs** — `--rootfs` takes a plain directory, the agent runs as uid 0
