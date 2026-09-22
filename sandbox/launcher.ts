@@ -568,6 +568,15 @@ export type SandboxRunOptions = {
   /** Path inside the sandbox of the nftables ruleset; required when filtered. */
   egressRules?: string
   /**
+   * Enforce egress through a proxy moat owns, on this boot's own loopback.
+   *
+   * The box is told to use it through the environment (`proxyEnv`), and the proxy decides by name
+   * and port before dialing — which is what the nftables allowlist cannot do: it is an IP snapshot
+   * taken at boot, it cannot express per-host ports, and DNS is still an outbound channel.
+   * `docs/EGRESS.md` has the measurements this rests on; `sandbox/proxy.ts` has the proxy.
+   */
+  egressProxy?: { allow: readonly string[] }
+  /**
    * Called with the output so far, and may stop the box by returning a reason.
    *
    * This is how a spend ceiling is enforced *while* the turn is running: the runtime's own stream
@@ -597,14 +606,42 @@ export async function runInSandbox(
   })
 
   let slirp: { stop: () => void } | null = null
+  let proxy: { stop: () => void } | null = null
+  const stopDatapath = (): void => {
+    proxy?.stop()
+    slirp?.stop()
+  }
   try {
     if (plan.needsSlirp) {
       const egress = await import("./egress.ts")
       const ready = child.pid ? await waitForNewNetns(child.pid) : false
       if (!ready) throw new Error("the sandbox did not enter its network namespace")
       slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
+      if (opts.egressProxy) {
+        // Beside slirp, in the same namespace and by the same seam — and before the boot is
+        // reported to anyone, so the agent's first request cannot beat the listener.
+        const proxies = await import("./proxy.ts")
+        const proxyLog = path.join(p.logs, "proxy.log")
+        const handle = proxies.startEgressProxy(child.pid!, {
+          allow: opts.egressProxy.allow,
+          logFile: proxyLog,
+          // The only resolver a filtered box's ruleset admits: slirp's, not the host's. Without it
+          // every dial fails with EAI_AGAIN (measured), because the proxy reads the host's
+          // /etc/resolv.conf while its network is the box's.
+          dns: egress.SLIRP_DNS,
+        })
+        if (!handle.pid || handle.pid <= 0) {
+          const reason = handle.error()?.message ?? "the process did not start"
+          throw new Error(`could not start the egress proxy (${proxies.NSENTER}): ${reason}`)
+        }
+        proxy = handle
+        if (!(await proxies.waitForProxyListening(proxyLog))) {
+          throw new Error("the egress proxy did not report that it was listening")
+        }
+      }
     }
   } catch (error) {
+    stopDatapath()
     child.kill("SIGKILL")
     throw error
   }
@@ -648,7 +685,7 @@ export async function runInSandbox(
   return await new Promise((resolve, reject) => {
     const cleanup = () => {
       if (timer) clearTimeout(timer)
-      slirp?.stop()
+      stopDatapath()
     }
     child.on("error", (error) => {
       cleanup()
@@ -691,24 +728,52 @@ export async function runInteractive(
     env: plan.env,
   })
   let slirp: { stop: () => void } | null = null
+  let proxy: { stop: () => void } | null = null
+  const stopDatapath = (): void => {
+    proxy?.stop()
+    slirp?.stop()
+  }
   try {
     if (plan.needsSlirp) {
       const egress = await import("./egress.ts")
       const ready = child.pid ? await waitForNewNetns(child.pid) : false
       if (!ready) throw new Error("the sandbox did not enter its network namespace")
       slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
+      if (opts.egressProxy) {
+        // Beside slirp, in the same namespace and by the same seam — and before the boot is
+        // reported to anyone, so the agent's first request cannot beat the listener.
+        const proxies = await import("./proxy.ts")
+        const proxyLog = path.join(p.logs, "proxy.log")
+        const handle = proxies.startEgressProxy(child.pid!, {
+          allow: opts.egressProxy.allow,
+          logFile: proxyLog,
+          // The only resolver a filtered box's ruleset admits: slirp's, not the host's. Without it
+          // every dial fails with EAI_AGAIN (measured), because the proxy reads the host's
+          // /etc/resolv.conf while its network is the box's.
+          dns: egress.SLIRP_DNS,
+        })
+        if (!handle.pid || handle.pid <= 0) {
+          const reason = handle.error()?.message ?? "the process did not start"
+          throw new Error(`could not start the egress proxy (${proxies.NSENTER}): ${reason}`)
+        }
+        proxy = handle
+        if (!(await proxies.waitForProxyListening(proxyLog))) {
+          throw new Error("the egress proxy did not report that it was listening")
+        }
+      }
     }
   } catch (error) {
+    stopDatapath()
     child.kill("SIGKILL")
     throw error
   }
   return await new Promise<number>((resolve, reject) => {
     child.on("error", (error) => {
-      slirp?.stop()
+      stopDatapath()
       reject(error)
     })
     child.on("close", (code) => {
-      slirp?.stop()
+      stopDatapath()
       resolve(code ?? 0)
     })
   })

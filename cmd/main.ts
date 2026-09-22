@@ -12,6 +12,8 @@ import { PACKAGE_ROOT, ensureMoatHome, envPaths, type EnvPaths, validateLogName 
 import {
   ALPINE_VERSION,
   CODEX_VERSION,
+  EGRESS_ALLOWED_PORTS,
+  EGRESS_REGISTRY_HOSTS,
   RUNTIME_BINARY,
   SANDBOX_WORKDIR,
   defaultEgress,
@@ -32,6 +34,7 @@ import {
   runtimeForEgress,
   type EgressRuntime,
 } from "../sandbox/egress.ts"
+import { proxyEnv } from "../sandbox/proxy.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import { recoverStateFromDisk } from "../sandbox/recover.ts"
@@ -632,6 +635,31 @@ async function cmdUp(argv: string[]): Promise<number> {
     )
   }
 
+  // Egress through a proxy moat owns. The policy is decided by *name and port* before dialing, which
+  // is what the nftables allowlist cannot do: it is an IP snapshot resolved at boot, so a rotating
+  // address falls out until the next `moat up`; its accept rule is a fixed `tcp dport { 80, 443 }`,
+  // so per-host ports cannot be expressed; and DNS to slirp's resolver stays an outbound channel.
+  // `docs/EGRESS.md` has the measurements this rests on, and both refusals below are combinations
+  // that cannot work rather than preferences.
+  const egressProxy = flag<boolean>(p, "egress-proxy") ?? false
+  const proxyAllow: string[] = []
+  if (egressProxy) {
+    if (egress === "open") {
+      log.fail(
+        "--egress-proxy needs an egress mode with a network namespace of its own: `open` is the host's, " +
+          "where the box's traffic never passes a boundary moat could put a proxy on. " +
+          "Use --egress isolated or --egress filtered.",
+      )
+    }
+    if (backend === "container") {
+      log.fail(
+        "--egress-proxy is implemented for the unshare backend. A container's namespace belongs to the " +
+          "runtime, and attaching to it needs the runtime's pid — measured to work, but not wired here " +
+          "(docs/EGRESS.md §4).",
+      )
+    }
+  }
+
   // `moat` on its own is typed anywhere, so the obvious wrong directories are
   // caught before a byte is copied. This runs before provisioning, because
   // discovering the mistake after unpacking a rootfs is a waste of a minute.
@@ -1146,12 +1174,31 @@ ${command}
   if (runtimeId === "claude") installClaudeFiles(paths.rootfs, { brief: renderedFiles.brief })
   else installCodexFiles(paths.rootfs, renderedFiles)
 
+  // The proxy's policy, built from the same names the nftables ruleset is built from — but paired
+  // with the ports actually in play. The provider keeps the port its base URL uses, which the
+  // ruleset cannot express at all (its accept rule is `tcp dport { 80, 443 }` for every allowed
+  // address), and an `--egress-allow` entry may name one.
+  if (egressProxy) {
+    const provider = providerHost(baseUrl)
+    if (provider) {
+      const url = new URL(baseUrl)
+      proxyAllow.push(`${provider}:${url.port || (url.protocol === "https:" ? "443" : "80")}`)
+    }
+    for (const host of EGRESS_REGISTRY_HOSTS) {
+      for (const port of EGRESS_ALLOWED_PORTS) proxyAllow.push(`${host}:${port}`)
+    }
+    for (const entry of egressAllow) proxyAllow.push(entry)
+  }
+
   const managedEnv: Record<string, string> = {
     // Configuration, not a secret: the custom-endpoint provider block needs the base
     // URL and the model whether or not a credential was injected. They used to arrive
     // only with the credential, so a --no-credential boot had a provider with no URL
     // at all and every model call died inside the box with ERR_INVALID_URL, silently.
     ...sandboxProviderEnv({ baseUrl, model: facts.label, modelId: facts.id }),
+    // The box is *told* to use the proxy, because nothing else can: MOAT_SANDBOX_ENV accepts only
+    // `MOAT_` names, so a variable the agent's own HTTP client reads has to be managed here.
+    ...(egressProxy ? proxyEnv() : {}),
     // Claude Code reads its endpoint from its own variable, not from moat's provider block, so the
     // base URL travels under both names. The credential's variable is handled at the mint.
     ...(runtimeId === "claude" ? { ANTHROPIC_BASE_URL: baseUrl } : {}),
@@ -1301,7 +1348,16 @@ ${command}
     egress,
     slirpBinary: egressConfig.slirpBinary,
     egressRules: egressConfig.egressRules,
+    ...(egressProxy ? { egressProxy: { allow: proxyAllow } } : {}),
     ...(catalogPrice ? { catalogPrice } : {}),
+  }
+  if (egressProxy && task.length === 0 && !interactive) {
+    // Said rather than left to be discovered: the proxy is attached per boot, and a keepalive boot
+    // runs no agent, so there is nothing for it to carry here.
+    log.info(
+      "--egress-proxy is attached to the boots that run the agent; this one is a keepalive, so nothing is " +
+        "proxied yet. `moat run \"...\"` or `moat --egress-proxy` makes a proxied boot.",
+    )
   }
   if (task.length > 0 && interactive) return await runInteractive(paths, runtime.tuiBody(task), runOptions)
   if (task.length > 0) {
@@ -3076,6 +3132,8 @@ type AgentRunOptions = {
   backend?: BackendId
   slirpBinary?: string
   egressRules?: string
+  /** The proxy's policy, when egress is enforced through a proxy moat owns. */
+  egressProxy?: { allow: readonly string[] }
   timeoutSeconds?: number
   showOutput?: boolean
   json?: boolean
@@ -3130,6 +3188,7 @@ async function runAgentTask(paths: EnvPaths, body: string, opts: AgentRunOptions
     backend: opts.backend,
     slirpBinary: opts.slirpBinary,
     egressRules: opts.egressRules,
+    egressProxy: opts.egressProxy,
     timeoutMs: (opts.timeoutSeconds ?? 2700) * 1000,
     // The ceiling is checked *while* the turn runs, against the usage the runtime has already
     // reported. It cannot be exact for every runtime — Codex only sends usage at `turn.completed`,

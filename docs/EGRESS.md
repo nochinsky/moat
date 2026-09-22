@@ -268,3 +268,62 @@ So the placement does **not** inherit shape 3's failure mode: a process on the b
 outside the agent's reach even with the pid in hand. (The kernel's reasoning is the user-namespace
 credential rules — `nsenter --user` keeps the host uid, which is unmapped inside the box — but the
 reading is what matters, and nothing here depends on the explanation.)
+
+## 7. What is built, and what this first increment does not cover
+
+`--egress-proxy` on `up`/`run` makes moat start the proxy (`sandbox/proxy.ts`) and place it on the
+boot's own loopback, by the same seam slirp4netns is started by — and the box is told to use it, in
+its managed environment, because `MOAT_SANDBOX_ENV` accepts only `MOAT_` names. Measured end to end
+against the real provider, on a `filtered` box with a deliberately invalid key:
+
+```
+2026-09-22T21:30:08Z listening on 127.0.0.1:41417 allowing api.deepseek.com:443 registry.npmjs.org:80 …
+2026-09-22T21:30:08Z REFUSED chatgpt.com:443
+2026-09-22T21:30:09Z ALLOWED CONNECT api.deepseek.com:443
+```
+
+and the turn came back with the provider's own `401 Unauthorized … url: https://api.deepseek.com/…`.
+A host outside the policy is refused **by name**, which is the thing a dropped packet could never say.
+
+What that increment deliberately does **not** cover, so nobody reads the above as more than it is:
+
+* **The ruleset still governs the proxy's own dial.** The proxy is a process in the box's network
+  namespace, so its outbound traffic passes the same nftables ruleset — whose accept addresses were
+  resolved *at boot*. A provider address that rotates is therefore still a snapshot for the proxy,
+  and the name-resolution win is only complete once the ruleset admits the proxy's traffic by uid
+  (it keeps the host uid, unmapped inside the box) and limits the box's own traffic to its loopback.
+  That is the next change, and it is the one that retires the IP snapshot for the provider.
+* **`moat exec`, `moat verify` and `moat take` are not proxied.** The policy arrives as a flag on
+  `up`/`run`; those commands read egress from `state.json`, so the policy has to become an
+  environment property (recorded, like `egress` and `egressAllow`) before they can carry it. Until
+  then a check that makes a network call does so under the ruleset alone.
+* **The container backend is refused, not ignored** — `--egress-proxy` says so, and attaching to a
+  container's namespace needs the runtime's pid (§4 measured that the mechanism works).
+* **A proxy is not a jail.** It governs clients that honour a proxy setting; a raw socket under
+  `isolated`/`filtered` still reaches what the ruleset admits. SPEC §7.3 already says the filter is a
+  policy rather than a jail, and this narrows where traffic *goes* without pretending otherwise.
+
+## 8. Two pre-existing defects this increment ran into
+
+Both were hit while taking §7's reading, and neither was introduced by it:
+
+* **A second turn on an environment is refused by the credential guard.** Codex writes a shell
+  snapshot into `/root/.codex/shell_snapshots/` containing the environment it was given, which
+  includes `MOAT_INJECTED_CREDENTIAL`; `scanRootfsForCredential` runs at the next boot, finds the
+  value on disk, and refuses with *"the credential was found on disk inside the sandbox"*. Measured
+  with no proxy involved at all — turn 1 fine, turns 2 and 3 refused:
+
+  ```
+  plain    turn 1: exit=1  unexpected status 401
+  plain    turn 2: exit=1  the credential was found on disk
+  plain    turn 3: exit=1  the credential was found on disk
+  ```
+
+  The guard is right about the principle and wrong about this file: it is the agent's own runtime
+  writing its own environment, not the image carrying a credential. It also makes an environment
+  unusable after one turn, and the message reads as a moat refusal with no way out.
+* **The proxy read the host's resolver.** A host process in the box's network namespace reads the
+  *host's* `/etc/resolv.conf`, whose nameserver a `filtered` ruleset drops (it admits DNS only to
+  slirp's `10.0.2.3`). Every dial failed `EAI_AGAIN`. Fixed here by passing slirp's resolver
+  explicitly — but it is the same lesson §5 keeps recording: the placement changes what the process
+  can see, and reading the environment it inherited is not reading the one it is in.
