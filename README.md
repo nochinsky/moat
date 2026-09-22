@@ -154,6 +154,8 @@ change has to come with and what will get sent back. Found a security problem?
 
 ## Reading order
 
+* `docs/TRUST.md` is **generated** from the evidence — what is verified, by which suite, and the
+  list of what is explicitly **not**. Start there.
 * `docs/SPEC.md` is the contract: what each command promises, and where the sharp edges are.
 * `docs/VERIFICATION.md` is the evidence: the criteria, the captures, and the closing table of
   what is **not** verified. Read that table before believing anything here.

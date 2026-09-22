@@ -76,7 +76,8 @@ docs/            SPEC (the contract), VERIFICATION (the evidence),
                  runtime would have to satisfy), RUNTIMES (what a second runtime
                  costs, and why ACP is not the shortcut), PORTABILITY (what is
                  measured about running moat outside Linux, and what a container
-                 backend would cost), CI (running moat in a pipeline, and why a
+                 backend would cost), TRUST (generated from the evidence — the
+                 verified/not-verified page), CI (running moat in a pipeline, and why a
                  GitHub-hosted runner cannot), PROGRESS (where things
                  stand), archive/ (the build journal and the finished phase
                  program — history, not instructions)
