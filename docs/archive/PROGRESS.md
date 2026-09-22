@@ -2065,3 +2065,35 @@ formats fields.
 Extras §AN grew the end-to-end half. Its stub's tool call now edits a file *and commits*, so the
 fetch `take` performs has a branch to find, and the section asserts the JSON parses and says what it
 should: `treeUntouched` true, `notes.txt` in the classification, `checks.ok` true.
+
+---
+
+## Session 17 — Phase 6: the trust page is a derivation, not a claim
+
+The half of Phase 6 that is engineering rather than publishing. The problem is not "write a landing
+page": it is that **every number on such a page is a number somebody typed, and typed numbers drift
+from the thing they describe.** This repository has been bitten by exactly that — `SPEC.md` promised
+"15 isolation assertions" while the three egress modes print 14, 16 and 17, and nothing kept the
+count honest until `test/unit/docs-claims.test.ts` was written.
+
+So `docs/TRUST.md` is **generated** by `scripts/trust.mjs` from what is already in the tree:
+
+* each suite's verdict, read out of the evidence file that suite writes (`checks passed: 52, failed:
+  0` from `extras.txt`, `acceptance (codex runtime): all criteria passed` from `codex-summary.txt`,
+  and so on);
+* the "not verified" list, read out of `docs/VERIFICATION.md` — the authoritative one, so there is
+  one place to correct and the page cannot disagree with it;
+* the commands that reproduce both.
+
+**A figure it cannot derive is not printed.** The unit suite is that case: it commits no evidence
+file, so the page names the command and says why it carries no count, rather than a number somebody
+would have to maintain. That is the repository's own rule — counts belong in the capture and in the
+tool's output, not in a hand-maintained table — applied to the page a stranger lands on.
+
+`test/unit/trust-generated.test.ts` runs the generator in `--check` mode and fails if the committed
+page differs, so the page cannot be hand-edited without the suite saying so. It was proved to bite by
+appending one line to `docs/TRUST.md`: 1 failed, and back to 2 passed when restored. A second check
+asserts the page names `npm run test:unit` **without** giving it a number.
+
+Because the check runs inside `npm run test:unit`, and CI runs that on every push, the page is
+enforced where the rest of the evidence is.
