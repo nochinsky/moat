@@ -1265,3 +1265,67 @@ tarball it would upload is the one measured above.
 
 **It did not rename the command.** `moat` is still the binary, the docs still say `moat`, and the
 only change a user sees is that the *package* is `moat-cli`.
+
+---
+
+## Session 6 — a one-byte loss in a partial accept
+
+A defect in the review surface, found by property-testing the hunk plumbing rather than by reading
+it, and fixed with its own round trip as the test.
+
+### The defect, and how it was found
+
+`hunksBetween(dest, proposed)` and `applyHunks(dest, hunks, accepted)` are the pair the per-hunk
+accept rests on, and `applyHunks`'s contract is that applying *every* hunk reproduces `proposed`,
+byte for byte. It did not. A round trip over random pairs —
+`applyHunks(dest, hunksBetween(dest, proposed), all) === proposed` — failed on 98 of 20,000 cases,
+23 of them with more than one hunk, and every single one was a disagreement about the file's
+**final newline**:
+
+```
+$ node …/prop2.mjs
+failures by hunkCount: { '1': 75, '2': 23 }  total 98/20000
+targeted: dest NL= false proposed NL= true hunks= 2
+accept LAST hunk only -> "…line 19\nline 20 changed"     <- the agent's newline is gone
+expected tail         -> "…line 19\nline 20 changed\n"
+```
+
+git writes a change to the last byte as `\ No newline at end of file`, attached to the hunk that
+reaches the end of the file; `parseUnifiedHunks` drops that marker because it is not a content line,
+and `applyHunks` then took the destination's ending unconditionally. The all-hunks case never showed
+it, because `applySelection` short-circuits to the frozen `proposed` bytes when every hunk is
+accepted — so the bug was reachable only through a *partial* accept that took the end-of-file hunk.
+That is `moat apply --hunks <n>` writing the agent's last line but the file's own newline: a
+one-byte difference between what the user reviewed and what landed.
+
+### The fix
+
+`Hunk` gained an optional `eofNewline`. `hunksBetween` sets it on the hunk whose `destEnd` reaches
+the destination's last line — the one the marker would have hung on — and `applyHunks` lets the
+accepted hunks decide the ending, falling back to the destination's when the end-of-file hunk was not
+taken. Round trip after the fix, over longer files, many hunks and CRLF: **0 failures / 6000**, with
+a subset check that rejecting the end hunk keeps the destination's ending (**0 / 2000**).
+
+### What the tests caught that prose did not
+
+Three tests were added, and each was verified to **fail without the fix** by reverting
+`lib/hunks.ts` and re-running:
+
+- `accepting every hunk reproduces the proposal byte for byte, its final newline included` — the
+  round trip, over the shapes where the two endings disagree;
+- `the final newline follows the hunk that reaches the end of the file` — two hunks, either half
+  taken alone;
+- `a partial accept carries the agent's final newline with the hunk that reaches the end` —
+  through the real `planApply` / `reviewPlan` / `applySelection` path.
+
+Measured pre-fix (`node --test test/unit/hunks.test.ts test/unit/review.test.ts`): **3 failing, 15
+passing**, the three failures being exactly these, each on its own assertion. With the fix:
+**18 pass** on that pair and `npm run test:unit` at **258 tests, 258 pass, 0 fail**.
+
+### The suite's blind spot, which is the point
+
+The round trip *was* asserted before this session —
+`assert.equal(applyHunks(dest, hunks, new Set([0, 1])), proposed)` — but only on fixtures whose two
+endings agreed, so the assertion could never fail. That is the failure mode this program keeps
+recording: a check that looks like coverage and is not. Property-testing the pair is what made it
+fail.

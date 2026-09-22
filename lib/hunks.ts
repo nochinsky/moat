@@ -45,6 +45,20 @@ export type Hunk = {
   lines: string[]
   /** For display: the destination lines this replaces. */
   removed: string[]
+  /**
+   * Set on the one hunk that reaches the end of the destination, and only there: whether the file
+   * ends with a newline once that hunk is applied. Absent means the hunk does not touch the end, so
+   * the destination's own ending stands.
+   *
+   * git writes a change to the final newline as the `\ No newline at end of file` marker attached
+   * to the hunk that touches the last line, and `parseUnifiedHunks` drops that marker because it is
+   * not a content line. Carrying the answer here instead is what keeps a *partial* accept honest:
+   * taking the end-of-file hunk adopts the proposed ending, leaving it out keeps the destination's.
+   * Everywhere else `applyHunks` kept the destination's ending, so accepting the agent's
+   * end-of-file change could lose a one-byte difference from what the user reviewed — measured, and
+   * the round-trip `applyHunks(dest, hunksBetween(dest, proposed), all) === proposed` failed on it.
+   */
+  eofNewline?: boolean
 }
 
 export type ReviewedChange = {
@@ -134,12 +148,21 @@ export async function hunksBetween(dest: string, proposed: string): Promise<Hunk
     // `diff --no-index` exits 1 for "they differ", which is the normal case here.
     if (result.code !== 0 && result.code !== 1) return null
     const destLines = readLines(before).lines
-    return parseUnifiedHunks(result.stdout).map((hunk) => ({
+    const hunks: Hunk[] = parseUnifiedHunks(result.stdout).map((hunk) => ({
       destStart: hunk.oldStart,
       destEnd: hunk.oldEnd,
       lines: hunk.lines,
       removed: destLines.slice(Math.max(0, hunk.oldStart - 1), hunk.oldEnd),
     }))
+    // The last hunk in the list has the largest `destEnd`; if it reaches the destination's last
+    // line, it is the one git would have hung the `\ No newline at end of file` marker on, so it is
+    // the hunk whose acceptance decides the file's ending. `>=` rather than `===` because an empty
+    // destination has zero lines and its single insertion hunk has `destEnd === 0`.
+    const eof = hunks[hunks.length - 1]
+    if (eof && eof.destEnd >= destLines.length) {
+      eof.eofNewline = proposed.length === 0 ? true : proposed.endsWith("\n")
+    }
+    return hunks
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true })
   }
@@ -155,6 +178,11 @@ export async function hunksBetween(dest: string, proposed: string): Promise<Hunk
  * The result is computed from the *destination's bytes* and the accepted hunks' lines. It never
  * re-reads the sandbox, and it never re-reads the destination: the caller passes the content it
  * verified, which is how the three-way re-check keeps holding under partial accept.
+ *
+ * The file's final newline is the one thing the destination's bytes do not decide. It follows
+ * whichever hunk touches the end of the file (`Hunk.eofNewline`): accept that hunk and the file
+ * ends the way the proposal ends, leave it out and your own ending is untouched. Applying *every*
+ * hunk then reproduces `proposed` byte for byte, which is the round-trip `hunksBetween` owes.
  */
 export function applyHunks(destContent: string, hunks: Hunk[], accepted: ReadonlySet<number>): string {
   const { lines, trailingNewline } = readLinesFrom(destContent)
@@ -162,10 +190,14 @@ export function applyHunks(destContent: string, hunks: Hunk[], accepted: Readonl
     .map((hunk, index) => ({ hunk, index }))
     .filter(({ index }) => accepted.has(index))
     .sort((a, b) => b.hunk.destStart - a.hunk.destStart)
+  let trailing = trailingNewline
   for (const { hunk } of ordered) {
     lines.splice(hunk.destStart - 1, hunk.destEnd - hunk.destStart + 1, ...hunk.lines)
+    // At most one hunk reaches the end of the destination, so this is the accepted hunk's answer
+    // when there is one and the destination's own ending when there is not.
+    if (hunk.eofNewline !== undefined) trailing = hunk.eofNewline
   }
-  return joinLines(lines, trailingNewline)
+  return joinLines(lines, trailing)
 }
 
 /** `readLines` for content already in memory. */

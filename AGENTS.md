@@ -235,6 +235,19 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   made a *rejected* hunk come back on the next apply, because the merged content already
   contains every hunk; anchoring to your file is what makes rejection stick, and
   `test/unit/review.test.ts` fails if that regresses.
+* **The file's final newline rides the hunk that reaches the end of the destination.** git
+  writes a change to the last byte as the `\ No newline at end of file` marker, attached to
+  that hunk, and `parseUnifiedHunks` drops the marker because it is not a content line.
+  `applyHunks` used to take the trailing newline from the destination unconditionally, so a
+  partial accept that *took* the end-of-file hunk wrote the destination's ending and lost
+  the agent's last byte — `applyHunks(dest, hunksBetween(dest, proposed), all)` did not
+  equal `proposed`. The all-hunks case hid it, because `applySelection` short-circuits to
+  the frozen `proposed` bytes when every hunk is accepted; only a partial accept showed it.
+  `hunksBetween` now sets `Hunk.eofNewline` on the one hunk whose `destEnd` reaches the
+  destination's last line, and `applyHunks` follows the accepted hunks' answer, falling
+  back to the destination's when that hunk was not taken. Pinned by the round trip and the
+  two-hunk subset in `test/unit/hunks.test.ts` and the end-to-end `--hunks 2` case in
+  `test/unit/review.test.ts`; all three fail if the ending is taken from the destination again.
 
 **Processes, scripts and logs**
 
