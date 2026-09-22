@@ -1354,3 +1354,33 @@ The fix observes quiet instead of assuming it: a bounded `quiet(file)` helper wa
 stopped — it detects a settle, not a complete stop — so it is scoped to the tail of an
 already-killed writer, which is the only thing it is used for, and the doc comment says so.
 
+### A path guard that refused real files
+
+Property-testing the rest of the plumbing, as planned next, fuzzed `safeDestination` — the guard
+that decides whether a planned change lands inside the project. It refused any relative path whose
+first segment merely *begins* with dots:
+
+```
+$ node …/probe.mjs
+ok   parent-escape    rel="../x"     -> null
+ok   symlink-out      rel="escape/passwd" -> null
+DIFF name starts with ..   rel="..foo"   -> null (expected inside)
+DIFF dir starts with ..    rel="..dir/f" -> null (expected inside)
+DIFF name is ... prefix    rel="...x"    -> null (expected inside)
+```
+
+`relative.startsWith("..")` is not the same test as "the path escapes". `path.relative` normalises,
+so an escape is exactly `..` or begins with `../`; a *name* beginning with dots is an ordinary file.
+The failure mode is the bad one for a guard: a real file called `..foo` was reported as
+"outside the project directory" and its change was silently skipped — a false refusal wearing the
+words of a security decision, which is harder to notice than a missing check because it looks like
+the guard working. It is *fail-closed*, so it was never a way out of the project, which is exactly
+why it survived: nothing touched the boundary.
+
+Fixed to `relative === ".." || relative.startsWith(".." + path.sep)`. `test/unit/apply.test.ts`
+extends the escape test with the dotted names and adds an end-to-end `applyPlan` case that commits a
+`..foo`, changes it in the sandbox, and asserts it is applied and not skipped. Both fail against the
+old guard (`2 failing, 11 passing` on that file); with the fix, `13 pass` and `npm run test:unit` at
+**259 tests, 259 pass, 0 fail**. The escapes it was written for (`..`, `../x`, `a/../../x`, a
+symlinked directory) are still refused, asserted in the same test.
+

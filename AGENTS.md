@@ -248,6 +248,14 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   back to the destination's when that hunk was not taken. Pinned by the round trip and the
   two-hunk subset in `test/unit/hunks.test.ts` and the end-to-end `--hunks 2` case in
   `test/unit/review.test.ts`; all three fail if the ending is taken from the destination again.
+* **A path-escaping guard must test for a `..` *segment*, not for a name that begins with
+  dots.** `safeDestination` (`sync/apply.ts`) refused `relative.startsWith("..")`, which
+  also refused `..foo` and `..dir/f` — ordinary names inside the project. A project holding
+  such a file had its change skipped with "outside the project directory", a false refusal
+  reading as a security decision (measured: `safeDestination(root, "..foo")` returned
+  `null`). `path.relative` normalises, so the escape is exactly `..` or a `../` prefix;
+  the guard tests `relative === ".." || relative.startsWith(".." + path.sep)`, and
+  `test/unit/apply.test.ts` pins both the refusal and the dotted name being written.
 
 **Processes, scripts and logs**
 

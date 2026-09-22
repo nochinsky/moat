@@ -570,7 +570,12 @@ export function safeDestination(root: string, rel: string): string | null {
   }
   const abs = path.resolve(realRoot, rel)
   const relative = path.relative(realRoot, abs)
-  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null
+  // The escape is a `..` *segment*, not a name that begins with dots: `startsWith("..")` also
+  // refused `..foo` and `..dir/f`, which are ordinary names inside the project. Measured: those
+  // came back null, so a change to such a file was skipped with "outside the project directory" —
+  // a false refusal that reads as a security decision. `path.relative` normalises, so an escaping
+  // path is exactly `..` or begins with `../`.
+  if (relative === "" || relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) return null
 
   const segments = relative.split(path.sep)
   let current = realRoot
