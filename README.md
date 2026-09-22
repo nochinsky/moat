@@ -11,8 +11,10 @@ you which changes are the agent's, which are yours, and which are both — and t
 part you actually want.
 
 It does that by copying your project into a disposable Linux sandbox and running the agent
-there. Nothing crosses back until you say so. There is no container runtime involved:
-`unshare`, `mount` and `chroot` directly, no Docker, no daemon.
+there. Nothing crosses back until you say so. The default way moat builds that box needs nothing
+installed — `unshare`, `mount` and `chroot` directly, no Docker, no podman, no daemon. If you would
+rather it used a container runtime you already have, `--backend container` runs the same box, with
+the same project copy and the same rules, under rootless podman.
 
 That is the whole idea: **autonomy without prompts**, bought by making the blast radius a box
 instead of your home directory.
@@ -62,14 +64,20 @@ the project needs one.
 1. Copies the project with git (`clone --no-hardlinks`), never a bind mount. The only host
    things inside are six device nodes.
 2. Builds an Alpine image once and reuses it: bash, git, curl, ripgrep, nftables, and the
-   pinned Codex CLI as a musl binary. No Docker, no podman, no daemon.
+   pinned Codex CLI as a musl binary. No Docker, no podman, no daemon — unless you asked for
+   `--backend container`, which needs a runtime you installed and nothing else.
 3. Boots it with its own mount, pid, user, uts and ipc namespaces, and its own network
    namespace behind slirp4netns unless egress is `open`.
 4. Renders `/root/.codex/config.toml`, `/root/.codex/models.json` and
    `/root/.codex/AGENTS.md` into the box on every boot, through a guard that refuses to
    follow a symlink the agent planted.
 5. Passes the provider key as an environment variable, never as a file. `moat doctor` shows
-   what the box can see.
+   what the box can see — including which backends this host could boot.
+
+`--backend container` is the same box through a container runtime instead of moat's own
+`unshare`: the project copy, the config, the brief, the egress allowlist applied inside, and the
+rule that nothing reaches your tree without `moat apply` are unchanged. It needs a runtime on the
+host; the default backend needs nothing. See `docs/SPEC.md` §7.5.
 
 The agent runs as a task (`codex exec --json`, whose stream moat reads and prices) or as its
 own TUI, which moat hands a real terminal. Both run inside the box. The host is a terminal

@@ -2,10 +2,11 @@
 --- exit 0
 --- stdout ---
 in-sandbox /opt after restore:
+moat-extra
 --- /work preserved? ---
 package.json
 src
 test
 --- agent commit still present? ---
-6d6df62 initial project
+71ac120 initial project
 --- stderr ---

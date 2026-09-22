@@ -1396,19 +1396,25 @@ if ! command -v podman >/dev/null 2>&1 || ! podman info >/dev/null 2>&1; then
   } | scrub | tee -a "$EVIDENCE/extras.txt" > "$EVIDENCE/container-backend.txt"
   pass "container backend" "no container runtime here, so the end-to-end half is skipped"
 else
-  ( cd "$AO" && $MOAT up --backend container --quiet --no-credential --no-detect --profile node --egress isolated --model deepseek-flash ) > "$AO/up.log" 2>&1
+  # The DEFAULT egress (filtered), deliberately: `--egress isolated` skips the ruleset, and the
+  # first version of this section used it — so the section passed while the default path failed at
+  # boot with "netlink: Error: cache initialization failed: Operation not permitted".
+  ( cd "$AO" && $MOAT up --backend container --quiet --no-credential --no-detect --profile node --model deepseek-flash ) > "$AO/up.log" 2>&1
   AO_UP=$?
   ( cd "$AO" && $MOAT exec -- sh -c 'id -u; ls -d /home/ektor 2>/dev/null || echo no-host-home' ) > "$AO/exec.log" 2>&1
   AO_EXEC=$?
   ( cd "$AO" && $MOAT verify --quiet ) > "$AO/verify.log" 2>&1
   AO_VERIFY=$?
+  # The ruleset has to be *inside* the box: filtering without applying it is the silent failure.
+  ( cd "$AO" && $MOAT exec -- sh -c 'nft list ruleset 2>/dev/null | grep -c "policy drop"' ) > "$AO/ruleset.log" 2>&1
+  AO_RULESET=$(grep -o "1" "$AO/ruleset.log" | head -1 || echo 0)
   AO_CONTAINERS_WHILE=$(podman ps --format '{{.ID}}' 2>/dev/null | wc -l)
   ( cd "$AO" && $MOAT down ) > "$AO/down.log" 2>&1
   AO_DOWN=$?
   sleep 2
   AO_CONTAINERS_AFTER=$(podman ps -a --format '{{.ID}}' 2>/dev/null | wc -l)
   {
-    echo "--- \$ moat up --backend container --egress isolated"
+    echo "--- \$ moat up --backend container   (default egress: filtered)"
     tail -3 "$AO/up.log"
     echo "--- \$ moat exec -- sh -c 'id -u; ls -d \$HOME'"
     tail -3 "$AO/exec.log"
@@ -1416,6 +1422,8 @@ else
     grep -E "pass|FAIL" "$AO/verify.log" | tail -2
     echo "--- \$ moat down"
     tail -2 "$AO/down.log"
+    echo "--- \$ moat exec -- nft list ruleset | grep -c 'policy drop'   (is the allowlist really applied?)"
+    echo "    $AO_RULESET"
     echo "--- containers: while up = $AO_CONTAINERS_WHILE, after down = $AO_CONTAINERS_AFTER"
   } | scrub | tee -a "$EVIDENCE/extras.txt" > "$EVIDENCE/container-backend.txt"
 
@@ -1424,11 +1432,12 @@ else
      && grep -q "^0$" "$AO/exec.log" \
      && grep -q "no-host-home" "$AO/exec.log" \
      && [ "$AO_VERIFY" = "0" ] \
+     && [ "$AO_RULESET" = "1" ] \
      && [ "$AO_CONTAINERS_WHILE" -ge 1 ] \
      && [ "$AO_CONTAINERS_AFTER" = "0" ]; then
-    pass "container backend" "a box booted in a container, ran the project's check as uid 0 with no host home, and left no container behind"
+    pass "container backend" "a box booted in a container with the DEFAULT filtered egress, applied moat's ruleset inside, ran the project's check as uid 0 with no host home, and left no container behind"
   else
-    fail "container backend" "up=$AO_UP exec=$AO_EXEC verify=$AO_VERIFY while=$AO_CONTAINERS_WHILE after=$AO_CONTAINERS_AFTER"
+    fail "container backend" "up=$AO_UP exec=$AO_EXEC verify=$AO_VERIFY ruleset=$AO_RULESET while=$AO_CONTAINERS_WHILE after=$AO_CONTAINERS_AFTER"
   fi
   ( cd "$AO" && $MOAT destroy --yes >/dev/null 2>&1 )
 fi
