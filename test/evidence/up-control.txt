@@ -1,0 +1,18 @@
+detected: package.json -> node
+          adding profile(s) node; use --no-detect or --profile to override
+✓ image provisioned in 1.56s (extract cached image 1.42s)
+✓ copy-in via git: 1 files, 0.0 KiB, digest 3cc2b2965ef28bd5
+model: moat/deepseek-flash
+! no credential injected, so requests to https://api.deepseek.com/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
+agent branch: moat-session-2026-09-22-22-34
+checks: npm run test
+✓ sandbox up, cold start 2.07s (image built)
+
+  project    /home/ektor/moat-demo/egress-control
+  env        /home/ektor/.moat/envs/d267f0eec345
+  runtime    codex (moat/deepseek-flash): `moat` opens its TUI
+  workspace  /work (inside the sandbox)
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)

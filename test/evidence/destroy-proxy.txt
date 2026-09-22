@@ -1,0 +1,6 @@
+
+--- $ node /home/user/Projects/moat/cmd/main.ts destroy --yes
+--- exit 0
+--- stdout ---
+--- stderr ---
+✓ destroyed /home/user/.moat/envs/2a1bb9cb2696

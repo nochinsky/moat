@@ -1,0 +1,5 @@
+[moat] boot: mounts are up, network next
+[moat] boot: waiting for the datapath
+[moat] boot: applying the egress policy
+[moat] boot: entering the sandbox
+lo tap0 

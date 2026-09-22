@@ -1,0 +1,10 @@
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c rm -f /usr/sbin/nft && command -v nft || echo "nft removed"
+--- exit 0
+--- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: waiting for the proxy link
+[moat] boot: applying the egress policy
+[moat] boot: entering the sandbox
+nft removed
+--- stderr ---

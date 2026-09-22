@@ -223,6 +223,61 @@ capture down-default $M down
 capture destroy-default $M destroy --yes
 
 say ""
+say "--- with --egress-proxy the proxy is the only path ---"
+say "The box's namespace holds the loopback and the link to the proxy, and nothing"
+say "else: no tap, no default route, no resolver. That is what makes the policy a"
+say "boundary rather than the route well-behaved clients happen to take, so every"
+say "part of it is checked below against an unproxied control that must fail the"
+say "same checks."
+capture up-proxy $M up --egress filtered --egress-proxy --no-credential --model deepseek-flash --base-url "https://api.deepseek.com/v1"
+check "the box booted with the proxy deciding" "sandbox up" "$EVIDENCE/up-proxy.txt"
+
+capture ifaces-proxy $M exec -- /bin/sh -c 'awk -F: "/:/{print \$1}" /proc/net/dev | tr -d " " | sort | tr "\n" " " | sed "s/\$/ /"'
+check "the box has the loopback and the proxy link" "lo moatp" "$EVIDENCE/ifaces-proxy.txt"
+check_absent "the box has no datapath of its own" "tap0" "$EVIDENCE/ifaces-proxy.txt"
+
+capture route-proxy $M exec -- /bin/sh -c 'echo "defaults=$(awk "\$2==\"00000000\"{n++} END{print n+0}" /proc/net/route)"'
+check "the box has no default route" "defaults=0" "$EVIDENCE/route-proxy.txt"
+
+capture resolv-proxy $M exec -- /bin/sh -c 'cat /etc/resolv.conf'
+check "the box's resolver refuses rather than resolving" "nameserver 127.0.0.1" "$EVIDENCE/resolv-proxy.txt"
+check_absent "the box's own resolver is not slirp's" "slirp" "$EVIDENCE/resolv-proxy.txt"
+
+capture noroute-proxy $M exec -- /bin/sh -c 'printf "CONNECT 1.1.1.1:443 HTTP/1.0\r\n\r\n" | /bin/bash -c "exec 3<>/dev/tcp/1.1.1.1/443" 2>&1 | head -1'
+check "a direct dial has nowhere to go: no route, not a timeout" "Network unreachable" "$EVIDENCE/noroute-proxy.txt"
+
+capture answer-proxy $M exec -- /bin/sh -c 'printf "CONNECT api.deepseek.com:443 HTTP/1.0\r\n\r\n" | /bin/bash -c "exec 3<>/dev/tcp/10.0.9.2/41417; cat >&3; head -1 <&3"'
+check "the proxy is reachable and dials the provider" "200 Connection Established" "$EVIDENCE/answer-proxy.txt"
+
+say ""
+say "the control is a *separate* environment without the flag. --egress-proxy is"
+say "recorded in state and persists for the environment it was chosen for, which"
+say "is right — re-booting this one without the flag would not be a control."
+CONTROL="$HOME/moat-demo/egress-control"
+rm -rf "$CONTROL"; mkdir -p "$CONTROL"
+( cd "$CONTROL" && git init -q . && git config user.email moat@example.com && git config user.name moat \
+  && printf '{"name":"control","scripts":{"test":"true"}}\n' > package.json && git add -A && git commit -qm base )
+( cd "$CONTROL" && $M up --quiet --egress filtered --no-credential --model deepseek-flash --base-url "https://api.deepseek.com/v1" ) > "$EVIDENCE/up-control.txt" 2>&1
+( cd "$CONTROL" && $M exec -- /bin/sh -c 'awk -F: "/:/{print \$1}" /proc/net/dev | tr -d " " | sort | tr "\n" " "' ) > "$EVIDENCE/ifaces-control-exec.txt" 2>&1
+check "the control box keeps its own datapath" "tap0" "$EVIDENCE/ifaces-control-exec.txt"
+( cd "$CONTROL" && $M destroy --yes ) >/dev/null 2>&1
+
+say ""
+say "packages still install inside a box with no datapath. nft is removed and a"
+say "filtered boot has to put it back, which runs apk in the box."
+capture rm-nft $M exec -- /bin/sh -c 'rm -f /usr/sbin/nft && command -v nft || echo "nft removed"'
+check "nft was removed inside the box" "nft removed" "$EVIDENCE/rm-nft.txt"
+capture nft-back $M exec -- /bin/sh -c 'command -v nft'
+check "the filtered boot repaired it without a datapath" "/usr/sbin/nft" "$EVIDENCE/nft-back.txt"
+
+capture doctor-proxy $M doctor
+check "doctor reports the policy through the proxy" "reachable through the proxy" "$EVIDENCE/doctor-proxy.txt"
+# And the variables moat sets for the proxy are moat's own: a proxied box has HTTP_PROXY by design, and
+# the doctor called that a host environment leak until this was fixed. This row is what caught it.
+check "doctor does not read its own proxy variables as a host leak" "pass  no host env forwarded" "$EVIDENCE/doctor-proxy.txt"
+capture destroy-proxy $M destroy --yes
+
+say ""
 say "--- a filtered boot refuses to start when the provider does not resolve ---"
 say "the allowlist is built from the provider host. If that name resolves to"
 say "nothing, a boot would leave a box with no way to reach the model; it fails"

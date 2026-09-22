@@ -1,0 +1,10 @@
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c echo "defaults=$(awk "\$2==\"00000000\"{n++} END{print n+0}" /proc/net/route)"
+--- exit 0
+--- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: waiting for the proxy link
+[moat] boot: applying the egress policy
+[moat] boot: entering the sandbox
+defaults=0
+--- stderr ---

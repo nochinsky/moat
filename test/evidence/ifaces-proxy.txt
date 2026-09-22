@@ -1,0 +1,9 @@
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c awk -F: "/:/{print \$1}" /proc/net/dev | tr -d " " | sort | tr "\n" " " | sed "s/\$/ /"
+--- exit 0
+--- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: waiting for the proxy link
+[moat] boot: applying the egress policy
+[moat] boot: entering the sandbox
+lo moatp  --- stderr ---

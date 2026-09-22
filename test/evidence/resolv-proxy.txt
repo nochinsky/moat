@@ -1,0 +1,10 @@
+
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c cat /etc/resolv.conf
+--- exit 0
+--- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: waiting for the proxy link
+[moat] boot: applying the egress policy
+[moat] boot: entering the sandbox
+nameserver 127.0.0.1
+--- stderr ---

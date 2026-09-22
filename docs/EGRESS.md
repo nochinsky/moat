@@ -478,8 +478,11 @@ What that costs and what it does not settle:
   succeeded by any other path. Either it used a package cache in the image or it went through the proxy;
   what it cannot have done is bypass it.
 
-  This was verified by hand on one environment and is not yet a check in the suite — `test/e2e-extras.sh`
-  is where it belongs, with a control that the same deletion on an unproxied environment is also repaired.
+  It is a check in `test/e2e-egress.sh` now, beside the confinement itself: the interfaces (`lo moatp`,
+  no `tap0`), no default route, the closed resolver, a direct dial reporting `Network unreachable`, the
+  proxy answering `200 Connection Established`, the repair above, and an unproxied control that must fail
+  the same checks — a fresh environment, because `--egress-proxy` is recorded in state and persists for
+  the environment it was chosen for, which is right.
 
 
 ## 8. Two pre-existing defects this increment ran into

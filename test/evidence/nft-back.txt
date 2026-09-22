@@ -1,15 +1,12 @@
 
---- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c command -v nft; curl -sS --max-time 6 -o /dev/null -w "code %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"
+--- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c command -v nft
 --- exit 0
 --- stdout ---
 [moat] boot: mounts are up, network next
-[moat] boot: waiting for the datapath
+[moat] boot: waiting for the proxy link
 [moat] boot: applying the egress policy
 [moat] boot: entering the sandbox
 /usr/sbin/nft
-curl: (28) Connection timed out after 6002 milliseconds
-code 000
-curl-exit=28
 --- stderr ---
 → installing nftables for filtered egress
 → repairing the nftables install (its files were removed, its package entry was not)

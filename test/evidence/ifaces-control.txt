@@ -1,0 +1,16 @@
+
+--- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --egress filtered --no-credential --model deepseek-flash --base-url https://api.deepseek.com/v1
+--- exit 0
+--- stdout ---
+--- stderr ---
+no project manifest found; booting with the base image only (see `moat profiles`)
+✓ sandbox up, reused the running instance
+
+  project    /home/user/moat-demo/egress-default
+  env        /home/user/.moat/envs/2a1bb9cb2696
+  runtime    codex (moat/deepseek-flash): `moat` opens its TUI
+  workspace  /work (inside the sandbox)
+
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)

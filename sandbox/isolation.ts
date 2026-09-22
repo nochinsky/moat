@@ -5,7 +5,7 @@ import { moatHome, type EnvPaths } from "../lib/paths.ts"
 import { ownNetns, type EgressMode } from "../lib/pins.ts"
 import { shellQuote } from "../lib/shell.ts"
 import { runInSandbox } from "./launcher.ts"
-import { PROXY_ADDRESS, PROXY_PORT } from "./proxy.ts"
+import { PROXY_ADDRESS, PROXY_PORT, proxyEnv } from "./proxy.ts"
 
 /**
  * The isolation self-test.
@@ -447,12 +447,23 @@ export async function runIsolationChecks(
     .filter((line) => line.trim().length > 0)
     .sort()
 
-  const injectedNames = (opts.injectedVarNames ?? []).sort()
+  // The variables moat itself sets when a proxy decides are moat's own, derived from the same function
+  // the boot uses so the two cannot drift — the `injectedVarNames` lesson again. A proxied box is
+  // *supposed* to have HTTP_PROXY and friends; without this the doctor read them as a host environment
+  // leak, which is a false alarm on a box working exactly as designed.
+  const injectedNames = [
+    ...(opts.injectedVarNames ?? []),
+    ...(opts.egressProxy ? Object.keys(proxyEnv()) : []),
+  ].sort()
   const leaked = envNames.filter(
     (name) => !EXPECTED_SANDBOX_ENV.has(name) && !injectedNames.includes(name) && index0(name),
   )
   const forbidden = forbiddenHostEnvNames()
-  const forbiddenPresent = envNames.filter((name) => forbidden.includes(name))
+  // A name moat injected itself cannot be a host variable that reached the box, so the forbidden list is
+  // read against the names nothing accounts for rather than against everything.
+  const forbiddenPresent = envNames.filter(
+    (name) => forbidden.includes(name) && !injectedNames.includes(name),
+  )
 
   const { suspicious, deviceBinds } = analyseMounts(mounts, moatHome())
 
