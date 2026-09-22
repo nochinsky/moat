@@ -580,8 +580,13 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 
 * **One runtime, and it is a CLI.** Codex is driven two ways (`codex exec --json` for a
   task and its own TUI for a session), and neither is a server, so the long-running box is
-  a keepalive (`codexEntryScript`) and every task, TUI session and check runs in its own
-  ephemeral boot of the same rootfs. The config moat renders (`bundle/codex.ts`, written
+  a keepalive (`keepaliveEntryScript` in `bundle/runtime.ts` — runtime-neutral and shared, so
+  the second runtime does not have to print a string naming the first) and every task, TUI
+  session and check runs in its own ephemeral boot of the same rootfs. The seam is exactly four
+  things — the binary, its pinned version, the body a turn runs, and the parser —
+  (`bundle/runtime.ts`); the second runtime (Claude Code, `bundle/claude.ts`) is implemented
+  against it and `docs/RUNTIMES.md` has the policy measurement that shaped it. The config moat
+  renders (`bundle/codex.ts`, written
   through the rootfs guard on every boot) is what keeps Codex from asking for approvals or
   adding its own sandbox: **never let the agent own that file.** The runtime is *pinned
   and digested* in `lib/pins.ts` like slirp4netns, because it becomes the code the agent

@@ -1,4 +1,83 @@
+import { SANDBOX_WORKDIR } from "../lib/pins.ts"
+import { writeRootfsFile } from "../lib/rootfs-fs.ts"
+import { shellQuote } from "../lib/shell.ts"
 import { describeTurn, type ToolRun, type Turn, type Usage } from "./turn.ts"
+
+/** A key-shaped string. Copied in spirit from Codex's guard so both runtimes refuse the same way. */
+const LITERAL_KEY = /\bsk-[A-Za-z0-9_-]{16,}\b/i
+
+/**
+ * The tools moat allows, so the box never has to ask.
+ *
+ * This is the policy, and it is why moat does not need `--dangerously-skip-permissions`: Claude
+ * Code refuses that flag when the process is root, which moat's agent is (`docs/RUNTIMES.md` has
+ * the measurement). `--allowedTools` is an additive auto-approval list — a listed tool never
+ * prompts — and in `--print` mode anything that would prompt is auto-*denied* instead of hanging,
+ * so a turn cannot block on a question that has no channel to answer it.
+ *
+ * The list is the coding surface and nothing else: the 25 tools the CLI advertises by default
+ * include `WebSearch`, the `Cron*` family and `Workflow`, which an unattended agent in a disposable
+ * box has no business with. Anything missing is not silently lost — it comes back in
+ * `permission_denials` on the `result` event and is reported, which is what makes an incomplete
+ * list a *reading* rather than a mystery.
+ */
+export const CLAUDE_ALLOWED_TOOLS = ["Bash", "Edit", "Write", "Read", "Glob", "Grep", "NotebookEdit"] as const
+
+/** Where the rendered brief lands. Passed to the body explicitly, never auto-discovered. */
+export const CLAUDE_BRIEF_PATH = "/root/.claude/moat-brief.md"
+
+/** The policy arguments, in the one place both bodies use them. */
+function claudePolicyArgs(): string {
+  return (
+    "--permission-mode acceptEdits --allowedTools " +
+    CLAUDE_ALLOWED_TOOLS.join(" ") +
+    " --append-system-prompt-file " +
+    CLAUDE_BRIEF_PATH
+  )
+}
+
+/**
+ * One non-interactive Claude turn.
+ *
+ * The prompt arrives on **stdin**, and that is not a style choice: `--allowedTools` is variadic and
+ * swallows a trailing positional argument, which is how this was found — the CLI answered "Input
+ * must be provided either through stdin or as a prompt argument" instead of reaching the model.
+ */
+export function claudeExecBody(prompt: string): string {
+  return `#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+cd ${SANDBOX_WORKDIR}
+printf '%s' ${shellQuote(prompt)} | claude -p --output-format stream-json --verbose ${claudePolicyArgs()}
+`
+}
+
+/** Claude's own TUI, inside the box, on the terminal moat inherited. */
+export function claudeTuiBody(prompt?: string): string {
+  // The positional prompt goes *before* the flags here: `--allowedTools` is variadic and would
+  // otherwise eat it.
+  return `#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+cd ${SANDBOX_WORKDIR}
+exec claude ${prompt && prompt.length > 0 ? shellQuote(prompt) : ""} ${claudePolicyArgs()}
+`
+}
+
+/**
+ * The brief, and the refusal to write one that looks like it carries a key.
+ *
+ * The same guard `installCodexFiles` applies, for the same reason: the file moat renders decides
+ * the agent's policy and is written on every boot, so a literal credential reaching it is exactly
+ * the mistake the check exists to catch. Written through `lib/rootfs-fs.ts` — the agent is root in
+ * its box and can plant a symlink where a directory used to be.
+ */
+export function installClaudeFiles(rootfs: string, files: { brief: string }): void {
+  if (LITERAL_KEY.test(files.brief)) {
+    throw new Error("refusing to write the brief into the sandbox: it appears to contain a literal API key")
+  }
+  writeRootfsFile(rootfs, CLAUDE_BRIEF_PATH, files.brief, 0o600)
+}
 
 /**
  * The Claude Code runtime: `claude -p --output-format stream-json`.

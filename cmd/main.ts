@@ -75,11 +75,14 @@ import {
 } from "../sandbox/launcher.ts"
 import { renderInstructions } from "../bundle/instructions.ts"
 import {
+  codexExecBody,
+  codexTuiBody,
   describeCodexTurn,
   installCodexFiles,
   parseCodexEvents,
   renderCodexConfig,
 } from "../bundle/codex.ts"
+import { keepaliveEntryScript } from "../bundle/runtime.ts"
 import {
   assertProviderID,
   listProviderSpecs,
@@ -1045,7 +1048,7 @@ ${command}
   }
 
   // --- boot -----------------------------------------------------------------
-  const entry = codexEntryScript()
+  const entry = keepaliveEntryScript()
 
   // Both files are rendered on every boot and written through the rootfs guard: the agent's
   // home is inside the box, the config is what decides that Codex asks for no approvals and
@@ -2906,75 +2909,6 @@ A flag a command does not read is refused rather than ignored.
 
 Docs: docs/SPEC.md, docs/VERIFICATION.md
 `
-
-// ---------------------------------------------------------------------------
-// the codex runtime
-// ---------------------------------------------------------------------------
-
-/**
- * The long-running box under the codex runtime.
- *
- * Codex is a CLI, not a server: there is nothing to wait for and nothing listening. The box
- * exists so `moat status`, `down` and `destroy` keep their meaning. Tasks and the TUI run in
- * their own ephemeral boots of the same rootfs, like `moat exec`.
- *
- * It also enforces the credential deadline, which is the box's own promise: the timestamp
- * comes from the host (`MOAT_CREDENTIAL_EXPIRES_EPOCH`), and the box exits when it passes. A
- * credential that is already dead at boot stops the box instead of leaving one that cannot
- * call a model. The deadline is the credential's own expiry, not a TTL counted from this
- * script's start — counting from the start let a box outlive its key by however long the boot
- * took, and that was a measured bug under the runtime this one replaced.
- */
-function codexEntryScript(): string {
-  return `#!/bin/sh
-set -u
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export HOME=/root
-# The deadline is checked BEFORE the readiness line, and that order is the point.
-# With the ready line first, a box whose credential was already dead printed
-# "codex runtime ready" and then exited, so moat up waited for the marker, saw it,
-# and recorded a running sandbox that was already gone: the same false success as
-# spawning and not waiting at all, one layer further in. Nothing here can be
-# reported as ready until the box has something it can actually call a model with.
-EXPIRES_EPOCH=\${MOAT_CREDENTIAL_EXPIRES_EPOCH:-0}
-REMAIN=0
-if [ "$EXPIRES_EPOCH" -gt 0 ]; then
-  REMAIN=$((EXPIRES_EPOCH - $(date +%s)))
-  if [ "$REMAIN" -le 0 ]; then
-    echo "[moat] the injected credential expired before the box started; stopping"
-    exit 0
-  fi
-fi
-echo "[moat] codex runtime ready (pid $$)"
-if [ "$EXPIRES_EPOCH" -gt 0 ]; then
-  echo "[moat] the injected credential expires in \${REMAIN}s; the box stops then"
-  sleep "$REMAIN"
-  echo "[moat] injected credential expired; stopping the sandbox"
-  exit 0
-fi
-exec sleep 2147483647
-`
-}
-
-/** One non-interactive Codex turn. The prompt is an argument; the stream is JSONL. */
-function codexExecBody(prompt: string): string {
-  return `#!/bin/sh
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export HOME=/root
-cd ${SANDBOX_WORKDIR}
-exec codex exec --json --skip-git-repo-check ${shellQuote(prompt)} </dev/null
-`
-}
-
-/** Codex's own TUI, inside the box, on the terminal moat inherited. */
-function codexTuiBody(prompt?: string): string {
-  return `#!/bin/sh
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export HOME=/root
-cd ${SANDBOX_WORKDIR}
-exec codex ${prompt && prompt.length > 0 ? shellQuote(prompt) : ""}
-`
-}
 
 type CodexRunOptions = {
   env: Record<string, string>

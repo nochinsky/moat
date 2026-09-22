@@ -1,5 +1,6 @@
-import { CODEX_VERSION } from "../lib/pins.ts"
+import { CODEX_VERSION, SANDBOX_WORKDIR } from "../lib/pins.ts"
 import { writeRootfsFile } from "../lib/rootfs-fs.ts"
+import { shellQuote } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
 import { catalogEntryForModel, reasoningLevelsFor, renderModelCatalog, type CodexCatalogModel } from "./model-catalog.ts"
 import { CODEX_BUILTIN_PROMPT } from "./codex-prompt.ts"
@@ -278,6 +279,33 @@ export type CodexToolRun = ToolRun
 export type CodexUsage = Usage
 export type CodexTurn = Turn
 export const describeCodexTurn = describeTurn
+
+// ---------------------------------------------------------------------------
+// the bodies the box runs
+// ---------------------------------------------------------------------------
+// These lived in `cmd/main.ts` while Codex was the only runtime. They are here now because the
+// runtime seam (`lib/runtime.ts`) has to reach them, and the CLI is the wrong place for something a
+// registry looks up. The scripts themselves are unchanged by the move.
+
+/** One non-interactive Codex turn. The prompt is an argument; the stream is JSONL. */
+export function codexExecBody(prompt: string): string {
+  return `#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+cd ${SANDBOX_WORKDIR}
+exec codex exec --json --skip-git-repo-check ${shellQuote(prompt)} </dev/null
+`
+}
+
+/** Codex's own TUI, inside the box, on the terminal moat inherited. */
+export function codexTuiBody(prompt?: string): string {
+  return `#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+cd ${SANDBOX_WORKDIR}
+exec codex ${prompt && prompt.length > 0 ? shellQuote(prompt) : ""}
+`
+}
 
 /** The one advisory this parser knows is not a failure. */
 function isNotice(message: string): boolean {

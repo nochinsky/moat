@@ -24,7 +24,7 @@ test("a boot that never says it is ready fails instead of being reported as up",
   // that was not there. The wait resolves on the entry script's own readiness line.
   const { pid, stop } = stayUp()
   try {
-    const result = await waitForSandboxReady(pid, () => "[moat] codex runtime ready (pid 7)\n", { pollMs: 5 })
+    const result = await waitForSandboxReady(pid, () => "[moat] runtime ready (pid 7)\n", { pollMs: 5 })
     assert.equal(result.ok, true)
   } finally {
     stop()

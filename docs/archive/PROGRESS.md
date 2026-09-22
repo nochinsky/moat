@@ -1688,3 +1688,64 @@ add an asset nothing reads. The next session renders the body and the policy, wi
 the stub in, and adds the e2e section that turns this capture into a suite check.
 
 
+
+---
+
+## Session 11 — the seam, extracted by the second implementation
+
+The seam is now in the tree, and it is four things wide — which is the point. Session 8 said the
+seam should be extracted by the second implementation rather than designed ahead of it; this is
+that extraction, and it is much narrower than the interface `docs/SEAM.md` sketched, because three
+of the five things a runtime needs turned out not to be per-runtime at all.
+
+### What the seam is, and what it turned out not to be
+
+`bundle/runtime.ts` holds a `RuntimeSpec`: **the binary, its pinned version, the body a turn runs,
+the body a TUI runs, and the parser**. That is the whole interface.
+
+Three things came *out* of the seam on the way in:
+
+* **The keepalive is not per-runtime.** A box that holds itself open and enforces the credential
+  deadline does not care which CLI it is holding. There is one `keepaliveEntryScript()`, and
+  Codex's copy was deleted rather than parameterised.
+* **The readiness marker was not neutral, and that was a real bug in waiting.** It read
+  `[moat] codex runtime ready`, so the second runtime would have had to print a line naming the
+  first — or wait on a string nothing would produce. It is `[moat] runtime ready` now, one constant
+  that the writer and the waiter share.
+* **The provider and the credential stay out**, because invariant 8 forbids guessing and the
+  provider is the user's own configuration; a runtime names variables, the CLI renders them.
+
+The config and brief renderers *did* stay per-runtime (`bundle/codex.ts`, `bundle/claude.ts`),
+because every agent has its own file format — TOML plus a catalog versus one markdown file.
+
+### The Claude bodies, and the two ways they differ
+
+`claudeExecBody` renders the policy as **arguments**, which is the whole answer to Session 9's
+wall: `--permission-mode acceptEdits --allowedTools Bash Edit Write Read Glob Grep NotebookEdit`
+instead of `--dangerously-skip-permissions`, which root cannot have. The tool list is deliberately
+the coding surface — the CLI advertises 25 tools by default including `WebSearch`, the `Cron*`
+family and `Workflow` — and anything left out is not lost, it comes back in `permission_denials`
+and is reported.
+
+The prompt goes on **stdin**, because `--allowedTools` is variadic and eats a trailing positional
+argument; the TUI body puts the prompt *first* for the same reason. Both facts are measured, not
+guessed: the first was found by getting "Input must be provided either through stdin or as a prompt
+argument" instead of an auth error.
+
+### Verified
+
+`npm run test:unit` at **272 tests, 272 pass, 0 fail**; typecheck clean; and a **real boot** through
+the changed path — the box log shows `[moat] runtime ready (pid 1)` with the neutral marker, which
+is the one behaviour change here. Four new tests in `test/unit/runtime-seam.test.ts` pin the
+registry, both bodies and the keepalive, and two of them were proved to bite: a body that reaches
+for `--dangerously-skip-permissions` fails the policy test, and unregistering the second runtime
+fails two.
+
+### Not wired yet, deliberately
+
+There is no `--runtime` flag, nothing reads `state.runtime` (the field does not exist yet), and
+`moat up` still installs Codex's binary and renders Codex's files. The registry is reachable from
+tests and from nothing else. That is the next session's whole job: flag, persisted runtime in
+`state.json`, provisioning of the selected binary, the task path through `runtime.execBody` /
+`runtime.parse`, the Anthropic variables, and the e2e that moves the stub into `stub/` and turns
+Session 10's capture into a suite check.
