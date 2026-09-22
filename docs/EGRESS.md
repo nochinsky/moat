@@ -457,6 +457,30 @@ What that costs and what it does not settle:
   What is *not* changed: a boot without `--egress-proxy` is exactly as it was — its own namespace, its
   own slirp, its own allowlist — so the three holes in the boot-time IP snapshot are closed for proxied
   environments only, which is what the flag is for.
+* **A proxied box can still install packages, and the path I expected to break first does not.** The
+  concern was concrete: a profile's packages are installed by `apk` at provisioning, and `ensurePackages`
+  installs `nftables` *inside* the box when a filtered boot finds it missing — and a proxied box has no
+  datapath, so an `apk` that needs the network has nowhere to go. Measured on a `filtered` proxied
+  environment:
+
+  ```
+  moat up --profile node --egress-proxy --egress filtered     up exit=0
+  rm /usr/sbin/nft, then a proxied moat exec on that env      → installing nftables for filtered egress
+                                                             → repairing the nftables install
+                                                               (its files were removed, its package entry was not)
+                                                             /usr/sbin/nft present again
+  ```
+
+  The repair path is the interesting one because it runs `apk add` in the box. It succeeded with the
+  proxy logging **no** request at all, so it fetched nothing over the network — and that is a reading
+  rather than a guess, because the previous measurement is what makes it one: the box has no default
+  route and reports `Network unreachable` in 4ms, so a fetch that needed the network could not have
+  succeeded by any other path. Either it used a package cache in the image or it went through the proxy;
+  what it cannot have done is bypass it.
+
+  This was verified by hand on one environment and is not yet a check in the suite — `test/e2e-extras.sh`
+  is where it belongs, with a control that the same deletion on an unproxied environment is also repaired.
+
 
 ## 8. Two pre-existing defects this increment ran into
 
