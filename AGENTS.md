@@ -74,7 +74,9 @@ test/            the pty suites, the fixtures, and the committed evidence they w
 docs/            SPEC (the contract), VERIFICATION (the evidence),
                  HISTORY (how the project got here), SEAM (the interface a second
                  runtime would have to satisfy), RUNTIMES (what a second runtime
-                 costs, and why ACP is not the shortcut), PROGRESS (where things
+                 costs, and why ACP is not the shortcut), PORTABILITY (what is
+                 measured about running moat outside Linux, and what a container
+                 backend would cost), PROGRESS (where things
                  stand), archive/ (the build journal and the finished phase
                  program — history, not instructions)
 ```

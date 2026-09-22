@@ -1900,3 +1900,66 @@ the honest limit below.
 a turn. Claude Code reports usage on every assistant event, so it is stopped mid-turn. And there is
 no budget that spans several `moat run` invocations — a ceiling is per turn. Both are in SPEC §2.2c
 rather than implied.
+
+---
+
+## Session 14 — Phase 4: the measurable half, and the script for the rest
+
+Phase 4 asks whether moat should escape Linux. The round started by checking whether the spike could
+even be run here, and it could not, mostly:
+
+```
+  absent    podman / docker / nerdctl / lxc / incus / systemd-nspawn
+  BLOCKED   /dev/kvm exists but this user cannot open it — crw-rw---- root:kvm
+  platform  WSL2 (a Linux kernel under Windows)
+```
+
+No container runtime is installed, installing one needs root this account does not have
+(`sudo -n` wants interactive auth), and macOS is a different OS with no Linux namespaces. So a spike
+run here would have produced **one real datapoint and two write-ups**, which is not the "measure,
+then decide" gate the plan implied — and saying so before running it was the honest move.
+
+### What was actually measured
+
+`test/portability-spike.sh` is the spike, as a script, so the reading can be taken on the machines
+that can take it. Its output here is `test/evidence/portability-wsl2.txt`:
+
+* **the platform is WSL2** (Linux 6.18.33.2-microsoft-standard-WSL2, Ubuntu 26.04, cgroup v2);
+* **unprivileged user namespaces work** — the probe unshares and mounts inside;
+* no container runtime; `/dev/kvm` present but `crw-rw---- root:kvm`, not openable by uid 1000.
+
+The WSL2 datapoint is stronger than a probe, and worth naming: **every sandbox suite in this
+repository runs on this host**, so the evidence in `docs/VERIFICATION.md` *is* the WSL2 measurement.
+moat supports WSL2 today, and has all along.
+
+### The probe was wrong first, and that is the session's lesson
+
+The spike's first version printed `BLOCKED — user namespaces do not work here`. It mounted a tmpfs
+onto `/tmp/.moat-spike`, which does not exist inside the new namespace, and reported the kernel's
+refusal as a host limitation. It was caught because it contradicted a suite that passes — a probe
+that cannot succeed and a probe that cannot fail look identical until one is checked against
+something already known. The probe now creates a scratch mount point first, and cleans it up.
+
+### The static cost, written down instead of guessed
+
+`docs/PORTABILITY.md` records what a container backend would cost, derived from this tree rather than
+from a blog post. It turns on one sentence: **moat's rootfs is a persistent, agent-writable
+directory**, and a container image is not. From that: snapshots, the image cache key,
+`installRuntimeBinary`, the boot script's mount table and device binds, the whole egress model
+(slirp + nftables in the box's netns), and the rootfs-write guard's premise all move. And
+**invariant 7 breaks by definition** — a runtime is a daemon or a socket — so the change is a
+deliberate amendment of the contract, the way invariant 8 was amended by name.
+
+The conclusion is deliberately unglamorous: **this is a backend seam, not a flag**, and options A
+and B are proposals with a known cost and **no measurements**, which the page states rather than
+recommending one.
+
+### What remains unmeasured, and how it gets measured
+
+* container-backend host: `bash test/portability-spike.sh` after installing rootless podman — §4
+  answers the load-bearing question, whether `--rootfs` accepts a plain directory;
+* macOS: the Lima/colima commands in §4, with the readings taken **inside** the VM, because a macOS
+  host's own facts say nothing about the kernel moat would get.
+
+`bash test/e2e-extras.sh` at 52 checks, 0 failed; `npm run test:unit` at 272; typecheck clean. No
+behaviour changed: the new script and the new page are the whole of it.
