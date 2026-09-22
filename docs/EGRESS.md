@@ -30,6 +30,31 @@ So: **the standard variables are enough, for both runtimes, with no per-runtime 
 proxying itself.** A proxy moat owns is a viable egress point, and the work that remains is the
 proxy and the policy rather than persuading the agent to use it.
 
+### The end-to-end reading: a real proxy carries real TLS
+
+"Uses a proxy" and "a proxy can carry the traffic" are different claims, and the second is the one
+that decides whether any of this works. Taken against the **real provider** with a deliberately
+invalid key, so that a 401 from it is proof the request arrived:
+
+```
+$ moat exec -- sh -c 'MOAT_INJECTED_CREDENTIAL=fake timeout 40 codex exec --json "say hi"'      # control
+unexpected status 401 Unauthorized: Authentication Fails, Your api key: fake is invalid, url: https://api.deepseek.com/...
+proxy saw: 0 request(s)
+
+$ ... HTTPS_PROXY=http://127.0.0.1:47971 codex exec --json "say hi"                              # through the proxy
+unexpected status 401 Unauthorized: ... url: https://api.deepseek.com/...        (the same 401)
+the proxy was asked to reach:  CONNECT api.deepseek.com:443, chatgpt.com:443, github.com:443
+```
+
+A ~30-line CONNECT proxy is enough: the model request went to the proxy, the tunnel carried the TLS,
+the provider answered, and the proxy never saw the payload — it sees `host:port`, which is exactly the
+granularity a name-and-port policy needs. Nothing here needs TLS interception, a certificate, or a
+custom CA in the box.
+
+This one is **not** in `test/proxy-spike.sh`, on purpose: that script is hermetic (a loopback endpoint
+and recorders answering 502), and this reading has to reach a third party's API. Its command is the
+four lines above.
+
 ## 2. What else the runtimes talk to, which a name-based allowlist has to decide about
 
 The same recordings show connections that are not the model call. Naming them matters, because a
