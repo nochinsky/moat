@@ -1836,3 +1836,67 @@ That is the same shape of question as the Phase 4 ACP finding and the Claude pol
 pricing table is where the number comes from, not where the decision to stop lives. Phase 3 starts
 by choosing which of the three enforcement points it is, and measuring what each costs — rather than
 adding a `--max-cost` flag that can only ever report a breach after the money is spent.
+
+---
+
+## Session 13 — a ceiling that stops a turn
+
+Phase 3. The reconnaissance at the end of Session 12 said the pricing table is where the *number*
+comes from and not where the *decision to stop* lives, and that shaped everything below.
+
+### The decision, and why it is not a pricing change
+
+`computeCost` was already pure and already returned `{ usd, known, peak }`. What did not exist was a
+way to act **during** a turn, because `docs/SEAM.md` §3 says usage arrives once, at `turn.completed`,
+and `runAgentTask` parsed the whole stream after the process exited. So the enforcement point had to
+be the stream:
+
+* `runInSandbox` gained **`abortWhen`**, called with the output so far and able to stop the box by
+  returning a reason, plus **`aborted`** on the result. It is deliberately separate from `timedOut` —
+  "the money ran out" and "the clock ran out" are different things to tell a user.
+* `--max-tokens <n>` and `--max-cost <usd>` are the ceiling. The predicate re-reads the runtime's own
+  stream **with the same parser the footer uses**, so the number compared is the number printed —
+  one parser, one accounting, no parallel counter to drift.
+* `--max-cost` on a model moat cannot price **warns and carries on**, naming `--max-tokens` and
+  `--timeout` as the alternatives. A ceiling that cannot be enforced is worse than none when it reads
+  as protection.
+* Both flags are validated like the integers are: `NaN`, `Infinity` and `-1` all compare as "never
+  breached", so `--max-cost -1` is refused rather than accepted as a ceiling nobody can hit.
+
+### A bug in the first cut, caught before the suite
+
+The first throttle evaluated the ceiling only after the output had grown two kilobytes. That is fine
+for a runtime with fat events and silently useless for one with small ones: the stub's per-request
+events are a few hundred bytes, so the check that mattered would never have run and the ceiling would
+have looked enforced while never firing. It is now evaluated when a **newline** arrives — which is
+exactly when a report could have changed — with no byte threshold at all.
+
+### Verified
+
+Extras §AN extended, run for real, keyless:
+
+```
+--- $ moat run "run the check"                     (no ceiling)
+Done: the tool ran.
+  432 tokens  1 tool
+--- $ moat run "run the check" --max-tokens 100    (a ceiling, mid-turn)
+Running the check.
+  160 tokens  0 tools
+! the turn reached its token ceiling: 160 tokens reported, limit 100
+  the sandbox was killed; set a higher ceiling, or none, to let a turn finish.
+--- the provider's own record ---
+requests to /v1/messages: 3
+```
+
+Three requests: two from the control turn and **one** from the ceiling run. That is the measurement
+that matters — the box was killed before the *second* request was made, not priced after the money
+was gone. `bash test/e2e-extras.sh` at **52 checks, 0 failed**; `npm run test:unit` at 272; typecheck
+clean. The README's "Nothing stops spending" is gone, and SPEC §2.2c states the contract, including
+the honest limit below.
+
+### The limit worth stating plainly
+
+**Codex sends usage only at `turn.completed`**, so under Codex the check can only fire at the end of
+a turn. Claude Code reports usage on every assistant event, so it is stopped mid-turn. And there is
+no budget that spans several `moat run` invocations — a ceiling is per turn. Both are in SPEC §2.2c
+rather than implied.

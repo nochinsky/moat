@@ -461,7 +461,20 @@ export async function waitForNewNetns(pid: number, timeoutMs = 5000): Promise<bo
   return false
 }
 
-export type RunInSandboxResult = { code: number; output: string; timedOut: boolean }
+export type RunInSandboxResult = {
+  code: number
+  output: string
+  timedOut: boolean
+  /**
+   * Why the box was stopped early, when something other than the clock ended it.
+   *
+   * The only caller today is the spend ceiling: a turn is killed the moment the usage it has
+   * already reported crosses a limit the user set, rather than being allowed to finish and priced
+   * after the fact. It is separate from `timedOut` because "the money ran out" and "the clock ran
+   * out" are different things to tell a user.
+   */
+  aborted?: string
+}
 
 // Captured output is bounded: a project's test suite can print gigabytes, and
 // the host process must not grow with it. The head is kept because the doctor's
@@ -479,6 +492,15 @@ export type SandboxRunOptions = {
   slirpBinary?: string
   /** Path inside the sandbox of the nftables ruleset; required when filtered. */
   egressRules?: string
+  /**
+   * Called with the output so far, and may stop the box by returning a reason.
+   *
+   * This is how a spend ceiling is enforced *while* the turn is running: the runtime's own stream
+   * reports usage as it goes (Claude Code sends it on every assistant event), so the host can price
+   * what has been spent and kill the namespace before the next request is made. Returning null lets
+   * it run.
+   */
+  abortWhen?: (output: string) => string | null
 }
 
 /** Run a script inside a *fresh, ephemeral* boot of the sandbox and wait for it. */
@@ -510,6 +532,7 @@ export async function runInSandbox(
 
   let output = ""
   let timedOut = false
+  let aborted: string | null = null
   const sink = (chunk: string) => {
     output += chunk
     if (output.length > MAX_CAPTURED_OUTPUT + 64 * 1024) {
@@ -519,6 +542,17 @@ export async function runInSandbox(
         output.slice(-OUTPUT_TAIL)
     }
     opts.onOutput?.(chunk)
+    // Checked when a *line* has arrived, not per byte and not on a byte threshold: a byte gate
+    // skips the check that matters whenever the runtime's events are small, and re-parsing on every
+    // byte would make a long turn quadratic. A newline is exactly when a report could have changed.
+    if (opts.abortWhen && aborted === null && chunk.includes("\n")) {
+      const reason = opts.abortWhen(output)
+      if (reason !== null) {
+        aborted = reason
+        // --kill-child takes the whole namespace with it, so the agent cannot outlive the ceiling.
+        child.kill("SIGKILL")
+      }
+    }
   }
   child.stdout.setEncoding("utf8")
   child.stderr.setEncoding("utf8")
@@ -543,7 +577,7 @@ export async function runInSandbox(
     })
     child.on("close", (code) => {
       cleanup()
-      resolve({ code: code ?? -1, output, timedOut })
+      resolve({ code: code ?? -1, output, timedOut, ...(aborted ? { aborted } : {}) })
     })
   })
 }

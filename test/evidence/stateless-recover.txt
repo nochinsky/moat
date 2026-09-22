@@ -3,8 +3,8 @@
 --- stdout ---
 --- stderr ---
 ! state.json is missing, but the sandbox's working tree is still there, so the environment was recovered from disk instead of replaced.
-  branch   moat-session-2026-09-22-14-27
-  baseline 1d3ecdce9e2e
+  branch   moat-session-2026-09-22-14-35
+  baseline e116fbddcd0b
   everything installed in it, and every commit it holds, are intact; this boot mints a fresh credential.
   the host-drift check cannot run without the recorded baseline: `moat up --sync` re-copies the project and restores it.
   to discard the sandbox's copy instead: moat up --fresh --yes
@@ -13,14 +13,14 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-22-14-27
-✓ sandbox up, warm start 186ms (image reused)
+agent branch: moat-session-2026-09-22-14-35
+✓ sandbox up, warm start 192ms (image reused)
 
   project    /home/user/moat-demo/stateless
   env        /home/user/.moat/envs/47af90427aba
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-22T18:27:47.646Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-22T18:35:34.846Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory

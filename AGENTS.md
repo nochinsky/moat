@@ -679,6 +679,20 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   no working tree at all** — `git clone` of an unborn HEAD brings the repository and none of the
   files — so such a project arrives in the sandbox empty and nothing says so. That one is
   documented by a test rather than fixed.
+* **A spend ceiling is enforced on the stream, and `abortWhen` is where it lives.**
+  `--max-tokens`/`--max-cost` (`cmd/main.ts:ceilingBreach`) are checked *while* a turn runs, by
+  re-reading the runtime's own output with **the same parser the footer uses** — one parser, one
+  accounting, no parallel counter to drift from the number printed. `runInSandbox` grew
+  `abortWhen`/`aborted` for it (separate from `timedOut`: "the money ran out" and "the clock ran out"
+  are different things to tell a user). Two traps, both measured: the check must fire on a
+  **newline**, not on a byte threshold — the first cut gated on 2 KiB, which is larger than a
+  runtime's per-request event, so the check that mattered would never have run; and `--max-cost` on a
+  model moat cannot price must **warn and carry on**, never pass silently, because an unenforceable
+  ceiling reads as protection. **Codex sends usage only at `turn.completed`**, so under Codex the
+  check can only fire at the end; Claude Code reports per assistant event and is stopped mid-turn.
+  `test/e2e-extras.sh` §AN holds both halves — the control turn's 432 tokens and the killed one at
+  160, with the stub's record showing the killed run made **one** request, not two.
+
 * **A missing runtime binary is repaired, never re-provisioned.** The agent is root in its
   own rootfs, so it can `rm /usr/local/bin/codex`, and an environment made by an older
   moat never had it. The next boot copies it into the live rootfs through

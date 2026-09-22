@@ -86,7 +86,9 @@ This is the part most projects leave out. Read it before deciding how much to tr
   namespace and can flush the ruleset. moat re-applies it on every boot and `moat doctor`
   re-measures it, so you find out on the next run — never before.
 * **Isolation is namespaces, which is v0.** A microVM is the next step, not a claim.
-* **Nothing stops spending.** A turn reports what it cost; no ceiling stops it.
+* **Spending is bounded only if you bound it.** A turn reports what it cost, and `--max-tokens`
+  stops one mid-stream — but the default is no ceiling, `--max-cost` can only be enforced when moat
+  can price the model (it says so rather than pretending), and there is no budget across runs.
 * **moat does not curate the agent's tools.** Codex ships its own and the box bounds them.
   `web_search` is the one entry the config can switch off, and it is off: DeepSeek's API
   accepts that tool and ignores it.
