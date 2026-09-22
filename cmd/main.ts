@@ -2407,6 +2407,9 @@ async function cmdDoctor(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
   const host = await probeHost()
   const paths = resolveEnv()
+  // The environment this doctor is describing, when there is one: the mount plan depends on the
+  // backend, and a container environment has a different one from the unshare default.
+  const envState = readState(paths)
   const out: Record<string, unknown> = {
     host,
     credential: {
@@ -2429,6 +2432,15 @@ async function cmdDoctor(argv: string[]): Promise<number> {
     const containerOnHost = containerRuntime()
     log.info(
       `  backends   unshare (default)${containerOnHost.usable ? `, container (${containerOnHost.command})` : ", container unavailable (no podman on PATH)"}`,
+    )
+    // What `/dev` is and where it comes from is a property of the *backend*, so it is stated per
+    // backend rather than folded into the host probe — which used to make a container environment
+    // print the unshare plan's device binds as if they were happening.
+    const backendHere = envState?.backend ?? "unshare"
+    log.info(
+      backendHere === "container"
+        ? `  mount plan  the container runtime supplies the boot mounts and /dev; moat binds nothing from the host`
+        : `  mount plan  six device nodes are bind-mounted from the host; every other path is moat's own or a fresh filesystem`,
     )
     for (const note of host.notes) log.info(`  note       ${note}`)
     for (const problem of host.problems) log.info(`  ${log.red("problem")}   ${problem}`)

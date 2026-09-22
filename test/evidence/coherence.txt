@@ -19,7 +19,7 @@ $ npm run test
 
 [moat] exit 1
 
-  FAIL  npm test                 0.2s
+  FAIL  npm test                 0.3s
       $ npm run test
       > test
       > sh test.sh

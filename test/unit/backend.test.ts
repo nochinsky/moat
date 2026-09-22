@@ -84,6 +84,13 @@ test("open shares the host's network, and nothing else does", () => {
       `${egress} must use the runtime's default network, where the host's loopback is refused`,
     )
   }
+  // `filtered` additionally applies moat's ruleset, and `nft` needs CAP_NET_ADMIN *in the box's own
+  // netns*: a rootless container's root does not have it, and the boot died with "Operation not
+  // permitted (you must be root)" / "netlink: Error: cache initialization failed". The capability is
+  // granted for that one mode, and only that mode.
+  assert.ok(containerPlan(paths, inner, { egress: "filtered" }).args.includes("--cap-add=net_admin"))
+  assert.ok(!containerPlan(paths, inner, { egress: "isolated" }).args.includes("--cap-add=net_admin"))
+  assert.ok(!containerPlan(paths, inner, { egress: "open" }).args.includes("--cap-add=net_admin"))
   fs.rmSync(path.dirname(path.dirname(paths.rootfs)), { recursive: true, force: true })
 })
 

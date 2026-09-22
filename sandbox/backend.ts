@@ -87,7 +87,21 @@ function which(name: string): string | null {
  * it is today.
  */
 function networkArgs(egress: EgressMode | undefined): string[] {
-  return egress === "open" ? ["--network=host"] : []
+  const args = egress === "open" ? ["--network=host"] : []
+  if (egress === "filtered") {
+    // `nft -f` needs CAP_NET_ADMIN **in the container's own network namespace**, and a rootless
+    // container's root does not have it by default: measured, `nft list ruleset` inside one answers
+    // "Operation not permitted (you must be root)" and `netlink: Error: cache initialization
+    // failed: Operation not permitted` — the same two lines AGENTS.md records from the unshare path
+    // when the ruleset was applied in the *host's* namespace.
+    //
+    // Granting it is faithful rather than a shortcut: moat's own box gives root inside
+    // CAP_NET_ADMIN in the netns it owns, which is exactly why `nft flush ruleset` works there and
+    // why SPEC §7.3 says the filter is a policy and not a jail. This makes the container backend
+    // give root the same power over the same kind of namespace, and no power over any other.
+    args.push("--cap-add=net_admin")
+  }
+  return args
 }
 
 /**

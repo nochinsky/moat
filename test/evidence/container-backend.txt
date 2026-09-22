@@ -1,4 +1,4 @@
---- $ moat up --backend container --egress isolated
+--- $ moat up --backend container   (default egress: filtered)
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
         moat down    stop the sandbox (state and snapshots are kept)
@@ -10,4 +10,6 @@ no-host-home
 --- $ moat down
   resume with: moat up
   remove with: moat destroy
+--- $ moat exec -- nft list ruleset | grep -c 'policy drop'   (is the allowlist really applied?)
+    1
 --- containers: while up = 1, after down = 0

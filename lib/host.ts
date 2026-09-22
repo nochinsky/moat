@@ -105,10 +105,14 @@ export async function probeHost(): Promise<Doctor> {
     })
     chown = (r.stdout + r.stderr).includes("MKNOD_OK")
   }
+  // A fact about this *host*, not about the box moat builds from it: how `/dev` is supplied depends
+  // on the backend, and `moat doctor` says that separately. The sentence used to fuse the two — it
+  // claimed the device nodes "are bind-mounted from the host's device nodes" — which is false under
+  // `--backend container`, where the runtime populates `/dev` and moat binds nothing.
   notes.push(
     chown
-      ? "mknod permitted in userns: /dev is built entirely inside the sandbox"
-      : "mknod denied in userns (kernel policy): /dev nodes are bind-mounted from the host's device nodes (rw: a device is an interface, not a file). No host *data* is mounted.",
+      ? "mknod permitted in userns: a device node can be created inside a user namespace here"
+      : "mknod denied in userns (kernel policy): a device node cannot be created from nothing in a user namespace, so moat's unshare backend binds the host's six device nodes (a device is an interface, not a file; no host *data* is mounted)",
   )
 
   return { linux, wsl, virt, userns, mountns, pidns, kvm, unshare, chroot, mount, chown, problems, notes }

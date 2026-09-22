@@ -2296,3 +2296,67 @@ claim the reader can check and find wrong.
   now says to run the command, for the same reason `docs/TRUST.md` is generated.
 
 `npm run test:unit` at 278; typecheck clean; `docs/TRUST.md` current.
+
+---
+
+## Session 21 — the default path, which the first test avoided
+
+Brutally honest about how the previous session ended: the container backend was declared "verified
+end to end", and the section I wrote to prove it used `--egress isolated`. That is the **one mode
+that does not apply a ruleset** — and `filtered` is the **default**. So the test passed while the
+default path was broken:
+
+```
+✗ the sandbox exited during boot (pid … is gone)
+  netlink: Error: cache initialization failed: Operation not permitted
+[moat] failed to apply the egress policy
+```
+
+### Why it broke, and why the fix is faithful
+
+Rootless podman gives the container's root **no `CAP_NET_ADMIN` in the netns it owns**, so `nft`
+cannot even initialize: `nft list ruleset` inside one answers "Operation not permitted (you must be
+root)". That is verbatim the failure `AGENTS.md` already records from the unshare path, for the same
+underlying reason, one layer out.
+
+Measured, the capability can be granted, and granting it is not a shortcut: moat's own box gives root
+inside `CAP_NET_ADMIN` in the netns it owns — which is exactly why `nft flush ruleset` works there
+and why SPEC §7.3 says the filter is a policy and not a jail. `--cap-add=net_admin` gives the
+container's root the same power over the same kind of namespace, and no power over any other. It is
+added for `filtered` and for nothing else, which the unit test pins.
+
+After it: the ruleset lands inside the box, verified by reading it back.
+
+```
+--- $ moat up --backend container   (default egress: filtered)
+--- $ moat exec -- nft list ruleset | grep -c 'policy drop'
+    1
+--- containers: while up = 1, after down = 0
+```
+
+### The test was fixed, not just the code
+
+§AO now runs the **default** egress and asserts the ruleset is really applied inside. The first
+version would have gone on passing through this bug forever, which is the same lesson this
+repository keeps relearning from the other direction: a check that cannot fail is not a check, and a
+check that exercises the easy path while the default is broken is only slightly better.
+
+### `moat doctor` described the wrong box
+
+With a container environment, `doctor` printed the *unshare* mount plan — "…are bind-mounted from the
+host's device nodes… No host *data* is mounted" — which is false under a backend that binds nothing.
+The sentence fused a **host** fact (`mknod` is denied in a user namespace here) with a **backend**
+plan, and the host probe has no backend to ask. The note now states only the host fact, and doctor
+prints a `mount plan` line per backend:
+
+```
+unshare, no environment:  six device nodes are bind-mounted from the host; every other path is moat's own or a fresh filesystem
+--backend container:      the container runtime supplies the boot mounts and /dev; moat binds nothing from the host
+```
+
+### The rest of the lifecycle, under a container
+
+Spot-checked rather than assumed: `status` reports running, `logs sandbox` reads the rootfs log
+through the guard, `snapshot` writes 147 MiB, `restore` puts it back (a marker written into the box
+is gone afterwards), and `down`/`destroy` leave zero containers. `npm run test:unit` at 278;
+`bash test/e2e-extras.sh` at 53 checks, 0 failed, with §AO covering the default path now.
