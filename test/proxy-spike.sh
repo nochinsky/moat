@@ -273,6 +273,55 @@ fi
 say ""
 
 # ---------------------------------------------------------------------------
+# The same question under the other backend. A proxy has to work wherever moat boots a box, and a
+# container's network is the runtime's rather than moat's, so its answers can differ — and if they
+# do, that decides the shape more than any preference does.
+say "== the same question under the container backend"
+say ""
+if ! command -v podman >/dev/null 2>&1 || ! podman info >/dev/null 2>&1; then
+  mark BLOCKED "no usable container runtime here" "test/e2e-extras.sh §AO runs the backend end to end wherever one exists"
+else
+  CDIR="$SCRATCH/project-container"
+  rm -rf "$CDIR"; mkdir -p "$CDIR"
+  (
+    cd "$CDIR"
+    git init -q -b main . >/dev/null 2>&1
+    git config user.email spike@example.com
+    git config user.name spike
+    printf '{"name":"container","scripts":{"test":"true"}}\n' > package.json
+    git add -A && git commit -qm base
+  )
+  if ( cd "$CDIR" && $MOAT up --quiet --backend container --egress isolated --no-detect --model deepseek-flash \
+        --base-url "http://127.0.0.1:$ENDPOINT_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL ) > "$SCRATCH/up-container.log" 2>&1; then
+    COUT=$( cd "$CDIR" && $MOAT exec -- sh -c "
+      timeout 6 wget -q -O /dev/null http://1.1.1.1/ && echo outbound=OK || echo outbound=no
+      timeout 5 wget -q -O /dev/null http://$HOSTIP:$ENDPOINT_PORT/ && echo hostaddr=REACHED || echo hostaddr=refused
+    " 2>/dev/null )
+    say "$(printf '%s\n' "$COUT" | sed 's/^/    /')"
+    # The container's name is derived from the environment id, so the box is identified rather than
+    # guessed at — `podman ps` would happily hand back somebody else's container.
+    ENVDIR=$( cd "$CDIR" && $MOAT status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("envDir") or "")' )
+    CPID=$(podman inspect --format '{{.State.Pid}}' "moat-$(basename "${ENVDIR:-none}")" 2>/dev/null)
+    CJ=$( [ -n "$CPID" ] && python3 "$SCRATCH/netjoin.py" "$CPID" 2>&1 )
+    say "    container pid ${CPID:-unknown}; setns into its namespace: ${CJ:-unmeasured}"
+    say ""
+    if printf '%s' "$COUT" | grep -q "outbound=no"; then
+      mark UNKNOWN "the container box has no uplink at all" "nothing here is about the placement"
+    elif printf '%s' "$COUT" | grep -q "hostaddr=REACHED"; then
+      mark MEASURED "a host-side listener IS reachable from a container box too" "one host-side proxy could serve both backends"
+    else
+      mark MEASURED "a host-side listener is NOT reachable from a container box" "the host's address is refused here, where the unshare backend reached it — that shape is unshare-only"
+      if [ -n "$CPID" ] && [ "$CJ" = "$(readlink "/proc/$CPID/ns/net" 2>/dev/null)" ]; then
+        mark MEASURED "and the in-namespace placement works for this backend too" "setns into the container's namespace succeeds ($CJ) — the one placement both backends allow"
+      fi
+    fi
+  else
+    mark BLOCKED "the container box did not boot" "$(tail -1 "$SCRATCH/up-container.log")"
+  fi
+fi
+say ""
+
+# ---------------------------------------------------------------------------
 # A name-based policy refuses the hosts a runtime calls besides the model. Does a turn notice? The
 # runtimes reach for their vendors' infrastructure on their own, and the policy has to answer for it.
 say "== does the policy's treatment of the vendor hosts break a turn?"
@@ -366,5 +415,7 @@ say "  not measured  the authenticated path (a real key's account traffic was ne
 say "              the same for Claude — its vendor set is api.anthropic.com and Datadog"
 say "  measured    that a plain process can be placed inside a boot's OWN network namespace, on the"
 say "              box's loopback — the placement that keeps a listener off the LAN"
+say "  measured    that a host-side listener is unshare-only — a container box refuses the host's LAN"
+say "              address too — while the in-namespace placement works for both backends"
 say "  not measured  the proxy: every reading here is an input to that decision, and none of it is one"
 say ""

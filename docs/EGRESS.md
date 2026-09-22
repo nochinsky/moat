@@ -117,6 +117,21 @@ box.
   it attaches per boot — which is exactly the shape moat already uses for slirp4netns, pointed at
   each boot's pid.
 
+  Under the **container** backend the same questions answer differently, and that is what narrows the
+  choice. Measured with `--backend container --egress isolated`, `outbound=OK` as the control that the
+  box has a network at all:
+
+  ```
+  host's loopback       : refused
+  host's non-loopback   : refused        (under the unshare backend this was REACHED)
+  setns (user, then net): IN net:[4026533557]
+  ```
+
+  So a host-side listener is **unshare-only** — a container box refuses the host's address on both
+  routes — while a process inside the boot's own namespace works for **both** backends. That is a
+  measurement rather than a preference, and it leaves one of the three shapes standing for a moat
+  with more than one backend.
+
   **A proxy inside the box** — in the agent's own filesystem and process namespace — would be
   agent-visible and agent-killable, which is the thing invariant 6's reason forbids.
 * **The same question under the other backends.** This is all the `unshare` backend. Whether a
@@ -179,7 +194,7 @@ which reading justified it.
 
 | shape | reachable from the box | what it costs |
 | --- | --- | --- |
-| **Host process, on the host's LAN address** | `isolated`: any port. `filtered` (default): 80/443 only, since the ruleset accepts `@allowed4 tcp dport { 80, 443 }` over `policy drop` | the listener is on the LAN, so it needs a deliberate bind address and caller authentication; and `filtered` needs one ruleset entry naming the proxy's port — the "cannot express per-host ports" hole, narrowed to one entry. A rootless process cannot bind 443 |
+| **Host process, on the host's LAN address** | `isolated` (unshare): any port. `filtered` (default): 80/443 only, since the ruleset accepts `@allowed4 tcp dport { 80, 443 }` over `policy drop`. **Container backend: not reachable at all** | the listener is on the LAN, so it needs a deliberate bind address and caller authentication; `filtered` needs one ruleset entry naming the proxy's port — the "cannot express per-host ports" hole, narrowed to one entry; a rootless process cannot bind 443; and it is **unshare-only**, so it cannot be the design for a moat with two backends |
 | **A host process in the box's own network namespace** (`setns` into the box's user namespace, then its network namespace — measured to work) | the box's own loopback, in every mode, with nothing on the LAN | moat cannot call `setns` from Node, so it needs a small helper binary to ship and pin. The attach-by-pid shape is the one moat already uses for slirp4netns; the artefact is new |
 | **A proxy inside the box** | its own loopback | agent-visible and agent-killable — the agent is root in there — which is what invariant 6's reason forbids ("the host is a terminal and a log reader") |
 
@@ -188,5 +203,6 @@ traffic through a proxy without per-runtime integration (§1); the hosts they ca
 can be refused or dropped for free, and doing so makes a turn ~8x faster (§2); moat cannot set the
 proxy variables today, so any shape needs a `managedEnv` change (`sandbox/launcher.ts` accepts only
 `MOAT_` names through `MOAT_SANDBOX_ENV`); that every boot has its own network namespace, so a proxy
-attaches per boot rather than to the running box; and that whatever is built terminates egress on
-the host, which invariant 6 would need amended for, in writing, by a named phase.
+attaches per boot rather than to the running box; that the in-namespace placement is the only one of
+the three both backends allow; and that whatever is built terminates egress on the host, which
+invariant 6 would need amended for, in writing, by a named phase.
