@@ -65,12 +65,27 @@ box.
   ```
 
   So the loopback really is closed and a host-side proxy is still reachable — on the host's
-  **non-loopback** address. `filtered` can allowlist exactly that address and port rather than
-  taking `--allow-host-loopback`, which would open the whole thing. Two consequences, neither
-  settled: the listener is on the LAN, so it has to be bound to a deliberate address and
-  authenticate its callers instead of trusting "only the box can reach it"; and the box can already
-  reach the host as a LAN machine, which is a property of `isolated` worth saying out loud — it was
-  never a LAN firewall, and SPEC §7.3 already says the filter is a policy rather than a jail.
+  **non-loopback** address. `filtered` — the **default** mode — narrows that in a way worth stating
+  exactly, read from the box's own `nft list ruleset`:
+
+  ```
+  type filter hook output priority filter; policy drop;
+  ip daddr @allowed4 tcp dport { 80, 443 } accept      the allowlisted address IS in @allowed4
+  ```
+
+  so the allowlist entry lands and only ports **80 and 443** are accepted; a connection to any other
+  port is *dropped*, which reads as a timeout rather than a refusal (my first probe used port 47622
+  and concluded "refused" — the wrong word for the right outcome). Two consequences, both concrete:
+
+  * A rootless host-side proxy cannot bind 443, so under the default mode a host-side proxy needs
+    moat to name *its* port in the ruleset. That is the "it cannot express per-host ports" hole
+    `AGENTS.md` already names, narrowed here to one deliberate entry rather than a general feature.
+  * The listener is on the LAN, so it has to be bound to a deliberate address and authenticate its
+    callers instead of trusting that only the box can reach it.
+
+  And the box can reach the host as a LAN machine at all, which is a property of `isolated` worth
+  saying out loud — it was never a LAN firewall, and SPEC §7.3 already says the filter is a policy
+  rather than a jail.
 
   The alternatives are worse or unavailable. **A host process cannot enter the box's network
   namespace**: `nsenter --target <pid> --net` answers `Operation not permitted`, and slirp4netns is
