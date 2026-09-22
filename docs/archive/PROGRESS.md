@@ -2097,3 +2097,69 @@ asserts the page names `npm run test:unit` **without** giving it a number.
 
 Because the check runs inside `npm run test:unit`, and CI runs that on every push, the page is
 enforced where the rest of the evidence is.
+
+---
+
+## Session 18 — Phase 4's missing measurement, and the correction it forced
+
+The owner installed podman and said so. That was the one reading Phase 4 could not take, and taking
+it **invalidated the central claim of `docs/PORTABILITY.md`** — a claim I had derived from the tree
+instead of measuring, and written down as if it were a found fact.
+
+### What was measured
+
+`bash test/portability-spike.sh` section 4, extended to take the reading rather than describe the
+question, captured in `test/evidence/portability-podman.txt`:
+
+```
+MEASURED  podman is usable by this user — rootless, no sudo
+MEASURED  --rootfs accepts a plain directory — moat's rootfs is a directory, not an image
+MEASURED  an agent's writes persist into it — inside uid=0; the file survived the container
+MEASURED  all six namespaces differ from the host — pid mnt user net uts ipc
+MEASURED  /dev is populated by the runtime — moat's six host device binds would not be needed
+MEASURED  the host's home is not inside — and no host data is mounted
+MEASURED  network modes are the runtime's own — --network=none gives 1 interface(s)
+```
+
+### The correction
+
+The old section said: **"moat's rootfs is a persistent, agent-writable directory, and a container
+image is not."** With `--rootfs` it *is* — a plain directory, uid 0 inside, and a write made inside
+lands in that directory. Four things the page had listed as costs are not costs:
+
+* the persistent directory rootfs (snapshots, the image cache key and `installRuntimeBinary` keep
+  working, because it is still a directory moat owns);
+* **the six device binds** — the runtime populates `/dev`, so an entire class of traps moat carries
+  (`mknod` denied in a userns, a read-only device bind failing with EACCES, a swallowed bind leaving
+  a regular file where a device should be) simply disappears, and invariant 1's "the only host mounts
+  are six device nodes" becomes "there are no host mounts at all";
+* the namespaces — all six differ by inode, exactly as `moat doctor` already asserts;
+* "no host data" — measured, with the host's own home path.
+
+What remains is smaller and is now named rather than guessed: invariant 7's *letter* ("no podman")
+must be amended, though its *reason* survives because rootless podman is daemonless; the egress
+model changes shape (`--network=none` is a *stronger* default than moat's current policy); the
+launcher seam is replaced; and there is **a new cost in the other direction** — podman becomes a
+host dependency, where today moat needs `unshare` and nothing else and works on a bare host. That
+last one is why it should be an *option*, not a replacement.
+
+Option A went from "unknown, probably a seam-sized rewrite" to **core-measured-viable**.
+
+### Three probe bugs, all mine, all found by not trusting the first answer
+
+1. the mount probe reporting `BLOCKED` for a host whose suites pass (session 14);
+2. `-x "$ROOTFS/bin/sh"` — Alpine's `/bin/sh` is a symlink to an absolute `/bin/busybox`, which
+   resolves against the *host* once extracted, so the check failed for a reason unrelated to the
+   extraction;
+3. asking for `$HOME` *inside* the container, where it is `/root` and always exists, and reading the
+   container's own home as if it were the host's.
+
+Each was caught by comparing the probe's answer with something already known to be true. That is now
+the third time this repository has learned it, and it is the reason the spike prints `MEASURED` /
+`BLOCKED` / `UNKNOWN` per assertion rather than one verdict: a wrong probe and a wrong host look
+identical in a summary line.
+
+### What did not change
+
+No behaviour changed: a script gained seven probes, a page was corrected, and one capture was added.
+`npm run test:unit` at 274; typecheck clean; `docs/TRUST.md` still current.

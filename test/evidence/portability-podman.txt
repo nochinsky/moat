@@ -1,0 +1,59 @@
+==================================================================
+moat portability spike
+==================================================================
+
+== 1. the machine
+
+  uname     Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
+  kernel    Linux version 6.18.33.2-microsoft-standard-WSL2 (root@f1bbfb02316b) (gcc (GCC) 13.2.0, GNU
+  platform  WSL2 (a Linux kernel under Windows)
+  distro    Ubuntu 26.04 LTS
+  uid       1000
+  cgroup    cgroup-v2
+
+== 2. unprivileged user namespaces — the feature moat cannot work without
+
+  max_user_namespaces: 30825
+  apparmor_restrict_unprivileged_userns: absent
+
+  probe: unshare --user --map-root-user --mount sh -c 'mount -t tmpfs none <scratch>'
+  MEASURED  user namespaces work — unshare, and a mount inside them, succeeded
+
+== 3. container runtimes present
+
+  FOUND     podman — /usr/bin/podman
+  absent    docker
+  absent    nerdctl
+  absent    lxc
+  absent    incus
+  absent    systemd-nspawn
+
+== 4. does a container runtime give what moat needs?
+
+  MEASURED  podman is usable by this user — rootless, no sudo
+  MEASURED  --rootfs accepts a plain directory — moat's rootfs is a directory, not an image
+  MEASURED  an agent's writes persist into it — inside uid=0; the file survived the container
+  MEASURED  all six namespaces differ from the host — pid mnt user net uts ipc
+  MEASURED  /dev is populated by the runtime — moat's six host device binds would not be needed
+  MEASURED  the host's home is not inside — and no host data is mounted
+  MEASURED  network modes are the runtime's own — --network=none gives 1 interface(s); the allowlist story changes shape
+
+== 5. the microVM path (moat v1)
+
+  BLOCKED   /dev/kvm exists but this user cannot open it — crw-rw---- root:kvm — moat doctor reports the same
+
+== 6. macOS, if that is where you are
+
+  n/a       not macOS — this branch is here for whoever runs it on a Mac
+
+==================================================================
+What this run measured, and what it did not
+==================================================================
+
+  measured    the platform line above, user-namespace availability, which container
+              runtimes exist, and whether /dev/kvm is reachable
+  not measured anything marked SKIPPED or UNKNOWN — and, always, whether moat's own
+              sandbox suites pass on this host: that is
+                bash test/e2e-codex.sh
+              which needs the feature in section 2 and several hundred MB of downloads.
+
