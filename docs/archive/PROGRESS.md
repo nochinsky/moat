@@ -1581,10 +1581,52 @@ user, a different second runtime, or none yet), `npm run test:unit` and the code
 untouched and green, and the decision is the owner's. `dontAsk` is recorded with the honest caveat
 that *what it does with a tool call* was not measured — only that the flag is accepted as root.
 
-### Not done, deliberately
+### The wall, corrected: it was passable, and the first read of it was wrong
 
-No seam, no adapter, no `--runtime`, no parser. Nothing in this session changes behaviour; it
-records a measurement and stops at the decision. That is a smaller session than the plan implied,
-and it is the right size until the decision is made.
+The paragraph above stopped at "Claude Code cannot honour invariant 3". That was too fast, and the
+correction is the more useful half of the session. `bypassPermissions` is not the only way to never
+ask. `--allowedTools` is an **additive auto-approval list** — a listed tool never prompts — and in
+`--print` mode anything that *would* prompt is auto-**denied** rather than left hanging, so a
+headless turn cannot block on a question that has no channel to answer it. Measured in the same box,
+as root:
+
+```
+$ printf 'say hi' | claude -p --output-format stream-json --verbose \
+      --permission-mode acceptEdits --allowedTools Bash Edit Write Read Glob Grep
+{"type":"system","subtype":"init","cwd":"/work","permissionMode":"acceptEdits","tools":[…25…],"apiKeySource":"none"}
+{"type":"assistant","message":{…,"error":"authentication_failed","is_api_error_message":true}}
+{"type":"result","…,"terminal_reason":"api_error","permission_denials":[],…}
+```
+
+An auth failure, not a flag error. So invariant 3 is reachable without a multi-uid namespace: allow
+the tools the agent needs rather than turn the checks off. Three things fell out of the capture and
+none of them were expected:
+
+1. **`permission_denials`** is a field on the `result` event, so "nothing was blocked" becomes a
+   *reading* rather than a promise — exactly the shape of evidence this project keeps asking for.
+2. **`--bare` narrows the advertised tools** from 25 (`Task`, the `Cron*` family, `DesignSync`,
+   `EnterWorktree`, `WebFetch`, `WebSearch`, `Workflow`, …) to `["Bash","Edit","Read"]`. That is moat
+   *choosing the tool set* — requirement 4, which `docs/VERIFICATION.md` records as **not met**
+   under Codex because Codex offers no supported way to prune the list.
+3. **`--allowedTools` is variadic**, so it swallows a trailing positional prompt: the prompt goes on
+   **stdin**. Found by getting `Input must be provided either through stdin or as a prompt argument`
+   rather than an auth error.
+
+The first version of this session's finding was "blocked, do not start the adapter". That is now
+corrected in `AGENTS.md` and `docs/RUNTIMES.md`, because a stop sign that is wrong is worse than no
+stop sign.
+
+### What is still unmeasured
+
+Whether an allowlisted call actually runs **un-denied**, and what `dontAsk` does to a call that would
+otherwise prompt. Both need a turn against a stub — the stream shape above is everything a parser
+needs, and the stub is what turns "the flags are accepted" into "a turn completes and
+`permission_denials` is empty".
+
+### Not done
+
+No seam, no adapter, no `--runtime`, no parser, and **no behaviour change** — the codex path and
+`npm run test:unit` (263) are untouched. What this session produced is a corrected measurement and
+the artefacts a parser will be written against.
 
 
