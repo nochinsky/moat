@@ -1530,4 +1530,61 @@ change before anything depended on it. The next session adds the seam, the confi
 the `stream-json` parser and the `--runtime` flag together, so the abstraction arrives with the
 thing that justifies it.
 
+---
+
+## Session 9 — the wall in front of the second runtime
+
+The seam was not written, because writing it would have been writing the wrong thing. Running the
+real binary inside a real box found a wall first, and the wall is worth more than the code would
+have been.
+
+### What was measured
+
+The pinned Claude Code binary runs on the image (session 8). The **policy** does not survive the
+box, and the measurement is one command inside one:
+
+```
+$ claude -p --permission-mode bypassPermissions "hi"      # uid=0, in a moat box
+--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons
+
+$ claude -p --permission-mode dontAsk "hi"
+Not logged in · Please run /login        # the flag was accepted; this is an auth failure
+```
+
+`bypassPermissions` is the only mode that means "never ask **and** never block" — moat's invariant
+3 — and Claude Code refuses it as root. moat's agent *is* root by design.
+
+The escape is not available either, in the same box:
+
+```
+$ adduser -D -h /home/moat moatuser && chown -R moatuser /home/moat
+chown: changing ownership of '/home/moat': Invalid argument
+$ su moatuser -s /bin/sh -c 'cd /work && claude …'
+su: can't set groups: Operation not permitted
+```
+
+One uid is mapped in the namespace; there is no second identity to become. Giving moat a non-root
+agent user means a multi-uid mapping, which changes `sandbox/launcher.ts` and the rootfs guard's
+whole threat model rather than adding an adapter.
+
+### Why this counted as the work
+
+Session 8 ended by saying the seam should be extracted by a second implementation that exists and
+constrains its shape. This session is what happens when you go looking for that implementation and
+find that the *premise* needs a decision first. Writing the seam, the config renderer, the
+`stream-json` parser and the `--runtime` flag against a runtime that cannot honour invariant 3 would
+have produced four hundred lines that a later session unwinds — which is the exact failure the
+staged approach was meant to avoid.
+
+So: `docs/RUNTIMES.md` carries the measurement and the four options (`dontAsk`, a non-root agent
+user, a different second runtime, or none yet), `npm run test:unit` and the codex path are
+untouched and green, and the decision is the owner's. `dontAsk` is recorded with the honest caveat
+that *what it does with a tool call* was not measured — only that the flag is accepted as root.
+
+### Not done, deliberately
+
+No seam, no adapter, no `--runtime`, no parser. Nothing in this session changes behaviour; it
+records a measurement and stops at the decision. That is a smaller session than the plan implied,
+and it is the right size until the decision is made.
+
 

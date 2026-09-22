@@ -113,3 +113,53 @@ Those are not the same semantics, and a parser that assumed Codex's shape would 
 Before trusting a new adapter's footer, run one turn through the recording stub, read the usage
 fields that actually arrived, and compare the arithmetic against `lib/pricing.ts` by hand. A cost
 figure that looks plausible is the failure mode.
+
+## Claude Code: a wall, measured before any adapter was written
+
+Phase 2 picked Claude Code as the second runtime. The **packaging** checks out and is pinned
+(`lib/pins.ts`, §"A second runtime's artefact"): the npm package is a platform package with
+`dependencies: {}` carrying a musl build, and it runs on the Alpine image with no Node —
+`./package/claude --version` inside a real moat sandbox printed `2.1.278 (Claude Code)`.
+
+The **policy** does not, and this was found by running the real binary inside a real box rather than
+by reading a flag list:
+
+```
+$ claude -p --permission-mode bypassPermissions "hi"        # uid=0, inside the moat box
+--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons
+
+$ claude -p --permission-mode dontAsk "hi"
+Not logged in · Please run /login        # the flag was ACCEPTED; this is an auth failure
+```
+
+`bypassPermissions` is the only mode that means "never ask **and** never block" — moat's invariant
+3 — and Claude Code refuses it when the process is root. moat's agent *is* root: the whole rootfs is
+the agent's, `/work` is inside it, and the box is a **single-id** user namespace.
+
+Running the agent as a non-root user is not an escape at v0 either. Measured in the same box:
+
+```
+$ adduser -D -h /home/moat moatuser && chown -R moatuser /home/moat
+chown: changing ownership of '/home/moat': Invalid argument
+$ su moatuser -s /bin/sh -c 'cd /work && claude …'
+su: can't set groups: Operation not permitted
+```
+
+One uid is mapped in the namespace, so there is no second identity to become.
+
+The options, none of them free:
+
+* **`--permission-mode dontAsk`** — accepted as root. It does not ask, but what it does with a tool
+  call that would otherwise prompt has **not** been measured (it is documented as denying rather
+  than allowing). If that is what it does, an autonomous agent's `Bash` calls fail with nothing
+  saying why: "never asks" survives, "never blocked" does not.
+* **A non-root agent user** — needs a multi-uid userns (`--map-users`/subuid). That is a change to
+  `sandbox/launcher.ts` and to the rootfs guard's threat model (the agent would stop being root in
+  its own box), not an adapter detail.
+* **A different second runtime** without the root check.
+* **No second runtime yet.**
+
+Recorded rather than worked around, the same way the Phase 4 ACP spike was rejected for taking the
+policy decision away from moat's rendered config. This is that question one layer down: *which
+process may the runtime run as, and who decides* — and the answer Claude Code gives is "not root",
+which is the one answer moat's design cannot give it.
