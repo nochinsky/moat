@@ -32,7 +32,7 @@ All five phases passed their gates. The suites run green on `main`:
 | --- | --- |
 | `npm run test:unit` | run it — the count is not copied here (a hand-maintained number drifted from 243 to 278 before anyone noticed; `docs/TRUST.md` is generated from the evidence for exactly this reason) |
 | `test/e2e-codex.sh` | acceptance list, all criteria passed |
-| `test/e2e-extras.sh` | 50 checks, 0 failed |
+| `test/e2e-extras.sh` | run it — the number written here had drifted from 50 to 53 before anyone noticed, so the suite prints its own count into `test/evidence/extras.txt` |
 | `test/e2e-egress.sh` | all egress checks passed |
 | `test/e2e-provider.sh` | 9 checks, 0 failed |
 | `test/e2e-demo.sh` | 9 checks, 0 failed |
