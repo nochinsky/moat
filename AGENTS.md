@@ -84,7 +84,9 @@ docs/            SPEC (the contract), VERIFICATION (the evidence),
                  costs, and why ACP is not the shortcut), PORTABILITY (what is
                  measured about running moat outside Linux, and what a container
                  backend would cost), MICROVM (what a KVM-backed box costs and what its
-                 datapath would need — measured on a host that has `/dev/kvm`), HANDOFF (a
+                 datapath would need — measured on a host that has `/dev/kvm`), EGRESS (the datapath's
+                 open questions: whether a moat-owned proxy can be the egress point, and what the
+                 runtimes talk to when they are not calling the model — measured), HANDOFF (a
                  point-in-time handoff for whoever picks
                  the project up next; read it before AGENTS.md if you are that), TRUST
                  (generated from the evidence — the
@@ -801,7 +803,11 @@ Not built, in rough order of how much they matter:
   is wrong. What is left is the allowlist's shape: it is an IP snapshot taken at boot (a
   rotating CDN address falls out until the next `moat up`), it cannot express per-host
   ports, and DNS to slirp's resolver remains an outbound channel. Closing those means a
-  resolving proxy moat owns, not a bigger ruleset.
+  resolving proxy moat owns, not a bigger ruleset. The proxy is viable: both runtimes do send
+  their model traffic through one when the box is told to use it (`docs/EGRESS.md` §1,
+  `test/proxy-spike.sh`). What is open is whether it is reachable from a `filtered` or
+  `isolated` box, both of which close the host's loopback on purpose — that, not the agent's
+  cooperation, is the next reading.
 * **Provider-side credential scoping**: short-lived, spend-capped tokens minted per boot,
   instead of borrowing a long-lived key.
 * **Spend caps beyond a turn.** A turn's ceiling is enforced on the stream

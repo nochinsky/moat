@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+#
+# Egress spike: does a runtime's model traffic actually go through a proxy when the box is told to
+# use one?
+#
+# This is the reading a moat-owned egress proxy stands or falls on. moat's egress policy today is an
+# nftables allowlist over IPs resolved at boot; the way to close that policy's remaining holes (a
+# rotating CDN address, no per-host ports, DNS as an outbound channel) is a proxy moat owns — but
+# only if the agent's own HTTP client uses it. Both runtimes are third-party binaries, so this is a
+# measurement about them, not a design decision.
+#
+#     bash test/proxy-spike.sh
+#
+# The shape: a recording endpoint on the host's loopback (which the runtime is configured to use)
+# and a recording proxy on another port. Each runtime runs twice — once with the standard proxy
+# variables set in the box and once without — and the two logs say which of them received the model
+# request. Both recorders answer 502, so nothing is forwarded anywhere.
+#
+# The control is a *precondition*, not a footnote: if the runtime does not reach the endpoint with no
+# proxy set, the run proves nothing about proxies and says UNKNOWN. The first version of this script
+# lacked that check and reported a result for Claude that was an artefact of running it without the
+# endpoint variables moat's `run` path sets (`cmd/main.ts`), so Claude talked to its own default
+# host instead. A harness that cannot tell "the client refused the proxy" from "the client was never
+# pointed at anything" is worse than no harness.
+#
+# What leaves the machine: nothing. Both recorders answer 502, and the endpoint is a loopback port.
+# The runtimes do make their own background connections to their vendors' infrastructure — that is
+# part of what the run measures — and in the control run those go direct, because the control is
+# precisely "no proxy is set". moat's own suites behave the same way.
+set -uo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MOAT="node $REPO/cmd/main.ts"
+ENDPOINT_PORT="${ENDPOINT_PORT:-47421}"
+PROXY_PORT="${PROXY_PORT:-47411}"
+export MOAT_MOCK_CREDENTIAL="moat-proxy-spike-credential"
+
+SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/moat-proxy-XXXXXX")
+PIDS=()
+cleanup() {
+  for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done
+  # Destroy only this run's environments, by project path — never in a loop over envs/.
+  for d in "$SCRATCH"/project-*; do
+    [ -d "$d" ] && ( cd "$d" && $MOAT destroy --yes >/dev/null 2>&1 )
+  done
+  rm -rf "$SCRATCH"
+}
+trap cleanup EXIT
+
+say() { printf '%s\n' "$*"; }
+mark() { printf '  %-9s %s%s\n' "$1" "$2" "${3:+ — $3}"; }
+# `grep -c` prints 0 **and exits 1** when nothing matches, so `$(grep -c . f || echo 0)` yields two
+# lines and every comparison against "0" fails — a check that fails on success, which is the trap
+# AGENTS.md records. Command substitution keeps the printed 0; the fallback only covers a missing
+# file.
+count() {
+  local n
+  n=$(grep -c . "$1" 2>/dev/null)
+  printf '%s' "${n:-0}"
+}
+
+say "=================================================================="
+say "moat egress spike: does the runtime use a proxy?"
+say "=================================================================="
+say ""
+
+if ! command -v python3 >/dev/null 2>&1; then
+  mark BLOCKED "no python3 to run the recorders"
+  exit 0
+fi
+
+# One recorder, two roles. It logs the first line of whatever request arrives and answers 502, so a
+# line in a log is proof the client sent the request *there*, and nothing is forwarded anywhere.
+cat > "$SCRATCH/recorder.py" <<'PY'
+import socket, sys, threading
+port, log = int(sys.argv[1]), sys.argv[2]
+open(log, "w").close()
+def handle(c):
+    try:
+        c.settimeout(10)
+        line = c.recv(8192).split(b"\r\n", 1)[0].decode("utf8", "replace").strip()
+        with open(log, "a") as f:
+            f.write(line + "\n")
+        c.sendall(b"HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\n\r\n")
+    except Exception:
+        pass
+    finally:
+        c.close()
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", port))
+s.listen(32)
+while True:
+    conn, _ = s.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PY
+
+# No `setsid`: `$!` for a wrapped command is the wrapper's pid, which exits immediately, and that is
+# how the microVM spike left a listener running — which then makes the next run's control report a
+# false UNKNOWN, the one failure mode a control exists to prevent.
+python3 "$SCRATCH/recorder.py" "$ENDPOINT_PORT" "$SCRATCH/endpoint.log" > "$SCRATCH/endpoint.out" 2>&1 &
+PIDS+=($!)
+python3 "$SCRATCH/recorder.py" "$PROXY_PORT" "$SCRATCH/proxy.log" > "$SCRATCH/proxy.out" 2>&1 &
+PIDS+=($!)
+sleep 1
+say "  endpoint  recording on 127.0.0.1:$ENDPOINT_PORT (the provider the runtime is pointed at)"
+say "  proxy     recording on 127.0.0.1:$PROXY_PORT (the standard variables point here)"
+say ""
+
+for RT in codex claude; do
+  DIR="$SCRATCH/project-$RT"
+  rm -rf "$DIR"; mkdir -p "$DIR"
+  (
+    cd "$DIR"
+    git init -q -b main . >/dev/null 2>&1
+    git config user.email spike@example.com
+    git config user.name spike
+    printf '{"name":"proxy-spike","scripts":{"test":"true"}}\n' > package.json
+    git add -A && git commit -qm base
+  )
+
+  say "== $RT"
+  say ""
+  if ! ( cd "$DIR" && $MOAT up --quiet --egress open --runtime "$RT" --no-detect --model deepseek-flash \
+        --base-url "http://127.0.0.1:$ENDPOINT_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL ) > "$SCRATCH/up-$RT.log" 2>&1; then
+    mark BLOCKED "$RT: the box did not boot" "$(tail -1 "$SCRATCH/up-$RT.log")"
+    say ""
+    continue
+  fi
+
+  # Codex reads its endpoint from the config moat renders, so nothing has to be passed. Claude reads
+  # ANTHROPIC_BASE_URL, which moat's `run` path sets and `moat exec` does not, so the two variables a
+  # run would carry are set here by hand — otherwise Claude falls back to its own default host and
+  # the run measures nothing.
+  if [ "$RT" = codex ]; then
+    TURN='MOAT_INJECTED_CREDENTIAL=spike timeout 40 codex exec --json "say hi"'
+  else
+    TURN="ANTHROPIC_BASE_URL=http://127.0.0.1:$ENDPOINT_PORT ANTHROPIC_API_KEY=spike timeout 40 sh -c \"printf %s 'say hi' | claude -p --output-format stream-json --verbose\""
+  fi
+
+  : > "$SCRATCH/endpoint.log"; : > "$SCRATCH/proxy.log"
+  ( cd "$DIR" && $MOAT exec -- sh -c "$TURN" ) >/dev/null 2>&1
+  C_ENDPOINT=$(count "$SCRATCH/endpoint.log")
+  C_PROXY=$(count "$SCRATCH/proxy.log")
+
+  : > "$SCRATCH/endpoint.log"; : > "$SCRATCH/proxy.log"
+  ( cd "$DIR" && $MOAT exec -- sh -c \
+      "HTTP_PROXY=http://127.0.0.1:$PROXY_PORT HTTPS_PROXY=http://127.0.0.1:$PROXY_PORT ALL_PROXY=http://127.0.0.1:$PROXY_PORT NO_PROXY= no_proxy= $TURN" \
+    ) > "$SCRATCH/run-$RT.log" 2>&1
+  T_ENDPOINT=$(count "$SCRATCH/endpoint.log")
+  T_PROXY=$(count "$SCRATCH/proxy.log")
+
+  say "  control, no proxy variables : endpoint $C_ENDPOINT request(s), proxy $C_PROXY"
+  say "  with HTTP(S)_PROXY set     : endpoint $T_ENDPOINT request(s), proxy $T_PROXY"
+  say "  what the proxy received (distinct):"
+  sort -u "$SCRATCH/proxy.log" | sed 's/^/    /'
+  say ""
+
+  if [ "$C_ENDPOINT" = "0" ]; then
+    mark UNKNOWN "$RT never reached the endpoint even with no proxy set" "the run says nothing about proxies until this leg works"
+  elif [ "$C_PROXY" != "0" ]; then
+    mark UNKNOWN "$RT: the control is not a control" "the proxy received traffic with no proxy variables set"
+  elif [ "$T_PROXY" = "0" ]; then
+    mark MEASURED "$RT does NOT use the proxy" "a moat-owned egress proxy cannot be the datapath for this runtime"
+  elif [ "$T_ENDPOINT" != "0" ]; then
+    mark UNKNOWN "$RT used the proxy and still reached the endpoint directly" "some traffic bypassed it"
+  else
+    mark MEASURED "$RT sends its model traffic through the proxy" "the standard variables are enough: no per-runtime integration for the proxying itself"
+  fi
+  say ""
+done
+
+say "=================================================================="
+say "What this run measured, and what it did not"
+say "=================================================================="
+say ""
+say "  measured    whether each runtime's own HTTP client sends its model traffic through a proxy"
+say "              when HTTP_PROXY/HTTPS_PROXY/ALL_PROXY are set in the box, against a control with"
+say "              none set, and which other hosts each runtime also talks to"
+say "  not measured  that moat can *set* those variables: MOAT_SANDBOX_ENV accepts only MOAT_ names"
+say "              (sandbox/launcher.ts), so a proxy is a managed-env change rather than config;"
+say "              whether a proxy is reachable from a box under filtered/isolated egress, where the"
+say "              host's loopback is closed; and nothing about a microVM backend — docs/MICROVM.md"
+say "              §5 has that open question"
+say ""

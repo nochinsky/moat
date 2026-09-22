@@ -92,11 +92,14 @@ Two consequences worth keeping:
 
 ## 5. What is not measured, and what is genuinely open
 
-* **Whether a moat-owned proxy can be the egress point — undecided.** The proxy that would close the
-  egress second half (name-based allowlist, per-host ports, no DNS channel) has to be *used* by the
-  agent's HTTP client. For the model API that means the runtime honouring a proxy setting, and
-  neither Codex's nor Claude Code's client has been measured for that here. **This is the
-  make-or-break reading and it has not been taken.**
+* **Whether a moat-owned proxy can be the egress point — measured, and it can.** The proxy that
+  would close the egress second half (name-based allowlist, per-host ports, no DNS channel) has to
+  be *used* by the agent's HTTP client, and both runtimes do use one: with the standard variables
+  set in the box, Codex's model request and Claude's both arrive at a recording proxy and not at the
+  configured endpoint, each leg with a no-proxy control. `docs/EGRESS.md` §1 has the readings and
+  `test/proxy-spike.sh` takes them. What is *not* settled is whether such a proxy is reachable from a
+  box whose egress is `filtered` or `isolated` — both close the host's loopback deliberately — and
+  that is now the first open question, in `docs/EGRESS.md` §4.
 * **Whether `filtered`'s nftables allowlist has a v1 equivalent.** A v0 box owns its netns, which is
   why `nft` works there and why SPEC §7.3 calls the filter a policy rather than a jail. A guest
   kernel's netns is not a host netns, and whether the same ruleset means anything in a VM is
