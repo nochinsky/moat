@@ -114,29 +114,25 @@ Before trusting a new adapter's footer, run one turn through the recording stub,
 fields that actually arrived, and compare the arithmetic against `lib/pricing.ts` by hand. A cost
 figure that looks plausible is the failure mode.
 
-## Claude Code: a wall, measured before any adapter was written
+## Claude Code: the policy, measured before any adapter was written
 
 Phase 2 picked Claude Code as the second runtime. The **packaging** checks out and is pinned
 (`lib/pins.ts`, §"A second runtime's artefact"): the npm package is a platform package with
 `dependencies: {}` carrying a musl build, and it runs on the Alpine image with no Node —
 `./package/claude --version` inside a real moat sandbox printed `2.1.278 (Claude Code)`.
 
-The **policy** does not, and this was found by running the real binary inside a real box rather than
-by reading a flag list:
+### `bypassPermissions` is out, and it does not matter
+
+The obvious mode is the root-refused one:
 
 ```
 $ claude -p --permission-mode bypassPermissions "hi"        # uid=0, inside the moat box
 --dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons
-
-$ claude -p --permission-mode dontAsk "hi"
-Not logged in · Please run /login        # the flag was ACCEPTED; this is an auth failure
 ```
 
-`bypassPermissions` is the only mode that means "never ask **and** never block" — moat's invariant
-3 — and Claude Code refuses it when the process is root. moat's agent *is* root: the whole rootfs is
-the agent's, `/work` is inside it, and the box is a **single-id** user namespace.
-
-Running the agent as a non-root user is not an escape at v0 either. Measured in the same box:
+`bypassPermissions` is the only mode that means "never ask **and** never block", and Claude Code
+refuses it when the process is root — which moat's agent is by design. Running the agent as a
+non-root user is not an escape either, measured in the same box:
 
 ```
 $ adduser -D -h /home/moat moatuser && chown -R moatuser /home/moat
@@ -145,21 +141,52 @@ $ su moatuser -s /bin/sh -c 'cd /work && claude …'
 su: can't set groups: Operation not permitted
 ```
 
-One uid is mapped in the namespace, so there is no second identity to become.
+One uid is mapped in the namespace; there is no second identity to become.
 
-The options, none of them free:
+**But `bypassPermissions` is not the only way to never ask.** `--allowedTools` is an *additive
+auto-approval* list — a listed tool never prompts — and in `--print` mode anything that would
+prompt is auto-**denied** rather than made to hang, so a non-interactive turn cannot block on a
+question there is no channel to answer. Measured as root, with the body shape this implies (the
+prompt goes on **stdin**: `--allowedTools` is variadic and eats a trailing positional argument):
 
-* **`--permission-mode dontAsk`** — accepted as root. It does not ask, but what it does with a tool
-  call that would otherwise prompt has **not** been measured (it is documented as denying rather
-  than allowing). If that is what it does, an autonomous agent's `Bash` calls fail with nothing
-  saying why: "never asks" survives, "never blocked" does not.
-* **A non-root agent user** — needs a multi-uid userns (`--map-users`/subuid). That is a change to
-  `sandbox/launcher.ts` and to the rootfs guard's threat model (the agent would stop being root in
-  its own box), not an adapter detail.
-* **A different second runtime** without the root check.
-* **No second runtime yet.**
+```
+$ printf 'say hi' | claude -p --output-format stream-json --verbose \
+      --permission-mode acceptEdits --allowedTools Bash Edit Write Read Glob Grep
+{"type":"system","subtype":"init","cwd":"/work","permissionMode":"acceptEdits","tools":[…25 tools…], "apiKeySource":"none"}
+{"type":"assistant","message":{…,"error":"authentication_failed","is_api_error_message":true}}
+{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","permission_denials":[],…}
+```
 
-Recorded rather than worked around, the same way the Phase 4 ACP spike was rejected for taking the
-policy decision away from moat's rendered config. This is that question one layer down: *which
-process may the runtime run as, and who decides* — and the answer Claude Code gives is "not root",
-which is the one answer moat's design cannot give it.
+An auth failure, not a flag error: the mode and the allowlist are accepted as root. So invariant 3
+is reachable without a multi-uid namespace, by *allowing the tools the agent needs* rather than by
+turning permission checks off.
+
+### Three things the capture gave for free
+
+1. **`permission_denials`** is a field on the `result` event. "Never blocked" stops being a promise
+   and becomes a **reading**: the adapter can surface any tool call that was denied, which is what
+   would catch an agent that is quietly failing because the allowlist is incomplete.
+2. **`--bare` curates the tool surface.** Without it the runtime advertises 25 tools (`Task`, the
+   `Cron*` family, `DesignSync`, `EnterWorktree`, `WebFetch`, `WebSearch`, `Workflow`, …). With it:
+   `"tools":["Bash","Edit","Read"]`. That is moat **choosing the tool set** — requirement 4, which
+   §"Requirement 4" in `docs/VERIFICATION.md` records as *not met* under Codex because Codex offers
+   no supported way to prune the list. Under Claude Code it is a flag.
+3. **The usage fields are confirmed real**, not read from a summary: `input_tokens`,
+   `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`,
+   `output_tokens_details.thinking_tokens`, and a top-level `total_cost_usd`. The trap from §"The
+   trap worth knowing" applies: `cache_read_input_tokens` is a **separate** field here, so a parser
+   that subtracts it from `input_tokens` the way Codex's does would undercount, and whether
+   `output_tokens` includes `thinking_tokens` still has to be measured against a real turn (the
+   capture has thinking at 0, which proves nothing).
+
+### What is still unmeasured, and what it blocks
+
+Not measured: whether an allowlisted tool call actually runs **without** a denial, and what
+`--permission-mode dontAsk` does to a tool call that would otherwise prompt (the docs say *deny*;
+the `permission_denials` field is how that would be caught). Both need a turn against a stub, which
+is the next step — the stream shape above is everything a parser needs to be written against, and
+the stub is what turns "the flags are accepted" into "a turn completes and no tool was denied".
+
+The decision this leaves for the owner is smaller than it looked: **keep invariant 3, do not touch
+the user namespace, and render the tool allowlist as policy** — with the caveat that moat would now
+be *choosing* the agent's tools, which is a promise it does not currently make for Codex.

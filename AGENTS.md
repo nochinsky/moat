@@ -595,13 +595,20 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   to stop being a single pinned binary. `lib/pins.ts` now also pins Claude Code
   (`CLAUDE_VERSION`, `CLAUDE_PLATFORM_PACKAGE`, `CLAUDE_TARBALL_SHA256`) and
   `sandbox/rootfs.ts:ensureClaudeBinary` fetches and digest-verifies it, the same way Codex's is
-  fetched. It is **blocked, not merely unwired**: Claude Code refuses `--permission-mode
-  bypassPermissions` as root, and moat's agent is root in a single-id user namespace with no second
-  identity to become (`chown` EINVAL, `su` EPERM — measured), so invariant 3 cannot be honoured by it
-  at v0. `docs/RUNTIMES.md` has the measurement and the four options; **do not start an adapter
-  before that decision is made**, and do not add a `--runtime` that boots it. What *is* proven is
-  that the pinned artefact downloads, verifies, extracts and runs on Alpine (measured: `2.1.278
-  (Claude Code)` inside a box; `test/unit/runtime-pins.test.ts` holds the pin).
+  fetched. The **policy** was measured next, in a real box. Claude Code refuses
+  `--permission-mode bypassPermissions` as root — which moat's agent is — and there is no non-root
+  identity to become: one uid is mapped, so `chown` is EINVAL and `su` is EPERM. But
+  `bypassPermissions` is not the only way to never ask. `--allowedTools` is an **additive
+  auto-approval list**, and in `--print` mode anything that would prompt is auto-**denied** rather
+  than left hanging, so `--permission-mode acceptEdits --allowedTools Bash Edit Write Read Glob Grep`
+  is accepted as root and never asks. Two things fall out and both matter: the `result` event carries
+  **`permission_denials`**, so "nothing was blocked" is a *reading* rather than a promise; and
+  `--bare` narrows the advertised tools to `["Bash","Edit","Read"]` — moat choosing the tool set,
+  which is requirement 4 that Codex cannot satisfy. `docs/RUNTIMES.md` has the captures. Still
+  **unmeasured** (needs a turn against a stub): whether an allowlisted call actually runs un-denied.
+  What *is* proven: the artefact downloads, verifies, extracts and runs on Alpine (`2.1.278 (Claude
+  Code)` in a box; `test/unit/runtime-pins.test.ts` holds the pin), and the body shape is accepted as
+  root.
   Two things differ from Codex and are why this is a separate function, not a parameter: Claude's
   executable is at the tarball **root** (`package/claude`, not `vendor/<triple>/bin/`), and its
   platform package carries no version in the name (`claude-code-linux-x64-musl`).
