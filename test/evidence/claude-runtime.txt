@@ -1,14 +1,14 @@
 --- $ moat up --runtime claude   (a second runtime, provisioned and booted)
-✓ image provisioned in 1.82s (extract cached image 1.57s)
+✓ image provisioned in 1.80s (extract cached image 1.56s)
   project    /home/user/moat-demo/claude-runtime
   runtime    claude (moat/claude-opus-5): `moat` opens its TUI
 --- $ moat run "run the check"   (a turn through the Claude runtime)
-sandbox already running (pid 248116); restarting it for this run
+sandbox already running (pid 259033); restarting it for this run
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/claude-opus-5
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-22-17-22
+agent branch: moat-session-2026-09-22-17-30
 checks: npm run test
   ✓ Bash sh -c 'echo ci-changed > notes.txt && echo stub-tool-ran && git add -A && git -c user.email=a@b -c user.name=a commit -q
 
@@ -23,7 +23,7 @@ Running the check.
   the sandbox was killed; set a higher ceiling, or none, to let a turn finish.
 --- $ moat take --json   (the review, machine-readable)
 treeUntouched + notes.txt in the classification + checks ok: yes
-  branch: moat-session-2026-09-22-17-22 | commits: 2 | treeUntouched: True
+  branch: moat-session-2026-09-22-17-30 | commits: 2 | treeUntouched: True
   agent    notes.txt (add)
   checks: npm test passed
 --- the provider's own record ---
