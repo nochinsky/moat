@@ -19,8 +19,8 @@ jobs:
 ```
 
 The action uploads the output directory as a `moat-review` artifact: the doctor report, the task's
-own log, and `review.txt` — which is what `moat take` prints, the three-way classification plus the
-project's own checks.
+own log, and `review.json` — `moat take --json`, the three-way classification plus the project's own
+checks, in the shape SPEC §4.2 documents.
 
 ## GitHub-hosted runners cannot run this
 
@@ -53,8 +53,9 @@ YAML nobody can run locally and this has two branches that both have to be prova
    sandbox should fail saying so, not fail later with something that reads like a moat bug.
 2. **`moat run "<task>"`** — the turn, unattended, in the box. Its log is captured and its exit code
    is the run's.
-3. **`moat take --quiet`** — fetch the agent's branch, classify the three trees, and run the
-   project's own checks. **Read-only**: nothing reaches the working tree, which is why a CI run can
+3. **`moat take --json --quiet`** — fetch the agent's branch, classify the three trees, and run the
+   project's own checks. The human summary in the log is **derived from that JSON**, not parsed out
+   of the CLI's prose (SPEC §4.2). **Read-only**: nothing reaches the working tree, which is why a CI run can
    produce a review without the host project being touched (SPEC §2.2).
 
 | exit | meaning |

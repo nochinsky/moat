@@ -115,7 +115,7 @@ export const COMMAND_FLAGS: Record<string, readonly string[]> = {
   run: UP_FLAGS,
   fetch: ["all", "commit-worktree", "json"],
   apply: ["checkout", "dry-run", "hunks", "json", "name", "no-verify", "only", "skip", "skip-conflicts", "timeout", "verify", "yes"],
-  take: ["no-verify", "timeout"],
+  take: ["json", "no-verify", "timeout"],
   verify: ["json", "timeout"],
   down: [],
   destroy: ["all", "yes"],

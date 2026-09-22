@@ -1289,7 +1289,9 @@ rm -rf "$AN"; mkdir -p "$AN"
   git add -A && git commit -qm base
 )
 : > "$WORK/anthropic-record.jsonl"
-setsid node "$REPO/stub/mock-anthropic.mjs" --port "$AN_PORT" --record "$WORK/anthropic-record.jsonl" > "$WORK/anthropic-stub.log" 2>&1 < /dev/null &
+setsid node "$REPO/stub/mock-anthropic.mjs" --port "$AN_PORT" --record "$WORK/anthropic-record.jsonl" \
+  --command "sh -c 'echo ci-changed > notes.txt && echo stub-tool-ran && git add -A && git -c user.email=a@b -c user.name=a commit -qm ci'" \
+  > "$WORK/anthropic-stub.log" 2>&1 < /dev/null &
 AN_STUB=$!
 sleep 1.2
 # The provider is on the host's loopback, so the box gets the host's network namespace — the same
@@ -1304,6 +1306,17 @@ AN_RUN=$?
 # what makes this a measurement rather than a claim.
 ( cd "$AN" && $MOAT run "run the check" --quiet --max-tokens 100 ) > "$WORK/claude-ceiling.log" 2>&1
 AN_CEIL=$?
+# The machine-readable review: `moat take` fetches the agent's branch, classifies the three trees
+# and runs the project's own checks, and `--json` is the same decision in a shape a pipeline reads.
+( cd "$AN" && $MOAT take --json < /dev/null ) > "$WORK/claude-review.json" 2> "$WORK/claude-take.log"
+AN_TAKE=$?
+AN_JSON=$(python3 -c "
+import json
+d=json.load(open('$WORK/claude-review.json'))
+paths=[r['path'] for r in (d.get('reviewed') or [])]
+checks=d.get('checks') or {}
+print('yes' if d.get('treeUntouched') is True and 'notes.txt' in paths and checks.get('ok') is True else 'no')
+" 2>/dev/null || echo no)
 AN_REQS=$(grep -c '/v1/messages' "$WORK/anthropic-record.jsonl" 2>/dev/null || echo 0)
 # The credential has to reach the runtime under the name *it* reads, not moat's: Claude Code reads
 # ANTHROPIC_API_KEY, and the stub records the header the provider actually received.
@@ -1324,6 +1337,15 @@ kill $AN_STUB 2>/dev/null
   cat "$WORK/claude-run.log"
   echo "--- \$ moat run \"run the check\" --max-tokens 100   (a ceiling, mid-turn)"
   tail -4 "$WORK/claude-ceiling.log"
+  echo "--- \$ moat take --json   (the review, machine-readable)"
+  echo "treeUntouched + notes.txt in the classification + checks ok: $AN_JSON"
+  python3 -c "
+import json
+d=json.load(open('$WORK/claude-review.json'))
+print('  branch:', d.get('branch'), '| commits:', d.get('commits'), '| treeUntouched:', d.get('treeUntouched'))
+for r in (d.get('reviewed') or []): print(f\"  {r['verdict']:8} {r['path']} ({r['kind']})\")
+print('  checks:', (d.get('checks') or {}).get('summary'))
+" 2>/dev/null
   echo "--- the provider's own record ---"
   echo "requests to /v1/messages: $AN_REQS    credential reached the runtime: $AN_KEY"
 } | scrub | tee -a "$EVIDENCE/extras.txt" > "$EVIDENCE/claude-runtime.txt"
@@ -1335,10 +1357,12 @@ if [ "$AN_UP" = "0" ] \
    && [ "$AN_KEY" = "yes" ] \
    && [ "$AN_CEIL" = "1" ] \
    && grep -q "reached its token ceiling" "$WORK/claude-ceiling.log" \
-   && grep -qi "sandbox was killed" "$WORK/claude-ceiling.log"; then
-  pass "claude runtime" "a turn ran under the second runtime, and a token ceiling killed one mid-turn before the next request was paid for"
+   && grep -qi "sandbox was killed" "$WORK/claude-ceiling.log" \
+   && [ "$AN_TAKE" = "0" ] \
+   && [ "$AN_JSON" = "yes" ]; then
+  pass "claude runtime" "a turn ran, a ceiling killed one mid-turn, and take --json reported the review machine-readably"
 else
-  fail "claude runtime" "up=$AN_UP run=$AN_RUN reqs=$AN_REQS key=$AN_KEY ceiling=$AN_CEIL"
+  fail "claude runtime" "up=$AN_UP run=$AN_RUN reqs=$AN_REQS key=$AN_KEY ceiling=$AN_CEIL take=$AN_TAKE json=$AN_JSON"
 fi
 ( cd "$AN" && $MOAT destroy --yes >/dev/null 2>&1 )
 # The stub belongs to this suite: e2e.sh used to start it and extras used to inherit it.

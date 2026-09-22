@@ -38,7 +38,7 @@ case "${1:-}" in
     exit 0
     ;;
   run)  echo "fake run $*" ; exit "${FAKE_RUN_CODE:-0}" ;;
-  take) echo "fake take $*"; exit "${FAKE_TAKE_CODE:-0}" ;;
+  take) echo '{"branch":"fake","commits":1,"treeUntouched":true,"reviewed":[],"checks":null}'; exit "${FAKE_TAKE_CODE:-0}" ;;
   *)    echo "fake moat: unexpected $*" >&2; exit 9 ;;
 esac
 SH
@@ -75,8 +75,8 @@ fi
 # 2. The happy path: task and review both succeed.
 d="$work/case2"
 code=$(run_entry "$d" FAKE_USERNS=yes TASK="fix the tests")
-if [ "$code" = "0" ] && [ -s "$d/moat-ci/task.log" ] && [ -s "$d/moat-ci/review.txt" ]; then
-  pass "a task ran and the review was written"
+if [ "$code" = "0" ] && [ -s "$d/moat-ci/task.log" ] && [ -s "$d/moat-ci/review.json" ]; then
+  pass "a task ran and the machine-readable review was written"
 else
   fail "expected exit 0 and both artefacts (got $code)"
 fi
