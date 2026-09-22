@@ -129,11 +129,38 @@ giving up the "works on a bare host" property.
 
 **Option C (stay Linux-only)** remains measured and true for this host and for WSL2.
 
+### Option A is built
+
+`--backend container` exists, is recorded in `state.json`, and was verified end to end on this host
+(rootless podman 5.7.0, WSL2):
+
+* `moat up --backend container` boots; `moat exec` in it reports `uid=0` and no host home;
+* `moat verify` runs the project's own check inside the container;
+* `moat run --backend container --runtime claude` completed a real, keyless turn — the agent asked
+  for a tool, the box ran it, and the footer read `432 tokens · 1 tool`;
+* `moat take --json` reported `treeUntouched: true` with the change classified and the checks passing;
+* `moat down` and `moat destroy` leave **zero** containers behind.
+
+Three defects were found by running it rather than reading it, and each is now pinned:
+
+1. **`--rootfs` is a boolean whose positional is the rootfs path**, so an option placed after it
+   becomes part of the *command* — the box died during boot with `crun: executable file --env not
+   found in $PATH`. The order is asserted in `test/unit/backend.test.ts`.
+2. **A container belongs to its runtime, not to the client.** Killing the `podman run` process left
+   the box running while `state.json` said `stopped`. `moat down` now stops the container through
+   the runtime, by a name derived from the environment id.
+3. **Ephemeral boots must not claim that name.** moat runs tasks, checks and `moat exec` *alongside*
+   the long-running box by design, so naming every boot after the environment collided with the
+   keepalive — surfacing as podman's exit code 125 in the middle of a task. Only the long-running
+   box is named.
+
+---
+
 ## 3. The four options, with their measurement status
 
 | option | measured? |
 | --- | --- |
-| **A. An opt-in container backend**, `unshare` stays the default | **core measured viable** — a persistent directory rootfs, six differing namespaces, a working `/dev`, no host data, rootless and daemonless. The remaining cost is the launcher seam, the egress model, and podman as a host dependency |
+| **A. An opt-in container backend**, `unshare` stays the default | **built and verified** — see below |
 | **B. Portable-first**, container/VM the default, `unshare` an expert flag | not measured as such; it is A's work plus re-deriving every capture, and it gives up running on a bare host |
 | **C. Stay Linux-only** | **measured** — this repository's entire suite runs on Linux, including WSL2, with unprivileged user namespaces |
 | **D. No second backend yet** | n/a — orthogonal to which runtime moat drives |

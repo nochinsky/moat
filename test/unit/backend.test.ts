@@ -44,11 +44,27 @@ test("the container plan runs the inner script against the rootfs directory", ()
   const { paths, inner } = fixture()
   const plan = containerPlan(paths, inner, { egress: "isolated" })
   assert.ok(plan.args.includes("--rm"))
+  // Ephemeral boots are NOT named: moat runs them alongside the long-running box, so a name derived
+  // from the environment id collides with the keepalive (measured: podman exit 125 mid-task).
+  assert.ok(!plan.args.includes("--name"), "an ephemeral boot must not claim a stable name")
+  const named = containerPlan(paths, inner, { egress: "isolated", name: "moat-abc" })
+  assert.equal(named.args[named.args.indexOf("--name") + 1], "moat-abc", "the long-running box is named")
   assert.ok(plan.args.includes("--rootfs"))
   // The rootfs is the directory itself — the measured property the whole backend rests on.
   assert.equal(plan.args[plan.args.indexOf("--rootfs") + 1], paths.rootfs)
   // The script is named by its path *inside* the box, not the host path it was written to.
   assert.equal(plan.args[plan.args.length - 1], "/.moat/entry-1-abc.sh")
+  // `--rootfs` is a boolean whose *positional* is the rootfs path, so nothing may follow it except
+  // the command. An option after it becomes part of the command — measured: crun was asked to exec
+  // `--env`, and the box died during boot with "executable file `--env` not found in $PATH".
+  const rootfsAt = plan.args.indexOf("--rootfs")
+  assert.notEqual(rootfsAt, -1)
+  for (const later of plan.args.slice(rootfsAt + 2)) {
+    assert.ok(
+      later === "/bin/sh" || later === "/.moat/entry-1-abc.sh",
+      `${later} came after the rootfs path, where only the command belongs`,
+    )
+  }
   assert.ok(plan.args.includes("/bin/sh"))
   // A container runtime brings the datapath: moat must not start slirp beside it.
   assert.equal(plan.needsSlirp, false)

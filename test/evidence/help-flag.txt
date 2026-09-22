@@ -64,6 +64,9 @@ Options that apply to up/run
                          keeps the catalog: context window, price, effort levels.
                          Same URL rule as --base-url.
   --credential-env NAME  host env var holding the key   --credential-ttl 4h
+  --backend WHICH        unshare (default, needs nothing installed) or container
+                         (rootless podman/docker runs the box against the same
+                         rootfs directory). Recorded per environment.
   --egress MODE          open, isolated or filtered. Default: filtered, which puts
                          the box in its own namespace behind a default-deny
                          allowlist (provider + package registries). A provider on

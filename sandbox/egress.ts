@@ -3,6 +3,8 @@ import net from "node:net"
 import os from "node:os"
 import path from "node:path"
 import dns from "node:dns"
+
+import type { BackendId } from "./backend.ts"
 import { spawn, type ChildProcess } from "node:child_process"
 
 import { slirpCachePath } from "../lib/paths.ts"
@@ -216,6 +218,8 @@ export async function ensureEgressPolicy(
 
 export type EgressRuntime = {
   egress: EgressMode
+  /** Which backend boots the box. A container runtime brings its own datapath. */
+  backend?: BackendId
   slirpBinary?: string
   /** The ruleset the boot script must apply, as text. */
   egressRules?: string
@@ -232,9 +236,17 @@ export type EgressRuntime = {
  */
 export async function runtimeForEgress(
   egress: EgressMode,
-  opts: { rootfs?: string; allowHosts?: string[] } = {},
+  opts: { rootfs?: string; allowHosts?: string[]; backend?: BackendId } = {},
 ): Promise<EgressRuntime> {
-  if (egress === "open") return { egress }
+  if (egress === "open") return { egress, ...(opts.backend ? { backend: opts.backend } : {}) }
+  if (opts.backend === "container") {
+    // No datapath of moat's own: the runtime provides one, and a default rootless container is
+    // refused on the host's loopback — measured, which is the property `--disable-host-loopback`
+    // buys on the unshare path. The ruleset is still moat's, applied inside the box.
+    if (egress !== "filtered") return { egress, backend: "container" }
+    const policy = await ensureEgressPolicy(opts.allowHosts ?? [])
+    return { egress, backend: "container", egressRules: policy.rules, unresolved: policy.unresolved }
+  }
   const slirpBinary = await ensureSlirp4netns()
   if (egress !== "filtered") return { egress, slirpBinary }
   const policy = await ensureEgressPolicy(opts.allowHosts ?? [])

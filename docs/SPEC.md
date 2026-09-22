@@ -1001,13 +1001,33 @@ Measured before that: the doctor reported "credential visible to the agent" with
 `DEEPSEEK_API_KEY` and `MOAT_INJECTED_CREDENTIAL` for a box that deliberately had neither,
 and reported `DEEPSEEK_API_KEY` for a custom endpoint that never has it.
 
-### 7.5 Why not a container runtime
+### 7.5 Two backends, and why the default needs nothing
 
-`podman` and `docker` are not installed and cannot be installed (no `sudo`, no
-`newuidmap`). Rather than degrade to running the agent on the host, which requirement 2
-forbids, moat builds the isolation directly from `unshare`/`mount`/`chroot`, which are
-present and work. That is why the launcher is ~200 readable lines instead of a runtime
-dependency.
+This section used to say "why **not** a container runtime", and its reason was "`podman` and
+`docker` are not installed and cannot be installed (no `sudo`, no `newuidmap`)". That was true when
+it was written and it was the honest answer then. It is no longer the whole answer: rootless podman
+installs without `sudo`, needs no `newuidmap` for the mapping moat uses, and was measured
+(`docs/PORTABILITY.md` §2, `test/evidence/portability-podman.txt`) to provide exactly what the
+`unshare` path provides — a persistent directory rootfs the agent owns, all six namespaces, a
+populated `/dev`, no host data, and the host's loopback refused.
+
+So there are two backends and **one is chosen, never inferred**:
+
+* **`unshare` (default).** `unshare` + `mount` + `chroot`, built by moat, needing nothing
+  installed. It is the default because it runs on a bare Linux host — a property nothing else in
+  this list has — and because every capture in `docs/VERIFICATION.md` was produced with it.
+* **`container`** (`--backend container`). The box is run by a container runtime (rootless podman
+  or docker), with `--rootfs` pointed at the same persistent rootfs directory. moat renders the
+  same config, the same brief and the same `/work`, and applies its own nftables ruleset inside the
+  box for `filtered`; the runtime supplies the mount table, the device nodes and the datapath.
+
+What does **not** change between them is the product: the host filesystem is never mounted, copy-in
+is a copy, copy-out is `fetch` + `apply`, and the agent runs as root in a box it owns. `moat doctor`
+prints which backends the host could boot; a backend that is asked for and missing is refused before
+provisioning rather than after.
+
+The default stays `unshare`, so "moat works on a host with nothing installed" remains true, and a
+container runtime is an *option* a user reaches for — not a dependency moat acquires.
 
 ---
 

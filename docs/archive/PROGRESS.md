@@ -2222,3 +2222,77 @@ the host's namespace: 1 failed, 4 passed when restored.
 `backend` field, and `filtered` has no place to put its ruleset. That is the next slice, and the
 order matters — the egress question above is answered, so what remains is plumbing rather than
 design.
+
+---
+
+## Session 20 — option A, wired and verified
+
+The container backend is selectable, and it works: `--backend container` is a flag, `state.json`
+records it, `moat doctor` reports which backends the host could boot, and every path moat has now
+has a container implementation behind the same seam.
+
+### What was verified, on this host, with rootless podman
+
+```
+moat up --backend container               → boots; 1 container running; status: running
+moat exec -- sh -c 'id; ls -d $HOME'      → uid=0; no host home
+moat verify                               → pass  npm test
+moat run --backend container --runtime claude "run the check"
+                                          → ✓ Bash …, 432 tokens · 1 tool
+moat take --json                          → treeUntouched: true, notes.txt classified, checks passed
+moat down                                 → status: stopped; 0 containers left
+moat destroy                              → 0 containers left
+```
+
+That is the whole lifecycle, including a real keyless model turn and the machine-readable review.
+
+### Three defects, all found by running it, none by reading it
+
+1. **`--rootfs` is a boolean flag whose positional is the rootfs path**, so any option placed after
+   it becomes part of the **command**. `--rootfs <dir> --env K=V …` made crun try to exec `--env`,
+   and the box died during boot with `crun: executable file '--env' not found in $PATH`. Every
+   option now precedes the rootfs, and `test/unit/backend.test.ts` asserts that nothing but the
+   command follows it.
+2. **A container belongs to its runtime, not to the client that started it.** Signalling the
+   `podman run` process left the box **running** while `moat down` printed "stopped" and wrote
+   `status: stopped` — measured, the container was still `Up` a minute later. `moat down` now stops
+   it through the runtime, by a name derived from the environment id, and `sandboxAlive` asks the
+   runtime rather than the pid for this backend.
+3. **Ephemeral boots must not claim that name.** moat runs a task, a check, `moat exec` and
+   `moat doctor` *alongside* the long-running box by design, so naming every boot after the
+   environment collided with the keepalive and surfaced as podman's exit code **125** in the middle
+   of a task. Only the long-running box is named; an ephemeral boot is anonymous and `--rm`.
+
+The third one is the most instructive: the design (ephemeral boots beside the box) was already
+written down in `AGENTS.md`, and the backend ignored it. A name that makes `stop` easy makes
+`concurrent boot` impossible, and only running it said so.
+
+### The `filtered` ruleset, inside the box
+
+A container has no outer script, and that is the point of the backend — so the ruleset has nowhere
+to go unless something inside applies it. `writeEgressWrapper` writes a wrapper **into the rootfs**
+that checks `nft` is present, feeds the ruleset to `nft -f -` from a heredoc in the file (never from
+argv, and never from a path in the agent-writable rootfs, where the agent could rewrite the policy
+it is about to be held to), and execs the real entry script. Same property `test/e2e-egress.sh`
+measures on the unshare path.
+
+### Invariant 7, amended by name
+
+The original read: "No container runtime. `unshare` + `mount` + `chroot` directly. No Docker, no
+podman, no daemon." It is amended the way invariant 8 was, and the reasoning is in `AGENTS.md`: what
+survives is that moat never **requires** a runtime and the default path stays the one that runs on a
+bare host. `docs/SPEC.md` §7.5 said "why **not** a container runtime" and gave a reason that has
+since expired — "podman and docker are not installed and cannot be installed (no `sudo`, no
+`newuidmap`)" — which is now false on this host, so the section is rewritten rather than left as a
+claim the reader can check and find wrong.
+
+### Two small debts paid
+
+* **`scrub_evidence` swept every suite's evidence.** Globbing `"$EVIDENCE"/*.txt` meant running
+  extras rewrote `egress.txt`, `provider.txt`, `demo.txt` and `review.txt` with nothing but a path
+  substitution. Found by diffing a PR and asking why four unrelated captures had changed, and worked
+  around by hand in four separate PRs. It now scrubs only the files newer than this run.
+* **The status page carried a hand-maintained count** (`243 pass`) that had drifted to 278. The row
+  now says to run the command, for the same reason `docs/TRUST.md` is generated.
+
+`npm run test:unit` at 278; typecheck clean; `docs/TRUST.md` current.

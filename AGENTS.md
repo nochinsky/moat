@@ -48,8 +48,15 @@ Breaking any of these breaks the product, not a feature.
 6. **The agent loop, its tools and the filesystem live inside the box.** The host is a
    terminal and a log reader: it hands the box a pty, or reads the CLI's own event stream.
    There is no server in the box and nothing is proxied.
-7. **No container runtime.** `unshare` + `mount` + `chroot` directly. No Docker, no podman,
-   no daemon. This is a constraint, not an accident.
+7. **No container runtime *by default*.** The default backend is `unshare` + `mount` + `chroot`
+   directly, and it needs nothing installed — no Docker, no podman, no daemon. *(Amended by the
+   Phase 4 work, which instructed this unlock by name: a second backend runs the box through a
+   container runtime when the user asks for one — `--backend container` — because the measurement
+   in `docs/PORTABILITY.md` §2 shows it provides the same persistent directory rootfs, the same six
+   namespaces, a populated `/dev` and the same closed host loopback. The original invariant was
+   "No container runtime. `unshare` + `mount` + `chroot` directly. No Docker, no podman, no daemon."
+   What survives, and is the part that mattered: moat never **requires** one, and the default path
+   stays the one that runs on a bare host.)*
 8. **No provider registry, and no guessing.** DeepSeek is the default provider; a *named* one
    is configuration the user wrote down (`moat provider add`, `--provider <id>`), never inferred
    from the environment, and an unconfigured name is refused. `--base-url` remains an escape

@@ -5,7 +5,7 @@ import path from "node:path"
 
 import type { EnvPaths } from "../lib/paths.ts"
 import { SLIRP_DNS, ownNetns, type EgressMode } from "../lib/pins.ts"
-import { containerRuntime, containerPlan, type BackendId } from "./backend.ts"
+import { containerName, containerPlan, containerRunning, containerStop, containerRuntime, type BackendId } from "./backend.ts"
 import { ensureRootfsDir, openRootfsFileForAppend, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { shellQuote } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
@@ -345,12 +345,55 @@ export type SandboxEnv = Record<string, string | undefined>
  * Nothing from the host reaches the box by this route — that is invariant 5, and it is about the
  * box, not about the daemon moat asks to build it.
  */
+/**
+ * The inner script for a container boot that has to apply the egress ruleset.
+ *
+ * The unshare path applies it from its outer script, after the mounts. A container has no outer
+ * script — that is the whole point of the backend — so something inside the box has to do it, and
+ * that something is a wrapper: it checks `nft` is present, feeds the ruleset to `nft -f -` from a
+ * heredoc in the file (never from argv, and never from a path inside the agent-writable rootfs,
+ * where the agent could rewrite the policy it is about to be held to), and execs the real entry
+ * script. `test/e2e-egress.sh` measures the same property on the unshare path.
+ */
+export function writeEgressWrapper(p: EnvPaths, inner: string, ruleset: string): string {
+  const body = `#!/bin/sh
+set -u
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+if ! command -v nft >/dev/null; then
+  echo "[moat] filtered egress needs nft inside the box, and this image has none" >&2
+  exit 1
+fi
+if ! nft -f - <<'${NFT_HEREDOC_MARKER}'
+${ruleset}
+${NFT_HEREDOC_MARKER}
+then
+  echo "[moat] failed to apply the egress policy" >&2
+  exit 1
+fi
+exec /bin/sh ${shellQuote("/" + path.posix.relative(p.rootfs, inner))}
+`
+  const name = `wrap-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sh`
+  return writeRootfsFile(p.rootfs, `/.moat/${name}`, body, 0o755)
+}
+
 function bootCommand(
   p: EnvPaths,
-  opts: { backend?: BackendId; inner: string; outer: string; egress?: EgressMode; env?: SandboxEnv; isolated: boolean },
+  opts: {
+    backend?: BackendId
+    inner: string
+    outer: string
+    egress?: EgressMode
+    env?: SandboxEnv
+    isolated: boolean
+    egressRules?: string
+    /** Set only for the long-running box; see ContainerPlanOptions.name. */
+    name?: string
+  },
 ): { command: string; args: string[]; env: NodeJS.ProcessEnv; needsSlirp: boolean } {
   if (opts.backend === "container") {
-    const plan = containerPlan(p, opts.inner, { egress: opts.egress, env: opts.env })
+    // A filtered boot still needs the ruleset applied, and there is no outer script to apply it in.
+    const inner = opts.egressRules ? writeEgressWrapper(p, opts.inner, opts.egressRules) : opts.inner
+    const plan = containerPlan(p, inner, { egress: opts.egress, env: opts.env, ...(opts.name ? { name: opts.name } : {}) })
     return { command: plan.command, args: plan.args, env: process.env, needsSlirp: false }
   }
   const isolated = opts.isolated
@@ -547,7 +590,7 @@ export async function runInSandbox(
   // No outer script for a container: the mount table, the chroot and the device nodes are the
   // runtime's job, which is the entire reason the backend is worth having.
   const boot = containerBackend ? "" : writeOuterScript(p, { innerScript: inner, waitForTap: isolated, egressRules: opts.egressRules })
-  const plan = bootCommand(p, { backend: opts.backend, inner, outer: boot, egress: opts.egress, env: opts.env, isolated })
+  const plan = bootCommand(p, { backend: opts.backend, inner, outer: boot, egress: opts.egress, env: opts.env, isolated, egressRules: opts.egressRules })
   const child = spawn(plan.command, plan.args, {
     env: plan.env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -641,6 +684,7 @@ export async function runInteractive(
     egress: opts.egress,
     env: { TERM: interactiveTerm(), ...opts.env },
     isolated,
+    egressRules: opts.egressRules,
   })
   const child = spawn(plan.command, plan.args, {
     stdio: "inherit",
@@ -712,33 +756,32 @@ export async function startSandbox(
   fs.mkdirSync(p.logs, { recursive: true })
   const logFile = path.join(p.logs, "sandbox.log")
   const fd = fs.openSync(logFile, "a", 0o600)
-  const plan = bootCommand(p, { backend: opts.backend, inner, outer: boot, egress: opts.egress, env, isolated })
+  // Only the long-running box is named: everything else boots alongside it.
+  const plan = bootCommand(p, {
+    backend: opts.backend,
+    inner,
+    outer: boot,
+    egress: opts.egress,
+    env,
+    isolated,
+    egressRules: opts.egressRules,
+    name: containerName(p.id),
+  })
+  // The container writes straight through the *rootfs* descriptor, exactly as the unshare path
+  // does — the file is inside the box, so the box holding it is not the thing AGENTS.md forbids
+  // (an append fd on a host file **outside** the rootfs).
+  //
+  // This was a `pipe` + mirror first, and it hung `moat up` forever: a readable pipe with a
+  // listener keeps the host's event loop alive, so `unref()` on the child was not enough and the
+  // command never exited — with the boot already finished and state.json already written.
   const child = spawn(plan.command, plan.args, {
     env: plan.env,
-    stdio: containerBackend ? ["ignore", "pipe", "pipe"] : ["ignore", fd, fd, bootFd],
+    stdio: containerBackend ? ["ignore", bootFd, bootFd] : ["ignore", fd, fd, bootFd],
     detached: true,
   })
-  if (containerBackend) {
-    const mirror = (chunk: Buffer) => {
-      try {
-        fs.writeSync(bootFd, chunk)
-        fs.writeSync(fd, chunk)
-      } catch {
-        /* the box is gone, or the fd is closed on its way out */
-      }
-    }
-    child.stdout?.on("data", mirror)
-    child.stderr?.on("data", mirror)
-    child.on("close", () => {
-      try { fs.closeSync(bootFd) } catch { /* already closed */ }
-      try { fs.closeSync(fd) } catch { /* already closed */ }
-    })
-  }
   child.unref()
-  if (!containerBackend) {
-    fs.closeSync(fd)
-    fs.closeSync(bootFd)
-  }
+  fs.closeSync(fd)
+  fs.closeSync(bootFd)
   if (!child.pid) throw new Error("failed to spawn sandbox: no pid")
 
   let slirp: SandboxProcess["slirp"] = null
@@ -830,6 +873,8 @@ export async function waitForSandboxReady(
  * unshare then guarantees the PID-namespace init cannot outlive it.
  */
 export type StopSandboxOptions = {
+  /** Which backend the box was started with. A container is stopped by its runtime. */
+  backend?: BackendId
   timeoutMs?: number
   startTime?: string | null
   envId?: string
@@ -845,6 +890,17 @@ export type StopSandboxOptions = {
  * slirp pid is only signalled when its start time still matches.
  */
 export async function stopSandbox(pid: number, opts: StopSandboxOptions = {}): Promise<boolean> {
+  // A container belongs to its runtime, not to the client that started it: signalling the `podman
+  // run` process leaves the box running. Measured — `moat down` printed "stopped", wrote
+  // `status: stopped`, and the container was still `Up` a minute later.
+  if (opts.backend === "container" && opts.envId) {
+    const stopped = containerStop(opts.envId)
+    // The client is signalled too: it is moat's own child, and leaving it is untidy even though it
+    // cannot take the container down by dying.
+    await stopSandboxProcess(pid, opts)
+    await stopSlirp(opts.slirpPid ?? null, opts.slirpStart ?? null)
+    return stopped
+  }
   const stopped = await stopSandboxProcess(pid, opts)
   await stopSlirp(opts.slirpPid ?? null, opts.slirpStart ?? null)
   return stopped

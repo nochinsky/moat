@@ -30,7 +30,7 @@ All five phases passed their gates. The suites run green on `main`:
 
 | suite | result |
 | --- | --- |
-| `npm run test:unit` | 243 pass, 0 fail |
+| `npm run test:unit` | run it — the count is not copied here (a hand-maintained number drifted from 243 to 278 before anyone noticed; `docs/TRUST.md` is generated from the evidence for exactly this reason) |
 | `test/e2e-codex.sh` | acceptance list, all criteria passed |
 | `test/e2e-extras.sh` | 50 checks, 0 failed |
 | `test/e2e-egress.sh` | all egress checks passed |

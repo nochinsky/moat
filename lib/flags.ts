@@ -30,6 +30,7 @@ export const SPEC: Spec = {
   profiles: "boolean",
   refresh: "boolean",
   "list-models": "boolean",
+  "backend": "string",
   "base-url": "string",
   upstream: "string",
   credential: "string",
@@ -79,6 +80,7 @@ export const GLOBAL_FLAGS: readonly string[] = ["help", "quiet", "verbose"]
 
 /** `moat run "task"` is `moat up "task"`: same command, same flags. */
 const UP_FLAGS: readonly string[] = [
+  "backend",
   "base-url",
   "provider",
   "credential",
