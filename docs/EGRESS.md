@@ -99,11 +99,26 @@ box.
   saying out loud — it was never a LAN firewall, and SPEC §7.3 already says the filter is a policy
   rather than a jail.
 
-  The alternatives are worse or unavailable. **A host process cannot enter the box's network
-  namespace**: `nsenter --target <pid> --net` answers `Operation not permitted`, and slirp4netns is
-  not doing that either — measured, it runs in the *host's* namespace (`net:[4026531833]`) and
-  creates the tap from outside. **A proxy inside the box** would be agent-visible and
-  agent-killable, which is the thing invariant 6's reason forbids.
+  The alternative placement — a host process inside the box's **own** network namespace, listening
+  on the box's loopback, which keeps the listener off the LAN — turns out to be available, and my
+  first reading of it was **wrong**. `nsenter --target <pid> --net` answers `Operation not permitted`
+  and I wrote "an ordinary process cannot" on the strength of it; that is nsenter's own bookkeeping
+  (it wants to write `gid_map`) rather than the kernel refusing. Joining the box's **user** namespace
+  first and its network namespace second works — it is the mechanism slirp4netns is built on — and a
+  plain `setns` in that order lands in the box's netns (`net:[4026533202]`), where two processes
+  reach each other on `127.0.0.1` (measured). What moat lacks is a way to *call* it: Node has no
+  `setns`, so this shape needs a small helper binary to ship and pin. That is the cost, and it is not
+  zero — which is why the shape is not simply free.
+
+  One thing this placement has to respect: **every boot has its own network namespace.** The
+  long-running box is a keepalive, and a task, a check and an `moat exec` are each their own boot
+  with their own netns (the running box `net:[4026533202]` against an exec boot's
+  `net:[4026533562]`, measured). A proxy pinned to the running box would serve none of the turns, so
+  it attaches per boot — which is exactly the shape moat already uses for slirp4netns, pointed at
+  each boot's pid.
+
+  **A proxy inside the box** — in the agent's own filesystem and process namespace — would be
+  agent-visible and agent-killable, which is the thing invariant 6's reason forbids.
 * **The same question under the other backends.** This is all the `unshare` backend. Whether a
   container backend's default network or a microVM's datapath can carry a host-side proxy is
   `docs/MICROVM.md` §4–§5, where a passt-backed box has a real uplink and a closed host loopback.
@@ -165,12 +180,13 @@ which reading justified it.
 | shape | reachable from the box | what it costs |
 | --- | --- | --- |
 | **Host process, on the host's LAN address** | `isolated`: any port. `filtered` (default): 80/443 only, since the ruleset accepts `@allowed4 tcp dport { 80, 443 }` over `policy drop` | the listener is on the LAN, so it needs a deliberate bind address and caller authentication; and `filtered` needs one ruleset entry naming the proxy's port — the "cannot express per-host ports" hole, narrowed to one entry. A rootless process cannot bind 443 |
-| **A slirp4netns-style helper** (does the `setns` dance: user namespace first, then network) | the box's own loopback, in every mode | a new privileged component to write and audit: `nsenter --target <pid> --net` is `Operation not permitted`, and slirp4netns runs in the *host's* namespace and creates the tap from outside, so this is not a configuration change. Keeps the listener off the LAN |
+| **A host process in the box's own network namespace** (`setns` into the box's user namespace, then its network namespace — measured to work) | the box's own loopback, in every mode, with nothing on the LAN | moat cannot call `setns` from Node, so it needs a small helper binary to ship and pin. The attach-by-pid shape is the one moat already uses for slirp4netns; the artefact is new |
 | **A proxy inside the box** | its own loopback | agent-visible and agent-killable — the agent is root in there — which is what invariant 6's reason forbids ("the host is a terminal and a log reader") |
 
 What is settled by measurement and does not depend on the choice: both runtimes send their model
 traffic through a proxy without per-runtime integration (§1); the hosts they call besides the model
 can be refused or dropped for free, and doing so makes a turn ~8x faster (§2); moat cannot set the
 proxy variables today, so any shape needs a `managedEnv` change (`sandbox/launcher.ts` accepts only
-`MOAT_` names through `MOAT_SANDBOX_ENV`); and whatever is built terminates egress on the host, which
-invariant 6 would need amended for, in writing, by a named phase.
+`MOAT_` names through `MOAT_SANDBOX_ENV`); that every boot has its own network namespace, so a proxy
+attaches per boot rather than to the running box; and that whatever is built terminates egress on
+the host, which invariant 6 would need amended for, in writing, by a named phase.

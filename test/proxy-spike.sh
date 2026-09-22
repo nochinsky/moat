@@ -97,6 +97,30 @@ while True:
     threading.Thread(target=handle, args=(conn,), daemon=True).start()
 PY
 
+# Entering a box's network namespace: `nsenter --target <pid> --net` answers EPERM, and that is
+# nsenter's own bookkeeping (it tries to write gid_map) rather than a kernel restriction. Joining the
+# box's USER namespace first, then its network namespace, works — it is what slirp4netns is built on,
+# and it is the mechanism the "proxy inside the box's namespace" shape rests on. Written as a file so
+# the section below can call it.
+cat > "$SCRATCH/netjoin.py" <<'NETJOIN'
+import ctypes, os, sys
+libc = ctypes.CDLL("libc.so.6", use_errno=True)
+def setns(path, nstype):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        return libc.setns(fd, nstype)
+    finally:
+        os.close(fd)
+pid = sys.argv[1]
+CLONE_NEWUSER, CLONE_NEWNET = 0x10000000, 0x40000000
+try:
+    if setns("/proc/%s/ns/user" % pid, CLONE_NEWUSER) != 0 or setns("/proc/%s/ns/net" % pid, CLONE_NEWNET) != 0:
+        raise OSError(ctypes.get_errno(), os.strerror(ctypes.get_errno()))
+    print(os.readlink("/proc/self/ns/net"))
+except OSError as exc:
+    print("failed: %s" % exc)
+NETJOIN
+
 # No `setsid`: `$!` for a wrapped command is the wrapper's pid, which exits immediately, and that is
 # how the microVM spike left a listener running — which then makes the next run's control report a
 # false UNKNOWN, the one failure mode a control exists to prevent.
@@ -219,15 +243,27 @@ else
     else
       mark MEASURED "a host-side proxy is NOT reachable from an isolated box" "the proxy would have to live inside the box or in its namespace instead"
     fi
-    # The placement that would avoid all of that: a host process in the box's own namespace. It is
-    # how slirp4netns appeared to work, and it does not: slirp runs in the HOST's namespace and
-    # creates the tap from outside.
+    # The placement that keeps the listener off the LAN: a host process inside the box's own network
+    # namespace, listening on the box's loopback. Two readings here, because the first one I took was
+    # wrong — I asked `nsenter --net` and reported "cannot", which is nsenter's bookkeeping, not the
+    # kernel. joining the user namespace first is what works.
     BOXPID=$( cd "$DIR" && $MOAT status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("pid") or "")' )
-    if [ -n "$BOXPID" ] && command -v nsenter >/dev/null 2>&1; then
-      if nsenter --target "$BOXPID" --net -- true 2>/dev/null; then
-        mark MEASURED "an ordinary process CAN enter the box's network namespace" "a proxy could be a host-side sibling of the box's loopback"
+    if [ -n "$BOXPID" ]; then
+      BOXNET=$(readlink "/proc/$BOXPID/ns/net" 2>/dev/null)
+      JOINED=$(python3 "$SCRATCH/netjoin.py" "$BOXPID" 2>&1)
+      if [ "$JOINED" = "$BOXNET" ]; then
+        mark MEASURED "a plain process CAN enter the box's network namespace" "user namespace first, then network ($JOINED) — the mechanism slirp4netns is built on, and no privilege has to be granted for it"
       else
-        mark MEASURED "an ordinary process CANNOT enter the box's network namespace" "$(nsenter --target "$BOXPID" --net -- true 2>&1 | tail -1)"
+        mark UNKNOWN "a plain process could not enter the box's network namespace" "$JOINED"
+      fi
+      if command -v nsenter >/dev/null 2>&1 && ! nsenter --target "$BOXPID" --net -- true 2>/dev/null; then
+        say "    (for contrast, nsenter --target <pid> --net says: $(nsenter --target "$BOXPID" --net -- true 2>&1 | tail -1 | cut -c1-60))"
+      fi
+      # Which namespace matters: the box is a keepalive and every task is its own boot, so a proxy
+      # pinned to the long-running box would serve none of the turns.
+      EXECNET=$( cd "$DIR" && $MOAT exec -- readlink /proc/self/ns/net 2>/dev/null | tail -1 )
+      if [ -n "$EXECNET" ] && [ "$EXECNET" != "$BOXNET" ]; then
+        mark MEASURED "every boot has its own network namespace" "the running box is $BOXNET, an exec boot is $EXECNET — a proxy attaches per boot, the way slirp4netns does"
       fi
     fi
   else
@@ -317,8 +353,9 @@ say "  measured    whether each runtime's own HTTP client sends its model traffi
 say "              when HTTP_PROXY/HTTPS_PROXY/ALL_PROXY are set in the box, against a control with"
 say "              none set, and which other hosts each runtime also talks to"
 say "  measured    where a proxy can live, for the box's other two egress modes: an isolated"
-say "              box refuses the host's loopback on both routes, but reaches the host's"
-say "              non-loopback address, and an ordinary process cannot enter the box's namespace"
+say "              box refuses the host's loopback on both routes but reaches the host's"
+say "              non-loopback address, a plain process CAN be placed inside a boot's own"
+say "              namespace on the box's loopback, and every boot has its own namespace"
 say "  not measured  that moat can *set* those variables: MOAT_SANDBOX_ENV accepts only MOAT_ names"
 say "              (sandbox/launcher.ts), so a proxy is a managed-env change rather than config;"
 say "              the same placement question under a container or microVM backend"
@@ -327,4 +364,7 @@ say "  measured    whether refusing or dropping those hosts changes what a turn 
 say "              turn against the Responses stub: it does not, and the turn is ~8x faster"
 say "  not measured  the authenticated path (a real key's account traffic was never exercised), and"
 say "              the same for Claude — its vendor set is api.anthropic.com and Datadog"
+say "  measured    that a plain process can be placed inside a boot's OWN network namespace, on the"
+say "              box's loopback — the placement that keeps a listener off the LAN"
+say "  not measured  the proxy: every reading here is an input to that decision, and none of it is one"
 say ""

@@ -803,11 +803,16 @@ Not built, in rough order of how much they matter:
   is wrong. What is left is the allowlist's shape: it is an IP snapshot taken at boot (a
   rotating CDN address falls out until the next `moat up`), it cannot express per-host
   ports, and DNS to slirp's resolver remains an outbound channel. Closing those means a
-  resolving proxy moat owns, not a bigger ruleset. The proxy is viable: both runtimes do send
-  their model traffic through one when the box is told to use it (`docs/EGRESS.md` §1,
-  `test/proxy-spike.sh`). What is open is whether it is reachable from a `filtered` or
-  `isolated` box, both of which close the host's loopback on purpose — that, not the agent's
-  cooperation, is the next reading.
+  resolving proxy moat owns, not a bigger ruleset. The proxy is viable, and every piece of *whether it
+  can be reached* is now measured rather than assumed: both runtimes send their model traffic through
+  one when the box is told to use it; an isolated box reaches the host on its non-loopback address
+  while the loopback stays closed; a plain `setns` — the box's **user** namespace first, then its
+  network namespace — puts a process on the box's own loopback, which `nsenter --net` alone refuses;
+  every boot has its own network namespace, so such a process attaches per boot the way slirp4netns
+  does; and refusing the hosts the runtimes call besides the model costs nothing and makes a turn
+  faster. `docs/EGRESS.md` has the readings and `test/proxy-spike.sh` takes them. What is open is the
+  shape — the three placements and the measured cost of each are `docs/EGRESS.md` §6, and none of them
+  is free.
 * **Provider-side credential scoping**: short-lived, spend-capped tokens minted per boot,
   instead of borrowing a long-lived key.
 * **Spend caps beyond a turn.** A turn's ceiling is enforced on the stream
