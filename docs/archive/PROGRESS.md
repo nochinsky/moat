@@ -2516,3 +2516,63 @@ bash test/e2e-extras.sh 53 checks, 0 failed   (§AN green, on a host with no amb
 bash test/e2e-codex.sh  all criteria passed
 node scripts/trust.mjs --check   current
 ```
+
+## Session 23 — the egress proxy: the second half, and the three wrong diagnoses it cost
+
+The item that led the "not built" list for four sessions was the egress policy's second half: the
+allowlist is an IP snapshot taken at boot, so a rotating CDN address falls out until the next `moat up`,
+per-host ports cannot be expressed, and DNS to slirp's resolver is an outbound channel. The answer was
+always going to be a resolving proxy moat owns rather than a bigger ruleset, and this session built it.
+
+**What it is.** `sandbox/proxy.ts` decides by name and port, matching exactly (no suffix match), tunnelling
+`CONNECT` and forwarding absolute-URI requests, refusing with a 403 that says why, and logging
+`ALLOWED`/`FAILED`/`REFUSED`. It runs in a namespace of its own with a veth to the box, because a proxy
+inside the box's namespace runs as the same uid 0 as the agent, and no ruleset can separate two processes
+that share a user. The box is told about it through the environment, the policy is recorded in `state.json`
+so `moat exec`, `verify`, `take` and the doctor's probe get the same box the agent gets, the box's own
+resolver is replaced with one that refuses (`nameserver 127.0.0.1`, measured: `nslookup` exits 1 in 1ms
+rather than waiting out a timeout), and — the structural change — the box's own datapath is not started at
+all, so the proxy is the only path rather than the one well-behaved clients take.
+
+**The readings that decided it.** A proxied `filtered` box: interfaces `lo moatp` (no `tap0`), no default
+route, a direct dial to `1.1.1.1:443` reporting `Network unreachable` in 4ms, the proxy answering
+`200 Connection Established`, and a real turn taking the provider's 401 with `ALLOWED CONNECT
+api.deepseek.com:443` in the proxy's log. An unproxied control still has its `tap0`. A profile boot and the
+in-box `apk` repair of a deleted `nftables` both work with no datapath, the proxy logging nothing, which is
+a reading rather than a guess only because of the route measurement above.
+
+**What it cost.** Four walk-backs of the state plumbing before the cause turned out to be one property read
+too late: `runInSandbox` attached its wait for the boot's exit *after* setting up the network, and a fast
+boot had already fired `exit` and `close` before any listener existed — an event that has already fired is
+never delivered. Measured: 4 hangs in 6 on fresh environments, then 0 in 6 asking `child.exitCode` at
+attach time. That could not be seen until the boot's output was read from the moment it was spawned and the
+host recorded its own stages in `logs/setup.log`; before that, a hung boot left an empty log, which was
+read first as "the boot never reached its command" and then as "the host is stuck".
+
+**Three defects the new checks found, all of them mine.** The doctor dropped the `egressProxy` its caller
+spread in (`runIsolationChecks`), so with the flag it probed a *different, more permissive* box — the
+`injectedVarNames` class exactly. Its reachability probe then had to go *through* the proxy, because
+`/dev/tcp/<host>/<port>` resolves the host in the box and a proxied box keeps no resolver. And the probe's
+generated shell joined its statements with a literal backslash-n instead of a newline, so the shell read
+`\ncase` as a command name and the row reported a working proxy as unreachable: three confident wrong
+diagnoses — readiness, a first-connection effect, a proxy not yet listening — all from one missing newline,
+with the broken line visible in `rootfs/.moat/entry-*.sh` the whole time. The generator is exported now with
+a test over its output.
+
+**Two habits worth keeping from this session.** A control has to be a *fresh* environment: `--egress-proxy`
+is recorded in state and persists, so re-booting the same environment without the flag is not a control.
+And a failing check stays failing: a section was written with a `|| true` after a check that was failing,
+which would have hidden it behind a green suite — the single thing this repository forbids. Removing the
+`|| true` is what exposed it.
+
+**Carried forward, and closed here.** The handoff's "a second turn is refused by the credential guard,
+because Codex writes `MOAT_INJECTED_CREDENTIAL` into `/root/.codex/shell_snapshots/`" does not reproduce
+against the pinned runtime on either credential path, and the claim underneath it does hold: the
+credential's value is in no file inside the box. Measured with a distinctive value searched across the whole
+rootfs; the limit is that these turns end at the provider's 401, so a *successful* long turn is not covered.
+
+Also closed, and honestly: `git add -A` had swept 213 files of this session's host scratch
+(`.reasonix/tasks/…`) into the repository across several commits. They are out, and `.gitignore` says why.
+
+At the end of the session `main` was 32 commits ahead of `origin/main` and unpushed — the whole phase
+exists on one machine. That is the first thing to fix.

@@ -26,7 +26,15 @@ all still there.
 
 ## State
 
-All five phases passed their gates. The suites run green on `main`:
+All five phases passed their gates, and the half of the egress policy that was left open is now built:
+a proxy moat owns, in a namespace of its own, decides egress by name and port rather than by a boot-time
+address snapshot, resolves names for boxes that no longer resolve anything, refuses out loud, and — under
+`--egress-proxy` — is the **only** path out, because the box's own datapath is not started at all. That
+closes the three holes `AGENTS.md` named for an IP allowlist. It is not the default: it needs `ip(8)` on
+the host, and the default's property is that it runs on a bare host. `docs/EGRESS.md` §7 has every
+measurement and every wrong turn.
+
+The suites run green on `main`:
 
 | suite | result |
 | --- | --- |
@@ -68,7 +76,14 @@ looked fine until the artifact was installed.
 
 ## Open
 
-One item, and it is a question rather than a task:
+**Whether the proxy becomes the default egress policy.** It is built and verified, and it makes the
+policy the only path instead of the route well-behaved clients take — but it needs `ip(8)` on the host and
+`moat up` refuses without it, naming the tool, while the default's whole property is that it runs on a bare
+host. So flipping it means either accepting that requirement or degrading silently to the ruleset when `ip`
+is absent, and a policy that differs by host is worse than one that is chosen. This is the owner's call,
+recorded in `AGENTS.md` so that it reads as a decision rather than an omission.
+
+One other item, and it is a question rather than a task:
 
 **The ACP permission question.** Phase 4's spike showed that the official Codex ACP adapter drives
 moat's pinned binary over stdio with no port, which answers the question that mattered most. It
@@ -100,10 +115,12 @@ in `archive/PROGRESS.md` is not to adopt it in this program.
 
 ## Not built, and not claimed
 
-Listed in `AGENTS.md` under *Where this is going*: the second half of the egress policy (a
-resolving proxy moat would own, rather than an IP snapshot), provider-side credential scoping,
-cost ceilings, byte paths for filenames that are not valid UTF-8, tool-set curation, and the v1
-microVM. `VERIFICATION.md`'s closing table is the authoritative list of what remains unverified.
+Listed in `AGENTS.md` under *Where this is going*: provider-side credential scoping, cost ceilings,
+byte paths for filenames that are not valid UTF-8, tool-set curation, and the v1 microVM — which is the
+one that would hold the next boundary, and which is measurement-complete here (`/dev/kvm` is accessible,
+`krun` is installed, `docs/MICROVM.md` holds the readings) and backend-incomplete. The second half of the
+egress policy used to lead this list; it is built now, and described under *State* above.
+`VERIFICATION.md`'s closing table is the authoritative list of what remains unverified.
 
 ## The first run asks for the key before it downloads anything
 
