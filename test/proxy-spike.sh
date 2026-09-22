@@ -270,6 +270,39 @@ else
       if command -v nsenter >/dev/null 2>&1 && ! nsenter --target "$BOXPID" --net -- true 2>/dev/null; then
         say "    (for contrast, nsenter --target <pid> --net says: $(nsenter --target "$BOXPID" --net -- true 2>&1 | tail -1 | cut -c1-60))"
       fi
+      # Does the agent share enough with such a process to kill it? Shape 3's failure mode is a
+      # proxy the agent can kill, so this is the question the placement has to answer, and the answer
+      # is the difference between "on the box's loopback" and "inside the box".
+      # The placed process has to be identifiable, and `$(nsenter … & echo $!)` is not: it captures a
+      # wrapper pid which is gone a moment later, so the survival check below read a process that
+      # never existed and this row reported BLOCKED for a box whose kill had in fact been *refused*.
+      # A listener on a unique port is identifiable, stays alive, and proves reachability too.
+      REACH_PORT=$((ENDPOINT_PORT + 2))
+      nsenter --target "$BOXPID" --user --net --preserve-credentials -- \
+        python3 -m http.server "$REACH_PORT" --bind 127.0.0.1 > "$SCRATCH/placed.log" 2>&1 &
+      PIDS+=($!)
+      sleep 1.5
+      PLACED=$(pgrep -f "http.server $REACH_PORT" | head -1)
+      if [ -n "$PLACED" ] && [ "$(readlink "/proc/$PLACED/ns/net" 2>/dev/null)" = "$BOXNET" ]; then
+        ROUT=$( cd "$DIR" && $MOAT exec -- sh -c "
+          [ -d /proc/$PLACED ] && echo visible=yes || echo visible=no
+          sh -c 'sleep 5 & kill -TERM \$! && echo own-kill=yes || echo own-kill=no'
+          kill -0 $PLACED 2>/dev/null && echo signal=permitted || echo signal=refused
+          kill -TERM $PLACED 2>/dev/null
+        " 2>/dev/null )
+        say "    $(printf '%s ' $ROUT | sed 's/  */ /g')"
+        sleep 1
+        if printf '%s' "$ROUT" | grep -q "own-kill=no"; then
+          mark UNKNOWN "the box could not signal its own child" "the control for this row failed"
+        elif kill -0 "$PLACED" 2>/dev/null; then
+          mark MEASURED "the agent cannot kill a process placed on its loopback" "not in its /proc, kill -0 refuses, and it survives the box's kill -TERM"
+        else
+          mark BLOCKED "the agent CAN kill a process placed on its loopback" "that is shape 3's failure mode reached from shape 2"
+        fi
+        kill "$PLACED" 2>/dev/null
+      else
+        mark UNKNOWN "the placed process could not be identified" "the rows above say nothing without it"
+      fi
       # Which namespace matters: the box is a keepalive and every task is its own boot, so a proxy
       # pinned to the long-running box would serve none of the turns.
       EXECNET=$( cd "$DIR" && $MOAT exec -- readlink /proc/self/ns/net 2>/dev/null | tail -1 )
@@ -429,5 +462,7 @@ say "  measured    that a plain process can be placed inside a boot's OWN networ
 say "              box's loopback — the placement that keeps a listener off the LAN"
 say "  measured    that a host-side listener is unshare-only — a container box refuses the host's LAN"
 say "              address too — while the in-namespace placement works for both backends"
+say "  measured    whether the agent can reach a process placed on its own loopback: it cannot see or"
+say "              signal it, which is what separates this placement from a proxy inside the box"
 say "  not measured  the proxy: every reading here is an input to that decision, and none of it is one"
 say ""

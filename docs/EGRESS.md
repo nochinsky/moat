@@ -189,6 +189,13 @@ while writing it, which is the same reason no count is kept in a status table.)
   **probe** the host's …" (`bundle/instructions.ts`). It is a substring scan, so a short or shared
   value makes such a boot impossible; real keys are long and random, and a test fixture's value must
   be too. Worth knowing because the symptom is an `up exit=1` that looks like a moat bug.
+* **A false accusation, which is the worst thing a measurement can produce.** The agent-reach row
+  placed its process with `$(nsenter … & echo $!)`, which captures a *wrapper* pid that is gone a
+  moment later — so "did it survive the box's kill?" was `kill -0` on a process that never existed,
+  and the row reported `BLOCKED: the agent CAN kill a process placed on its loopback` while its own
+  rows in the same output said `signal=refused`. A standalone probe using `pgrep` on a uniquely-ported
+  listener disagreed, and the disagreement is what caught it. Identify the thing you are measuring,
+  and check that the survivor is the one you placed.
 * **The harness's own state made two runs incomparable.** `stub/mock-responses.mjs` serves its
   scripted turns *in sequence per process*, so one stub across two turns gives the second turn an
   exhausted script — the first comparison showed "1 request, 0 tools" for the second turn and read
@@ -209,7 +216,7 @@ which reading justified it.
 | shape | reachable from the box | what it costs |
 | --- | --- | --- |
 | **Host process, on the host's LAN address** | `isolated` (unshare): any port. `filtered` (default): 80/443 only, since the ruleset accepts `@allowed4 tcp dport { 80, 443 }` over `policy drop`. **Container backend: not reachable at all** | the listener is on the LAN, so it needs a deliberate bind address and caller authentication; `filtered` needs one ruleset entry naming the proxy's port — the "cannot express per-host ports" hole, narrowed to one entry; a rootless process cannot bind 443; and it is **unshare-only**, so it cannot be the design for a moat with two backends |
-| **A host process in the boot's own network namespace**, placed by `nsenter --user --net --preserve-credentials` | the box's own loopback, in every mode, with nothing on the LAN | nothing new to ship: a subprocess of util-linux, the package `unshare`/`chroot` already come from. It attaches per boot, the shape moat already uses for slirp4netns. The open question is the agent's reach — see below |
+| **A host process in the boot's own network namespace**, placed by `nsenter --user --net --preserve-credentials` | the box's own loopback, in every mode, with nothing on the LAN | nothing new to ship: a subprocess of util-linux, the package `unshare`/`chroot` already come from. It attaches per boot, the shape moat already uses for slirp4netns. And the agent cannot reach it: not in its `/proc`, and its signals are refused (measured) |
 | **A proxy inside the box** | its own loopback | agent-visible and agent-killable — the agent is root in there — which is what invariant 6's reason forbids ("the host is a terminal and a log reader") |
 
 What is settled by measurement and does not depend on the choice: both runtimes send their model
@@ -221,9 +228,18 @@ attaches per boot rather than to the running box; that the in-namespace placemen
 the three both backends allow, with no new artefact needed; and that whatever is built terminates
 egress on the host, which invariant 6 would need amended for, in writing, by a named phase.
 
-One question this placement raises and nothing here answers: **can the agent reach the process.**
-`nsenter --user` puts the listener in the box's *user* namespace, so the box's root is in the same
-namespace it is — it cannot *see* it (a different pid namespace: the box sees a handful of pids), but
-whether it can find and signal it is unmeasured, and the socket itself is visible in the box's own
-`/proc/net/tcp`. That belongs in the design, not in a footnote, because "the agent can kill the
-proxy" is precisely shape 3's failure mode.
+The question this placement raises is whether the agent can reach the process — "the agent can kill
+the proxy" is precisely shape 3's failure mode — and it is measured, with the box's root doing the
+asking:
+
+```
+the box sees 4 pids              its own namespace, and /proc/<the placed pid> does not exist
+the box signals its own child    yes  (control: `kill` works in there)
+kill -0 <placed pid>             not permitted
+kill -TERM <placed pid>          refused — and the placed process survived
+```
+
+So the placement does **not** inherit shape 3's failure mode: a process on the box's loopback is
+outside the agent's reach even with the pid in hand. (The kernel's reasoning is the user-namespace
+credential rules — `nsenter --user` keeps the host uid, which is unmapped inside the box — but the
+reading is what matters, and nothing here depends on the explanation.)
