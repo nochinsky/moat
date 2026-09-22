@@ -10,3 +10,6 @@ test/evidence/*.err
 # rewritten. Everything else under test/evidence/ is regenerated and committed; this one is not.
 test/evidence/onboard.txt
 *.tgz
+
+# `scripts/ci/run-task.sh` and the moat action write their review here by default.
+moat-ci/

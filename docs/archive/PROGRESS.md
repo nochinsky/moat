@@ -1963,3 +1963,73 @@ recommending one.
 
 `bash test/e2e-extras.sh` at 52 checks, 0 failed; `npm run test:unit` at 272; typecheck clean. No
 behaviour changed: the new script and the new page are the whole of it.
+
+---
+
+## Session 15 — Phase 5: moat in CI, scoped by a measurement
+
+Phase 5 is "run moat in CI". Before writing an action, the premise was checked against this
+repository's own CI logs — and it does not hold on GitHub-hosted runners:
+
+```
+host capability probe (ubuntu-latest):
+  "userns": false,
+  "unprivileged user namespaces are unavailable: `unshare --user --map-root-user` could not
+   mount a tmpfs. moat has no host fallback, so it cannot run here."
+
+unit tests:  ﹣ a real boot whose entry script dies early is not reported as up
+             # no unprivileged user namespaces here
+
+sandbox end-to-end (ubuntu-24.04):
+  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+  kernel.apparmor_restrict_unprivileged_userns = 0      ← lifted, and unshare is still killed
+```
+
+That is the same wall as macOS, and it means a hosted-runner story is gated on Phase 4's container
+backend — which is unmeasured. So the action is scoped honestly: **self-hosted runners**, with the
+limitation stated, and the failure mode made *honest* rather than mysterious.
+
+### What shipped
+
+* **`scripts/ci/run-task.sh`** — the whole action, in a script rather than YAML, because a composite
+  action is YAML nobody can run locally and this has two branches that both have to be provable. It
+  asks `moat doctor --json` *first*: on a host without user namespaces it prints the doctor's own
+  `host.problems` — the real reason — and exits 2 **without running anything**.
+* **`.github/actions/moat/action.yml`** — the thin composite wrapper, with `task`, `moat-args`,
+  `output-dir`, `moat` and an artifact upload. Deliberately does **not** `moat apply` and does not
+  open a pull request: a review is not a decision.
+* **`test/ci-entrypoint.test.sh`** — both branches, with a fake `moat` on `PATH`. It needs no
+  namespaces, so it **does** run on a hosted runner, and `ci.yml`'s `checks` job now runs it for
+  exactly that reason: the refusal branch is what decides whether a runner without namespaces fails
+  honestly or fails as a mystery.
+* **`docs/CI.md`** — usage, the measured evidence, the exit-code contract, and what the action
+  deliberately does not do.
+
+### Two bugs found by running it rather than reading it
+
+1. **The entrypoint hung.** It inherited stdin, and `moat take` can read it; in a pipeline that is a
+   pipe that may never close. Found by running the real thing, not by review. Both invocations now
+   redirect from `/dev/null`.
+2. **The fake-CLI test under-counted its own assertions** ("5 checks" for seven passes). A suite that
+   miscounts is the same class of thing this repository keeps catching; it counts passes now.
+
+The user-namespace gate was proved to bite by deleting it: two checks fail, and both pass again when
+it is restored.
+
+### Verified
+
+**The real path, not just the fake one**, against a keyless Claude turn (the Session 10 rig, with the
+stub's tool call editing a file and committing so `moat take` has a branch):
+
+```
+### scripts/ci/run-task.sh against a real sandbox
+  checks:  npm test passed
+  your working tree is untouched
+ENTRY_EXIT=0
+### artefacts
+  ci.log  doctor.json  doctor.err  review.txt  task.log
+```
+
+`review.txt` holds the classification (`hunk 1 a new file + ci-changed`), the project's own check
+result, and the fact that the host tree was not written. `test/ci-entrypoint.test.sh` at **7 checks,
+0 failed**; `npm run test:unit` at 272; typecheck clean; `action.yml` and `ci.yml` both parse.

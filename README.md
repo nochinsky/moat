@@ -161,6 +161,7 @@ change has to come with and what will get sent back. Found a security problem?
 * `docs/SEAM.md` is the interface a second agent runtime would have to satisfy, and
   `docs/RUNTIMES.md` is what adding one costs
 * `docs/PORTABILITY.md` is what is measured about running moat outside Linux, and what a
-  container backend would cost — including why it is not a protocol problem.
+  container backend would cost
+* `docs/CI.md` is how to run moat in a pipeline — and why that needs a **self-hosted** runner — including why it is not a protocol problem.
 * `AGENTS.md` is for people changing the code: the invariants, the traps that cost real time,
   and what is still unbuilt.
