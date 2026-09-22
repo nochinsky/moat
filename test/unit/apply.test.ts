@@ -172,6 +172,37 @@ test("a destination outside the project is refused, including through a symlink"
   assert.equal(safeDestination(project, "../outside/x"), null)
   assert.equal(safeDestination(project, "escape/x"), null)
   assert.equal(safeDestination(project, "fine/x"), path.join(project, "fine", "x"))
+  // A name that merely *begins* with dots is inside the project. The guard used `startsWith("..")`,
+  // which also refused these, so a real file called `..foo` (or a directory `..dir/`) was reported
+  // as "outside the project directory" and its change was skipped — a false refusal wearing the
+  // words of a security decision. The escape it was written to catch is a `..` segment.
+  assert.equal(safeDestination(project, "..foo"), path.join(project, "..foo"))
+  assert.equal(safeDestination(project, "..dir/f"), path.join(project, "..dir", "f"))
+  assert.equal(safeDestination(project, "...x"), path.join(project, "...x"))
+  assert.equal(safeDestination(project, ".."), null)
+  assert.equal(safeDestination(project, "../x"), null)
+  assert.equal(safeDestination(project, "a/../../x"), null)
+})
+
+test("a change to a file whose name begins with dots is applied, not called an escape", (t) => {
+  // The end-to-end half of the guard above: `..foo` is a legal name, git tracks it, and a change to
+  // it has to reach the host. Before the fix `planApply` listed it and `applyPlan` skipped it with
+  // "outside the project directory", so the agent's work was silently dropped.
+  const f = fixture({ "..foo": "base\n" })
+  cleanup(t, f)
+  fs.writeFileSync(path.join(f.work, "..foo"), "the agent changed this\n")
+
+  return (async () => {
+    const plan = await planApply(f.p)
+    assert.ok(
+      plan.changes.some((c) => c.path === "..foo"),
+      "the dotted name must be in the plan",
+    )
+    const result = await applyPlan(f.p, plan)
+    assert.equal(result.applied, 1)
+    assert.deepEqual(result.skipped, [])
+    assert.equal(fs.readFileSync(path.join(f.host, "..foo"), "utf8"), "the agent changed this\n")
+  })()
 })
 
 test("a new file the agent created is applied", (t) => {
