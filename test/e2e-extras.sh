@@ -272,7 +272,7 @@ section "P. the boot log is readable through the guard that refuses symlinks"
 # (the script dups fd 3 instead of redirecting to a path inside the
 # agent-writable rootfs), and the host reads it back through the same guard.
 capture logs-sandbox $MOAT logs sandbox
-if grep -q "codex runtime ready" "$EVIDENCE/logs-sandbox.txt"; then
+if grep -q "runtime ready" "$EVIDENCE/logs-sandbox.txt"; then
   pass "boot log" "the banner the box wrote is readable back on the host"
 else
   fail "boot log" "no boot banner in the captured output"

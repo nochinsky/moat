@@ -674,7 +674,7 @@ export async function startSandbox(
  * `codexEntryScript` (cmd/main.ts) writes it after the mounts, the chroot and the
  * runtime are all in place, and a boot that fails before it never reaches it.
  */
-export const READY_MARKER = "[moat] codex runtime ready"
+export const READY_MARKER = "[moat] runtime ready"
 
 /**
  * Wait until the box has actually said it is up, and refuse to report a boot that
