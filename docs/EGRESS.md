@@ -351,6 +351,17 @@ What that costs and what it does not settle:
   in the proxy's log, because a dropped packet reads as a slow network rather than a refusal. The
   ruleset therefore carries one deliberate accept rule naming the proxy's address and port, and
   `test/unit/egress.test.ts` pins it — including that it admits nothing else beyond the allowlist.
+* **The state-driven boots are not proxied, and that is deliberate for now.** `moat exec`, `verify`,
+  `take` and the doctor's probe read egress from `state.json`; the proxy's policy is per-invocation, so
+  those boots are built without it. Wiring it — recording the policy and building the topology for
+  every boot of the environment, which is how `egress`, `egressAllow`, `backend` and `runtime` already
+  work — was written and **reverted**, because it hung: with the same code and the same environment,
+  `moat exec -- sh -c 'echo hi'` completed on one run and sat for its whole 60-second timeout on
+  another. The one failure the runs did produce was explainable and fixed (the topology is built after
+  the boot starts, so a fast boot was gone before the link existed — `cannot open /proc/<pid>/ns/user`
+  — and the boot now waits for its link the way it already waits for slirp's tap). The hang is not, and
+  a hang in `exec` is worse than an unproxied check, so the state does not record a policy it is not
+  honouring. **This is the next thing to settle**, with the reproduction above.
 * **Still open.** The box's own datapath is a *backstop*, not a second policy: the box can still reach
   the allowlist directly on 80/443 and resolve through slirp, so the proxy governs clients that honour
   it and the ruleset governs the rest. Making the proxy the *only* path means removing the box's

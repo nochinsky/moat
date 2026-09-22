@@ -60,6 +60,30 @@ export const PROXY_PORT = 41417
  */
 export const PROXY_ADDRESS = "10.0.9.2"
 
+/**
+ * The policy for an environment: the provider on the port its base URL uses, the package registries
+ * every profile may need, and whatever the user allowed.
+ *
+ * Shared by the boot that enables the proxy and the state-driven boots that later read it from
+ * `state.json`, so an environment cannot have two policies that disagree — the same reason `egress`
+ * and `egressAllow` are recorded rather than re-derived.
+ */
+export function proxyPolicy(opts: {
+  provider?: string | undefined
+  providerPort: string
+  allow?: readonly string[]
+  registries: readonly string[]
+  registryPorts: readonly number[]
+}): string[] {
+  const rules: string[] = []
+  if (opts.provider) rules.push(`${opts.provider}:${opts.providerPort}`)
+  for (const host of opts.registries) {
+    for (const port of opts.registryPorts) rules.push(`${host}:${port}`)
+  }
+  for (const entry of opts.allow ?? []) rules.push(entry)
+  return [...new Set(rules)]
+}
+
 /** Split a policy entry into host and optional port, lowercased. */
 function parseRule(rule: string): { host: string; port: number | null } | null {
   const text = rule.trim().toLowerCase()

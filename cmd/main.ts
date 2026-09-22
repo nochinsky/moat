@@ -34,7 +34,7 @@ import {
   runtimeForEgress,
   type EgressRuntime,
 } from "../sandbox/egress.ts"
-import { PROXY_ADDRESS, PROXY_PORT, proxyEnv } from "../sandbox/proxy.ts"
+import { PROXY_ADDRESS, PROXY_PORT, proxyEnv, proxyPolicy } from "../sandbox/proxy.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import { recoverStateFromDisk } from "../sandbox/recover.ts"
@@ -373,11 +373,46 @@ function reportUnresolved(
   }
 }
 
+/**
+ * The proxy's policy for one environment: the provider on the port its base URL uses, the package
+ * registries every profile may need, and whatever the user allowed.
+ *
+ * Defined once and used by both the boot that enables the proxy and every boot that later reads it
+ * out of `state.json`, so an environment cannot end up with two policies that disagree.
+ */
+function proxyPolicyFor(provider: string | undefined, baseUrl: string, allow: readonly string[]): string[] {
+  let providerPort = "443"
+  try {
+    const url = new URL(baseUrl)
+    providerPort = url.port || (url.protocol === "https:" ? "443" : "80")
+  } catch {
+    // An unusable base URL is refused before provisioning; this is only a fallback for the port.
+    providerPort = "443"
+  }
+  return proxyPolicy({
+    provider,
+    providerPort,
+    allow,
+    registries: EGRESS_REGISTRY_HOSTS,
+    registryPorts: EGRESS_ALLOWED_PORTS,
+  })
+}
+
 async function egressRuntime(state: EnvState, paths: EnvPaths): Promise<EgressRuntime> {
   if (state.egress === "filtered") await ensureFilterTool(paths)
   const provider = providerHost(state.providerBaseUrl ?? DEEPSEEK.baseUrl)
   const hosts = [...defaultAllowHosts(provider), ...(state.egressAllow ?? [])]
-  const runtime = await runtimeForEgress(state.egress, { rootfs: paths.rootfs, allowHosts: hosts, backend: state.backend })
+  // NOT proxied yet, and deliberately: reading the policy out of the state and building the proxy's
+  // topology for these boots was written and hung — `moat exec -- sh -c 'echo hi'` completed on one
+  // run and sat for its whole timeout on another, with the same code and the same environment, and
+  // the cause is not yet known. A hang in `exec` is worse than an unproxied check, so the policy is
+  // not recorded as in force: state.egressProxy stays false until the state-driven boots are measured
+  // to work the way the turn's boot does. docs/EGRESS.md §7 has the reproduction.
+  const runtime = await runtimeForEgress(state.egress, {
+    rootfs: paths.rootfs,
+    allowHosts: hosts,
+    backend: state.backend,
+  })
   // Ephemeral boots warn rather than fail: `moat exec` may be exactly how the
   // user is diagnosing the box, and doctor's own check reports it as a failure.
   reportUnresolved(runtime.unresolved, provider, false)
@@ -641,9 +676,12 @@ async function cmdUp(argv: string[]): Promise<number> {
   // so per-host ports cannot be expressed; and DNS to slirp's resolver stays an outbound channel.
   // `docs/EGRESS.md` has the measurements this rests on, and both refusals below are combinations
   // that cannot work rather than preferences.
-  const egressProxy = flag<boolean>(p, "egress-proxy") ?? false
+  const egressProxyFlag = flag<boolean>(p, "egress-proxy")
+  // The flag is per-invocation for now, not a recorded property of the environment: recording it and
+  // honouring it on every boot is the step that hung (see egressRuntime above).
+  const egressProxy = egressProxyFlag ?? false
   const proxyAllow: string[] = []
-  if (egressProxy) {
+  if (egressProxyFlag) {
     if (egress === "open") {
       log.fail(
         "--egress-proxy needs an egress mode with a network namespace of its own: `open` is the host's, " +
@@ -1186,16 +1224,16 @@ ${command}
   // with the ports actually in play. The provider keeps the port its base URL uses, which the
   // ruleset cannot express at all (its accept rule is `tcp dport { 80, 443 }` for every allowed
   // address), and an `--egress-allow` entry may name one.
-  if (egressProxy) {
-    const provider = providerHost(baseUrl)
-    if (provider) {
-      const url = new URL(baseUrl)
-      proxyAllow.push(`${provider}:${url.port || (url.protocol === "https:" ? "443" : "80")}`)
-    }
-    for (const host of EGRESS_REGISTRY_HOSTS) {
-      for (const port of EGRESS_ALLOWED_PORTS) proxyAllow.push(`${host}:${port}`)
-    }
-    for (const entry of egressAllow) proxyAllow.push(entry)
+  const proxyInUse = egressProxy && egress !== "open" && backend !== "container"
+  if (proxyInUse) {
+    proxyAllow.push(...proxyPolicyFor(providerHost(baseUrl), baseUrl, egressAllow))
+  } else if (egressProxy) {
+    // Recorded, but this invocation cannot carry it. Say so rather than booting something that looks
+    // proxied and is not — the same shape as the `--egress-allow` note above.
+    log.info(
+      `egress: this environment records a proxy, but ${egress} egress on the ${backend} backend cannot carry one; ` +
+        "this boot is unproxied.",
+    )
   }
 
   const managedEnv: Record<string, string> = {
@@ -1206,7 +1244,7 @@ ${command}
     ...sandboxProviderEnv({ baseUrl, model: facts.label, modelId: facts.id }),
     // The box is *told* to use the proxy, because nothing else can: MOAT_SANDBOX_ENV accepts only
     // `MOAT_` names, so a variable the agent's own HTTP client reads has to be managed here.
-    ...(egressProxy ? proxyEnv() : {}),
+    ...(proxyInUse ? proxyEnv() : {}),
     // Claude Code reads its endpoint from its own variable, not from moat's provider block, so the
     // base URL travels under both names. The credential's variable is handled at the mint.
     ...(runtimeId === "claude" ? { ANTHROPIC_BASE_URL: baseUrl } : {}),
@@ -1228,7 +1266,7 @@ ${command}
     allowHosts: [...defaultAllowHosts(providerName), ...egressAllow],
     // The box has to be able to reach the proxy, and under `filtered` the default-deny ruleset is
     // what would otherwise drop it — measured: the turn hung for its whole timeout in silence.
-    ...(egressProxy ? { proxy: { address: PROXY_ADDRESS, port: PROXY_PORT } } : {}),
+    ...(proxyInUse ? { proxy: { address: PROXY_ADDRESS, port: PROXY_PORT } } : {}),
   })
   reportUnresolved(egressConfig.unresolved, providerName, egress === "filtered")
   const bootStart = Date.now()
@@ -1359,10 +1397,10 @@ ${command}
     egress,
     slirpBinary: egressConfig.slirpBinary,
     egressRules: egressConfig.egressRules,
-    ...(egressProxy ? { egressProxy: { allow: proxyAllow } } : {}),
+    ...(proxyInUse ? { egressProxy: { allow: proxyAllow } } : {}),
     ...(catalogPrice ? { catalogPrice } : {}),
   }
-  if (egressProxy && task.length === 0 && !interactive) {
+  if (proxyInUse && task.length === 0 && !interactive) {
     // Said rather than left to be discovered: the proxy is attached per boot, and a keepalive boot
     // runs no agent, so there is nothing for it to carry here.
     log.info(

@@ -85,11 +85,21 @@ test("the proxy tunnels an admitted destination and refuses the rest", async (t)
 
   const port = 41417 + 1
   const log = path.join(scratch, "proxy.log")
-  const child = execFile(
-    process.execPath,
-    [MODULE, "--port", String(port), "--bind", "127.0.0.1", "--log", log, "--allow", `127.0.0.1:${upstreamPort}`],
-    { stdio: "ignore" },
-  )
+  // Two arguments: the options overload of `execFile` does not accept `stdio` in this @types/node,
+  // and the failure it produces is invisible when the check's output is piped away — which is how a
+  // commit here once claimed "typecheck clean" while it was in fact failing. stdout and stderr are
+  // pipes by default, and the proxy writes its lines to the log file, so nothing needs reading.
+  const child = execFile(process.execPath, [
+    MODULE,
+    "--port",
+    String(port),
+    "--bind",
+    "127.0.0.1",
+    "--log",
+    log,
+    "--allow",
+    `127.0.0.1:${upstreamPort}`,
+  ])
   t.after(() => child.kill("SIGKILL"))
   // The listener says when it is up, in its own log, rather than a sleep guessing.
   const deadline = Date.now() + 5000

@@ -8,6 +8,8 @@ import { SLIRP_DNS, ownNetns, type EgressMode } from "../lib/pins.ts"
 import { containerName, containerPlan, containerRunning, containerStop, containerRuntime, type BackendId } from "./backend.ts"
 import { ensureRootfsDir, openRootfsFileForAppend, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { shellQuote } from "../lib/shell.ts"
+import { proxyEnv } from "./proxy.ts"
+import { VETH_BOX_IFACE } from "./proxy-netns.ts"
 import * as log from "../lib/log.ts"
 
 /**
@@ -143,6 +145,16 @@ export type OuterScriptOptions = {
    */
   waitForTap?: boolean
   /**
+   * Wait for the proxy's link to appear before anything runs, by interface name.
+   *
+   * The link is built by the host *after* the boot starts, because building it needs this process's
+   * pid — so without a wait the boot races the host, and a boot that finishes quickly (an
+   * `moat exec -- echo hi`) is gone before the link exists: measured, the host's build then failed
+   * with `cannot open /proc/<pid>/ns/user: No such file or directory`. Same shape as `waitForTap`, and
+   * the same reason.
+   */
+  waitForLink?: string
+  /**
    * The nftables ruleset to apply before anything runs, as text.
    *
    * Set when egress is filtered: the rules go on inside the sandbox's own network
@@ -221,6 +233,16 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
     lines.push("  sleep 0.1")
     lines.push("done")
     lines.push("echo nameserver " + SLIRP_DNS + " > \"$N/etc/resolv.conf\"")
+  }
+  if (opts.waitForLink) {
+    // A boot that cannot get its link must not run anyway: it would come up with a proxy in its
+    // environment and no way to reach it, which reads as a broken network rather than a failed boot.
+    lines.push("i=0")
+    lines.push(`while ! grep -q ${opts.waitForLink} /proc/net/dev; do`)
+    lines.push("  i=$((i+1))")
+    lines.push(`  if [ "$i" -ge 100 ]; then echo '[moat] the proxy link did not appear' >&2; exit 1; fi`)
+    lines.push("  sleep 0.1")
+    lines.push("done")
   }
   if (opts.egressRules) {
     // A policy that fails to load must stop the boot: running unfiltered while
@@ -598,8 +620,25 @@ export async function runInSandbox(
   const inner = writeInnerScript(p, innerBody)
   // No outer script for a container: the mount table, the chroot and the device nodes are the
   // runtime's job, which is the entire reason the backend is worth having.
-  const boot = containerBackend ? "" : writeOuterScript(p, { innerScript: inner, waitForTap: isolated, egressRules: opts.egressRules })
-  const plan = bootCommand(p, { backend: opts.backend, inner, outer: boot, egress: opts.egress, env: opts.env, isolated, egressRules: opts.egressRules })
+  const boot = containerBackend
+    ? ""
+    : writeOuterScript(p, {
+        innerScript: inner,
+        waitForTap: isolated,
+        waitForLink: opts.egressProxy ? VETH_BOX_IFACE : undefined,
+        egressRules: opts.egressRules,
+      })
+  // The proxy's variables are added here rather than by each caller: a boot that has the topology but
+  // not the environment sends its traffic straight out, and the policy is silently absent.
+  const plan = bootCommand(p, {
+    backend: opts.backend,
+    inner,
+    outer: boot,
+    egress: opts.egress,
+    env: opts.egressProxy ? { ...(opts.env ?? {}), ...proxyEnv() } : opts.env,
+    isolated,
+    egressRules: opts.egressRules,
+  })
   const child = spawn(plan.command, plan.args, {
     env: plan.env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -728,7 +767,14 @@ export async function runInteractive(
   const containerBackend = opts.backend === "container"
   const isolated = containerBackend ? false : bootIsolation(opts)
   const inner = writeInnerScript(p, innerBody)
-  const boot = containerBackend ? "" : writeOuterScript(p, { innerScript: inner, waitForTap: isolated, egressRules: opts.egressRules })
+  const boot = containerBackend
+    ? ""
+    : writeOuterScript(p, {
+        innerScript: inner,
+        waitForTap: isolated,
+        waitForLink: opts.egressProxy ? VETH_BOX_IFACE : undefined,
+        egressRules: opts.egressRules,
+      })
   // An interactive boot is the one case where the terminal type has to come from the terminal:
   // TERM=dumb makes Codex's TUI ask "Continue anyway?" before it starts. A container gets it as an
   // --env argument like every other variable; the unshare path puts it in the process environment.
@@ -737,7 +783,7 @@ export async function runInteractive(
     inner,
     outer: boot,
     egress: opts.egress,
-    env: { TERM: interactiveTerm(), ...opts.env },
+    env: { TERM: interactiveTerm(), ...opts.env, ...(opts.egressProxy ? proxyEnv() : {}) },
     isolated,
     egressRules: opts.egressRules,
   })
