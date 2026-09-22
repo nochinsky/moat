@@ -445,7 +445,7 @@ that reads like a moat bug.
   ]
 }
 --- stderr ---
-  (removed the binary from /home/ektor/.moat/envs/16a525996d67/rootfs/usr/sbin/nft)
+  (removed the binary from /home/user/.moat/envs/16a525996d67/rootfs/usr/sbin/nft)
 
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c command -v nft; curl -sS --max-time 6 -o /dev/null -w "code %{http_code}\n" https://1.1.1.1/ ; echo "curl-exit=$?"
 --- exit 0

@@ -1,5 +1,7 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c git -C /work log --oneline -1
 --- exit 0
 --- stdout ---
-9894a9a fix: sum adds
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
+dc00fa9 fix: sum adds
 --- stderr ---

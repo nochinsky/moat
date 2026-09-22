@@ -1,15 +1,15 @@
---- $ node /home/user/Projects/moat/cmd/main.ts run Make the failing test pass, then commit it.
+--- $ node /home/user/Projects/moat/cmd/main.ts run --credential-env MOAT_MOCK_CREDENTIAL Make the failing test pass, then commit it.
 --- exit 0
 --- stdout ---
 --- stderr ---
-sandbox already running (pid 876307); restarting it for this run
+sandbox already running (pid 362412); restarting it for this run
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
-! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-21-19-16
+! injecting moat credential sha256:304e485880327eb8 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-22-22-44
 checks: npm run test
-→ sandbox booted (pid 876777); the codex runtime has no server to wait for
+→ sandbox booted (pid 363065); the codex runtime has no server to wait for
   ✓ /bin/sh -lc "cd /work && sed -i 's/a - b/a + b/' src/sum.js && npm test 2>&1 | tail -4 && git add -A && git -c user.emai
 
 Fixed src/sum.js so the test passes, and committed it.

@@ -1,6 +1,8 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- /bin/sh -c echo persisted-at-$(date -u +%s) > /opt/moat-marker; n=0; until apk add --no-cache jq >/tmp/apk.log 2>&1; do n=$((n+1)); [ $n -ge 4 ] && break; sleep 3; done; echo jq:; jq --version 2>&1 | head -1
 --- exit 0
 --- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 jq:
 jq-1.7.1
 --- stderr ---

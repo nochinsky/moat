@@ -8,8 +8,8 @@ agent branch: moat-session-2026-09-22-22-34
 checks: npm run test
 ✓ sandbox up, cold start 2.07s (image built)
 
-  project    /home/ektor/moat-demo/egress-control
-  env        /home/ektor/.moat/envs/d267f0eec345
+  project    /home/user/moat-demo/egress-control
+  env        /home/user/.moat/envs/d267f0eec345
   runtime    codex (moat/deepseek-flash): `moat` opens its TUI
   workspace  /work (inside the sandbox)
 

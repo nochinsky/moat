@@ -202,6 +202,6 @@ moat-session-2026-09-21-19-21  2 commit(s), dc96d1a909ed
   pass  the conflict
   pass  the conflict, after a selection
 
-review evidence written to /home/ektor/Projects/moat/test/evidence/review.txt
+review evidence written to /home/user/Projects/moat/test/evidence/review.txt
 
 checks passed: 21, failed: 0

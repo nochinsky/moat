@@ -51,6 +51,6 @@ moat demo three-way attribution, on a real sandbox, with no API key
   pass  the accepted change
   pass  the warm budget
 
-demo evidence written to /home/ektor/Projects/moat/test/evidence/demo.txt
+demo evidence written to /home/user/Projects/moat/test/evidence/demo.txt
 
 checks passed: 9, failed: 0

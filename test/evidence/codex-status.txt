@@ -1,15 +1,67 @@
---- $ node /home/user/Projects/moat/cmd/main.ts status
+--- $ node /home/user/Projects/moat/cmd/main.ts status --json
 --- exit 0
 --- stdout ---
+{
+  "version": 1,
+  "id": "5f160b318512",
+  "projectDir": "/home/user/moat-demo/codex-project",
+  "createdAt": "2026-09-22T22:43:55.818Z",
+  "lastUpAt": "2026-09-22T22:43:56.028Z",
+  "status": "running",
+  "alpineVersion": "3.21.4",
+  "model": "moat/mock-model",
+  "provider": "moat",
+  "providerBaseUrl": "http://127.0.0.1:5597/v1",
+  "branch": "moat-session-2026-09-22-22-43",
+  "baseBranch": "main",
+  "profiles": [
+    "node"
+  ],
+  "pid": 362412,
+  "pidStart": "1656549",
+  "egress": "open",
+  "egressAllow": [],
+  "egressProxy": false,
+  "runtime": "codex",
+  "backend": "unshare",
+  "slirpPid": null,
+  "slirpStart": null,
+  "baselineDigest": "c1ccc1457def136b9277f19aedd312435a50013452c7f0bc9ce9c1a7d1f9ead7",
+  "baselineHostState": "git:cbc8d51133a3bbf75d5072502c3f89df39edb0f3:1f41ff19b72e60c8",
+  "baselineCommit": "c6a48903a2ad4ea422cb52da92c106b657346147",
+  "credential": {
+    "provider": "moat",
+    "fingerprint": "sha256:304e485880327eb8",
+    "mintedAt": "2026-09-22T22:43:55.915Z",
+    "expiresAt": "2026-09-23T02:43:55.915Z",
+    "sourceEnvVars": [
+      "MOAT_INJECTED_CREDENTIAL",
+      "DEEPSEEK_API_KEY",
+      "MOAT_CREDENTIAL"
+    ]
+  },
+  "snapshots": [],
+  "lastBootMs": 103,
+  "envDir": "/home/user/.moat/envs/5f160b318512",
+  "rootfsDir": "/home/user/.moat/envs/5f160b318512/rootfs",
+  "running": true,
+  "booting": null,
+  "rootfsBytes": 419534476,
+  "sandboxBranches": [
+    {
+      "name": "main",
+      "sha": "cbc8d51133a3bbf75d5072502c3f89df39edb0f3",
+      "subject": "initial project (the test fails)",
+      "committedAt": "2026-09-23T01:43:53+03:00",
+      "current": false
+    },
+    {
+      "name": "moat-session-2026-09-22-22-43",
+      "sha": "cbc8d51133a3bbf75d5072502c3f89df39edb0f3",
+      "subject": "initial project (the test fails)",
+      "committedAt": "2026-09-23T01:43:53+03:00",
+      "current": true
+    }
+  ]
+}
 --- stderr ---
-project      /home/user/moat-demo/codex-runtime
-env          /home/user/.moat/envs/a3e8fefc7c25
-status       running
-codex        0.155.1 / alpine 3.21.4
-pid          342135
-model        deepseek/deepseek-flash (deepseek)
-branch       moat-session-2026-09-22-22-38
-egress       filtered (own network namespace, default-deny allowlist)
-rootfs       298.7 MiB
-snapshots    none
-branches     main, moat-session-2026-09-22-22-38*

@@ -1,5 +1,7 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- codex --version
 --- exit 0
 --- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 codex-cli 0.155.1
 --- stderr ---

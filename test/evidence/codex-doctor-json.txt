@@ -4,21 +4,27 @@
 {
   "host": {
     "linux": true,
-    "wsl": true,
-    "virt": "wsl",
+    "wsl": false,
+    "virt": "Dream Machines Laptop",
     "userns": true,
     "mountns": true,
     "pidns": true,
-    "kvm": false,
+    "kvm": true,
     "unshare": "/usr/bin/unshare",
     "chroot": "/usr/bin/chroot",
     "mount": "/usr/bin/mount",
     "chown": false,
     "problems": [],
     "notes": [
-      "no usable /dev/kvm (present but not accessible to uid 1000 (mode 660, gid 991)): v1 microVM unavailable here; the v0 container path is the supported mode",
-      "mknod denied in userns (kernel policy): /dev nodes are bind-mounted from the host's device nodes (rw: a device is an interface, not a file). No host *data* is mounted."
+      "/dev/kvm usable: the v1 microVM path is available on this host",
+      "mknod denied in userns (kernel policy): a device node cannot be created from nothing in a user namespace, so moat's unshare backend binds the host's six device nodes (a device is an interface, not a file; no host *data* is mounted)"
     ]
+  },
+  "backends": {
+    "default": "unshare",
+    "unshare": true,
+    "container": "/usr/bin/podman",
+    "environment": "unshare"
   },
   "credential": {
     "envVar": "DEEPSEEK_API_KEY",
@@ -59,32 +65,32 @@
       {
         "name": "sandbox pid 1",
         "ok": true,
-        "detail": "pid 1 is \"entry-876536-a6\", 4 visible processes"
+        "detail": "pid 1 is \"entry-362707-2d\", 4 visible processes"
       },
       {
         "name": "own mount namespace",
         "ok": true,
-        "detail": "sandbox mnt:[4026532302] vs host mnt:[4026532219]"
+        "detail": "sandbox mnt:[4026534054] vs host mnt:[4026531832]"
       },
       {
         "name": "own pid namespace",
         "ok": true,
-        "detail": "sandbox pid:[4026532305] vs host pid:[4026532221]"
+        "detail": "sandbox pid:[4026534057] vs host pid:[4026531836]"
       },
       {
         "name": "own user namespace",
         "ok": true,
-        "detail": "sandbox user:[4026532301] vs host user:[4026531837]"
+        "detail": "sandbox user:[4026534053] vs host user:[4026531837]"
       },
       {
         "name": "own uts namespace",
         "ok": true,
-        "detail": "sandbox uts:[4026532303] vs host uts:[4026532220]"
+        "detail": "sandbox uts:[4026534055] vs host uts:[4026531838]"
       },
       {
         "name": "own ipc namespace",
         "ok": true,
-        "detail": "sandbox ipc:[4026532304] vs host ipc:[4026532208]"
+        "detail": "sandbox ipc:[4026534056] vs host ipc:[4026531839]"
       },
       {
         "name": "uid mapping",
@@ -101,7 +107,7 @@
         "kind": "exposure",
         "name": "host loopback reachable",
         "ok": true,
-        "detail": "the sandbox connected to a service the host opened on 127.0.0.1:42737. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent."
+        "detail": "the sandbox connected to a service the host opened on 127.0.0.1:43719. Every service you run locally (databases, dev servers, notebooks) is reachable by the agent."
       },
       {
         "kind": "exposure",
@@ -127,19 +133,19 @@
       }
     ],
     "mounts": [
-      "/dev/full||/full||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev/null||/null||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
+      "/dev/full||/full||rw,nosuid,relatime||devtmpfs dev rw,size=7845624k,nr_inodes=1961406,mode=755,inode64,huge=advise",
+      "/dev/null||/null||rw,nosuid,relatime||devtmpfs dev rw,size=7845624k,nr_inodes=1961406,mode=755,inode64,huge=advise",
       "/dev/pts||/||rw,relatime||devpts devpts rw,mode=620,ptmxmode=666",
-      "/dev/random||/random||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev/shm||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,uid=1000,gid=1000",
-      "/dev/tty||/tty||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev/urandom||/urandom||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev/zero||/zero||rw,nosuid,relatime||devtmpfs none rw,size=3945424k,nr_inodes=986356,mode=755",
-      "/dev||/||rw,nosuid,relatime||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000",
+      "/dev/random||/random||rw,nosuid,relatime||devtmpfs dev rw,size=7845624k,nr_inodes=1961406,mode=755,inode64,huge=advise",
+      "/dev/shm||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,uid=1000,gid=1000,inode64,huge=advise",
+      "/dev/tty||/tty||rw,nosuid,relatime||devtmpfs dev rw,size=7845624k,nr_inodes=1961406,mode=755,inode64,huge=advise",
+      "/dev/urandom||/urandom||rw,nosuid,relatime||devtmpfs dev rw,size=7845624k,nr_inodes=1961406,mode=755,inode64,huge=advise",
+      "/dev/zero||/zero||rw,nosuid,relatime||devtmpfs dev rw,size=7845624k,nr_inodes=1961406,mode=755,inode64,huge=advise",
+      "/dev||/||rw,nosuid,relatime||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000,inode64,huge=advise",
       "/proc||/||rw,relatime||proc proc rw",
-      "/run||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000",
-      "/tmp||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,uid=1000,gid=1000",
-      "/||/home/user/.moat/envs/5f160b318512/rootfs||rw,relatime||ext4 /dev/sdd rw,discard,errors=remount-ro,data=ordered"
+      "/run||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,mode=755,uid=1000,gid=1000,inode64,huge=advise",
+      "/tmp||/||rw,nosuid,nodev,relatime||tmpfs tmpfs rw,uid=1000,gid=1000,inode64,huge=advise",
+      "/||/home/user/.moat/envs/5f160b318512/rootfs||rw,noatime||ext4 /dev/nvme0n1p2 rw"
     ],
     "envNames": [
       "HOME",
@@ -158,14 +164,14 @@
       "SHLVL",
       "TERM"
     ],
-    "raw": "MOAT_ID=uid=0(root) gid=0(root) groups=0(root),65534(nobody)\nMOAT_ALPINE=3.21.4\nMOAT_PID_COUNT=4\nMOAT_DEV_MISSING=\nMOAT_PID1=entry-876536-a6\nMOAT_NS_MNT=mnt:[4026532302]\nMOAT_NS_PID=pid:[4026532305]\nMOAT_NS_USER=user:[4026532301]\nMOAT_NS_NET=net:[4026531833]\nMOAT_NS_UTS=uts:[4026532303]\nMOAT_NS_IPC=ipc:[4026532304]\nMOAT_UIDMAP= 0 1000 1\nMOAT_HOST_PROJECT=absent\nMOAT_HOST_HOME=absent\nMOAT_CANARY=unreadable\nMOAT_HOST_SSH=absent\nMOAT_ROOT_SSH=absent\nMOAT_ENV_B64=TU9BVF9QUk9WSURFUl9CQVNFX1VSTD1SRURBQ1RFRC1CWS1ET0NUT1IKU0hMVkw9MgpIT01FPS9yb290Ck1PQVRfQ1JFREVOVElBTF9FWFBJUkVTX0FUPVJFREFDVEVELUJZLURPQ1RPUgpNT0FUX0NSRURFTlRJQUxfVFRMX1NFQ09ORFM9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfTU9ERUw9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfU0FOREJPWD0xCk1PQVRfTU9ERUxfSUQ9UkVEQUNURUQtQlktRE9DVE9SClRFUk09ZHVtYgpQQVRIPS91c3IvbG9jYWwvc2JpbjovdXNyL2xvY2FsL2JpbjovdXNyL3NiaW46L3Vzci9iaW46L3NiaW46L2JpbgpNT0FUX0NSRURFTlRJQUxfRklOR0VSUFJJTlQ9UkVEQUNURUQtQlktRE9DVE9SCkxBTkc9Qy5VVEYtOApMQ19BTEw9Qy5VVEYtOApQV0Q9LwpNT0FUX0lOSkVDVEVEX0NSRURFTlRJQUw9UkVEQUNURUQtQlktRE9DVE9SCg==\nMOAT_SECRET_ENV_NAMES=MOAT_CREDENTIAL_EXPIRES_AT,MOAT_CREDENTIAL_TTL_SECONDS,MOAT_CREDENTIAL_FINGERPRINT,MOAT_INJECTED_CREDENTIAL,\nMOAT_HOST_LOOPBACK=REACHABLE\nMOAT_HOST_LOOPBACK_GATEWAY=blocked\nMOAT_EGRESS_OPEN=yes\nMOAT_MOUNTS_B64=L3x8L2hvbWUvZWt0b3IvLm1vYXQvZW52cy81ZjE2MGIzMTg1MTIvcm9vdGZzfHxydyxyZWxhdGltZXx8ZXh0NCAvZGV2L3NkZCBydyxkaXNjYXJkLGVycm9ycz1yZW1vdW50LXJvLGRhdGE9b3JkZXJlZAovcHJvY3x8L3x8cncscmVsYXRpbWV8fHByb2MgcHJvYyBydwovZGV2fHwvfHxydyxub3N1aWQscmVsYXRpbWV8fHRtcGZzIHRtcGZzIHJ3LG1vZGU9NzU1LHVpZD0xMDAwLGdpZD0xMDAwCi9kZXYvbnVsbHx8L251bGx8fHJ3LG5vc3VpZCxyZWxhdGltZXx8ZGV2dG1wZnMgbm9uZSBydyxzaXplPTM5NDU0MjRrLG5yX2lub2Rlcz05ODYzNTYsbW9kZT03NTUKL2Rldi96ZXJvfHwvemVyb3x8cncsbm9zdWlkLHJlbGF0aW1lfHxkZXZ0bXBmcyBub25lIHJ3LHNpemU9Mzk0NTQyNGssbnJfaW5vZGVzPTk4NjM1Nixtb2RlPTc1NQovZGV2L2Z1bGx8fC9mdWxsfHxydyxub3N1aWQscmVsYXRpbWV8fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvcmFuZG9tfHwvcmFuZG9tfHxydyxub3N1aWQscmVsYXRpbWV8fGRldnRtcGZzIG5vbmUgcncsc2l6ZT0zOTQ1NDI0ayxucl9pbm9kZXM9OTg2MzU2LG1vZGU9NzU1Ci9kZXYvdXJhbmRvbXx8L3VyYW5kb218fHJ3LG5vc3VpZCxyZWxhdGltZXx8ZGV2dG1wZnMgbm9uZSBydyxzaXplPTM5NDU0MjRrLG5yX2lub2Rlcz05ODYzNTYsbW9kZT03NTUKL2Rldi90dHl8fC90dHl8fHJ3LG5vc3VpZCxyZWxhdGltZXx8ZGV2dG1wZnMgbm9uZSBydyxzaXplPTM5NDU0MjRrLG5yX2lub2Rlcz05ODYzNTYsbW9kZT03NTUKL2Rldi9wdHN8fC98fHJ3LHJlbGF0aW1lfHxkZXZwdHMgZGV2cHRzIHJ3LG1vZGU9NjIwLHB0bXhtb2RlPTY2NgovZGV2L3NobXx8L3x8cncsbm9zdWlkLG5vZGV2LHJlbGF0aW1lfHx0bXBmcyB0bXBmcyBydyx1aWQ9MTAwMCxnaWQ9MTAwMAovdG1wfHwvfHxydyxub3N1aWQsbm9kZXYscmVsYXRpbWV8fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwCi9ydW58fC98fHJ3LG5vc3VpZCxub2RldixyZWxhdGltZXx8dG1wZnMgdG1wZnMgcncsbW9kZT03NTUsdWlkPTEwMDAsZ2lkPTEwMDAK\nMOAT_ALLOWED_REACHABLE=no\n",
+    "raw": "[moat] boot: mounts are up, network next\n[moat] boot: entering the sandbox\nMOAT_ID=uid=0(root) gid=0(root) groups=0(root),65534(nobody)\nMOAT_ALPINE=3.21.4\nMOAT_PID_COUNT=4\nMOAT_DEV_MISSING=\nMOAT_PID1=entry-362707-2d\nMOAT_NS_MNT=mnt:[4026534054]\nMOAT_NS_PID=pid:[4026534057]\nMOAT_NS_USER=user:[4026534053]\nMOAT_NS_NET=net:[4026531833]\nMOAT_NS_UTS=uts:[4026534055]\nMOAT_NS_IPC=ipc:[4026534056]\nMOAT_UIDMAP= 0 1000 1\nMOAT_HOST_PROJECT=absent\nMOAT_HOST_HOME=absent\nMOAT_CANARY=unreadable\nMOAT_HOST_SSH=absent\nMOAT_ROOT_SSH=absent\nMOAT_ENV_B64=TU9BVF9QUk9WSURFUl9CQVNFX1VSTD1SRURBQ1RFRC1CWS1ET0NUT1IKU0hMVkw9MgpIT01FPS9yb290Ck1PQVRfQ1JFREVOVElBTF9FWFBJUkVTX0FUPVJFREFDVEVELUJZLURPQ1RPUgpNT0FUX0NSRURFTlRJQUxfVFRMX1NFQ09ORFM9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfTU9ERUw9UkVEQUNURUQtQlktRE9DVE9SCk1PQVRfU0FOREJPWD0xCk1PQVRfTU9ERUxfSUQ9UkVEQUNURUQtQlktRE9DVE9SClRFUk09ZHVtYgpQQVRIPS91c3IvbG9jYWwvc2JpbjovdXNyL2xvY2FsL2JpbjovdXNyL3NiaW46L3Vzci9iaW46L3NiaW46L2JpbgpNT0FUX0NSRURFTlRJQUxfRklOR0VSUFJJTlQ9UkVEQUNURUQtQlktRE9DVE9SCkxBTkc9Qy5VVEYtOApMQ19BTEw9Qy5VVEYtOApQV0Q9LwpNT0FUX0lOSkVDVEVEX0NSRURFTlRJQUw9UkVEQUNURUQtQlktRE9DVE9SCg==\nMOAT_SECRET_ENV_NAMES=MOAT_CREDENTIAL_EXPIRES_AT,MOAT_CREDENTIAL_TTL_SECONDS,MOAT_CREDENTIAL_FINGERPRINT,MOAT_INJECTED_CREDENTIAL,\nMOAT_HOST_LOOPBACK=REACHABLE\nMOAT_HOST_LOOPBACK_GATEWAY=blocked\nMOAT_EGRESS_OPEN=yes\nMOAT_MOUNTS_B64=L3x8L2hvbWUvZWt0b3IvLm1vYXQvZW52cy81ZjE2MGIzMTg1MTIvcm9vdGZzfHxydyxub2F0aW1lfHxleHQ0IC9kZXYvbnZtZTBuMXAyIHJ3Ci9wcm9jfHwvfHxydyxyZWxhdGltZXx8cHJvYyBwcm9jIHJ3Ci9kZXZ8fC98fHJ3LG5vc3VpZCxyZWxhdGltZXx8dG1wZnMgdG1wZnMgcncsbW9kZT03NTUsdWlkPTEwMDAsZ2lkPTEwMDAsaW5vZGU2NCxodWdlPWFkdmlzZQovZGV2L251bGx8fC9udWxsfHxydyxub3N1aWQscmVsYXRpbWV8fGRldnRtcGZzIGRldiBydyxzaXplPTc4NDU2MjRrLG5yX2lub2Rlcz0xOTYxNDA2LG1vZGU9NzU1LGlub2RlNjQsaHVnZT1hZHZpc2UKL2Rldi96ZXJvfHwvemVyb3x8cncsbm9zdWlkLHJlbGF0aW1lfHxkZXZ0bXBmcyBkZXYgcncsc2l6ZT03ODQ1NjI0ayxucl9pbm9kZXM9MTk2MTQwNixtb2RlPTc1NSxpbm9kZTY0LGh1Z2U9YWR2aXNlCi9kZXYvZnVsbHx8L2Z1bGx8fHJ3LG5vc3VpZCxyZWxhdGltZXx8ZGV2dG1wZnMgZGV2IHJ3LHNpemU9Nzg0NTYyNGssbnJfaW5vZGVzPTE5NjE0MDYsbW9kZT03NTUsaW5vZGU2NCxodWdlPWFkdmlzZQovZGV2L3JhbmRvbXx8L3JhbmRvbXx8cncsbm9zdWlkLHJlbGF0aW1lfHxkZXZ0bXBmcyBkZXYgcncsc2l6ZT03ODQ1NjI0ayxucl9pbm9kZXM9MTk2MTQwNixtb2RlPTc1NSxpbm9kZTY0LGh1Z2U9YWR2aXNlCi9kZXYvdXJhbmRvbXx8L3VyYW5kb218fHJ3LG5vc3VpZCxyZWxhdGltZXx8ZGV2dG1wZnMgZGV2IHJ3LHNpemU9Nzg0NTYyNGssbnJfaW5vZGVzPTE5NjE0MDYsbW9kZT03NTUsaW5vZGU2NCxodWdlPWFkdmlzZQovZGV2L3R0eXx8L3R0eXx8cncsbm9zdWlkLHJlbGF0aW1lfHxkZXZ0bXBmcyBkZXYgcncsc2l6ZT03ODQ1NjI0ayxucl9pbm9kZXM9MTk2MTQwNixtb2RlPTc1NSxpbm9kZTY0LGh1Z2U9YWR2aXNlCi9kZXYvcHRzfHwvfHxydyxyZWxhdGltZXx8ZGV2cHRzIGRldnB0cyBydyxtb2RlPTYyMCxwdG14bW9kZT02NjYKL2Rldi9zaG18fC98fHJ3LG5vc3VpZCxub2RldixyZWxhdGltZXx8dG1wZnMgdG1wZnMgcncsdWlkPTEwMDAsZ2lkPTEwMDAsaW5vZGU2NCxodWdlPWFkdmlzZQovdG1wfHwvfHxydyxub3N1aWQsbm9kZXYscmVsYXRpbWV8fHRtcGZzIHRtcGZzIHJ3LHVpZD0xMDAwLGdpZD0xMDAwLGlub2RlNjQsaHVnZT1hZHZpc2UKL3J1bnx8L3x8cncsbm9zdWlkLG5vZGV2LHJlbGF0aW1lfHx0bXBmcyB0bXBmcyBydyxtb2RlPTc1NSx1aWQ9MTAwMCxnaWQ9MTAwMCxpbm9kZTY0LGh1Z2U9YWR2aXNlCg==\nMOAT_ALLOWED_REACHABLE=no\n",
     "hostNamespaces": {
-      "mnt": "mnt:[4026532219]",
-      "pid": "pid:[4026532221]",
+      "mnt": "mnt:[4026531832]",
+      "pid": "pid:[4026531836]",
       "user": "user:[4026531837]",
       "net": "net:[4026531833]",
-      "uts": "uts:[4026532220]",
-      "ipc": "ipc:[4026532208]"
+      "uts": "uts:[4026531838]",
+      "ipc": "ipc:[4026531839]"
     }
   }
 }

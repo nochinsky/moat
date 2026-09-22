@@ -1,6 +1,8 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c cat /root/.codex/config.toml
 --- exit 0
 --- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 model = "mock-model"
 model_provider = "moat"
 approval_policy = "never"

@@ -1,5 +1,7 @@
 --- $ node /home/user/Projects/moat/cmd/main.ts exec -- sh -c M=""; for p in /dev/null /etc/hosts; do [ -c "$p" ] || M="$M $p"; done; echo "MOAT_DEV_MISSING=$(echo $M)"
 --- exit 0
 --- stdout ---
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 MOAT_DEV_MISSING=/etc/hosts
 --- stderr ---

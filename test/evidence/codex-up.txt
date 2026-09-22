@@ -1,18 +1,82 @@
---- $ node /home/user/Projects/moat/cmd/main.ts up --quiet --no-detect --no-credential
+--- $ node /home/user/Projects/moat/cmd/main.ts up --json --model mock-model --base-url http://127.0.0.1:5597/v1 --credential-env MOAT_MOCK_CREDENTIAL
 --- exit 0
 --- stdout ---
+{
+  "project": "/home/user/moat-demo/codex-project",
+  "envId": "5f160b318512",
+  "provisionMs": 1588,
+  "provisionFromImageCache": true,
+  "imageCache": "/home/user/.moat/cache/images/alpine-3.21.4-2c1b310cad94.tar.gz",
+  "provisionSteps": [
+    {
+      "name": "extract cached image",
+      "ms": 1428
+    }
+  ],
+  "baselineSnapshot": {
+    "name": "baseline",
+    "bytes": 154422176,
+    "linked": true
+  },
+  "copyIn": {
+    "transport": "git",
+    "head": "cbc8d51133a3bbf75d5072502c3f89df39edb0f3",
+    "branch": "main",
+    "dirty": true,
+    "trackedChanges": 1,
+    "untrackedFiles": 1,
+    "digest": "c1ccc1457def136b9277f19aedd312435a50013452c7f0bc9ce9c1a7d1f9ead7",
+    "files": 5,
+    "bytes": 328,
+    "suspectSecrets": [],
+    "skippedFromCopy": [],
+    "hostState": "git:cbc8d51133a3bbf75d5072502c3f89df39edb0f3:1f41ff19b72e60c8"
+  },
+  "copyInMs": 59,
+  "provider": {
+    "id": "moat",
+    "native": false,
+    "label": "custom OpenAI-compatible endpoint (127.0.0.1:5597)"
+  },
+  "model": {
+    "id": "moat/mock-model",
+    "name": "mock-model"
+  },
+  "egress": "open",
+  "status": "running",
+  "pid": 362412,
+  "bootMs": 103,
+  "totalMs": 1824,
+  "readyCheck": "the entry script reported ready ([moat] runtime ready)",
+  "credential": {
+    "provider": "moat",
+    "fingerprint": "sha256:304e485880327eb8",
+    "expiresAt": "2026-09-23T02:43:55.915Z",
+    "source": "env:MOAT_MOCK_CREDENTIAL"
+  },
+  "host": "linux x64 userns=yes kvm=yes",
+  "credentialsInSandboxEnv": [
+    "MOAT_CREDENTIAL_EXPIRES_AT",
+    "MOAT_CREDENTIAL_EXPIRES_EPOCH",
+    "MOAT_CREDENTIAL_FINGERPRINT",
+    "MOAT_CREDENTIAL_TTL_SECONDS",
+    "MOAT_INJECTED_CREDENTIAL",
+    "MOAT_MODEL",
+    "MOAT_MODEL_ID",
+    "MOAT_PROVIDER_BASE_URL"
+  ]
+}
 --- stderr ---
-✓ image provisioned in 1.23s (extract cached image 1.10s)
-✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
-model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-22-22-38
-✓ sandbox up, cold start 2.12s (image built)
-
-  project    /home/user/moat-demo/codex-runtime
-  env        /home/user/.moat/envs/a3e8fefc7c25
-  runtime    codex (deepseek/deepseek-flash): `moat` opens its TUI
-  workspace  /work (inside the sandbox)
-
-  next: moat         open a session here and tell it what to do
-        moat apply   merge what it did into this directory
-        moat down    stop the sandbox (state and snapshots are kept)
+egress: open, because the provider is on the host's loopback (http://127.0.0.1:5597/v1) and the sandbox's own namespace cannot reach it. Pass --egress filtered to filter it anyway.
+detected: package.json -> node
+          adding profile(s) node; use --no-detect or --profile to override
+→ provisioning sandbox image (alpine 3.21.4 + codex 0.155.1 + node)
+→ provisioning from the cached image alpine-3.21.4-2c1b310cad94.tar.gz
+✓ image provisioned in 1.59s (extract cached image 1.43s)
+→ copy-in: git clone --no-hardlinks
+✓ copy-in via git: 5 files, 0.3 KiB, digest c1ccc1457def136b (dirty tree: 1 modified, 1 untracked)
+model: moat/mock-model
+! injecting moat credential sha256:304e485880327eb8 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
+agent branch: moat-session-2026-09-22-22-43
+checks: npm run test
+→ sandbox booted (pid 362412); the codex runtime has no server to wait for
