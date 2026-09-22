@@ -52,6 +52,43 @@ export const CODEX_TARBALL_SHA256: Record<string, string> = {
   "linux-x64-musl": "f110cccdd50b0be8130b84f45b3144ea775c233f1c8bd8226da6ee719d63d206",
 }
 
+/**
+ * Claude Code, the second agent runtime.
+ *
+ * The same shape as Codex, and for the same reason: the npm package is a *platform* package
+ * with `dependencies: {}` that carries a **musl** build, so it runs on the Alpine image with no
+ * gcompat and no Node runtime. Measured, not read from a summary: `npm pack
+ * @anthropic-ai/claude-code-linux-x64-musl@2.1.278` produced a tarball whose only executable is
+ * `package/claude` (228 MB), and running that file inside a moat sandbox printed
+ * `2.1.278 (Claude Code)`.
+ *
+ * Two differences from Codex matter and are not incidental: the platform packages are named
+ * `claude-code-<os>-<arch>[-musl]` (no version segment), and the executable sits at the tarball
+ * **root** (`package/claude`) rather than under `vendor/<triple>/bin/`.
+ */
+export const CLAUDE_VERSION = "2.1.278"
+
+/** Where the second runtime's binary lands inside the rootfs. */
+export const CLAUDE_BINARY = "/usr/local/bin/claude"
+
+/** npm platform package per sandbox triple. Only what moat actually provisions. */
+export const CLAUDE_PLATFORM_PACKAGE: Record<string, string> = {
+  "linux-x64-musl": "@anthropic-ai/claude-code-linux-x64-musl",
+  "linux-arm64-musl": "@anthropic-ai/claude-code-linux-arm64-musl",
+}
+
+/** The executable's path inside the tarball. A constant, because it is not `vendor/…` here. */
+export const CLAUDE_TARBALL_PATH = "package/claude"
+
+/**
+ * Published digests, per platform. A triple with no digest is **refused** rather than downloaded
+ * unverified, exactly as for Codex: an unpinned binary that becomes the agent runtime is the one
+ * artefact moat cannot be casual about.
+ */
+export const CLAUDE_TARBALL_SHA256: Record<string, string> = {
+  "linux-x64-musl": "7f11bbabdd47961ad497b29316df2caee1e8df943bc79dff6971328a73de79c9",
+}
+
 export const ALPINE_BRANCH = "v3.21"
 export const ALPINE_VERSION = "3.21.4"
 export const ALPINE_ROOTFS_URL =
