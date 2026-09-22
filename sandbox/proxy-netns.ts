@@ -43,9 +43,14 @@ function ipAvailable(): boolean {
 }
 
 export type ProxyNetnsHandle = {
+  /**
+   * The process that owns the namespace.
+   *
+   * Only the pid is returned: the *identity* is the launcher's to read (`processStartTime`), because
+   * that is where every other pid in moat is checked before it is signalled — and reading it here
+   * would be a second description of the same fact, in a module the launcher already imports.
+   */
   holderPid: number
-  stop: () => void
-  error: () => Error | null
 }
 
 /**
@@ -146,31 +151,5 @@ export async function startProxyNetns(
     opts.logFile,
     `${new Date().toISOString()} proxy namespace ${holderNetns} (holder pid ${holderPid}), link ${VETH_BOX_ADDRESS}/${PREFIX} <-> ${PROXY_ADDRESS}, proxy listens on ${PROXY_ADDRESS}:${PROXY_PORT}\n`,
   )
-  return {
-    holderPid,
-    stop: () => {
-      stopProxyNetns(holderPid)
-    },
-    error: () => spawnError,
-  }
-}
-
-/**
- * Tear the topology down by reaping the holder — never by signalling a pid that is not ours.
- *
- * The namespace dies with its last member, and the veth pair dies with the namespace: one signal
- * removes the link, its addressing and the proxy's way out together.
- */
-export function stopProxyNetns(holderPid: number | null): void {
-  if (!holderPid || holderPid <= 0) return
-  try {
-    process.kill(holderPid, "SIGTERM")
-  } catch {
-    // Already gone.
-  }
-  try {
-    process.kill(holderPid, "SIGKILL")
-  } catch {
-    // Already gone.
-  }
+  return { holderPid }
 }

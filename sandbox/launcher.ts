@@ -647,13 +647,14 @@ export async function runInSandbox(
   let slirp: { stop: () => void } | null = null
   let proxy: { stop: () => void } | null = null
   let proxySlirp: { stop: () => void } | null = null
-  let topology: { stop: () => void } | null = null
+  let topology: { holderPid: number; startTime: string | null } | null = null
   const stopDatapath = (): void => {
     proxy?.stop()
     proxySlirp?.stop()
     slirp?.stop()
-    // Last, so the processes that depend on the link are gone before the link is.
-    topology?.stop()
+    // Last, so the processes that depend on the link are gone before the link is — and by identity,
+    // because the holder may have exited on its own while the boot was failing.
+    if (topology) stopOwnedProcess(topology.holderPid, topology.startTime)
   }
   try {
     if (plan.needsSlirp) {
@@ -671,7 +672,9 @@ export async function runInSandbox(
         const nets = await import("./proxy-netns.ts")
         const proxyLog = path.join(p.logs, "proxy.log")
         const built = await nets.startProxyNetns(child.pid!, { dir: p.logs, logFile: proxyLog })
-        topology = built
+        // The identity is read here, where every other pid in moat is checked before it is
+        // signalled: the holder is a `sleep` that can exit on its own, and a pid alone is not it.
+        topology = { holderPid: built.holderPid, startTime: processStartTime(built.holderPid) }
         const datapath = await egress.startSlirp(opts.slirpBinary!, built.holderPid, {
           logFile: path.join(p.logs, "slirp-proxy.log"),
         })
@@ -794,13 +797,14 @@ export async function runInteractive(
   let slirp: { stop: () => void } | null = null
   let proxy: { stop: () => void } | null = null
   let proxySlirp: { stop: () => void } | null = null
-  let topology: { stop: () => void } | null = null
+  let topology: { holderPid: number; startTime: string | null } | null = null
   const stopDatapath = (): void => {
     proxy?.stop()
     proxySlirp?.stop()
     slirp?.stop()
-    // Last, so the processes that depend on the link are gone before the link is.
-    topology?.stop()
+    // Last, so the processes that depend on the link are gone before the link is — and by identity,
+    // because the holder may have exited on its own while the boot was failing.
+    if (topology) stopOwnedProcess(topology.holderPid, topology.startTime)
   }
   try {
     if (plan.needsSlirp) {
@@ -818,7 +822,9 @@ export async function runInteractive(
         const nets = await import("./proxy-netns.ts")
         const proxyLog = path.join(p.logs, "proxy.log")
         const built = await nets.startProxyNetns(child.pid!, { dir: p.logs, logFile: proxyLog })
-        topology = built
+        // The identity is read here, where every other pid in moat is checked before it is
+        // signalled: the holder is a `sleep` that can exit on its own, and a pid alone is not it.
+        topology = { holderPid: built.holderPid, startTime: processStartTime(built.holderPid) }
         const datapath = await egress.startSlirp(opts.slirpBinary!, built.holderPid, {
           logFile: path.join(p.logs, "slirp-proxy.log"),
         })
@@ -1076,6 +1082,35 @@ export async function stopSlirp(pid: number | null, startTime: string | null): P
     process.kill(pid, "SIGKILL")
   } catch {
     /* already gone */
+  }
+  return true
+}
+
+/**
+ * Reap a process this boot started — never a pid that is only *that number* now.
+ *
+ * `AGENTS.md`: a pid is not an identity. The holder that owns the proxy's namespace is a `sleep`
+ * that can exit on its own, and this runs on the error paths of every boot, where a recycled pid
+ * would take an unrelated process down with it. The start time is checked first, and a mismatch
+ * means nothing is signalled.
+ *
+ * Synchronous on purpose: its callers are error paths that cannot await, and the process it reaps is
+ * a `sleep` with nothing to clean up — so there is no grace period to give it.
+ */
+export function stopOwnedProcess(pid: number | null, startTime: string | null): boolean {
+  if (!pid || pid <= 0 || !isRunning(pid)) return false
+  if (startTime !== null && processStartTime(pid) !== startTime) return false
+  try {
+    process.kill(pid, "SIGTERM")
+  } catch {
+    return false
+  }
+  if (isRunning(pid)) {
+    try {
+      process.kill(pid, "SIGKILL")
+    } catch {
+      // Gone between the two checks.
+    }
   }
   return true
 }
