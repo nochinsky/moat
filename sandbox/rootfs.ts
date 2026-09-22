@@ -9,6 +9,10 @@ import {
   ALPINE_ROOTFS_SHA256,
   ALPINE_ROOTFS_URL,
   ALPINE_VERSION,
+  CLAUDE_PLATFORM_PACKAGE,
+  CLAUDE_TARBALL_PATH,
+  CLAUDE_TARBALL_SHA256,
+  CLAUDE_VERSION,
   CODEX_PLATFORM_PACKAGE,
   CODEX_TARBALL_SHA256,
   CODEX_VENDOR_TRIPLE,
@@ -19,7 +23,7 @@ import {
   SANDBOX_TRIPLE,
   SANDBOX_WORKDIR,
 } from "../lib/pins.ts"
-import { cacheDir, codexCachePath, partPath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
+import { cacheDir, claudeCachePath, codexCachePath, partPath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
 import { chmodRootfsDir, ensureRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { out, run } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
@@ -147,6 +151,43 @@ export async function ensureCodexBinary(triple = SANDBOX_TRIPLE): Promise<string
       stdio: ["ignore", fd, "inherit"],
     })
     if (result.status !== 0) throw new Error(`failed to extract the codex binary from ${tarball}`)
+  } finally {
+    fs.closeSync(fd)
+  }
+  fs.chmodSync(tmp, 0o755)
+  fs.renameSync(tmp, dest)
+  return dest
+}
+
+/**
+ * The Claude Code CLI binary, fetched from the npm registry and cached on the host.
+ *
+ * The second agent runtime, under the same rules as the first: it is a *binary*, not a
+ * credential; it is pinned by digest per platform, and a triple with no digest is refused rather
+ * than downloaded unverified. Two things differ from `ensureCodexBinary` and are the whole
+ * reason this is a separate function rather than a parameter: the tarball names its executable
+ * at the **root** (`package/claude`) instead of under `vendor/<triple>/bin/`, and the platform
+ * package carries no version in its name (`@anthropic-ai/claude-code-linux-x64-musl`), so the
+ * tarball file name is `<package>-<version>.tgz`.
+ */
+export async function ensureClaudeBinary(triple = SANDBOX_TRIPLE): Promise<string> {
+  const dest = claudeCachePath(triple)
+  if (fs.existsSync(dest)) return dest
+  const pkg = CLAUDE_PLATFORM_PACKAGE[triple]
+  const sha256 = CLAUDE_TARBALL_SHA256[triple]
+  if (!pkg) throw new Error(`claude is not pinned for the ${triple} sandbox triple`)
+  if (!sha256) throw new Error(`claude has no pinned digest for ${triple}, so moat will not install it`)
+  const file = `${pkg.split("/").pop()}-${CLAUDE_VERSION}.tgz`
+  const url = `${NPM_REGISTRY}/${pkg}/-/${file}`
+  const tarball = path.join(path.dirname(dest), file)
+  await download(url, tarball, { sha256 })
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  const tmp = partPath(dest)
+  // Straight to disk: 228 MiB must never pass through a utf8-decoding string buffer.
+  const fd = fs.openSync(tmp, "w")
+  try {
+    const result = spawnSync("tar", ["-xzOf", tarball, CLAUDE_TARBALL_PATH], { stdio: ["ignore", fd, "inherit"] })
+    if (result.status !== 0) throw new Error(`failed to extract the claude binary from ${tarball}`)
   } finally {
     fs.closeSync(fd)
   }

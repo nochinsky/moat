@@ -1464,4 +1464,70 @@ accepted and then dropped would run the check against `/work` and pass a broken 
 Verified: `npm run test:unit` at **260 tests, 260 pass, 0 fail**; `bash test/e2e-extras.sh` at
 **51 checks, 0 failed**, with §AM the new one and its evidence in `test/evidence/coherence.txt`.
 
+---
+
+## Session 8 — Phase 2 begins: the second runtime's artefact, pinned
+
+Phase 2 of the plan is to stop being a single pinned binary. The first step is not a flag or a
+parser: it is deciding, from measurement, whether the second runtime is even fetchable the way the
+first one is. It is.
+
+### The measurement that decided the shape
+
+`docs/RUNTIMES.md` already recorded Claude Code's *stream* shape from a real run. What it did not
+record is how the CLI is **packaged**, and that is what decides whether the image needs a Node
+runtime:
+
+```
+$ npm view @anthropic-ai/claude-code optionalDependencies dependencies
+dependencies = {}
+optionalDependencies = {
+  '@anthropic-ai/claude-code-linux-x64'      : '2.1.278',
+  '@anthropic-ai/claude-code-linux-x64-musl' : '2.1.278',
+  …
+}
+```
+
+A **platform package with no dependencies** carrying a **musl** build — the same shape as Codex,
+and the reason no Node goes into the image. `npm pack` on the musl package gave the pinned values,
+and running the extracted binary inside a real moat sandbox settled the only risky part:
+
+```
+$ ./package/claude --version      (inside the Alpine box)
+2.1.278 (Claude Code)
+```
+
+Two differences from Codex are load-bearing and are why the fetcher is a sibling function rather
+than a parameter: the executable is at the tarball **root** (`package/claude`, 228 MB) rather than
+under `vendor/<triple>/bin/`, and the platform package name carries no version
+(`claude-code-linux-x64-musl`), so the tarball file is `<package>-<version>.tgz`.
+
+### What landed
+
+* `lib/pins.ts`: `CLAUDE_VERSION`, `CLAUDE_BINARY`, `CLAUDE_PLATFORM_PACKAGE`,
+  `CLAUDE_TARBALL_PATH`, `CLAUDE_TARBALL_SHA256` (sha256 `7f11bbab…79c9`, measured from the real
+  artifact).
+* `lib/paths.ts`: `claudeCachePath(triple)`, keyed by version and platform like `codexCachePath`.
+* `sandbox/rootfs.ts`: `ensureClaudeBinary(triple)`, which downloads, verifies the digest before
+  unpacking, streams the extraction to disk (228 MiB must never pass through a utf8 string), and
+  installs it `0755`. A triple with no digest is refused, exactly as for Codex.
+* `test/unit/runtime-pins.test.ts`: the pin cannot rot silently — the tarball path, the platform
+  package, the digest's shape, and the refusal to install an unpinned triple.
+
+Verified: `ensureClaudeBinary` run for real fetched 102 MiB, verified the digest, and produced a
+217.5 MiB ELF at mode `0755`; `npm run test:unit` at **263 tests, 263 pass, 0 fail**. The unit test
+was proved to bite by pointing `CLAUDE_TARBALL_PATH` at Codex's `vendor/…` layout: it fails
+(`1 failing, 2 passing`) and passes again when restored — a fetcher that copied Codex's path would
+extract nothing and leave an empty binary behind.
+
+### What deliberately did **not** land
+
+The runtime is **not selectable**: there is no `--runtime`, nothing boots Claude, and `docs/SPEC.md`
+§2.2b still says moat ships one runtime. That is on purpose. The seam (`docs/SEAM.md`) should be
+extracted by a second implementation that *exists* and constrains its shape, not designed in the
+abstract and then bent — the same reasoning that made Phase 4 write the seam down with no behaviour
+change before anything depended on it. The next session adds the seam, the config/brief renderer,
+the `stream-json` parser and the `--runtime` flag together, so the abstraction arrives with the
+thing that justifies it.
+
 

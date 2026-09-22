@@ -591,6 +591,17 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   parses `codex exec --json`; `test/unit/codex-runtime.test.ts` pins the parser against a
   real captured stream and the rendered config against the load-bearing lines.
   `docs/HISTORY.md` holds the runtime history and the measurements behind it.
+* **A second runtime's artefact is pinned before its runtime is wired.** Phase 2 of the plan is
+  to stop being a single pinned binary. `lib/pins.ts` now also pins Claude Code
+  (`CLAUDE_VERSION`, `CLAUDE_PLATFORM_PACKAGE`, `CLAUDE_TARBALL_SHA256`) and
+  `sandbox/rootfs.ts:ensureClaudeBinary` fetches and digest-verifies it, the same way Codex's is
+  fetched. It is deliberately **not selectable yet** — no `--runtime`, nothing boots it — because
+  the seam should be driven by the second implementation rather than guessed at first; what is
+  proven so far is that the pinned artefact downloads, verifies, extracts and *runs on Alpine*
+  (measured: `2.1.278 (Claude Code)` inside a box; `test/unit/runtime-pins.test.ts` holds the pin).
+  Two things differ from Codex and are why this is a separate function, not a parameter: Claude's
+  executable is at the tarball **root** (`package/claude`, not `vendor/<triple>/bin/`), and its
+  platform package carries no version in the name (`claude-code-linux-x64-musl`).
 * **The model catalog is policy too, and its `base_instructions` is a prompt
   pin.** `installCodexFiles` writes `models.json` to `/root/.codex/models.json` on every
   boot, and the rendered config points `model_catalog_json` at it. It used to be
