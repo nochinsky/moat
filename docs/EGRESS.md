@@ -264,10 +264,15 @@ kill -0 <placed pid>             not permitted
 kill -TERM <placed pid>          refused — and the placed process survived
 ```
 
-So the placement does **not** inherit shape 3's failure mode: a process on the box's loopback is
-outside the agent's reach even with the pid in hand. (The kernel's reasoning is the user-namespace
-credential rules — `nsenter --user` keeps the host uid, which is unmapped inside the box — but the
-reading is what matters, and nothing here depends on the explanation.)
+So the placement does **not** inherit shape 3's failure mode. The reason is the **pid namespace**, and
+my first explanation of it was wrong: `nsenter --user --preserve-credentials` does not leave the
+process unmapped, it lands it on **uid 0** — measured, `id -u` through this exact invocation prints 0,
+and so does the box's own root. What stops the agent is that the pid does not exist in the box's pid
+namespace, so `kill` answers **ESRCH** (no such process) rather than refusing for permission — my
+earlier probe's `kill -0 … || echo "not permitted (or no such pid)"` conflated the two.
+
+That is not a footnote: two principals with the same uid mean **no ruleset can separate the proxy's
+traffic from the box's** (§7).
 
 ## 7. What is built, and what this first increment does not cover
 
@@ -287,12 +292,22 @@ A host outside the policy is refused **by name**, which is the thing a dropped p
 
 What that increment deliberately does **not** cover, so nobody reads the above as more than it is:
 
-* **The ruleset still governs the proxy's own dial.** The proxy is a process in the box's network
-  namespace, so its outbound traffic passes the same nftables ruleset — whose accept addresses were
-  resolved *at boot*. A provider address that rotates is therefore still a snapshot for the proxy,
-  and the name-resolution win is only complete once the ruleset admits the proxy's traffic by uid
-  (it keeps the host uid, unmapped inside the box) and limits the box's own traffic to its loopback.
-  That is the next change, and it is the one that retires the IP snapshot for the provider.
+* **The ruleset governs the proxy's own dial — measured, and it kills the obvious fix.** The proxy is
+  a process in the box's network namespace, so its outbound traffic passes the same nftables ruleset.
+  The same provider on a port the ruleset does not open:
+
+  ```
+  egress isolated (no ruleset):  ALLOWED POST 192.168.1.236:8443
+  egress filtered (the default): FAILED 192.168.1.236:8443 no response within 10s (a dropped packet, not a refusal?)
+  ```
+
+  I said the next step would be to split the ruleset — admit the proxy's traffic by uid, confine the
+  box to its loopback. **That cannot work**, and the reading is why: the proxy is uid **0** inside the
+  box, the same principal as the box's root (§4), so there is nothing for a ruleset to match on. The
+  split has to be *structural* instead: give the proxy a network namespace of its own and connect it
+  to the box by a link the ruleset can name (a veth pair), so the proxy's egress is its own policy and
+  the box's ruleset confines the box to the proxy. Until that exists, `--egress-proxy` on `filtered`
+  buys **refusals by name** and not yet the retirement of the boot-time IP snapshot.
 * **`moat exec`, `moat verify` and `moat take` are not proxied.** The policy arrives as a flag on
   `up`/`run`; those commands read egress from `state.json`, so the policy has to become an
   environment property (recorded, like `egress` and `egressAllow`) before they can carry it. Until

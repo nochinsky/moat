@@ -25,9 +25,13 @@ import { fileURLToPath } from "node:url"
  *  - `--preserve-credentials` is the flag that makes it work: plain `--net` fails, because nsenter
  *    then wants to write `gid_map`. util-linux is the package `unshare` and `chroot` already come
  *    from, so this needs nothing new shipped.
- *  - The agent cannot reach the process: it is not in the box's `/proc`, `kill -0` is refused, and
- *    it survives the box's `kill -TERM` (measured). It shares the box's *user* namespace but not its
- *    pid namespace, and it keeps the host uid — unmapped inside the box.
+ *  - The agent cannot reach the process: it is not in the box's `/proc`, and it survives the box's
+ *    `kill -TERM` (measured). The reason is the **pid namespace** — a pid the box cannot name, so
+ *    `kill` answers ESRCH rather than refusing. It is *not* a credential distinction: `id -u` through
+ *    this same invocation prints 0 inside the box, the same principal as the box's root. That has a
+ *    consequence for the policy, not just for this comment: **no ruleset can tell this process's
+ *    traffic from the box's by uid**, which is why the ruleset cannot simply admit the proxy and
+ *    confine the box (docs/EGRESS.md §7).
  *  - A CONNECT tunnel carries the runtime's real TLS: with this proxy in the path, a request to a
  *    real provider came back 401 through the tunnel, and the proxy saw only `host:port`. No
  *    interception, no certificate, no CA in the box — which also means it cannot inject a
@@ -319,7 +323,19 @@ function handle(socket: net.Socket, opts: Options, resolver: dns.Resolver | null
     }
 
     resolveTarget(host, resolver).then((address) => {
-    const upstream = net.connect({ host: address, port })
+    // Bounded, and the bound matters: under `filtered` a packet the ruleset does not admit is
+    // *dropped*, not refused, so an unbounded dial sits in the kernel's SYN retries for minutes and
+    // the proxy holds a request the caller is waiting on. Measured: with no timeout the log showed
+    // no line at all for a destination the ruleset dropped, which reads as "the proxy never tried".
+    const upstream = net.connect({ host: address, port, timeout: 10_000 })
+    upstream.on("timeout", () => {
+      logLine(opts.log, `FAILED ${host}:${port} no response within 10s (a dropped packet, not a refusal?)`)
+      upstream.destroy()
+      if (!socket.destroyed) {
+        const body = `${host}:${port} did not answer\n`
+        socket.end(`HTTP/1.1 504 Gateway Timeout\r\ncontent-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`)
+      }
+    })
     upstream.on("error", (error: Error) => {
       // The reason, not just the fact: a dial that fails from here is a fact about the *box's*
       // network — the policy already admitted the name — and without the message it is unguessable.
