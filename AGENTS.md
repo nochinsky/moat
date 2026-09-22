@@ -595,10 +595,13 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   to stop being a single pinned binary. `lib/pins.ts` now also pins Claude Code
   (`CLAUDE_VERSION`, `CLAUDE_PLATFORM_PACKAGE`, `CLAUDE_TARBALL_SHA256`) and
   `sandbox/rootfs.ts:ensureClaudeBinary` fetches and digest-verifies it, the same way Codex's is
-  fetched. It is deliberately **not selectable yet** — no `--runtime`, nothing boots it — because
-  the seam should be driven by the second implementation rather than guessed at first; what is
-  proven so far is that the pinned artefact downloads, verifies, extracts and *runs on Alpine*
-  (measured: `2.1.278 (Claude Code)` inside a box; `test/unit/runtime-pins.test.ts` holds the pin).
+  fetched. It is **blocked, not merely unwired**: Claude Code refuses `--permission-mode
+  bypassPermissions` as root, and moat's agent is root in a single-id user namespace with no second
+  identity to become (`chown` EINVAL, `su` EPERM — measured), so invariant 3 cannot be honoured by it
+  at v0. `docs/RUNTIMES.md` has the measurement and the four options; **do not start an adapter
+  before that decision is made**, and do not add a `--runtime` that boots it. What *is* proven is
+  that the pinned artefact downloads, verifies, extracts and runs on Alpine (measured: `2.1.278
+  (Claude Code)` inside a box; `test/unit/runtime-pins.test.ts` holds the pin).
   Two things differ from Codex and are why this is a separate function, not a parameter: Claude's
   executable is at the tarball **root** (`package/claude`, not `vendor/<triple>/bin/`), and its
   platform package carries no version in the name (`claude-code-linux-x64-musl`).
