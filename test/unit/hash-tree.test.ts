@@ -74,6 +74,25 @@ test("the streamed tree hash matches the whole-file hash, chunk boundaries inclu
   assert.deepEqual(hashTree(root, { skip: [] }), reference(root, []))
 })
 
+/**
+ * Wait until a file stops changing: two identical (size, mtime) readings a short interval apart.
+ *
+ * A killed writer is not necessarily a finished one — the shell dies, a `truncate` it had already
+ * spawned does not — so the caller observes quiet rather than assuming it. Bounded, so a file that
+ * never settles fails the test rather than hanging it.
+ */
+async function quiet(file: string, intervalMs = 60, tries = 50): Promise<void> {
+  let previous = ""
+  for (let attempt = 0; attempt < tries; attempt++) {
+    const stat = fs.statSync(file)
+    const reading = `${stat.size}:${stat.mtimeMs}`
+    if (reading === previous) return
+    previous = reading
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+  throw new Error(`${file} never stopped changing`)
+}
+
 test("a well-defined digest and count, for a file being rewritten under the read", async (t) => {
   // The old name promised a scenario the test never created: it hashed a file nobody
   // was writing to. The real case is a concurrent writer in the sandbox, where the
@@ -120,6 +139,12 @@ test("a well-defined digest and count, for a file being rewritten under the read
     sizes.push(result.bytes)
   }
   writer.kill("SIGKILL")
+  // `kill` reaps the shell, not a `truncate` it had already spawned: that is a separate process and
+  // can still land after the kill returns. So "the writer is gone" has to be observed, not assumed —
+  // wait until the file stops changing before measuring it, or the two passes below can straddle one
+  // last truncate. This failed on CI and passed locally, which is exactly how a timing assumption
+  // hides: the runner's interleaving differed, not the code under test.
+  await quiet(file)
   // With the writer gone, every pass reports the same size: the answer is a function
   // of the file, not of when the read happened to run.
   const after = hashTree(root)

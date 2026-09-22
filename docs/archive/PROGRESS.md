@@ -1329,3 +1329,28 @@ The round trip *was* asserted before this session —
 endings agreed, so the assertion could never fail. That is the failure mode this program keeps
 recording: a check that looks like coverage and is not. Property-testing the pair is what made it
 fail.
+
+### The flake that blocked the pull request
+
+The PR's first CI run failed, not on the newline change but in `test/unit/hash-tree.test.ts` — a file
+that change does not touch. Same class of defect as the round trip: an assumption stated as a
+guarantee. The test killed its writer with `SIGKILL` and then hashed the file twice, expecting both
+passes to agree because "with the writer gone, every pass reports the same size". `SIGKILL` reaps the
+*shell*, not a `truncate` it had already spawned: that is a separate process and can land after the
+kill returns. Measured on this host:
+
+```
+$ node …/window.mjs
+the file was still changing after kill() returned in 26/120 runs (max observed gap 1ms)
+```
+
+Whether that becomes a failed assertion depends on whether the last `truncate` lands between the two
+hashes — which is why it passed locally and on most runs, and failed on a CI runner whose
+interleaving differed. `main` flaked the same way: two of its previous eight `ci` runs failed at the
+"unit tests" step.
+
+The fix observes quiet instead of assuming it: a bounded `quiet(file)` helper waits for two identical
+`(size, mtime)` readings before the file is measured. It cannot *prove* a still-running writer has
+stopped — it detects a settle, not a complete stop — so it is scoped to the tail of an
+already-killed writer, which is the only thing it is used for, and the doc comment says so.
+
