@@ -96,9 +96,14 @@ if [ -z "$FOUND_CTR" ]; then
   mark SKIPPED "no container runtime installed" "nothing to measure — this is the reading that has to be taken on the host that has one"
   say ""
   say "  To take it, install one (rootless podman is the closest analogue) and re-run:"
+  say "    Arch:           sudo pacman -S podman"
   say "    Debian/Ubuntu:  sudo apt-get install -y podman"
   say "    Fedora:         sudo dnf install -y podman"
+  say "    openSUSE:       sudo zypper install -y podman"
   say "  then:           bash test/portability-spike.sh"
+  say ""
+  say "  The hint named only Debian and Fedora until someone asked about Arch — this script is meant"
+  say "  to be run on whatever machine you have, so it now names the ones people actually use."
 elif [ "$FOUND_CTR" != "podman" ] && [ "$FOUND_CTR" != "docker" ]; then
   mark UNKNOWN "$FOUND_CTR is present" "not a runtime this spike knows how to probe"
 elif ! $FOUND_CTR info >/dev/null 2>&1; then
