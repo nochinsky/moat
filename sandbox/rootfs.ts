@@ -24,6 +24,7 @@ import {
   SANDBOX_WORKDIR,
 } from "../lib/pins.ts"
 import { cacheDir, claudeCachePath, codexCachePath, partPath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
+import { CLAUDE_BINARY, type RuntimeId } from "../lib/pins.ts"
 import { chmodRootfsDir, ensureRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { out, run } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
@@ -208,11 +209,38 @@ export async function ensureClaudeBinary(triple = SANDBOX_TRIPLE): Promise<strin
  * and the copy lands on a temp name that is renamed into place. The box must not be running;
  * callers stop it first (a running box has the old binary open anyway).
  */
-export async function installRuntimeBinary(p: EnvPaths): Promise<void> {
-  const target = RUNTIME_BINARY
+/**
+ * Which binary belongs to which runtime, and where it lands in the rootfs.
+ *
+ * One place, so the image cache key, the provisioner and the repair path cannot disagree about
+ * what a `claude` environment is supposed to contain — the shape of the bug that once handed an
+ * environment an image with no runtime in it at all.
+ */
+export function runtimeBinaryPath(id: RuntimeId): string {
+  return id === "claude" ? CLAUDE_BINARY : RUNTIME_BINARY
+}
+
+/**
+ * The runtime's pinned version, as it appears in the image cache key.
+ *
+ * Codex's value is the bare version, unchanged from before the second runtime existed, so a
+ * cached image is not invalidated by this refactor — the key for a codex environment is byte for
+ * byte what it was.
+ */
+export function runtimeCacheKey(id: RuntimeId): string {
+  return id === "claude" ? `claude-${CLAUDE_VERSION}` : CODEX_VERSION
+}
+
+/** The host-side cache for a runtime's binary, fetched and digest-verified if it is not there. */
+export async function ensureRuntimeBinary(id: RuntimeId, triple = SANDBOX_TRIPLE): Promise<string> {
+  return id === "claude" ? await ensureClaudeBinary(triple) : await ensureCodexBinary(triple)
+}
+
+export async function installRuntimeBinary(p: EnvPaths, id: RuntimeId = "codex"): Promise<void> {
+  const target = runtimeBinaryPath(id)
   // Guard first, so a planted symlink fails before anything is downloaded or copied.
   ensureRootfsDir(p.rootfs, path.posix.dirname(target))
-  const source = await ensureCodexBinary()
+  const source = await ensureRuntimeBinary(id)
   const dest = path.join(p.rootfs, target.slice(1))
   const tmp = partPath(dest)
   try {
@@ -248,7 +276,11 @@ export function extractRootfs(tarball: string, rootfs: string): void {
  */
 const IMAGE_EXCLUDES = ["./work", "./proc", "./sys", "./dev", "./tmp", "./run", "./.moat", "./var/log/moat"]
 
-export function imageCachePath(packages: string[] = PROVISION_PACKAGES, binaries: readonly string[] = [RUNTIME_BINARY]): string {
+export function imageCachePath(
+  packages: string[] = PROVISION_PACKAGES,
+  binaries: readonly string[] = [RUNTIME_BINARY],
+  runtimeKey: string = CODEX_VERSION,
+): string {
   // The binaries and their pinned versions are part of the key: an image built before a binary
   // existed, or before its version changed, must never be handed to an environment that needs
   // it. The measured form of that bug is a cached image with the binary missing, which
@@ -256,7 +288,7 @@ export function imageCachePath(packages: string[] = PROVISION_PACKAGES, binaries
   const key = crypto
     .createHash("sha256")
     .update(
-      `${ALPINE_VERSION}|${CODEX_VERSION}|${SANDBOX_TRIPLE}|${[...binaries].sort().join(",")}|${[...packages].sort().join(",")}`,
+      `${ALPINE_VERSION}|${runtimeKey}|${SANDBOX_TRIPLE}|${[...binaries].sort().join(",")}|${[...packages].sort().join(",")}`,
     )
     .digest("hex")
     .slice(0, 12)
@@ -284,7 +316,7 @@ export type ProvisionResult = {
  */
 export async function provisionEnv(
   p: EnvPaths,
-  opts: { useImageCache?: boolean; packages?: string[] } = {},
+  opts: { useImageCache?: boolean; packages?: string[]; runtime?: RuntimeId } = {},
 ): Promise<ProvisionResult> {
   const packages = opts.packages ?? [...PROVISION_PACKAGES]
   const started = Date.now()
@@ -296,7 +328,8 @@ export async function provisionEnv(
     return Date.now()
   }
 
-  const imageCache = imageCachePath(packages)
+  const runtime = opts.runtime ?? "codex"
+  const imageCache = imageCachePath(packages, [runtimeBinaryPath(runtime)], runtimeCacheKey(runtime))
   const useImageCache = opts.useImageCache !== false
 
   if (useImageCache && fs.existsSync(imageCache)) {
@@ -391,12 +424,12 @@ rm -rf /var/cache/apk/*
   t = mark("apk packages", t)
 
   {
-    const binary = await ensureCodexBinary()
-    const target = path.join(p.rootfs, RUNTIME_BINARY.slice(1))
+    const binary = await ensureRuntimeBinary(runtime)
+    const target = path.join(p.rootfs, runtimeBinaryPath(runtime).slice(1))
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.copyFileSync(binary, target)
     fs.chmodSync(target, 0o755)
-    t = mark("install codex", t)
+    t = mark(`install ${runtime}`, t)
   }
 
   // The config and the brief are NOT baked into the image: `moat up` renders and writes them

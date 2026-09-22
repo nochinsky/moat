@@ -1749,3 +1749,73 @@ tests and from nothing else. That is the next session's whole job: flag, persist
 `state.json`, provisioning of the selected binary, the task path through `runtime.execBody` /
 `runtime.parse`, the Anthropic variables, and the e2e that moves the stub into `stub/` and turns
 Session 10's capture into a suite check.
+
+---
+
+## Session 12 — the second runtime is selectable
+
+The seam had no way in: the registry existed and nothing reached it. This session wired it, and the
+end of Phase 2 is now a command that runs a turn under a second agent runtime.
+
+### What `--runtime` does
+
+* `moat up|run --runtime codex|claude` resolves the runtime **before provisioning** and refuses an
+  unknown name in under a second (`unknown runtime "gemini". moat ships: codex, claude.`) rather than
+  after a multi-minute image build. `lib/flags.ts` carries the flag, and it is an `up`/`run` flag
+  only: every later command reads the choice from `state.json`, the same way egress works.
+* **`state.json` gained `runtime`**, with a read-side default of `codex`, so an environment written
+  by an earlier moat is still valid rather than undefined.
+* **Provisioning is runtime-aware.** `runtimeBinaryPath`, `runtimeCacheKey` and `ensureRuntimeBinary`
+  are the one place that knows which binary belongs to which runtime, and the image cache key
+  includes the runtime. Codex's key is byte-for-byte what it was, deliberately: a refactor that
+  silently invalidated every cached image would look like a slowdown with no cause.
+* **The repair path follows the runtime too** — a deleted `claude` is put back by
+  `installRuntimeBinary(paths, "claude")` rather than by re-provisioning, which would take `/work`.
+* **The files are rendered per runtime**: Codex gets its TOML config, catalog and brief; Claude gets
+  the brief alone, at `/root/.claude/moat-brief.md`, handed to it with `--append-system-prompt-file`.
+* **The credential is named for the runtime.** `mint` already took `targetEnvVars`; for Claude that
+  list gains `ANTHROPIC_API_KEY`, and the provider's base URL is exported as `ANTHROPIC_BASE_URL`
+  alongside moat's own variables. Without this the box would have been handed a key under a name
+  nothing reads — the same class of bug as `MOAT_PROVIDER_BASE_URL` arriving empty.
+* The task path goes through the seam: `runtime.execBody(task)`, `runtime.tuiBody(task)`,
+  `runtime.parse(stream)` and `runtime.describe(turn)`. `runCodexTask` became `runAgentTask`.
+* One stale label fell out: the boot summary printed the literal `runtime    codex` for every
+  environment. It reads `state.runtime` now — visible in the evidence below as
+  `runtime    claude (moat/claude-opus-5)`.
+
+### Verified end to end
+
+Extras §AN, run for real, keyless, against `stub/mock-anthropic.mjs`:
+
+```
+--- $ moat up --runtime claude
+  runtime    claude (moat/claude-opus-5): `moat` opens its TUI
+--- $ moat run "run the check"
+  ✓ Bash echo stub-tool-ran
+
+Running the check.
+
+Done: the tool ran.
+  432 tokens  1 tool
+--- the provider's own record ---
+requests to /v1/messages: 2    credential reached the runtime: yes
+  pass  claude runtime
+```
+
+`bash test/e2e-extras.sh` at **52 checks, 0 failed**; `npm run test:unit` at **272**, typecheck clean.
+The assertions are on the **provider's** view and on what the agent's own stream says, not on moat's
+account: the stub recorded **two** requests to `/v1/messages` (the tool turn and the tool-result
+turn) and a non-empty `x-api-key`, which is the credential arriving as `ANTHROPIC_API_KEY`. A
+separate check that the *brief* reached the model is implicit in the same capture: the request
+carried three system blocks, which is the default prompt plus moat's appended brief.
+
+The suite was run twice: the first pass passed, and it also exposed that §AN wrote its logs *inside*
+the project, which makes `planApply` see drift that is really the test's own file. Fixed the same way
+§AM was, and the evidence above is from the second, clean run.
+
+### Not done
+
+The Claude TUI body is wired but not exercised (the pty suite drives Codex's). `--bare` is not used —
+it would narrow the advertised tools to `Bash`/`Edit`/`Read`, which is attractive, but its effect on
+a real task is unmeasured and the allowlist already expresses the policy. Both are recorded in
+`docs/RUNTIMES.md` rather than assumed.
