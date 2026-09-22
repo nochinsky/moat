@@ -2360,3 +2360,159 @@ Spot-checked rather than assumed: `status` reports running, `logs sandbox` reads
 through the guard, `snapshot` writes 147 MiB, `restore` puts it back (a marker written into the box
 is gone afterwards), and `down`/`destroy` leave zero containers. `npm run test:unit` at 278;
 `bash test/e2e-extras.sh` at 53 checks, 0 failed, with §AO covering the default path now.
+
+---
+
+## Session 22 — a new host, and the two checks that passed by accident
+
+The project moved from WSL2 to a native Arch Linux box, and the handoff says to re-measure the
+machine rather than trust it. Doing that turned up two checks that had been green for the wrong
+reason — neither is a defect in moat, and both would have gone on being green.
+
+Host: Arch, kernel `7.2.6-arch2-1`, `podman 6.1.2` (the container backend was measured on 5.7.0),
+node `v26.7.0`, npm `12.0.2`. `/dev/kvm` is `crw-rw-rw-`, so the user needs no `kvm` group to reach
+it; `moat doctor` reports `userns=yes kvm=yes backends unshare (default), container
+(/usr/bin/podman)` and `test/portability-spike.sh` MEASURES §2, all seven properties of §4, and
+`/dev/kvm is accessible` in §5. `bash test/e2e-codex.sh` passes the acceptance list, and
+`node scripts/trust.mjs --check` is current. Two things did not match the handoff.
+
+### The unit suite was red on a host where `/bin/sh` is bash
+
+```
+✖ a real boot whose entry script dies early is not reported as up
+  /bin/sh: error while loading shared libraries: libreadline.so.8: cannot open shared object file
+```
+
+`throwawayEnv` in `test/unit/ready-check.test.ts` builds a minimal rootfs for the real spawn path to
+chroot into, and it named the shell's dependencies by hand:
+`["/lib/x86_64-linux-gnu/libc.so.6", "/lib64/ld-linux-x86-64.so.2"]`. That is a host assumption
+wearing a test. `/bin/sh` is `dash` on Debian and `bash` on Arch, and bash also needs
+`libreadline.so.8` and `libncursesw.so.6`; the multiarch libc path does not exist here, so the
+`continue` below it skipped the one library that *was* named and the model got no libc at all. The
+box under test then died of the missing library instead of printing the credential line, and the
+assertion failed for a reason with nothing to do with what it measures. Deterministic: 3/3 runs.
+
+The list now comes from `ldd` on the host's own shell, copied to the paths the shell asks for —
+both the resolved one and, for the interpreter, the absolute path the ELF header names. And the
+model is now checked before it is used, which is the part that was missing:
+
+```
+assert.equal(shellProbe.status, 0,
+  `the throwaway rootfs cannot run its own shell, so it is not a model of the box: …`)
+```
+
+Reverted to the hardcoded list, that guard fails first and names the cause —
+`the throwaway rootfs cannot run its own shell … libreadline.so.8: cannot open shared object file`
+— instead of leaving a confusing assertion mismatch three steps later. Restored: 278 tests, 278
+pass, 0 fail. The library paths are the kind of thing that moves between distros, so this is the
+guard that has to exist for the test to mean anything off Debian.
+
+### §AN was green only on a host that happened to carry a key
+
+`bash test/e2e-extras.sh` reported 52 passed, 1 failed, and it was not a moat bug:
+
+```
+claude runtime: FAILED — up=0 run=1 reqs=0
+Not logged in · Please run /login
+```
+
+Section AN passes `--credential "$CREDENTIAL"` to `moat up` and **not** to its two `moat run`
+calls. Every boot re-mints the credential from the host — `state.json` keeps a fingerprint and never
+the value — so the runs were looking for one of `DEEPSEEK_API_KEY` / `MOAT_CREDENTIAL` /
+`~/.moat/credentials.json`, and this machine has none of them. Claude Code refuses to start without
+`ANTHROPIC_API_KEY`, so the box logged `Not logged in`, zero requests reached the stub, and the
+section failed. Codex tolerates a keyless custom endpoint, which is why the acceptance suite, which
+leaves its own runs unqualified the same way, never noticed.
+
+What settles it is that the committed capture was *never* the section's own credential: it records
+`sha256:34c4e933b47c1fb3`, while `$CREDENTIAL` here is `sha256:7726b438889c7f57`. The old host had
+an ambient key and the section was reading it. Measured both directions, same commands:
+
+```
+no credential source   → run=1, 0 requests to /v1/messages, "Not logged in"
+MOAT_CREDENTIAL set    → run=0, tool ran, 432 tokens
+```
+
+The runs now name the credential, and the capture records the section's own fingerprint instead of
+whatever the host had. `bash test/e2e-extras.sh`: **53 checks, 0 failed**. `--credential` rather
+than `--credential-env` on purpose: this script re-points `MOAT_MOCK_CREDENTIAL` at the Responses
+stub further up, so the section keeps its own value rather than inheriting that export.
+
+### Two smaller things the re-measurement caught
+
+* `package-lock.json` was stale against `package.json` — its root still said `"name": "moat"` and
+  `"bin": {"moat": "cmd/main.ts"}` while the package is `moat-sandbox` and the bin is
+  `dist/cmd/main.js`, left over from the packaging rename. `npm ci` accepts it (only the root
+  metadata drifted), but it meant the documented first command, `npm install`, left a dirty tree on
+  every run. Refreshed.
+* `docs/PROGRESS.md` promised `test/e2e-extras.sh` at 50 checks while it prints 53, and
+  `docs/HANDOFF.md` already said 53 — a hand-maintained count that drifted exactly the way
+  `AGENTS.md` says it will, and that nothing guards (`docs-claims.test.ts` holds only SPEC's
+  `moat doctor` row). The row no longer carries a number; the suite prints its own, in the capture.
+  The other rows were checked against the committed captures and are still accurate (provider 9,
+  demo 9, review 21), which is why they were left alone rather than rewritten.
+
+### The trust page's guard wrote the page it was checking
+
+Found while tidying up: `docs/TRUST.md` came out of a verification run modified, in a way no suite
+is supposed to cause. `scripts/trust.mjs` did its write at **module top level**, and
+`test/unit/trust-generated.test.ts` imports it to call `renderTrust()` — so the read-only guard was
+quietly a writer:
+
+```js
+node -e "import('./scripts/trust.mjs').then(m => process.stdout.write(m.renderTrust()))"
+// argv[1] is undefined here, so `process.argv.includes("--check")` is false
+// and the module's top-level else branch writes docs/TRUST.md
+```
+
+On a healthy run it wrote back the same bytes, which is why nothing noticed. What exposed it was
+running `npm run test:unit` while `test/e2e-extras.sh` was in flight — that suite truncates its
+capture at its start (`: > "$EVIDENCE/extras.txt"`), so the derivation saw no capture and the guard
+**wrote a wrong page**: extras listed as "no capture is committed for this one" while the capture
+sat on disk. A check that exists to keep that page derived rather than typed, writing a page the
+evidence contradicts.
+
+The write is now behind a direct-run check, and the guard for it is behavioural rather than a
+content comparison — on a healthy run the bytes are identical, so a comparison would pass through
+the bug forever. It copies the generator into a scratch tree whose page does not exist and asserts
+the import creates nothing:
+
+```
+with the write at module top level:  ✖ importing the generator must not write the page it is reading
+behind the direct-run guard:         ✔ 3 pass, 0 fail
+```
+
+Note that the two tests that were there did **not** catch this: `--check` never writes, and the
+other one only reads a rendered string. Both passed with the bug in place.
+
+### Not reproduced, and not done
+
+* The unnamed flake from the handoff did not appear: 278 tests over several runs on this host, one
+  failure, and it was the deterministic `ready-check` one above.
+* What *did* reproduce, twice, is what happens when these suites are overlapped. Running
+  `npm run test:unit` while `test/e2e-extras.sh` was in flight gave **49 checks, 4 failed** —
+  `credential ttl: the box outlived its credential`, `boot log: no boot banner in the captured
+  output`, `log name: no refusal`, `--tail: no refusal` — plus one unit failure that did not
+  recur. Each suite alone: 53/0 and 278/0, several times each. So the extras suite is not safe to
+  run alongside anything else on one machine: it binds fixed ports, it asserts on a 6-second
+  credential TTL, and it asserts on boot banners, all of which move under CPU contention. The
+  handoff's flake was described as "timing-sensitive files" and did not reproduce here, so this is
+  not offered as its cause — only as a measured way to fail these suites that has nothing to do
+  with the code.
+* `test/e2e-codex.sh` leaves its `moat run` calls unqualified in the same way §AN did. It passes —
+  section 4's assertions do not need a credential under Codex — but its capture therefore depends
+  on the host, and the committed one shows an ambient key. Not changed here: that would alter what
+  four sections measure, which is a decision with its own verification, not a one-line fix.
+* `/dev/kvm` is reachable on this machine, which is the one thing the move unlocked — the v1 microVM
+  path is now measurable. It was not built in this session.
+* `test/evidence/` was left as committed. Every suite run on a new host rewrites pids, branch names
+  and dates across the captures, and re-capturing is its own concern; the numbers above are this
+  session's runs, quoted rather than committed.
+
+```
+npm run test:unit       278 tests, 278 pass, 0 fail
+npm run typecheck       clean
+bash test/e2e-extras.sh 53 checks, 0 failed   (§AN green, on a host with no ambient key)
+bash test/e2e-codex.sh  all criteria passed
+node scripts/trust.mjs --check   current
+```
