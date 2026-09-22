@@ -106,9 +106,23 @@ box.
   (it wants to write `gid_map`) rather than the kernel refusing. Joining the box's **user** namespace
   first and its network namespace second works — it is the mechanism slirp4netns is built on — and a
   plain `setns` in that order lands in the box's netns (`net:[4026533202]`), where two processes
-  reach each other on `127.0.0.1` (measured). What moat lacks is a way to *call* it: Node has no
-  `setns`, so this shape needs a small helper binary to ship and pin. That is the cost, and it is not
-  zero — which is why the shape is not simply free.
+  reach each other on `127.0.0.1` (measured).
+
+  **What that placement costs is not a helper binary, and I said it was for one round.** Node has no
+  `setns`, which is true and was beside the point: `nsenter` does it, and the reason my earlier
+  attempt failed is a flag — `--user --net` dies on `setgroups`, and **`--preserve-credentials`** is
+  the flag that skips that bookkeeping:
+
+  ```
+  nsenter --target <pid> --net                      -> reassociate to namespaces failed
+  nsenter --target <pid> --user --net --preserve-credentials  -> net:[4026533192]  (the box)
+  ```
+
+  A listener started that way is reached by a peer in the same namespace (`HTTP/1.0 200 OK`), and the
+  host's own loopback listener answers 200 as the control. So the mechanism is a **subprocess of
+  util-linux** — the same package `unshare` and `chroot` already come from, and which moat's default
+  path already assumes. Nothing new has to be shipped or pinned. The container backend answers the
+  same way (`net:[4026533187]`, peer `HTTP/1.0 200 OK`), so this is one mechanism for both.
 
   One thing this placement has to respect: **every boot has its own network namespace.** The
   long-running box is a keepalive, and a task, a check and an `moat exec` are each their own boot
@@ -195,7 +209,7 @@ which reading justified it.
 | shape | reachable from the box | what it costs |
 | --- | --- | --- |
 | **Host process, on the host's LAN address** | `isolated` (unshare): any port. `filtered` (default): 80/443 only, since the ruleset accepts `@allowed4 tcp dport { 80, 443 }` over `policy drop`. **Container backend: not reachable at all** | the listener is on the LAN, so it needs a deliberate bind address and caller authentication; `filtered` needs one ruleset entry naming the proxy's port — the "cannot express per-host ports" hole, narrowed to one entry; a rootless process cannot bind 443; and it is **unshare-only**, so it cannot be the design for a moat with two backends |
-| **A host process in the box's own network namespace** (`setns` into the box's user namespace, then its network namespace — measured to work) | the box's own loopback, in every mode, with nothing on the LAN | moat cannot call `setns` from Node, so it needs a small helper binary to ship and pin. The attach-by-pid shape is the one moat already uses for slirp4netns; the artefact is new |
+| **A host process in the boot's own network namespace**, placed by `nsenter --user --net --preserve-credentials` | the box's own loopback, in every mode, with nothing on the LAN | nothing new to ship: a subprocess of util-linux, the package `unshare`/`chroot` already come from. It attaches per boot, the shape moat already uses for slirp4netns. The open question is the agent's reach — see below |
 | **A proxy inside the box** | its own loopback | agent-visible and agent-killable — the agent is root in there — which is what invariant 6's reason forbids ("the host is a terminal and a log reader") |
 
 What is settled by measurement and does not depend on the choice: both runtimes send their model
@@ -204,5 +218,12 @@ can be refused or dropped for free, and doing so makes a turn ~8x faster (§2); 
 proxy variables today, so any shape needs a `managedEnv` change (`sandbox/launcher.ts` accepts only
 `MOAT_` names through `MOAT_SANDBOX_ENV`); that every boot has its own network namespace, so a proxy
 attaches per boot rather than to the running box; that the in-namespace placement is the only one of
-the three both backends allow; and that whatever is built terminates egress on the host, which
-invariant 6 would need amended for, in writing, by a named phase.
+the three both backends allow, with no new artefact needed; and that whatever is built terminates
+egress on the host, which invariant 6 would need amended for, in writing, by a named phase.
+
+One question this placement raises and nothing here answers: **can the agent reach the process.**
+`nsenter --user` puts the listener in the box's *user* namespace, so the box's root is in the same
+namespace it is — it cannot *see* it (a different pid namespace: the box sees a handful of pids), but
+whether it can find and signal it is unmeasured, and the socket itself is visible in the box's own
+`/proc/net/tcp`. That belongs in the design, not in a footnote, because "the agent can kill the
+proxy" is precisely shape 3's failure mode.

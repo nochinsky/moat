@@ -251,10 +251,21 @@ else
     if [ -n "$BOXPID" ]; then
       BOXNET=$(readlink "/proc/$BOXPID/ns/net" 2>/dev/null)
       JOINED=$(python3 "$SCRATCH/netjoin.py" "$BOXPID" 2>&1)
+      # The cheap mechanism, and the one that decides what this shape costs: `nsenter` needs
+      # --preserve-credentials. Without it, it fails on setgroups — which is exactly what made me
+      # report "an ordinary process cannot" one round before this. With it, a *subprocess of
+      # util-linux* is enough, and util-linux is the package moat's default path already assumes for
+      # `unshare` and `chroot`, so nothing new has to be shipped.
+      NSJOIN=$(nsenter --target "$BOXPID" --user --net --preserve-credentials -- readlink /proc/self/ns/net 2>&1)
       if [ "$JOINED" = "$BOXNET" ]; then
-        mark MEASURED "a plain process CAN enter the box's network namespace" "user namespace first, then network ($JOINED) — the mechanism slirp4netns is built on, and no privilege has to be granted for it"
+        mark MEASURED "a plain process CAN enter the box's network namespace" "user namespace first, then network ($JOINED) — the mechanism slirp4netns is built on"
       else
         mark UNKNOWN "a plain process could not enter the box's network namespace" "$JOINED"
+      fi
+      if [ "$NSJOIN" = "$BOXNET" ]; then
+        mark MEASURED "nsenter reaches it too, with nothing new to ship" "--user --net --preserve-credentials: util-linux is where unshare and chroot already come from"
+      else
+        say "    (nsenter --user --net --preserve-credentials: $NSJOIN)"
       fi
       if command -v nsenter >/dev/null 2>&1 && ! nsenter --target "$BOXPID" --net -- true 2>/dev/null; then
         say "    (for contrast, nsenter --target <pid> --net says: $(nsenter --target "$BOXPID" --net -- true 2>&1 | tail -1 | cut -c1-60))"
@@ -303,6 +314,7 @@ else
     ENVDIR=$( cd "$CDIR" && $MOAT status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("envDir") or "")' )
     CPID=$(podman inspect --format '{{.State.Pid}}' "moat-$(basename "${ENVDIR:-none}")" 2>/dev/null)
     CJ=$( [ -n "$CPID" ] && python3 "$SCRATCH/netjoin.py" "$CPID" 2>&1 )
+    CJN=$( [ -n "$CPID" ] && nsenter --target "$CPID" --user --net --preserve-credentials -- readlink /proc/self/ns/net 2>&1 )
     say "    container pid ${CPID:-unknown}; setns into its namespace: ${CJ:-unmeasured}"
     say ""
     if printf '%s' "$COUT" | grep -q "outbound=no"; then
@@ -312,7 +324,7 @@ else
     else
       mark MEASURED "a host-side listener is NOT reachable from a container box" "the host's address is refused here, where the unshare backend reached it — that shape is unshare-only"
       if [ -n "$CPID" ] && [ "$CJ" = "$(readlink "/proc/$CPID/ns/net" 2>/dev/null)" ]; then
-        mark MEASURED "and the in-namespace placement works for this backend too" "setns into the container's namespace succeeds ($CJ) — the one placement both backends allow"
+        mark MEASURED "and the in-namespace placement works for this backend too" "setns into the container's namespace succeeds ($CJ)$( [ "$CJN" = "$CJ" ] && echo ', and so does nsenter, so no new artefact is needed')"
       fi
     fi
   else
