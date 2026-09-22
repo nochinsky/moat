@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 
@@ -89,7 +90,52 @@ function networkArgs(egress: EgressMode | undefined): string[] {
   return egress === "open" ? ["--network=host"] : []
 }
 
+/**
+ * The container's name, derived from the environment id.
+ *
+ * Derived rather than stored, so `moat down` and `moat status` can find the box without a second
+ * piece of state that could disagree with the first. Killing the `podman run` *client* does not stop
+ * the container — conmon owns it — which is exactly how a `moat down` under this backend left a box
+ * running while state.json said stopped.
+ */
+export function containerName(envId: string): string {
+  return `moat-${envId}`
+}
+
+/** Is the container for this environment running? */
+export function containerRunning(envId: string): boolean {
+  const runtime = containerRuntime()
+  if (!runtime.usable) return false
+  const result = spawnSync(runtime.command, ["inspect", "--format", "{{.State.Running}}", containerName(envId)], {
+    encoding: "utf8",
+  })
+  return result.status === 0 && (result.stdout ?? "").trim() === "true"
+}
+
+/**
+ * Stop the box through the runtime, which is the only thing that can.
+ *
+ * `rm -f` rather than `stop` then `rm`: the boot runs with `--rm`, so a stopped container is
+ * already gone, and `rm -f` covers both states without a race between them.
+ */
+export function containerStop(envId: string): boolean {
+  const runtime = containerRuntime()
+  if (!runtime.usable) return false
+  const result = spawnSync(runtime.command, ["rm", "-f", containerName(envId)], { encoding: "utf8" })
+  return result.status === 0
+}
+
 export type ContainerPlanOptions = {
+  /**
+   * A stable name, for the long-running box only.
+   *
+   * Ephemeral boots must NOT be named: moat runs them *alongside* the box by design — a task, a
+   * check, `moat exec` and `moat doctor` each take their own boot of the same rootfs — so a name
+   * derived from the environment id collides with the keepalive. Measured: the second one failed
+   * with "the container name `moat-<id>` is already in use", which surfaced as podman's exit code
+   * 125 in the middle of a task.
+   */
+  name?: string
   egress?: EgressMode
   /** The box's environment: configuration and the credential variable, never a file. */
   env?: Record<string, string | undefined>
@@ -105,12 +151,16 @@ export type ContainerPlanOptions = {
  */
 export function containerPlan(p: EnvPaths, innerScript: string, opts: ContainerPlanOptions = {}): BootPlan {
   const runtime = containerRuntime()
-  const inner = "/" + path.relative(p.rootfs, innerScript)
-  const args = ["run", "--rm", "--rootfs", p.rootfs, ...networkArgs(opts.egress)]
+  const inner = "/" + path.posix.relative(p.rootfs, innerScript)
+  // `--rootfs` is a BOOLEAN flag: it says "the first argument is not an image but the rootfs", so
+  // the path is a *positional* and every option has to come before it. Putting `--rootfs <dir>`
+  // first made the options that followed part of the command — measured, crun reported
+  // "executable file `--env` not found in $PATH". The order below is the contract.
+  const args = ["run", "--rm", ...(opts.name ? ["--name", opts.name] : []), ...networkArgs(opts.egress)]
   for (const [key, value] of Object.entries(opts.env ?? {})) {
     if (value === undefined) continue
     args.push("--env", `${key}=${value}`)
   }
-  args.push("/bin/sh", inner)
+  args.push("--rootfs", p.rootfs, "/bin/sh", inner)
   return { command: runtime.command, args, needsSlirp: false, label: runtime.command }
 }

@@ -84,6 +84,7 @@ import {
 } from "../bundle/codex.ts"
 import { installClaudeFiles } from "../bundle/claude.ts"
 import { DEFAULT_RUNTIME, keepaliveEntryScript, resolveRuntime, type RuntimeId, type RuntimeSpec } from "../bundle/runtime.ts"
+import { BACKEND_IDS, DEFAULT_BACKEND, containerRunning, containerRuntime, resolveBackend, type BackendId } from "../sandbox/backend.ts"
 import {
   assertProviderID,
   listProviderSpecs,
@@ -229,6 +230,9 @@ function requireState(p: EnvPaths): EnvState {
  * signalled.
  */
 function sandboxAlive(state: EnvState, paths: EnvPaths): boolean {
+  // A container's pid is the `podman run` client, which says nothing about the box: the container
+  // is owned by its runtime, so liveness for that backend is a question for the runtime.
+  if (state.backend === "container") return containerRunning(paths.id)
   return sandboxPidStatus(state.pid, { startTime: state.pidStart, envId: paths.id }) === "ours"
 }
 
@@ -370,7 +374,7 @@ async function egressRuntime(state: EnvState, paths: EnvPaths): Promise<EgressRu
   if (state.egress === "filtered") await ensureFilterTool(paths)
   const provider = providerHost(state.providerBaseUrl ?? DEEPSEEK.baseUrl)
   const hosts = [...defaultAllowHosts(provider), ...(state.egressAllow ?? [])]
-  const runtime = await runtimeForEgress(state.egress, { rootfs: paths.rootfs, allowHosts: hosts })
+  const runtime = await runtimeForEgress(state.egress, { rootfs: paths.rootfs, allowHosts: hosts, backend: state.backend })
   // Ephemeral boots warn rather than fail: `moat exec` may be exactly how the
   // user is diagnosing the box, and doctor's own check reports it as a failure.
   reportUnresolved(runtime.unresolved, provider, false)
@@ -561,6 +565,25 @@ async function cmdUp(argv: string[]): Promise<number> {
     return log.fail((error as Error).message)
   }
   const runtimeId: RuntimeId = runtime.id
+
+  // Which backend boots the box. `--backend` sets it, an existing environment keeps the one it was
+  // created with, and a new one gets the unshare path that needs nothing installed. Resolved here,
+  // with the runtime, so a typo or a missing runtime fails before provisioning rather than after.
+  let backend: BackendId
+  try {
+    backend = resolveBackend(flag<string>(p, "backend") ?? state?.backend ?? DEFAULT_BACKEND)
+  } catch (error) {
+    return log.fail((error as Error).message)
+  }
+  if (backend === "container") {
+    const runtimeAvailable = containerRuntime()
+    if (!runtimeAvailable.usable) {
+      return log.fail(
+        `--backend container needs a container runtime (${BACKEND_IDS.join(" or ")}), and none is on PATH.\n` +
+          "  install rootless podman, or use the default backend, which needs nothing but unshare.",
+      )
+    }
+  }
   const runtimePresent = fs.existsSync(path.join(paths.rootfs, runtime.binary))
   const needsProvision = fresh || !envExists(paths) || !state
 
@@ -721,6 +744,7 @@ async function cmdUp(argv: string[]): Promise<number> {
       useImageCache: !fresh,
       packages: resolvedProfiles.packages,
       runtime: runtimeId,
+      backend,
     })
     report.provisionMs = provision.totalMs
     report.provisionFromImageCache = provision.fromImageCache
@@ -756,6 +780,7 @@ async function cmdUp(argv: string[]): Promise<number> {
   if (state!.pid && sandboxAlive(state!, paths) && credentialExpired(state!)) {
     log.warn("the injected credential for this sandbox has expired; restarting it to mint a fresh one")
     await stopSandbox(state!.pid!, {
+      backend: state!.backend,
       startTime: state!.pidStart,
       envId: paths.id,
       slirpPid: state!.slirpPid,
@@ -775,6 +800,7 @@ async function cmdUp(argv: string[]): Promise<number> {
         : "the egress allowlist changed; restarting the sandbox to apply it",
     )
     await stopSandbox(state!.pid!, {
+      backend: state!.backend,
       startTime: state!.pidStart,
       envId: paths.id,
       slirpPid: state!.slirpPid,
@@ -801,6 +827,7 @@ async function cmdUp(argv: string[]): Promise<number> {
     }
     log.info(`sandbox already running (pid ${state!.pid}); restarting it for this run`)
     await stopSandbox(state!.pid, {
+      backend: state!.backend,
       startTime: state!.pidStart,
       envId: paths.id,
       slirpPid: state!.slirpPid,
@@ -1156,6 +1183,7 @@ ${command}
   if (state?.slirpPid && !sandboxAlive(state, paths)) await reapRecordedDatapath(state)
 
   const sandbox = await startSandbox(paths, entry, sandboxEnvVars, {
+    backend,
     egress,
     slirpBinary: egressConfig.slirpBinary,
     egressRules: egressConfig.egressRules,
@@ -1169,6 +1197,7 @@ ${command}
   const ready = await waitForSandboxReady(sandbox.pid, () => readRootfsFileTail(paths.rootfs, "/var/log/moat/boot.log", LOG_TAIL_BYTES))
   if (!ready.ok) {
     await stopSandbox(sandbox.pid, {
+      backend: backend,
       startTime: sandbox.startTime,
       envId: paths.id,
       slirpPid: sandbox.slirp?.pid ?? null,
@@ -1186,6 +1215,7 @@ ${command}
     egress,
     egressAllow,
     runtime: runtimeId,
+    backend,
     slirpPid: sandbox.slirp?.pid ?? null,
     slirpStart: sandbox.slirp?.startTime ?? null,
     model: facts.label,
@@ -1224,6 +1254,7 @@ ${command}
     const leaks = scanRootfsForCredential(paths.rootfs, credential.value)
     if (leaks.length > 0) {
       await stopSandbox(sandbox.pid, {
+        backend: backend,
         startTime: sandbox.startTime,
         envId: paths.id,
         slirpPid: sandbox.slirp?.pid ?? null,
@@ -1264,6 +1295,7 @@ ${command}
   }
   const runOptions = {
     env: sandboxEnvVars,
+    backend,
     maxTokens,
     maxCost,
     egress,
@@ -2030,6 +2062,7 @@ async function cmdDown(argv: string[]): Promise<number> {
   }
   if (
     await stopSandbox(state.pid!, {
+      backend: state.backend,
       startTime: state.pidStart,
       envId: paths.id,
       slirpPid: state.slirpPid,
@@ -2076,6 +2109,7 @@ async function cmdDestroy(argv: string[]): Promise<number> {
       if (envState?.pid) {
         // stopSandbox reaps the recorded datapath too, whether or not the box answered.
         await stopSandbox(envState.pid, {
+          backend: envState.backend,
           startTime: envState.pidStart,
           envId: envState.id,
           slirpPid: envState.slirpPid,
@@ -2105,6 +2139,7 @@ async function cmdDestroy(argv: string[]): Promise<number> {
       log.fail("sandbox is running. Stop it first, or pass --yes to destroy it while running.")
     }
     await stopSandbox(state.pid!, {
+      backend: state.backend,
       startTime: state.pidStart,
       envId: paths.id,
       slirpPid: state.slirpPid,
@@ -2283,6 +2318,7 @@ async function cmdRestore(argv: string[]): Promise<number> {
       )
     }
     await stopSandbox(state.pid, {
+      backend: state.backend,
       startTime: state.pidStart,
       envId: paths.id,
       slirpPid: state.slirpPid,
@@ -2387,6 +2423,13 @@ async function cmdDoctor(argv: string[]): Promise<number> {
     log.info(`  user ns    ${host.userns ? log.green("available") : log.red("unavailable")}`)
     log.info(`  pid ns     ${host.pidns ? log.green("available") : log.red("unavailable")}`)
     log.info(`  /dev/kvm   ${host.kvm ? "present" : "absent (v1 microVM path unavailable here)"}`)
+    // Which backends this host could boot, so `--backend container` is a choice made with the
+    // facts rather than discovered at a refusal. The container runtime is not required — the
+    // default backend needs nothing but unshare — so this is a note, not a check.
+    const containerOnHost = containerRuntime()
+    log.info(
+      `  backends   unshare (default)${containerOnHost.usable ? `, container (${containerOnHost.command})` : ", container unavailable (no podman on PATH)"}`,
+    )
     for (const note of host.notes) log.info(`  note       ${note}`)
     for (const problem of host.problems) log.info(`  ${log.red("problem")}   ${problem}`)
   }
@@ -2973,6 +3016,9 @@ Options that apply to up/run
                          keeps the catalog: context window, price, effort levels.
                          Same URL rule as --base-url.
   --credential-env NAME  host env var holding the key   --credential-ttl 4h
+  --backend WHICH        unshare (default, needs nothing installed) or container
+                         (rootless podman/docker runs the box against the same
+                         rootfs directory). Recorded per environment.
   --egress MODE          open, isolated or filtered. Default: filtered, which puts
                          the box in its own namespace behind a default-deny
                          allowlist (provider + package registries). A provider on
@@ -3005,6 +3051,8 @@ type AgentRunOptions = {
    */
   catalogPrice?: CatalogPrice
   egress: EgressMode
+  /** Which backend boots the box for this turn. */
+  backend?: BackendId
   slirpBinary?: string
   egressRules?: string
   timeoutSeconds?: number
@@ -3058,6 +3106,7 @@ async function runAgentTask(paths: EnvPaths, body: string, opts: AgentRunOptions
   const result = await runInSandbox(paths, body, {
     env: opts.env,
     egress: opts.egress,
+    backend: opts.backend,
     slirpBinary: opts.slirpBinary,
     egressRules: opts.egressRules,
     timeoutMs: (opts.timeoutSeconds ?? 2700) * 1000,

@@ -2,6 +2,7 @@ import type { Check } from "../lib/detect.ts"
 import type { EnvPaths } from "../lib/paths.ts"
 import { SANDBOX_WORKDIR, type EgressMode } from "../lib/pins.ts"
 import { shellQuote } from "../lib/shell.ts"
+import type { BackendId } from "./backend.ts"
 import { runInSandbox } from "./launcher.ts"
 
 /**
@@ -66,6 +67,8 @@ export async function runChecks(
     onOutput?: (chunk: string) => void
     /** Run the checks in the same kind of network as the environment. */
     egress?: EgressMode
+    /** Which backend boots the check: a container runtime, or the default unshare path. */
+    backend?: BackendId
     slirpBinary?: string
     /**
      * Directory inside the sandbox to run in, when it is not `/work`.
@@ -89,6 +92,7 @@ export async function runChecks(
     const result = await runInSandbox(paths, script, {
       onOutput: opts.onOutput,
       egress: opts.egress,
+      backend: opts.backend,
       slirpBinary: opts.slirpBinary,
       // The inner timeout is the real limit; this is the backstop for a boot or a
       // shell that ignores every signal. --kill-after makes the inner timeout

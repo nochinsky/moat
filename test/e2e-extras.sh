@@ -34,6 +34,9 @@ CREDENTIAL="moat-e2e-scoped-credential-8c1d4e"
 # status at the very end.
 mkdir -p "$EVIDENCE"
 CHECKS_LOG="$EVIDENCE/extras.txt"
+# Every evidence file this run writes is newer than this; `scrub_evidence` uses it to leave the
+# other suites' captures alone.
+SUITE_START=$(date +%s)
 . "$REPO/test/lib/guard.sh"
 check_count
 
@@ -59,10 +62,14 @@ scrub() {
 # every evidence file gets one final pass before the suite reports.
 scrub_evidence() {
   local f
-  for f in "$EVIDENCE"/*.txt; do
+  # Only the files *this run* wrote. Globbing `"$EVIDENCE"/*.txt` swept every other suite's evidence
+  # too, so running extras rewrote `egress.txt`, `provider.txt`, `demo.txt` and `review.txt` with
+  # nothing but a path substitution — found by diffing a PR and asking why four unrelated captures
+  # had changed, and worked around by hand in four separate PRs before being fixed here.
+  while IFS= read -r f; do
     [ -f "$f" ] || continue
     sed -i -e "s|$HOME|/home/user|g" -e "s|${USER:-$(id -un)}|user|g" "$f"
-  done
+  done < <(find "$EVIDENCE" -maxdepth 1 -name '*.txt' -newermt "@$SUITE_START" 2>/dev/null)
 }
 
 capture() {

@@ -25,6 +25,7 @@ import {
 } from "../lib/pins.ts"
 import { cacheDir, claudeCachePath, codexCachePath, partPath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
 import { CLAUDE_BINARY, type RuntimeId } from "../lib/pins.ts"
+import type { BackendId } from "./backend.ts"
 import { chmodRootfsDir, ensureRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { out, run } from "../lib/shell.ts"
 import * as log from "../lib/log.ts"
@@ -316,7 +317,7 @@ export type ProvisionResult = {
  */
 export async function provisionEnv(
   p: EnvPaths,
-  opts: { useImageCache?: boolean; packages?: string[]; runtime?: RuntimeId } = {},
+  opts: { useImageCache?: boolean; packages?: string[]; runtime?: RuntimeId; backend?: BackendId } = {},
 ): Promise<ProvisionResult> {
   const packages = opts.packages ?? [...PROVISION_PACKAGES]
   const started = Date.now()
@@ -417,7 +418,8 @@ fi
 for pkg in $packages; do echo "[moat] verified $pkg $(apk info -v "$pkg" 2>/dev/null | head -1)"; done
 rm -rf /var/cache/apk/*
 `
-  const result = await runInSandbox(p, inner, { onOutput: (c) => log.debug(c.trimEnd()) })
+  // The image is built by booting a box, so it is built the same way the box will be.
+  const result = await runInSandbox(p, inner, { backend: opts.backend, onOutput: (c) => log.debug(c.trimEnd()) })
   if (result.code !== 0) {
     throw new Error(`rootfs provisioning failed (exit ${result.code}):\n${tailOf(result.output, 25)}`)
   }

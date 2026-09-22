@@ -3,6 +3,7 @@ import path from "node:path"
 
 import { ENV_ID, envPathsForId, envsDir, partPath, type EnvPaths } from "../lib/paths.ts"
 import type { EgressMode, RuntimeId } from "../lib/pins.ts"
+import type { BackendId } from "./backend.ts"
 
 export type EnvStatus = "provisioning" | "stopped" | "running"
 
@@ -61,6 +62,8 @@ export type EnvState = {
   egressAllow: string[]
   /** Which agent CLI this environment runs. One at a time, recorded so every later command agrees. */
   runtime: RuntimeId
+  /** How the box is started: `unshare`, or a container runtime. Recorded so every command agrees. */
+  backend: BackendId
   /** slirp4netns pid for an isolated environment, and its identity. */
   slirpPid: number | null
   slirpStart: string | null
@@ -98,6 +101,7 @@ export function initialState(p: EnvPaths, versions: { alpine: string }): EnvStat
     egress: "open",
     egressAllow: [],
     runtime: "codex",
+    backend: "unshare",
     slirpPid: null,
     slirpStart: null,
     baselineDigest: null,
@@ -155,6 +159,7 @@ export function readState(p: EnvPaths): EnvState | null {
     if (raw.pidStart === undefined) raw.pidStart = null
     if (raw.egress === undefined) raw.egress = "open"
     if (raw.runtime === undefined) raw.runtime = "codex"
+    if (raw.backend === undefined) raw.backend = "unshare"
     if (raw.egressAllow === undefined) raw.egressAllow = []
     if (raw.slirpPid === undefined) raw.slirpPid = null
     if (raw.slirpStart === undefined) raw.slirpStart = null
