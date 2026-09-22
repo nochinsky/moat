@@ -1272,6 +1272,65 @@ else
   fail "coherence" "expected a refusal (exit=$COH_PARTIAL, left=$COH_LEFT) and a forced write (exit=$COH_FORCED, wrote=$COH_FORCED_VAL)"
 fi
 ( cd "$AM" && $MOAT destroy --yes >/dev/null 2>&1 )
+
+section "AN. the second runtime runs a turn end to end, keyless"
+# Phase 2's payoff: `moat run` under `--runtime claude`, against the keyless Messages stub. The
+# assertions are on the *provider's* view (what the stub recorded) and on what the agent's own
+# stream says happened, rather than on moat's account of either.
+AN="$WORK/claude-runtime"
+AN_PORT="${AN_PORT:-5612}"
+rm -rf "$AN"; mkdir -p "$AN"
+(
+  cd "$AN"
+  git init -q -b main .
+  git config user.email a@b
+  git config user.name t
+  printf '{"name":"claude-runtime","scripts":{"test":"true"}}\n' > package.json
+  git add -A && git commit -qm base
+)
+: > "$WORK/anthropic-record.jsonl"
+setsid node "$REPO/stub/mock-anthropic.mjs" --port "$AN_PORT" --record "$WORK/anthropic-record.jsonl" > "$WORK/anthropic-stub.log" 2>&1 < /dev/null &
+AN_STUB=$!
+sleep 1.2
+# The provider is on the host's loopback, so the box gets the host's network namespace — the same
+# reason moat chooses `open` for a loopback endpoint by itself.
+( cd "$AN" && $MOAT up --quiet --runtime claude --credential "$CREDENTIAL" \
+    --base-url "http://127.0.0.1:$AN_PORT" --model claude-opus-5 --no-detect --profile node --egress open ) > "$WORK/claude-up.log" 2>&1
+AN_UP=$?
+( cd "$AN" && $MOAT run "run the check" --quiet ) > "$WORK/claude-run.log" 2>&1
+AN_RUN=$?
+AN_REQS=$(grep -c '/v1/messages' "$WORK/anthropic-record.jsonl" 2>/dev/null || echo 0)
+# The credential has to reach the runtime under the name *it* reads, not moat's: Claude Code reads
+# ANTHROPIC_API_KEY, and the stub records the header the provider actually received.
+AN_KEY=$(python3 -c "
+import json
+ok='no'
+for line in open('$WORK/anthropic-record.jsonl'):
+    d=json.loads(line)
+    if str(d.get('path','')).startswith('/v1/messages') and d.get('apiKey'):
+        ok='yes'
+print(ok)
+" 2>/dev/null || echo no)
+kill $AN_STUB 2>/dev/null
+{
+  echo "--- \$ moat up --runtime claude   (a second runtime, provisioned and booted)"
+  grep -E "runtime|prov" "$WORK/claude-up.log" | head -4
+  echo "--- \$ moat run \"run the check\"   (a turn through the Claude runtime)"
+  cat "$WORK/claude-run.log"
+  echo "--- the provider's own record ---"
+  echo "requests to /v1/messages: $AN_REQS    credential reached the runtime: $AN_KEY"
+} | scrub | tee -a "$EVIDENCE/extras.txt" > "$EVIDENCE/claude-runtime.txt"
+
+if [ "$AN_UP" = "0" ] \
+   && [ "$AN_RUN" = "0" ] \
+   && grep -q "stub-tool-ran" "$WORK/claude-run.log" \
+   && [ "$AN_REQS" -ge 2 ] \
+   && [ "$AN_KEY" = "yes" ]; then
+  pass "claude runtime" "a turn ran under the second runtime: the model asked for a tool, the box ran it, and the credential arrived as ANTHROPIC_API_KEY"
+else
+  fail "claude runtime" "up=$AN_UP run=$AN_RUN requests=$AN_REQS key=$AN_KEY"
+fi
+( cd "$AN" && $MOAT destroy --yes >/dev/null 2>&1 )
 # The stub belongs to this suite: e2e.sh used to start it and extras used to inherit it.
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; rm -f "$MOCK_PIDFILE"; fi
 echo "" | tee -a "$EVIDENCE/extras.txt"

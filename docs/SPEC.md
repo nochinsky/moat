@@ -132,17 +132,33 @@ Measured: one `kill -9`, then `moat up` left two `slirp4netns` processes and
 
 ### 2.2b The agent runtime
 
-moat ships one runtime: **Codex**, a CLI, pinned and digest-verified in `lib/pins.ts` like
-slirp4netns, because it becomes the code the agent runs. The npm platform tarball is a
-**musl** build, so it runs on the Alpine image with no gcompat and no Node runtime, and
-provisioning extracts it to `/usr/local/bin/codex`.
+moat ships two runtimes, chosen with `--runtime codex|claude` and recorded in `state.json` so every
+later command agrees with the boot that made it. Both are CLIs, pinned and digest-verified in
+`lib/pins.ts` like slirp4netns, because each becomes the code the agent runs. The npm platform
+tarballs are **musl** builds, so they run on the Alpine image with no gcompat and no Node runtime,
+and provisioning extracts them to `/usr/local/bin/codex` and `/usr/local/bin/claude`.
 
-Codex is not a server, so the long-running box is a keepalive (`codexEntryScript`): it
-exists, so `moat status`, `down` and `destroy` keep their meaning, it prints that the
-runtime is ready and sleeps, and it enforces the credential deadline the host passes as
+**Codex** is the default. `--permission-mode`-style policy does not exist for it; the config moat
+renders (§6.2) is what keeps it from asking.
+
+**Claude Code** reads its policy from arguments, and that is deliberate: its one "allow everything,
+ask nothing" mode, `--permission-mode bypassPermissions`, is **refused when the process is root**,
+which moat's agent is (`docs/RUNTIMES.md` has the measurement, and why a non-root agent user is not
+available in a single-id user namespace). moat renders an **allowlist** instead —
+`--permission-mode acceptEdits --allowedTools Bash Edit Write Read Glob Grep NotebookEdit` — and
+because anything that would still prompt is auto-*denied* in `--print` mode rather than left
+hanging, the box never asks for approval and never blocks on a question it cannot ask. Anything the
+allowlist lacks comes back in `permission_denials` on the final event and is reported, so an
+incomplete list is visible rather than silent. Its stream is parsed into the same turn shape as
+Codex's (§2.2b), with one trap: `input_tokens` there is already the cache-miss count.
+
+Neither runtime is a server, so the long-running box is a keepalive (`keepaliveEntryScript`): it
+exists, so `moat status`, `down` and `destroy` keep their meaning, it prints that the runtime is
+ready and sleeps, and it enforces the credential deadline the host passes as
 `MOAT_CREDENTIAL_EXPIRES_EPOCH`. Everything that runs the agent runs in its own ephemeral
-boot of the same rootfs: a task is `codex exec --json --skip-git-repo-check <prompt>`, a
-session is Codex's own TUI, with a prompt or without one. The host attaches a pty for the
+boot of the same rootfs: a task is `codex exec --json --skip-git-repo-check <prompt>` or
+`claude -p --output-format stream-json`, a session is the runtime's own TUI, with a prompt or
+without one. The host attaches a pty for the
 second and parses the JSONL event stream of the first; it never runs a tool itself.
 
 The agent's policy is two files moat renders on **every** boot through the rootfs guard

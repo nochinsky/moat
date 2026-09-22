@@ -246,3 +246,12 @@ export const EGRESS_ALLOWED_PORTS = [80, 443]
 
 /** Where the agent works inside the sandbox rootfs. */
 export const SANDBOX_WORKDIR = "/work"
+
+/**
+ * Which agent CLI a box runs.
+ *
+ * A small union rather than a string, because a name moat does not ship must be refused rather than
+ * fall back to the default — the same discipline as invariant 8, one layer down. The registry that
+ * implements each one is `bundle/runtime.ts`.
+ */
+export type RuntimeId = "codex" | "claude"

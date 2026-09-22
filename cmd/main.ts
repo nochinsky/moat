@@ -82,7 +82,8 @@ import {
   parseCodexEvents,
   renderCodexConfig,
 } from "../bundle/codex.ts"
-import { keepaliveEntryScript } from "../bundle/runtime.ts"
+import { installClaudeFiles } from "../bundle/claude.ts"
+import { DEFAULT_RUNTIME, keepaliveEntryScript, resolveRuntime, type RuntimeId, type RuntimeSpec } from "../bundle/runtime.ts"
 import {
   assertProviderID,
   listProviderSpecs,
@@ -536,7 +537,17 @@ async function cmdUp(argv: string[]): Promise<number> {
   // The binary can be missing: the agent can delete it, and an environment provisioned by an
   // older moat never had it. It is put back into the live rootfs below, not by re-provisioning
   // — provisioning deletes the rootfs first and would take the agent's work with it.
-  const runtimePresent = fs.existsSync(path.join(paths.rootfs, RUNTIME_BINARY))
+  // Which agent runtime this boot uses. `--runtime` sets it, an existing environment keeps the one
+  // it was created with, and a new one gets codex. Resolved *before* provisioning: a typo has to
+  // fail in under a second rather than after a multi-minute image build.
+  let runtime: RuntimeSpec
+  try {
+    runtime = resolveRuntime(flag<string>(p, "runtime") ?? state?.runtime ?? DEFAULT_RUNTIME)
+  } catch (error) {
+    return log.fail((error as Error).message)
+  }
+  const runtimeId: RuntimeId = runtime.id
+  const runtimePresent = fs.existsSync(path.join(paths.rootfs, runtime.binary))
   const needsProvision = fresh || !envExists(paths) || !state
 
   // Where the provider lives decides the default network policy, so resolve it
@@ -689,10 +700,14 @@ async function cmdUp(argv: string[]): Promise<number> {
 
   if (needsProvision) {
     log.step(
-      `provisioning sandbox image (alpine ${ALPINE_VERSION} + codex ${CODEX_VERSION}` +
+      `provisioning sandbox image (alpine ${ALPINE_VERSION} + ${runtime.id} ${runtime.version}` +
         `${resolvedProfiles.profiles.length > 0 ? ` + ${resolvedProfiles.profiles.join(", ")}` : ""})`,
     )
-    const provision = await provisionEnv(paths, { useImageCache: !fresh, packages: resolvedProfiles.packages })
+    const provision = await provisionEnv(paths, {
+      useImageCache: !fresh,
+      packages: resolvedProfiles.packages,
+      runtime: runtimeId,
+    })
     report.provisionMs = provision.totalMs
     report.provisionFromImageCache = provision.fromImageCache
     report.imageCache = provision.imageCache
@@ -710,8 +725,8 @@ async function cmdUp(argv: string[]): Promise<number> {
   // back here rather than by re-provisioning: provisioning deletes the rootfs first and would
   // take /work with it, and a copy into /usr/local/bin touches nothing the agent owns.
   if (!needsProvision && !runtimePresent) {
-    log.step("installing the codex runtime into this environment")
-    await installRuntimeBinary(paths)
+    log.step(`installing the ${runtimeId} runtime into this environment`)
+    await installRuntimeBinary(paths, runtimeId)
   }
 
   // The recorded pid is only meaningful if it is still the process moat started.
@@ -964,7 +979,7 @@ ${command}
       // The key goes into the box under the name this provider's own client expects: the
       // variable the user configured, or the default provider's name, or (for an endpoint that
       // declared none) moat's own name, which the rendered provider block references.
-      targetEnvVars: credentialVarNames(provider),
+      targetEnvVars: [...credentialVarNames(provider), ...(runtimeId === "claude" ? ["ANTHROPIC_API_KEY"] : [])],
     })
     if (!credential && interactive) {
       // At a terminal, do not explain what is missing: ask for it. The key is
@@ -977,7 +992,7 @@ ${command}
           baseUrl,
           model: facts.id,
           ttlSeconds,
-          targetEnvVars: credentialVarNames(provider),
+          targetEnvVars: [...credentialVarNames(provider), ...(runtimeId === "claude" ? ["ANTHROPIC_API_KEY"] : [])],
         })
       }
     }
@@ -1060,7 +1075,7 @@ ${command}
   // `deepseek-moat`, the block's `name` was the literal `"DeepSeek"`, the key variable was
   // `DEEPSEEK_API_KEY`, and the catalog was the vendored DeepSeek file — so a box pointed at
   // any other endpoint was described to itself and to the runtime as DeepSeek.
-  installCodexFiles(paths.rootfs, {
+  const renderedFiles = {
     config: renderCodexConfig({
       model: facts.id,
       providerID: provider.codexProviderID,
@@ -1084,7 +1099,11 @@ ${command}
     // that is set). Measured through the recording proxy: the content arrives in the request
     // body wrapped as AGENTS.md instructions, not in the top-level instructions field.
     brief: renderInstructions({ ...briefInput, workspace: SANDBOX_WORKDIR }),
-  })
+  }
+  // Each runtime owns the files it reads: Codex wants a TOML config, a rendered catalog and a
+  // brief; Claude wants the brief alone, and its policy travels as arguments (bundle/claude.ts).
+  if (runtimeId === "claude") installClaudeFiles(paths.rootfs, { brief: renderedFiles.brief })
+  else installCodexFiles(paths.rootfs, renderedFiles)
 
   const managedEnv: Record<string, string> = {
     // Configuration, not a secret: the custom-endpoint provider block needs the base
@@ -1092,6 +1111,9 @@ ${command}
     // only with the credential, so a --no-credential boot had a provider with no URL
     // at all and every model call died inside the box with ERR_INVALID_URL, silently.
     ...sandboxProviderEnv({ baseUrl, model: facts.label, modelId: facts.id }),
+    // Claude Code reads its endpoint from its own variable, not from moat's provider block, so the
+    // base URL travels under both names. The credential's variable is handled at the mint.
+    ...(runtimeId === "claude" ? { ANTHROPIC_BASE_URL: baseUrl } : {}),
     ...(credential ? toSandboxEnv(credential) : {}),
   }
   // The escape hatch is spread first and the managed values last, and it may not
@@ -1149,6 +1171,7 @@ ${command}
     pidStart: sandbox.startTime,
     egress,
     egressAllow,
+    runtime: runtimeId,
     slirpPid: sandbox.slirp?.pid ?? null,
     slirpStart: sandbox.slirp?.startTime ?? null,
     model: facts.label,
@@ -1222,9 +1245,11 @@ ${command}
     egressRules: egressConfig.egressRules,
     ...(catalogPrice ? { catalogPrice } : {}),
   }
-  if (task.length > 0 && interactive) return await runInteractive(paths, codexTuiBody(task), runOptions)
-  if (task.length > 0) return await runCodexTask(paths, codexExecBody(task), { ...runOptions, timeoutSeconds, showOutput, json })
-  if (interactive) return await runInteractive(paths, codexTuiBody(), runOptions)
+  if (task.length > 0 && interactive) return await runInteractive(paths, runtime.tuiBody(task), runOptions)
+  if (task.length > 0) {
+    return await runAgentTask(paths, runtime.execBody(task), { ...runOptions, timeoutSeconds, showOutput, json, runtime })
+  }
+  if (interactive) return await runInteractive(paths, runtime.tuiBody(), runOptions)
 
   report.status = "running"
   report.pid = sandbox.pid
@@ -1267,7 +1292,7 @@ function printUpSummary(
   log.info(`  env        ${paths.dir}`)
   // No server, so no endpoint and no password to report: the TUI and the tasks run in the
   // box's own rootfs, and the credential is what the box talks to the provider with.
-  log.info(`  runtime    codex (${state.model ?? "default model"}): \`moat\` opens its TUI`)
+  log.info(`  runtime    ${state.runtime} (${state.model ?? "default model"}): \`moat\` opens its TUI`)
   log.info(`  workspace  ${SANDBOX_WORKDIR} (inside the sandbox)`)
   if (state.credential) {
     log.info(`  credential ${state.credential.provider} ${state.credential.fingerprint} expires ${state.credential.expiresAt}`)
@@ -2910,7 +2935,7 @@ A flag a command does not read is refused rather than ignored.
 Docs: docs/SPEC.md, docs/VERIFICATION.md
 `
 
-type CodexRunOptions = {
+type AgentRunOptions = {
   env: Record<string, string>
   /**
    * What the catalog says this model costs, when the model is not one of DeepSeek's.
@@ -2926,6 +2951,8 @@ type CodexRunOptions = {
   timeoutSeconds?: number
   showOutput?: boolean
   json?: boolean
+  /** Which runtime produced the stream, so the footer prices and describes the right one. */
+  runtime: RuntimeSpec
 }
 
 /**
@@ -2935,7 +2962,7 @@ type CodexRunOptions = {
  * fields are normalised into the shape `lib/pricing.ts` prices, so the footer is the same
  * arithmetic as every other cost moat reports.
  */
-async function runCodexTask(paths: EnvPaths, body: string, opts: CodexRunOptions): Promise<number> {
+async function runAgentTask(paths: EnvPaths, body: string, opts: AgentRunOptions): Promise<number> {
   const result = await runInSandbox(paths, body, {
     env: opts.env,
     egress: opts.egress,
@@ -2943,7 +2970,7 @@ async function runCodexTask(paths: EnvPaths, body: string, opts: CodexRunOptions
     egressRules: opts.egressRules,
     timeoutMs: (opts.timeoutSeconds ?? 2700) * 1000,
   })
-  const turn = parseCodexEvents(result.output)
+  const turn = opts.runtime.parse(result.output)
   if (opts.json) {
     log.emit({ ...turn, code: result.code, timedOut: result.timedOut })
     return result.code
@@ -2969,9 +2996,9 @@ async function runCodexTask(paths: EnvPaths, body: string, opts: CodexRunOptions
     const cost = computeCost(modelID, usage, new Date(), opts.catalogPrice)
     const tokens = usage.input + usage.cacheRead + usage.output + usage.reasoning
     const money = cost.known ? `  ${log.dim(`${formatUSD(cost.usd)} ${cost.peak ? "peak" : "off-peak"}`)}` : ""
-    log.info(`  ${log.dim(`${tokens} tokens`)}${money}  ${log.dim(describeCodexTurn(turn))}`)
+    log.info(`  ${log.dim(`${tokens} tokens`)}${money}  ${log.dim(opts.runtime.describe(turn))}`)
   } else if (turn.tools.length > 0) {
-    log.info(`  ${log.dim(describeCodexTurn(turn))}`)
+    log.info(`  ${log.dim(opts.runtime.describe(turn))}`)
   }
   if (result.timedOut) log.warn(`the turn was still running after ${opts.timeoutSeconds ?? 2700}s and was killed`)
   return result.code

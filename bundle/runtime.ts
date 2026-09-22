@@ -1,4 +1,4 @@
-import { CLAUDE_VERSION, CODEX_VERSION, SANDBOX_WORKDIR } from "../lib/pins.ts"
+import { CLAUDE_VERSION, CODEX_VERSION, SANDBOX_WORKDIR, type RuntimeId } from "../lib/pins.ts"
 import { shellQuote } from "../lib/shell.ts"
 import { READY_MARKER } from "../sandbox/launcher.ts"
 import { claudeExecBody, claudeTuiBody, parseClaudeEvents } from "./claude.ts"
@@ -25,7 +25,7 @@ import { describeTurn, type Turn } from "./turn.ts"
  *    TOML vs JSON), so each runtime owns its renderer (`bundle/codex.ts`, `bundle/claude.ts`).
  */
 
-export type RuntimeId = "codex" | "claude"
+export type { RuntimeId }
 
 export type RuntimeSpec = {
   id: RuntimeId

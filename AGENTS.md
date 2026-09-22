@@ -596,24 +596,24 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   parses `codex exec --json`; `test/unit/codex-runtime.test.ts` pins the parser against a
   real captured stream and the rendered config against the load-bearing lines.
   `docs/HISTORY.md` holds the runtime history and the measurements behind it.
-* **A second runtime's artefact is pinned before its runtime is wired.** Phase 2 of the plan is
-  to stop being a single pinned binary. `lib/pins.ts` now also pins Claude Code
-  (`CLAUDE_VERSION`, `CLAUDE_PLATFORM_PACKAGE`, `CLAUDE_TARBALL_SHA256`) and
-  `sandbox/rootfs.ts:ensureClaudeBinary` fetches and digest-verifies it, the same way Codex's is
-  fetched. The **policy** was measured next, in a real box. Claude Code refuses
-  `--permission-mode bypassPermissions` as root — which moat's agent is — and there is no non-root
-  identity to become: one uid is mapped, so `chown` is EINVAL and `su` is EPERM. But
-  `bypassPermissions` is not the only way to never ask. `--allowedTools` is an **additive
-  auto-approval list**, and in `--print` mode anything that would prompt is auto-**denied** rather
-  than left hanging, so `--permission-mode acceptEdits --allowedTools Bash Edit Write Read Glob Grep`
-  is accepted as root and never asks. Two things fall out and both matter: the `result` event carries
-  **`permission_denials`**, so "nothing was blocked" is a *reading* rather than a promise; and
-  `--bare` narrows the advertised tools to `["Bash","Edit","Read"]` — moat choosing the tool set,
-  which is requirement 4 that Codex cannot satisfy. `docs/RUNTIMES.md` has the captures. Still
-  **unmeasured** (needs a turn against a stub): whether an allowlisted call actually runs un-denied.
-  What *is* proven: the artefact downloads, verifies, extracts and runs on Alpine (`2.1.278 (Claude
-  Code)` in a box; `test/unit/runtime-pins.test.ts` holds the pin), and the body shape is accepted as
-  root.
+* **The second runtime: the policy is arguments, and the trap is the token accounting.** Claude
+  Code is implemented and selectable (`--runtime codex|claude`, recorded in `state.json` as
+  `runtime`). `lib/pins.ts` pins it (`CLAUDE_VERSION`, `CLAUDE_PLATFORM_PACKAGE`,
+  `CLAUDE_TARBALL_SHA256`) and `sandbox/rootfs.ts:ensureClaudeBinary` fetches and digest-verifies
+  it; `bundle/runtime.ts` is the seam, `bundle/claude.ts` the bodies and the parser.
+  **`--permission-mode bypassPermissions` is refused as root**, which moat's agent is, and there is
+  no non-root identity to become (one uid is mapped: `chown` EINVAL, `su` EPERM — measured). The way
+  through is an **additive allowlist**: `--permission-mode acceptEdits --allowedTools Bash Edit
+  Write Read Glob Grep NotebookEdit`, which is accepted as root and never asks, while anything that
+  *would* prompt is auto-**denied** in `--print` mode rather than left hanging. Two consequences to
+  keep: the `result` event carries **`permission_denials`**, so "nothing was blocked" is a *reading*
+  rather than a promise (the parser turns them into notices); and the prompt goes on **stdin**,
+  because `--allowedTools` is variadic and swallows a trailing positional argument. The token trap
+  from `docs/RUNTIMES.md` is live: **`input_tokens` here is already the cache-miss count**
+  (`cache_read_input_tokens` is a separate field), so subtracting it the way Codex's parser must
+  would undercount, and `thinking_tokens` is lifted *out* of `output_tokens` instead of counted
+  twice. `test/unit/claude-runtime.test.ts` pins both, and `test/unit/runtime-seam.test.ts` pins the
+  seam and the bodies. `docs/RUNTIMES.md` has every capture.
   Two things differ from Codex and are why this is a separate function, not a parameter: Claude's
   executable is at the tarball **root** (`package/claude`, not `vendor/<triple>/bin/`), and its
   platform package carries no version in the name (`claude-code-linux-x64-musl`).

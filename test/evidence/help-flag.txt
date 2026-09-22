@@ -29,6 +29,8 @@ Branches and history
                          --only PATH        just this change; comma-separated, repeatable
                          --skip PATH        everything but this change
                          --hunks SPEC       part of a file: 1,3-5 of a hunk list, or all/none
+                         --no-verify        write the accepted subset without running the checks
+                         --verify           run the checks even when the whole change is taken
                          --checkout         land it on a local branch too
                          --name BRANCH      the branch --checkout writes
 

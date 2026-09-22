@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { ENV_ID, envPathsForId, envsDir, partPath, type EnvPaths } from "../lib/paths.ts"
-import type { EgressMode } from "../lib/pins.ts"
+import type { EgressMode, RuntimeId } from "../lib/pins.ts"
 
 export type EnvStatus = "provisioning" | "stopped" | "running"
 
@@ -59,6 +59,8 @@ export type EnvState = {
   egress: EgressMode
   /** Extra hosts the filtered allowlist permits, beyond the defaults. */
   egressAllow: string[]
+  /** Which agent CLI this environment runs. One at a time, recorded so every later command agrees. */
+  runtime: RuntimeId
   /** slirp4netns pid for an isolated environment, and its identity. */
   slirpPid: number | null
   slirpStart: string | null
@@ -95,6 +97,7 @@ export function initialState(p: EnvPaths, versions: { alpine: string }): EnvStat
     // open for a loopback provider) and records it before the first boot.
     egress: "open",
     egressAllow: [],
+    runtime: "codex",
     slirpPid: null,
     slirpStart: null,
     baselineDigest: null,
@@ -151,6 +154,7 @@ export function readState(p: EnvPaths): EnvState | null {
     // them in rather than making every reader defend against undefined.
     if (raw.pidStart === undefined) raw.pidStart = null
     if (raw.egress === undefined) raw.egress = "open"
+    if (raw.runtime === undefined) raw.runtime = "codex"
     if (raw.egressAllow === undefined) raw.egressAllow = []
     if (raw.slirpPid === undefined) raw.slirpPid = null
     if (raw.slirpStart === undefined) raw.slirpStart = null
