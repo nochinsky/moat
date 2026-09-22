@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
+import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
@@ -37,4 +39,36 @@ test("the generator refuses to print a figure it cannot derive", () => {
   // The derived ones are there, and they came out of the captures.
   assert.match(page, /checks passed: \d+, failed: 0/)
   assert.match(page, /## What is \*\*not\*\* verified/)
+})
+
+test("reading the generator does not write the page it is reading", () => {
+  // The write used to sit at module top level, so *importing* this script — which the test above
+  // does only to call `renderTrust()` — rewrote docs/TRUST.md as a side effect. On a normal run it
+  // wrote the same bytes back, which is why nothing noticed. Measured: the extras suite truncates
+  // its capture at its start (`: > "$EVIDENCE/extras.txt"`), so a `npm run test:unit` running
+  // alongside it read an empty file and the guard left docs/TRUST.md claiming extras had "no
+  // capture" while the capture sat on disk — a wrong page written by the check that exists to keep
+  // that page derived rather than typed. A content comparison would miss it, because on a healthy
+  // run the bytes it writes are the bytes already there: hence a scratch copy of the generator,
+  // whose page does not exist yet.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "moat-trust-"))
+  try {
+    fs.mkdirSync(path.join(scratch, "scripts"), { recursive: true })
+    fs.mkdirSync(path.join(scratch, "docs"), { recursive: true })
+    fs.copyFileSync(path.join(ROOT, "scripts", "trust.mjs"), path.join(scratch, "scripts", "trust.mjs"))
+    // The one file `renderTrust()` insists on; the captures are absent on purpose, which is the
+    // shape that made the concurrent run write a wrong page.
+    fs.copyFileSync(path.join(ROOT, "docs", "VERIFICATION.md"), path.join(scratch, "docs", "VERIFICATION.md"))
+    execFileSync("node", ["-e", "import('./scripts/trust.mjs').then(m => process.stdout.write(m.renderTrust()))"], {
+      encoding: "utf8",
+      cwd: scratch,
+    })
+    assert.equal(
+      fs.existsSync(path.join(scratch, "docs", "TRUST.md")),
+      false,
+      "importing the generator must not write the page it is reading",
+    )
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true })
+  }
 })

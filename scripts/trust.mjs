@@ -158,16 +158,29 @@ export function renderTrust() {
   return lines.join("\n")
 }
 
-const rendered = renderTrust()
-const check = process.argv.includes("--check")
-if (check) {
-  const current = fs.existsSync(OUT) ? fs.readFileSync(OUT, "utf8") : ""
-  if (current.trim() !== rendered.trim()) {
-    console.error("docs/TRUST.md is stale: run `node scripts/trust.mjs`")
-    process.exit(1)
+/**
+ * Write or check the page — **only when this file is the program being run.**
+ *
+ * This ran at module top level, so *importing* the script had the side effect of rewriting
+ * `docs/TRUST.md`. `test/unit/trust-generated.test.ts` imports it to call `renderTrust()`, so a
+ * read-only guard was quietly a writer: on a normal serial run it rewrote the page with the same
+ * bytes and nobody saw it, but when the page could not be derived — the extras suite truncates its
+ * capture at its start (`: > "$EVIDENCE/extras.txt"`), so a concurrent `npm run test:unit` read an
+ * empty file — the guard **wrote a wrong page**, saying extras had "no capture" while the capture
+ * sat on disk. Reading a derivation must not write its result.
+ */
+const isDirectRun = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (isDirectRun) {
+  const rendered = renderTrust()
+  if (process.argv.includes("--check")) {
+    const current = fs.existsSync(OUT) ? fs.readFileSync(OUT, "utf8") : ""
+    if (current.trim() !== rendered.trim()) {
+      console.error("docs/TRUST.md is stale: run `node scripts/trust.mjs`")
+      process.exit(1)
+    }
+    console.log("docs/TRUST.md is current")
+  } else {
+    fs.writeFileSync(OUT, rendered)
+    console.log(`wrote ${path.relative(process.cwd(), OUT)} (${rendered.split("\n").length} lines)`)
   }
-  console.log("docs/TRUST.md is current")
-} else {
-  fs.writeFileSync(OUT, rendered)
-  console.log(`wrote ${path.relative(process.cwd(), OUT)} (${rendered.split("\n").length} lines)`)
 }
