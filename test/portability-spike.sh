@@ -118,8 +118,17 @@ else
     # `/bin/busybox`, which resolves against the *host* once extracted, so the check fails for a
     # reason that has nothing to do with the extraction. A directory is enough; the `--rootfs` probe
     # below is what actually proves the tree is usable.
-    if [ -n "$CID" ] && $FOUND_CTR export "$CID" 2>/dev/null | tar -x -C "$ROOTFS" 2>/dev/null && [ -d "$ROOTFS/bin" ] && [ -d "$ROOTFS/etc" ]; then
+    # Export first, and remove the container UNCONDITIONALLY: this script must not leave debris in
+    # somebody's container storage, and the first version removed it only when the extraction also
+    # succeeded — so a failed unpack left a container behind, which is exactly how two of them
+    # appeared while this section was being written.
+    extracted=no
+    if [ -n "$CID" ]; then
+      $FOUND_CTR export "$CID" 2>/dev/null | tar -x -C "$ROOTFS" 2>/dev/null
       $FOUND_CTR rm "$CID" >/dev/null 2>&1
+      [ -d "$ROOTFS/bin" ] && [ -d "$ROOTFS/etc" ] && extracted=yes
+    fi
+    if [ "$extracted" = "yes" ]; then
 
       # 1. Can a plain directory be the rootfs at all?
       if $FOUND_CTR run --rm --rootfs "$ROOTFS" /bin/sh -c true >/dev/null 2>&1; then
