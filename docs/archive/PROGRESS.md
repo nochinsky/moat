@@ -1819,3 +1819,20 @@ The Claude TUI body is wired but not exercised (the pty suite drives Codex's). `
 it would narrow the advertised tools to `Bash`/`Edit`/`Read`, which is attractive, but its effect on
 a real task is unmeasured and the allowlist already expresses the policy. Both are recorded in
 `docs/RUNTIMES.md` rather than assumed.
+
+### Reconnaissance for Phase 3 (cost ceilings), before writing any of it
+
+Two facts decide what a ceiling can even be:
+
+* `computeCost` (`lib/pricing.ts`) is pure and already returns `{ usd, known, peak }` from a usage
+  record, so the *arithmetic* for a ceiling exists and needs nothing new.
+* **Usage arrives once, at the end of a turn.** `docs/SEAM.md` §3 is explicit: "No usage until the
+  turn ends" — `turn.completed` is the only event carrying it, and `runAgentTask` parses the whole
+  JSONL document after the process exits. So a ceiling that *stops a mid-turn run* is not a pricing
+  change at all: it needs either incremental parsing of the stream, or enforcement *between* turns,
+  or a wall-clock/token bound held by the watchdog beside `MOAT_CREDENTIAL_EXPIRES_EPOCH`.
+
+That is the same shape of question as the Phase 4 ACP finding and the Claude policy wall: the
+pricing table is where the number comes from, not where the decision to stop lives. Phase 3 starts
+by choosing which of the three enforcement points it is, and measuring what each costs — rather than
+adding a `--max-cost` flag that can only ever report a breach after the money is spent.
