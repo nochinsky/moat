@@ -132,7 +132,8 @@ giving up the "works on a bare host" property.
 ### Option A is built
 
 `--backend container` exists, is recorded in `state.json`, and was verified end to end on this host
-(rootless podman 5.7.0, WSL2):
+(rootless podman 5.7.0, WSL2). **Docker is not verified**: the same code path accepts it, but it is
+not installed on the host that took these readings, so nothing here claims it:
 
 * `moat up --backend container` boots; `moat exec` in it reports `uid=0` and no host home;
 * `moat verify` runs the project's own check inside the container;
