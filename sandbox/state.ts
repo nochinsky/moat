@@ -60,6 +60,7 @@ export type EnvState = {
   egress: EgressMode
   /** Extra hosts the filtered allowlist permits, beyond the defaults. */
   egressAllow: string[]
+  egressProxy: boolean
   /** Which agent CLI this environment runs. One at a time, recorded so every later command agrees. */
   runtime: RuntimeId
   /** How the box is started: `unshare`, or a container runtime. Recorded so every command agrees. */
@@ -100,6 +101,7 @@ export function initialState(p: EnvPaths, versions: { alpine: string }): EnvStat
     // open for a loopback provider) and records it before the first boot.
     egress: "open",
     egressAllow: [],
+    egressProxy: false,
     runtime: "codex",
     backend: "unshare",
     slirpPid: null,
@@ -161,6 +163,7 @@ export function readState(p: EnvPaths): EnvState | null {
     if (raw.runtime === undefined) raw.runtime = "codex"
     if (raw.backend === undefined) raw.backend = "unshare"
     if (raw.egressAllow === undefined) raw.egressAllow = []
+    if (raw.egressProxy === undefined) raw.egressProxy = false
     if (raw.slirpPid === undefined) raw.slirpPid = null
     if (raw.slirpStart === undefined) raw.slirpStart = null
     return raw

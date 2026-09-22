@@ -408,15 +408,20 @@ async function egressRuntime(state: EnvState, paths: EnvPaths): Promise<EgressRu
   // the host writes a boot's captured output only when the boot returns, and this path's setup runs
   // *before* the reader is attached. So the stuck side is the host, and the stage markers cannot see
   // it until the reader is moved ahead of the setup.
+  const proxied = state.egressProxy && state.egress !== "open" && state.backend !== "container"
+  const rules = proxied
+    ? proxyPolicyFor(provider, state.providerBaseUrl ?? DEEPSEEK.baseUrl, state.egressAllow ?? [])
+    : undefined
   const runtime = await runtimeForEgress(state.egress, {
     rootfs: paths.rootfs,
     allowHosts: hosts,
     backend: state.backend,
+    ...(proxied ? { proxy: { address: PROXY_ADDRESS, port: PROXY_PORT } } : {}),
   })
   // Ephemeral boots warn rather than fail: `moat exec` may be exactly how the
   // user is diagnosing the box, and doctor's own check reports it as a failure.
   reportUnresolved(runtime.unresolved, provider, false)
-  return runtime
+  return rules ? { ...runtime, egressProxy: { allow: rules } } : runtime
 }
 
 function human(bytes: number): string {
@@ -677,7 +682,7 @@ async function cmdUp(argv: string[]): Promise<number> {
   // `docs/EGRESS.md` has the measurements this rests on, and both refusals below are combinations
   // that cannot work rather than preferences.
   const egressProxyFlag = flag<boolean>(p, "egress-proxy")
-  const egressProxy = egressProxyFlag ?? false
+  const egressProxy = egressProxyFlag ?? state?.egressProxy ?? false
   const proxyAllow: string[] = []
   if (egressProxyFlag) {
     if (egress === "open") {
@@ -1308,6 +1313,7 @@ ${command}
     pidStart: sandbox.startTime,
     egress,
     egressAllow,
+    egressProxy: proxyInUse,
     runtime: runtimeId,
     backend,
     slirpPid: sandbox.slirp?.pid ?? null,

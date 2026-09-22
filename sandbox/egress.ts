@@ -238,6 +238,7 @@ export type EgressRuntime = {
   egressRules?: string
   /** Allowlist hosts that resolved to nothing, so the caller can say so. */
   unresolved?: string[]
+  egressProxy?: { allow: readonly string[] }
 }
 
 /**

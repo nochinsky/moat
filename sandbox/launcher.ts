@@ -654,68 +654,11 @@ export async function runInSandbox(
     stdio: ["ignore", "pipe", "pipe"],
   })
 
-  let slirp: { stop: () => void } | null = null
-  let proxy: { stop: () => void } | null = null
-  let proxySlirp: { stop: () => void } | null = null
-  let topology: { holderPid: number; startTime: string | null } | null = null
-  const stopDatapath = (): void => {
-    proxy?.stop()
-    proxySlirp?.stop()
-    slirp?.stop()
-    // Last, so the processes that depend on the link are gone before the link is — and by identity,
-    // because the holder may have exited on its own while the boot was failing.
-    if (topology) stopOwnedProcess(topology.holderPid, topology.startTime)
-  }
-  try {
-    if (plan.needsSlirp) {
-      const egress = await import("./egress.ts")
-      const ready = child.pid ? await waitForNewNetns(child.pid) : false
-      if (!ready) throw new Error("the sandbox did not enter its network namespace")
-      slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
-      if (opts.egressProxy) {
-        // The proxy gets a namespace of its own with its own datapath, because a process inside the
-        // box's namespace is subject to the box's ruleset — and the ruleset's addresses were resolved
-        // at boot, which is the very snapshot this exists to retire. Measured both ways in
-        // docs/EGRESS.md §7. The box keeps its own datapath and ruleset as the backstop for traffic
-        // that ignores the proxy.
-        const proxies = await import("./proxy.ts")
-        const nets = await import("./proxy-netns.ts")
-        const proxyLog = path.join(p.logs, "proxy.log")
-        const built = await nets.startProxyNetns(child.pid!, { dir: p.logs, logFile: proxyLog })
-        // The identity is read here, where every other pid in moat is checked before it is
-        // signalled: the holder is a `sleep` that can exit on its own, and a pid alone is not it.
-        topology = { holderPid: built.holderPid, startTime: processStartTime(built.holderPid) }
-        const datapath = await egress.startSlirp(opts.slirpBinary!, built.holderPid, {
-          logFile: path.join(p.logs, "slirp-proxy.log"),
-        })
-        if (!datapath.pid || datapath.pid <= 0) {
-          const reason = datapath.error()?.message ?? "the process did not start"
-          throw new Error(`could not start the proxy's datapath (${opts.slirpBinary}): ${reason}`)
-        }
-        proxySlirp = datapath
-        const handle = proxies.startEgressProxy(built.holderPid, {
-          allow: opts.egressProxy.allow,
-          logFile: proxyLog,
-          bind: proxies.PROXY_ADDRESS,
-          // slirp's resolver, sited in the namespace the proxy's traffic actually leaves from.
-          dns: egress.SLIRP_DNS,
-        })
-        if (!handle.pid || handle.pid <= 0) {
-          const reason = handle.error()?.message ?? "the process did not start"
-          throw new Error(`could not start the egress proxy (${proxies.NSENTER}): ${reason}`)
-        }
-        proxy = handle
-        if (!(await proxies.waitForProxyListening(proxyLog))) {
-          throw new Error("the egress proxy did not report that it was listening")
-        }
-      }
-    }
-  } catch (error) {
-    stopDatapath()
-    child.kill("SIGKILL")
-    throw error
-  }
-
+  // The reader is attached *before* the datapath is set up, and the order is the point. Setting up a
+  // boot's network takes the host a second or more, and during it a boot that said anything had it sit
+  // unread in the pipe — so a boot that stopped during setup left a log with no bytes, and "the boot
+  // said nothing" was indistinguishable from "nobody was reading". Measured, and it cost two wrong
+  // diagnoses: docs/EGRESS.md §7.
   let output = ""
   let timedOut = false
   let aborted: string | null = null
@@ -744,6 +687,87 @@ export async function runInSandbox(
   child.stderr.setEncoding("utf8")
   child.stdout.on("data", sink)
   child.stderr.on("data", sink)
+
+  // The host's own stages, in a file, as they happen: the boot's markers report the boot, and the side
+  // that can be stuck is this one — so a run that stops during setup names its stage here even when the
+  // boot never gets the chance to say anything.
+  const stage = (what: string): void => {
+    try {
+      fs.mkdirSync(p.logs, { recursive: true })
+      fs.appendFileSync(path.join(p.logs, "setup.log"), `${new Date().toISOString()} ${what}\n`)
+    } catch {
+      // Diagnosis must never be what stops a boot.
+    }
+  }
+  stage("spawned")
+
+  let slirp: { stop: () => void } | null = null
+  let proxy: { stop: () => void } | null = null
+  let proxySlirp: { stop: () => void } | null = null
+  let topology: { holderPid: number; startTime: string | null } | null = null
+  const stopDatapath = (): void => {
+    proxy?.stop()
+    proxySlirp?.stop()
+    slirp?.stop()
+    // Last, so the processes that depend on the link are gone before the link is — and by identity,
+    // because the holder may have exited on its own while the boot was failing.
+    if (topology) stopOwnedProcess(topology.holderPid, topology.startTime)
+  }
+  try {
+    if (plan.needsSlirp) {
+      const egress = await import("./egress.ts")
+      const ready = child.pid ? await waitForNewNetns(child.pid) : false
+      if (!ready) throw new Error("the sandbox did not enter its network namespace")
+      slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
+      stage("the box's datapath is up")
+      if (opts.egressProxy) {
+        // The proxy gets a namespace of its own with its own datapath, because a process inside the
+        // box's namespace is subject to the box's ruleset — and the ruleset's addresses were resolved
+        // at boot, which is the very snapshot this exists to retire. Measured both ways in
+        // docs/EGRESS.md §7. The box keeps its own datapath and ruleset as the backstop for traffic
+        // that ignores the proxy.
+        const proxies = await import("./proxy.ts")
+        const nets = await import("./proxy-netns.ts")
+        const proxyLog = path.join(p.logs, "proxy.log")
+        const built = await nets.startProxyNetns(child.pid!, { dir: p.logs, logFile: proxyLog })
+        // The identity is read here, where every other pid in moat is checked before it is
+        // signalled: the holder is a `sleep` that can exit on its own, and a pid alone is not it.
+        topology = { holderPid: built.holderPid, startTime: processStartTime(built.holderPid) }
+        stage(`the proxy's namespace is built (holder ${built.holderPid})`)
+        const datapath = await egress.startSlirp(opts.slirpBinary!, built.holderPid, {
+          logFile: path.join(p.logs, "slirp-proxy.log"),
+        })
+        if (!datapath.pid || datapath.pid <= 0) {
+          const reason = datapath.error()?.message ?? "the process did not start"
+          throw new Error(`could not start the proxy's datapath (${opts.slirpBinary}): ${reason}`)
+        }
+        proxySlirp = datapath
+        stage("the proxy's datapath is up")
+        const handle = proxies.startEgressProxy(built.holderPid, {
+          allow: opts.egressProxy.allow,
+          logFile: proxyLog,
+          bind: proxies.PROXY_ADDRESS,
+          // slirp's resolver, sited in the namespace the proxy's traffic actually leaves from.
+          dns: egress.SLIRP_DNS,
+        })
+        if (!handle.pid || handle.pid <= 0) {
+          const reason = handle.error()?.message ?? "the process did not start"
+          throw new Error(`could not start the egress proxy (${proxies.NSENTER}): ${reason}`)
+        }
+        proxy = handle
+        stage("the proxy is running, waiting for it to listen")
+        if (!(await proxies.waitForProxyListening(proxyLog))) {
+          throw new Error("the egress proxy did not report that it was listening")
+        }
+        stage("the proxy is listening")
+      }
+    }
+  } catch (error) {
+    stopDatapath()
+    child.kill("SIGKILL")
+    throw error
+  }
+
   const timer = opts.timeoutMs
     ? setTimeout(() => {
         timedOut = true
@@ -753,18 +777,40 @@ export async function runInSandbox(
     : null
 
   return await new Promise((resolve, reject) => {
-    const cleanup = () => {
+    let settled = false
+    const done = (code: number) => {
+      if (settled) return
+      settled = true
       if (timer) clearTimeout(timer)
       stopDatapath()
+      resolve({ code, output, timedOut, ...(aborted ? { aborted } : {}) })
     }
     child.on("error", (error) => {
-      cleanup()
+      if (timer) clearTimeout(timer)
+      stopDatapath()
       reject(error)
     })
-    child.on("close", (code) => {
-      cleanup()
-      resolve({ code: code ?? -1, output, timedOut, ...(aborted ? { aborted } : {}) })
+    // `exit`, not only `close`. `close` waits for every writer of the boot's stdio pipes to be gone,
+    // so anything holding one — a process the boot spawned, or one the host did while it worked —
+    // keeps this waiting forever, and the wait is unbounded when a caller passes no `--timeout`.
+    // Measured at length, and it is why the proxy's state plumbing was walked back three times: the
+    // boot printed its whole script and its command's output, and the command was still killed by a
+    // 25-second timeout. The boot is done when its *process* exits; a process holding a pipe is not
+    // the boot. `close` still resolves when it comes first, so a normal boot's output is complete.
+    child.on("exit", (code) => {
+      // A drain for bytes already written: `exit` can arrive before the pipe has delivered them.
+      setTimeout(() => done(code ?? -1), 50)
     })
+    child.on("close", (code) => done(code ?? -1))
+    // And ask, because the boot can exit *before* these are attached. The reader is attached early,
+    // but this wait is at the end of the function, and setting up a network takes the host about a
+    // second while a fast boot — `moat exec -- echo hi` — takes less. An event that has already fired
+    // is never delivered to a later listener, so the promise waited forever; `exitCode` is set the
+    // moment it happens, which is why it is the thing to read. This is the race that killed the
+    // proxy's state plumbing three times, at one hang in two on a fresh environment.
+    if (child.exitCode !== null || child.signalCode !== null) {
+      setTimeout(() => done(child.exitCode ?? -1), 50)
+    }
   })
 }
 

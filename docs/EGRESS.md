@@ -351,70 +351,37 @@ What that costs and what it does not settle:
   in the proxy's log, because a dropped packet reads as a slow network rather than a refusal. The
   ruleset therefore carries one deliberate accept rule naming the proxy's address and port, and
   `test/unit/egress.test.ts` pins it — including that it admits nothing else beyond the allowlist.
-* **The state-driven boots are not proxied: the flake is the first boot after `up`, and an empty log
-  does not mean what I said it meant.** Wiring it was written, measured, and walked back a third time.
-  What the third attempt got, on six fresh environments with exactly one `moat exec -- sh -c 'echo hi'`
-  each:
+* **The state-driven boots are proxied, and the flake that blocked it was one property read too late.**
+  `--egress-proxy` is recorded in `state.json` now, so `moat exec`, `verify`, `take` and the doctor's
+  probe get the same box the agent gets — the same reason `egress`, `egressAllow`, `backend` and
+  `runtime` are recorded.
+
+  Getting there took four walk-backs and one line of the wrong kind. `runInSandbox` attached its wait
+  for the boot's exit *after* setting up the network, and setting that up takes the host about a second
+  while `moat exec -- sh -c 'echo hi'` takes less — so on a fast boot the `exit` and `close` events had
+  **already fired** before any listener existed, and an event that has already fired is never delivered
+  to a later listener. The promise waited forever, and no `--timeout` bounds it because `moat exec` does
+  not pass one. Measured, with everything else visible — the proxy up, the host's stages all complete,
+  and the boot's own output ending in `hi`, a *successful* command that was still killed at 25 seconds:
 
   ```
-  attempt 1: exit=124   last stage: none   output: (empty)
-  attempt 2: exit=124   last stage: none   output: (empty)
-  attempt 3: exit=0     last stage: entering the sandbox
-  attempt 4: exit=124   last stage: none   output: (empty)
-  attempt 5: exit=124   last stage: none   output: (empty)
-  attempt 6: exit=0     last stage: entering the sandbox
-  hangs: 4 / 6
+  with the wait attached after the setup:        hangs: 1 / 8, then 4 / 6 on fresh environments
+  asking child.exitCode at attach time:          hangs: 0 / 6
   ```
 
-  So it is **4 in 6 for a fresh environment's first boot**, not the 1-in-8 the earlier run suggested —
-  that run's later attempts reused an environment that had already booted once.
+  Two things had to be true before that could be seen, and both are changes worth keeping on their own:
 
-  And the empty output is **not** evidence that the boot never reached its command, which is what I
-  wrote last round. The host only surfaces a boot's captured output when the boot returns, and this
-  path's setup (the datapath, the topology, the proxy) runs *before* the output reader is attached — so
-  a boot whose output is sitting unread in the pipe prints nothing to a log either. The stage markers
-  added here are therefore blind to this flake: they report the boot, and the thing that is stuck is
-  ahead of them.
+  * **The boot's output is read from the moment it is spawned.** The reader used to be attached after
+    the setup, so a boot that said anything during that second had it sit unread in the pipe — and a
+    log with no bytes in it was indistinguishable from a boot that said nothing, which is how this was
+    misdiagnosed twice (see the retraction below).
+  * **The host records its own stages** in `logs/setup.log` as it works, and the boot script names its
+    stages (`[moat] boot: …`: mounts, datapath, link, policy, entering the sandbox). A stuck boot now
+    says which side it is stuck on and where.
 
-  The next step is named by that, and it is two changes rather than a guess: **attach the output reader
-  before the setup runs** (a boot's output should never be swallowed while the host works), and **log
-  the setup's own stages on the host** — the topology's holder, the link, the second datapath, the
-  proxy, and the readiness wait — so a stuck boot's *host* names its stage, which is the side that is
-  stuck.
+  The fix itself is the property, not the event: `child.exitCode` is set the moment the process exits,
+  so the wait asks rather than waits.
 
-* **The old text of this bullet, kept because it was wrong:** Wiring it was written, measured, and walked back twice. The second attempt caught the
-  flake with a dump, on a proxied environment and `moat exec -- sh -c 'echo hi'` run eight times:
-
-  ```
-  run 1: exit=124   <-- hung
-  run 2..8: exit=0
-  hangs: 1 / 8
-  at the hang: the proxy had started and was serving ("listening on 10.0.9.2:41417", then
-  "stopping on SIGTERM" 25 seconds later, when the timeout killed it), the holder's pidfile existed,
-  and run 1's own log was **0 bytes** — the boot never reached its command. Run 2's log said "hi".
-  ```
-
-  So: **the first run after `up`, only** — and the boot is stuck in the silent part of the boot script,
-  because *both* of its waits are bounded (ten seconds each) and both print when they give up. The
-  boot-side waits, the ruleset application and the chroot are the stages between the proxy starting and
-  the command running, and nothing there reports anything. The next step is to instrument the boot
-  stages themselves — a marker per stage, written where the host can read it — so the stuck stage names
-  itself instead of being inferred. The host's calls were bounded in the same commit that found this
-  (`spawnSync` to `nsenter`/`ip` now have a ten-second `timeout`), which is right regardless: the host
-  was not the thing that hung, and an unbounded call to something that can block is the rule this repo
-  already records for the in-box probes.
-
-* **The state-driven boots are not proxied, and that is deliberate for now.** `moat exec`, `verify`,
-  `take` and the doctor's probe read egress from `state.json`; the proxy's policy is per-invocation, so
-  those boots are built without it. Wiring it — recording the policy and building the topology for
-  every boot of the environment, which is how `egress`, `egressAllow`, `backend` and `runtime` already
-  work — was written and **reverted**, because it hung: with the same code and the same environment,
-  `moat exec -- sh -c 'echo hi'` completed on one run and sat for its whole 60-second timeout on
-  another. The one failure the runs did produce was explainable and fixed (the topology is built after
-  the boot starts, so a fast boot was gone before the link existed — `cannot open /proc/<pid>/ns/user`
-  — and the boot now waits for its link the way it already waits for slirp's tap). The hang is not, and
-  a hang in `exec` is worse than an unproxied check, so the state does not record a policy it is not
-  honouring. **This is the next thing to settle**, with the reproduction above.
 * **Still open.** The box's own datapath is a *backstop*, not a second policy: the box can still reach
   the allowlist directly on 80/443 and resolve through slirp, so the proxy governs clients that honour
   it and the ruleset governs the rest. Making the proxy the *only* path means removing the box's
