@@ -80,7 +80,14 @@ git commit -qm "egress fixture"
 
 say ""
 say "--- boot isolated ---"
-capture up $M up --egress isolated
+# Every boot names its credential policy. These four used to name none, so on a host carrying a key
+# of its own the box got one: the committed captures record `injecting deepseek credential
+# sha256:34c4e933b47c1fb3 … as DEEPSEEK_API_KEY`, and that is not a value this suite ever passed in.
+# It also contradicts this file's own premise — "No API key is needed. Reachability is proven by the
+# provider answering 401 to an unauthenticated request" — so on that host the reachability check was
+# made with an authenticated request instead. `--no-credential` is what the suite means, and it is
+# silent for the default provider.
+capture up $M up --no-credential --egress isolated
 check "the box booted with isolated egress" "sandbox up" "$EVIDENCE/up.txt"
 
 capture status $M status
@@ -125,7 +132,7 @@ else
   FAIL=1
 fi
 
-capture up-filtered $M up --egress filtered
+capture up-filtered $M up --no-credential --egress filtered
 check "the box booted with filtered egress" "sandbox up" "$EVIDENCE/up-filtered.txt"
 
 capture status-filtered $M status
@@ -200,7 +207,7 @@ echo "# default" > README.md
 git add -A
 git commit -qm "default fixture"
 
-capture up-default $M up
+capture up-default $M up --no-credential
 check "a fresh environment boots filtered by default" "sandbox up" "$EVIDENCE/up-default.txt"
 capture status-default $M status
 check "the default policy is reported as filtered" "egress       filtered" "$EVIDENCE/status-default.txt"
@@ -220,7 +227,7 @@ say "--- a filtered boot refuses to start when the provider does not resolve ---
 say "the allowlist is built from the provider host. If that name resolves to"
 say "nothing, a boot would leave a box with no way to reach the model; it fails"
 say "instead, naming the host and the way out."
-capture up-nxdomain $M up --base-url "https://nxdomain-$RANDOM.invalid/v1"
+capture up-nxdomain $M up --no-credential --base-url "https://nxdomain-$RANDOM.invalid/v1"
 check "an unresolvable provider fails the boot" "could not resolve" "$EVIDENCE/up-nxdomain.txt"
 capture destroy-nxdomain $M destroy --yes
 

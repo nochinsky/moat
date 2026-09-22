@@ -354,7 +354,7 @@ else
   fail "--egress" "no refusal before provisioning"
 fi
 
-capture up-timeout $MOAT up --timeout 30
+capture up-timeout $MOAT up --timeout 30 --credential-env MOAT_MOCK_CREDENTIAL
 if grep -q "sandbox up" "$EVIDENCE/up-timeout.txt"; then
   pass "--timeout" "seconds, not milliseconds, for the boot readiness wait"
 else
@@ -674,7 +674,7 @@ fi
 # The control: the same host and port with the scheme boots, so the check above cannot
 # pass by refusing every --base-url.
 ( cd "$NB" && capture base-url-schemed $MOAT up --quiet --no-detect --model mock-model \
-  --base-url "http://localhost:$MOCK_PORT/v1" )
+  --base-url "http://localhost:$MOCK_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
 if grep -q "^--- exit 0$" "$EVIDENCE/base-url-schemed.txt" && grep -q "sandbox up" "$EVIDENCE/base-url-schemed.txt"; then
   pass "the control" "the same endpoint with a scheme boots"
 else
@@ -1117,7 +1117,7 @@ export MOAT_MOCK_CREDENTIAL="moat-e2e-responses-stub"
 # still the stub; only the id changes, and the stub ignores it.
 ( cd "$CK" && capture codex-mock-up $MOAT up --quiet --profile node --model deepseek-flash --effort high \
   --base-url "http://127.0.0.1:$RESP_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
-( cd "$CK" && capture codex-mock-run $MOAT run --effort high "Make the failing test pass." )
+( cd "$CK" && capture codex-mock-run $MOAT run --effort high --credential-env MOAT_MOCK_CREDENTIAL "Make the failing test pass." )
 ( cd "$CK" && capture codex-mock-fix $MOAT exec -- sh -c 'cat /work/src/sum.js; git -C /work log --oneline -1' )
 # The project's own checks are the verdict the user reads, and they run inside the box with
 # no model involved. This is the half that says the runtime swap did not cost moat its loop.
@@ -1142,7 +1142,7 @@ node "$REPO/stub/mock-responses.mjs" --port "$RESP_PORT_LOW" --script "$REPO/tes
   --record "$WORK/responses-requests-low.jsonl" > "$WORK/mock-responses-low.log" 2>&1 &
 RESP_PID_LOW=$!
 sleep 1
-( cd "$CK" && capture codex-mock-run-low $MOAT run --effort low --model deepseek-flash \
+( cd "$CK" && capture codex-mock-run-low $MOAT run --effort low --model deepseek-flash --credential-env MOAT_MOCK_CREDENTIAL \
   --base-url "http://127.0.0.1:$RESP_PORT_LOW/v1" "Make the failing test pass." )
 kill "$RESP_PID_LOW" 2>/dev/null
 PINNED_SHA=$( cd "$REPO" && node -e 'import("./bundle/codex.ts").then(m => console.log(m.CATALOG_INSTRUCTIONS_SHA256))' )
