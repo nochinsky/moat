@@ -51,7 +51,10 @@ running the suites; never edit it by hand.
 
 ## Published
 
-`moat-sandbox` is on npm, currently **0.0.3**, with a provenance record. A release is a tag: the
+`moat-sandbox` is on npm, currently **0.0.3**, with a provenance record. Note the gap: the egress phase
+described under *State* — the proxy moat owns — is on `main` and **not in that release**. A release is a
+tag, so publishing it is `npm version minor --no-git-tag-version`, a commit, and `git tag v0.0.4 && git push
+origin main v0.0.4`; nothing is published without that, deliberately. A release is a tag: the
 `v*` tag runs `.github/workflows/release.yml`, which typechecks, tests, checks the tag against
 `package.json`, and publishes over GitHub OIDC — no token anywhere. The installed command is
 `moat`. Both `moat` and `moat-cli` were already taken by unrelated packages, which is why the

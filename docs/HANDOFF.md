@@ -19,8 +19,9 @@ accept, so nothing reaches your tree until you say so. The project is unusually 
 
 ## 2. State right now
 
-* **`main` is 30 commits ahead of `origin/main` and unpushed.** That is the headline of this handoff: the
-  whole egress phase exists only on this machine. `git log --oneline origin/main..HEAD` is the list.
+* **`main` is pushed.** It was 34 commits ahead of `origin/main` when this document was written — the whole
+  egress phase living on one machine — and the owner asked for it to be pushed, so it is on the remote.
+  `git log --oneline origin/main..HEAD` should be empty; if it is not, that is new work, not this work.
 * `npm run test:unit` → **295 tests, 0 fail**, no sandbox needed. `npm run typecheck` clean.
 * `bash test/e2e-extras.sh` → **53 checks, 0 failed**, including the container backend, on this machine.
 * `bash test/e2e-egress.sh` → green, including the proxied confinement and its unproxied control.

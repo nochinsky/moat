@@ -2575,4 +2575,5 @@ Also closed, and honestly: `git add -A` had swept 213 files of this session's ho
 (`.reasonix/tasks/…`) into the repository across several commits. They are out, and `.gitignore` says why.
 
 At the end of the session `main` was 32 commits ahead of `origin/main` and unpushed — the whole phase
-exists on one machine. That is the first thing to fix.
+existed on one machine. That was the first thing to fix, and the owner had it pushed on request, with the
+phase still unreleased: the published `0.0.3` predates it.
