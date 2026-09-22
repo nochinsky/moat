@@ -40,8 +40,20 @@ name-based policy will be asked about them and nobody has measured what happens 
   **`http-intake.logs.us5.datadoghq.com:443`** — telemetry.
 
 That last one is worth stating plainly: a runtime moat runs in the box ships usage data to Datadog.
-Refusing it is probably the right policy, and "probably" is the honest word until someone measures
-whether the runtime degrades, retries, or gives up.
+Refusing it looked like a policy with an unknown cost, so it was measured — `test/proxy-spike.sh`
+runs the same turn with the vendor hosts reachable, refused, and black-holed (a drop):
+
+```
+reachable    exit=0  9195ms  model requests=2  17280 tokens
+refused      exit=0   973ms  model requests=2  17280 tokens
+black-holed  exit=0   987ms  model requests=2  17280 tokens
+```
+
+Refusing **or** dropping them changes nothing about what the turn does and makes it roughly **8x
+faster** — the ~8 seconds the control spends are the runtime's own vendor chatter. So a name-based
+policy is free here rather than risky. Two things are not measured: this is a *keyless* turn against
+the stub, so a real key's account traffic was never exercised, and Claude was not put through the
+same three cases (its vendor set is `api.anthropic.com` and Datadog).
 
 ## 3. moat cannot set those variables today
 
@@ -103,10 +115,11 @@ box.
 * **What happens to a request the policy refuses.** "The agent cannot reach that host" is a policy;
   what the agent *does* about it — surface an error, retry, abandon the turn — is unmeasured.
 
-## 5. Three harness lessons, all of them bugs in this spike
+## 5. Harness lessons, all of them bugs in this spike
 
 Recorded because they are the failure modes a *measurement tool* has, and each one produced a
-confident wrong answer before it was found:
+confident wrong answer before it was found. (No count in this heading on purpose: it grew twice
+while writing it, which is the same reason no count is kept in a status table.)
 
 * **A check that fails on success.** `grep -c` prints `0` *and exits 1* when nothing matches, so
   `$(grep -c . log || echo 0)` produced two lines, every comparison against `"0"` was true, and the
@@ -118,11 +131,27 @@ confident wrong answer before it was found:
   recorded as `refused`. The run contradicted a standalone probe using `python3 -m http.server`
   (which answers 200), and the contradiction is what exposed it. The recorder now takes its status
   code as an argument, and only the placement listener answers 200, so `wget` exiting 0 means the
-  connection arrived.
+  connection arrived. The cousin of this one: a **dropped** packet reads as a timeout, not a
+  refusal, so `filtered`'s default-deny looked like "the address is unreachable" until the box's own
+  `nft list ruleset` was read (§4).
 * **A control has to be a precondition, not a footnote.** The Claude leg first ran the CLI without
   `ANTHROPIC_BASE_URL`, which moat's `run` path sets and `moat exec` does not — so Claude talked to
   its own default host and the run would have reported a confident result about nothing. The script
   now refuses to conclude anything unless the *no-proxy* leg reached the endpoint.
+* **A credential value that is a common word cannot boot a box.** The vendor-host probe used
+  `MOAT_MOCK_CREDENTIAL=probe` and every boot was refused with *"the credential was found on disk
+  inside the sandbox"*. The guard is right and the message is clear — `moat` scans the rootfs for the
+  credential's value, and the agent brief rendered for an **open**-egress box contains "Do not
+  **probe** the host's …" (`bundle/instructions.ts`). It is a substring scan, so a short or shared
+  value makes such a boot impossible; real keys are long and random, and a test fixture's value must
+  be too. Worth knowing because the symptom is an `up exit=1` that looks like a moat bug.
+* **The harness's own state made two runs incomparable.** `stub/mock-responses.mjs` serves its
+  scripted turns *in sequence per process*, so one stub across two turns gives the second turn an
+  exhausted script — the first comparison showed "1 request, 0 tools" for the second turn and read
+  as an effect of the policy. The script now starts a fresh stub per turn. The same family: the
+  fixture mutates as turns run (a scripted `git commit` has nothing to commit on the second pass),
+  which is why the turn footer shows a failed tool and why the readings rely on requests and tokens
+  rather than tool counts.
 
-All three were found by running the thing and disbelieving the result, which is the only way any of
+Every one was found by running the thing and disbelieving the result, which is the only way any of
 them is found.

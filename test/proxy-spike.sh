@@ -236,6 +236,79 @@ else
 fi
 say ""
 
+# ---------------------------------------------------------------------------
+# A name-based policy refuses the hosts a runtime calls besides the model. Does a turn notice? The
+# runtimes reach for their vendors' infrastructure on their own, and the policy has to answer for it.
+say "== does the policy's treatment of the vendor hosts break a turn?"
+say ""
+RESPONSES_STUB="$REPO/stub/mock-responses.mjs"
+if [ ! -f "$RESPONSES_STUB" ]; then
+  mark BLOCKED "no Responses stub to run a real turn against"
+else
+  DIR="$SCRATCH/project-vendor"; mkdir -p "$DIR/src"
+  (
+    cd "$DIR"
+    git init -q -b main . >/dev/null 2>&1
+    git config user.email spike@example.com; git config user.name spike
+    printf '{"name":"vendor","scripts":{"test":"true"}}\n' > package.json
+    printf 'export const sum = (a, b) => a - b\n' > src/sum.js
+    git add -A && git commit -qm base
+  )
+  VENDOR_PORT=$((ENDPOINT_PORT + 1))
+  STUB_PID=""
+  start_stub() { # a fresh stub per turn: it serves its scripted turns in sequence, so one stub for
+                 # two turns would make the second one incomparable
+    [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
+    : > "$SCRATCH/rec-$1.jsonl"
+    node "$RESPONSES_STUB" --port "$VENDOR_PORT" --script "$REPO/test/scripts/responses-basic.json" \
+      --record "$SCRATCH/rec-$1.jsonl" > "$SCRATCH/stub-$1.log" 2>&1 &
+    STUB_PID=$!
+    PIDS+=($!)
+    sleep 1.2
+  }
+  set_vendor() { # set_vendor <address|reset> — the box is the agent's, so this is what a policy
+                 # looks like from the runtime's side. No value here may be a common word: moat
+                 # scans the rootfs for the credential's value and REFUSES the boot if it finds it,
+                 # and "probe" is in the agent brief for an open-egress box.
+    ( cd "$DIR" && $MOAT exec -- sh -c "
+      sed -i '/github.com\|chatgpt.com\|anthropic.com\|datadoghq.com/d' /etc/hosts
+      [ '$1' = reset ] || printf '%s github.com\n%s api.github.com\n%s chatgpt.com\n' '$1' '$1' '$1' >> /etc/hosts
+    " ) >/dev/null 2>&1
+  }
+  if ( cd "$DIR" && $MOAT up --quiet --egress open --no-detect --model deepseek-flash \
+        --base-url "http://127.0.0.1:$VENDOR_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL ) > "$SCRATCH/up-vendor.log" 2>&1; then
+    run_turn() { # run_turn <label>
+      local before after rc reqs tokens
+      start_stub "$1"
+      before=$(date +%s%N)
+      ( cd "$DIR" && $MOAT run --effort high --credential-env MOAT_MOCK_CREDENTIAL "Make the failing test pass." ) \
+        > "$SCRATCH/turn-$1.log" 2>&1
+      rc=$?; after=$(date +%s%N)
+      reqs=$(count "$SCRATCH/rec-$1.jsonl")
+      tokens=$(grep -oE '[0-9]+ tokens' "$SCRATCH/turn-$1.log" | tail -1)
+      printf '  %-12s exit=%s  %sms  model requests=%s  %s\n' "$1" "$rc" "$(( (after-before)/1000000 ))" "$reqs" "${tokens:-no footer}"
+      eval "REQ_$1=$reqs; RC_$1=$rc; TOK_$1=\$tokens"
+    }
+    say "  a turn with the vendor hosts reachable, then refused, then black-holed:"
+    set_vendor reset;      run_turn reachable
+    set_vendor 127.0.0.1;  run_turn refused
+    set_vendor 10.255.255.1; run_turn blackholed
+    say ""
+    if [ "${RC_reachable:-1}" != "0" ]; then
+      mark UNKNOWN "the control turn did not complete" "nothing here is about the policy"
+    elif [ "${RC_refused:-1}" = "0" ] && [ "${RC_blackholed:-1}" = "0" ] \
+      && [ "${REQ_refused:-x}" = "${REQ_reachable:-y}" ] && [ "${REQ_blackholed:-x}" = "${REQ_reachable:-y}" ]; then
+      mark MEASURED "a refused or dropped vendor host does not change what a turn does" "same model requests, same tokens, exit 0 — and the turn is faster, which is what the policy would buy"
+    else
+      mark UNKNOWN "the policy's treatment of the vendor hosts changed the turn" "see the rows above"
+    fi
+    set_vendor reset
+  else
+    mark BLOCKED "the box for the vendor-host turn did not boot" "$(tail -1 "$SCRATCH/up-vendor.log")"
+  fi
+fi
+say ""
+
 say "=================================================================="
 say "What this run measured, and what it did not"
 say "=================================================================="
@@ -249,6 +322,9 @@ say "              non-loopback address, and an ordinary process cannot enter th
 say "  not measured  that moat can *set* those variables: MOAT_SANDBOX_ENV accepts only MOAT_ names"
 say "              (sandbox/launcher.ts), so a proxy is a managed-env change rather than config;"
 say "              the same placement question under a container or microVM backend"
-say "              (docs/MICROVM.md §4–§5); and what the policy should do to the vendor hosts"
-say "              each runtime also calls"
+say "              (docs/MICROVM.md §4–§5)"
+say "  measured    whether refusing or dropping those hosts changes what a turn does, on a keyless"
+say "              turn against the Responses stub: it does not, and the turn is ~8x faster"
+say "  not measured  the authenticated path (a real key's account traffic was never exercised), and"
+say "              the same for Claude — its vendor set is api.anthropic.com and Datadog"
 say ""
