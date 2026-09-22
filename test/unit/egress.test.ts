@@ -18,6 +18,24 @@ import {
 import { NFT_HEREDOC_MARKER, bootIsolation, outerScript, unshareArgs } from "../../sandbox/launcher.ts"
 import { defaultEgress, isLoopbackHost, ownNetns } from "../../lib/pins.ts"
 
+/**
+ * The box has to be able to reach the proxy across its link, and the default-deny ruleset is exactly
+ * what would stop it: the link's address is in no allowlist and the port is not 80/443. Measured
+ * without this rule, the box's SYN was dropped and the turn hung for its whole timeout with nothing
+ * in the proxy's log — a dropped packet reads as a slow network, not as a refusal.
+ */
+test("the ruleset admits the proxy, and nothing else beyond the allowlist", () => {
+  const without = renderNftRules(["93.184.216.34"])
+  assert.doesNotMatch(without, /10\.0\.9\.2/, "no proxy rule unless one is asked for")
+  const withProxy = renderNftRules(["93.184.216.34"], "10.0.2.3", { address: "10.0.9.2", port: 41417 })
+  assert.match(withProxy, /ip daddr 10\.0\.9\.2 tcp dport 41417 accept/)
+  // One address and one port: not the link's whole /30, and not every port on it.
+  assert.doesNotMatch(withProxy, /10\.0\.9\.1/)
+  assert.doesNotMatch(withProxy, /tcp dport \{ \}/)
+  // And the policy is still default-deny behind it.
+  assert.match(withProxy, /policy drop;/)
+})
+
 test("the allowlist parser splits on commas and whitespace without duplicates", () => {
   assert.deepEqual(parseAllowlist("a.example, b.example  c.example,a.example"), ["a.example", "b.example", "c.example"])
   assert.deepEqual(parseAllowlist(undefined), [])

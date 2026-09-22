@@ -50,6 +50,16 @@ export type ProxyRule = string
  */
 export const PROXY_PORT = 41417
 
+/**
+ * The address the proxy listens on, and the one the box is told to use.
+ *
+ * A constant for the same reason the port is one: the box's environment is built before the boot
+ * exists, and the topology is built after it has a pid. It is the far side of the veth pair
+ * `sandbox/proxy-netns.ts` creates — not the box's own loopback, which is what it was while the proxy
+ * sat inside the box's network namespace and was subject to its ruleset.
+ */
+export const PROXY_ADDRESS = "10.0.9.2"
+
 /** Split a policy entry into host and optional port, lowercased. */
 function parseRule(rule: string): { host: string; port: number | null } | null {
   const text = rule.trim().toLowerCase()
@@ -85,8 +95,8 @@ export function allowedTarget(allow: readonly ProxyRule[], host: string, port: n
  * unset `NO_PROXY` in the parent could otherwise exempt a host from the policy. `NO_PROXY` is set to
  * the empty string deliberately — set, so it beats an inherited value, empty so nothing is exempt.
  */
-export function proxyEnv(port: number = PROXY_PORT): Record<string, string> {
-  const url = `http://127.0.0.1:${port}`
+export function proxyEnv(opts: { address?: string; port?: number } = {}): Record<string, string> {
+  const url = `http://${opts.address ?? PROXY_ADDRESS}:${opts.port ?? PROXY_PORT}`
   return { HTTP_PROXY: url, HTTPS_PROXY: url, ALL_PROXY: url, NO_PROXY: "", no_proxy: "" }
 }
 
@@ -107,6 +117,7 @@ export function proxyArgs(
   logFile: string,
   port: number = PROXY_PORT,
   dnsAddress?: string,
+  bind?: string,
 ): string[] {
   return [
     "--target",
@@ -119,6 +130,8 @@ export function proxyArgs(
     proxyModulePath(),
     "--port",
     String(port),
+    "--bind",
+    bind ?? PROXY_ADDRESS,
     "--log",
     logFile,
     // The resolver the *box* can use, passed explicitly. This is not an optimisation: the proxy is
@@ -173,14 +186,14 @@ export type EgressProxyHandle = {
  */
 export function startEgressProxy(
   bootPid: number,
-  opts: { allow: readonly ProxyRule[]; logFile: string; port?: number; nsenter?: string; dns?: string },
+  opts: { allow: readonly ProxyRule[]; logFile: string; port?: number; nsenter?: string; dns?: string; bind?: string },
 ): EgressProxyHandle {
   const port = opts.port ?? PROXY_PORT
   fs.mkdirSync(path.dirname(opts.logFile), { recursive: true })
   // The proxy's own log, appended, host-side: it is outside the rootfs, so it is not the
   // box-written log the rootfs guard exists for.
   const fd = fs.openSync(opts.logFile, "a", 0o600)
-  const child = spawn(opts.nsenter ?? NSENTER, proxyArgs(bootPid, opts.allow, opts.logFile, port, opts.dns), {
+  const child = spawn(opts.nsenter ?? NSENTER, proxyArgs(bootPid, opts.allow, opts.logFile, port, opts.dns, opts.bind), {
     stdio: ["ignore", fd, fd],
     detached: false,
   })
@@ -205,7 +218,7 @@ export function startEgressProxy(
 // ---------------------------------------------------------------------------
 // The proxy itself. Everything below runs only when this file is the program.
 
-type Options = { port: number; allow: ProxyRule[]; log: string | null; dns: string | null }
+type Options = { port: number; allow: ProxyRule[]; log: string | null; dns: string | null; bind: string }
 
 function proxyOptions(argv: string[]): Options {
   const value = (name: string): string | undefined => {
@@ -221,6 +234,7 @@ function proxyOptions(argv: string[]): Options {
     allow,
     log: value("--log") ?? null,
     dns: value("--dns") ?? null,
+    bind: value("--bind") ?? PROXY_ADDRESS,
   }
 }
 
@@ -381,8 +395,8 @@ if (isDirectRun()) {
     logLine(opts.log, `LISTEN FAILED ${error.message}`)
     process.exit(1)
   })
-  server.listen(opts.port, "127.0.0.1", () => {
-    logLine(opts.log, `listening on 127.0.0.1:${opts.port} allowing ${opts.allow.join(" ") || "(nothing)"}`)
+  server.listen(opts.port, opts.bind, () => {
+    logLine(opts.log, `listening on ${opts.bind}:${opts.port} allowing ${opts.allow.join(" ") || "(nothing)"}`)
   })
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => {

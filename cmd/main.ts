@@ -34,7 +34,7 @@ import {
   runtimeForEgress,
   type EgressRuntime,
 } from "../sandbox/egress.ts"
-import { proxyEnv } from "../sandbox/proxy.ts"
+import { PROXY_ADDRESS, PROXY_PORT, proxyEnv } from "../sandbox/proxy.ts"
 import { run, shellQuote, which } from "../lib/shell.ts"
 import { resolveGitDir, sandboxGit } from "../lib/git.ts"
 import { recoverStateFromDisk } from "../sandbox/recover.ts"
@@ -658,6 +658,14 @@ async function cmdUp(argv: string[]): Promise<number> {
           "(docs/EGRESS.md §4).",
       )
     }
+    // The topology needs ip(8), and a flag whose requirement is missing should say so before a
+    // rootfs is copied and an image is built.
+    if (!which("ip")) {
+      log.fail(
+        "--egress-proxy needs a network namespace of its own for the proxy, and building it needs ip(8) " +
+          "(iproute2) on the host. Install iproute2, or drop --egress-proxy.",
+      )
+    }
   }
 
   // `moat` on its own is typed anywhere, so the obvious wrong directories are
@@ -1218,6 +1226,9 @@ ${command}
   const egressConfig = await runtimeForEgress(egress, {
     rootfs: paths.rootfs,
     allowHosts: [...defaultAllowHosts(providerName), ...egressAllow],
+    // The box has to be able to reach the proxy, and under `filtered` the default-deny ruleset is
+    // what would otherwise drop it — measured: the turn hung for its whole timeout in silence.
+    ...(egressProxy ? { proxy: { address: PROXY_ADDRESS, port: PROXY_PORT } } : {}),
   })
   reportUnresolved(egressConfig.unresolved, providerName, egress === "filtered")
   const bootStart = Date.now()

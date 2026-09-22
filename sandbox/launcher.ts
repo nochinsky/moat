@@ -607,9 +607,14 @@ export async function runInSandbox(
 
   let slirp: { stop: () => void } | null = null
   let proxy: { stop: () => void } | null = null
+  let proxySlirp: { stop: () => void } | null = null
+  let topology: { stop: () => void } | null = null
   const stopDatapath = (): void => {
     proxy?.stop()
+    proxySlirp?.stop()
     slirp?.stop()
+    // Last, so the processes that depend on the link are gone before the link is.
+    topology?.stop()
   }
   try {
     if (plan.needsSlirp) {
@@ -618,16 +623,29 @@ export async function runInSandbox(
       if (!ready) throw new Error("the sandbox did not enter its network namespace")
       slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
       if (opts.egressProxy) {
-        // Beside slirp, in the same namespace and by the same seam — and before the boot is
-        // reported to anyone, so the agent's first request cannot beat the listener.
+        // The proxy gets a namespace of its own with its own datapath, because a process inside the
+        // box's namespace is subject to the box's ruleset — and the ruleset's addresses were resolved
+        // at boot, which is the very snapshot this exists to retire. Measured both ways in
+        // docs/EGRESS.md §7. The box keeps its own datapath and ruleset as the backstop for traffic
+        // that ignores the proxy.
         const proxies = await import("./proxy.ts")
+        const nets = await import("./proxy-netns.ts")
         const proxyLog = path.join(p.logs, "proxy.log")
-        const handle = proxies.startEgressProxy(child.pid!, {
+        const built = await nets.startProxyNetns(child.pid!, { dir: p.logs, logFile: proxyLog })
+        topology = built
+        const datapath = await egress.startSlirp(opts.slirpBinary!, built.holderPid, {
+          logFile: path.join(p.logs, "slirp-proxy.log"),
+        })
+        if (!datapath.pid || datapath.pid <= 0) {
+          const reason = datapath.error()?.message ?? "the process did not start"
+          throw new Error(`could not start the proxy's datapath (${opts.slirpBinary}): ${reason}`)
+        }
+        proxySlirp = datapath
+        const handle = proxies.startEgressProxy(built.holderPid, {
           allow: opts.egressProxy.allow,
           logFile: proxyLog,
-          // The only resolver a filtered box's ruleset admits: slirp's, not the host's. Without it
-          // every dial fails with EAI_AGAIN (measured), because the proxy reads the host's
-          // /etc/resolv.conf while its network is the box's.
+          bind: proxies.PROXY_ADDRESS,
+          // slirp's resolver, sited in the namespace the proxy's traffic actually leaves from.
           dns: egress.SLIRP_DNS,
         })
         if (!handle.pid || handle.pid <= 0) {
@@ -729,9 +747,14 @@ export async function runInteractive(
   })
   let slirp: { stop: () => void } | null = null
   let proxy: { stop: () => void } | null = null
+  let proxySlirp: { stop: () => void } | null = null
+  let topology: { stop: () => void } | null = null
   const stopDatapath = (): void => {
     proxy?.stop()
+    proxySlirp?.stop()
     slirp?.stop()
+    // Last, so the processes that depend on the link are gone before the link is.
+    topology?.stop()
   }
   try {
     if (plan.needsSlirp) {
@@ -740,16 +763,29 @@ export async function runInteractive(
       if (!ready) throw new Error("the sandbox did not enter its network namespace")
       slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
       if (opts.egressProxy) {
-        // Beside slirp, in the same namespace and by the same seam — and before the boot is
-        // reported to anyone, so the agent's first request cannot beat the listener.
+        // The proxy gets a namespace of its own with its own datapath, because a process inside the
+        // box's namespace is subject to the box's ruleset — and the ruleset's addresses were resolved
+        // at boot, which is the very snapshot this exists to retire. Measured both ways in
+        // docs/EGRESS.md §7. The box keeps its own datapath and ruleset as the backstop for traffic
+        // that ignores the proxy.
         const proxies = await import("./proxy.ts")
+        const nets = await import("./proxy-netns.ts")
         const proxyLog = path.join(p.logs, "proxy.log")
-        const handle = proxies.startEgressProxy(child.pid!, {
+        const built = await nets.startProxyNetns(child.pid!, { dir: p.logs, logFile: proxyLog })
+        topology = built
+        const datapath = await egress.startSlirp(opts.slirpBinary!, built.holderPid, {
+          logFile: path.join(p.logs, "slirp-proxy.log"),
+        })
+        if (!datapath.pid || datapath.pid <= 0) {
+          const reason = datapath.error()?.message ?? "the process did not start"
+          throw new Error(`could not start the proxy's datapath (${opts.slirpBinary}): ${reason}`)
+        }
+        proxySlirp = datapath
+        const handle = proxies.startEgressProxy(built.holderPid, {
           allow: opts.egressProxy.allow,
           logFile: proxyLog,
-          // The only resolver a filtered box's ruleset admits: slirp's, not the host's. Without it
-          // every dial fails with EAI_AGAIN (measured), because the proxy reads the host's
-          // /etc/resolv.conf while its network is the box's.
+          bind: proxies.PROXY_ADDRESS,
+          // slirp's resolver, sited in the namespace the proxy's traffic actually leaves from.
           dns: egress.SLIRP_DNS,
         })
         if (!handle.pid || handle.pid <= 0) {

@@ -7,7 +7,7 @@ import path from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 
-import { PROXY_PORT, allowedTarget, proxyArgs, proxyEnv, proxyModulePath } from "../../sandbox/proxy.ts"
+import { PROXY_ADDRESS, PROXY_PORT, allowedTarget, proxyArgs, proxyEnv, proxyModulePath } from "../../sandbox/proxy.ts"
 
 const MODULE = fileURLToPath(new URL("../../sandbox/proxy.ts", import.meta.url))
 
@@ -40,10 +40,13 @@ test("malformed rules are ignored rather than treated as a wildcard", () => {
 })
 
 test("the box is given all three variables, with an empty NO_PROXY", () => {
-  const env = proxyEnv(41417)
-  assert.equal(env.HTTP_PROXY, "http://127.0.0.1:41417")
-  assert.equal(env.HTTPS_PROXY, "http://127.0.0.1:41417")
-  assert.equal(env.ALL_PROXY, "http://127.0.0.1:41417")
+  // The default address is the far side of the link, not the box's loopback: the proxy is outside the
+  // box's network namespace precisely so its own egress is not the box's ruleset.
+  const env = proxyEnv({ port: 41417 })
+  const url = `http://${PROXY_ADDRESS}:41417`
+  assert.equal(env.HTTP_PROXY, url)
+  assert.equal(env.HTTPS_PROXY, url)
+  assert.equal(env.ALL_PROXY, url)
   // Set and empty on purpose: set so it beats an inherited value, empty so nothing is exempt.
   assert.equal(env.NO_PROXY, "")
   assert.equal(env.no_proxy, "")
@@ -84,7 +87,7 @@ test("the proxy tunnels an admitted destination and refuses the rest", async (t)
   const log = path.join(scratch, "proxy.log")
   const child = execFile(
     process.execPath,
-    [MODULE, "--port", String(port), "--log", log, "--allow", `127.0.0.1:${upstreamPort}`],
+    [MODULE, "--port", String(port), "--bind", "127.0.0.1", "--log", log, "--allow", `127.0.0.1:${upstreamPort}`],
     { stdio: "ignore" },
   )
   t.after(() => child.kill("SIGKILL"))

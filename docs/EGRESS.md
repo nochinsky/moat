@@ -292,29 +292,29 @@ A host outside the policy is refused **by name**, which is the thing a dropped p
 
 What that increment deliberately does **not** cover, so nobody reads the above as more than it is:
 
-* **The ruleset governs the proxy's own dial — measured, and it kills the obvious fix.** The proxy is
-  a process in the box's network namespace, so its outbound traffic passes the same nftables ruleset.
-  The same provider on a port the ruleset does not open:
+* **The ruleset used to govern the proxy's own dial — fixed, and the fix is §7a.** The proxy sat in
+  the box's network namespace, so its outbound traffic passed the box's ruleset, whose accept
+  addresses were resolved at boot. The same provider on a port the ruleset never opens:
 
   ```
-  egress isolated (no ruleset):  ALLOWED POST 192.168.1.236:8443
-  egress filtered (the default): FAILED 192.168.1.236:8443 no response within 10s (a dropped packet, not a refusal?)
+  before: egress isolated (no ruleset):  ALLOWED POST 192.168.1.236:8443
+          egress filtered (the default): FAILED 192.168.1.236:8443 no response within 10s
+  after:  egress filtered, proxied:      ALLOWED POST 192.168.1.236:8443, 7 requests reached the endpoint
+          egress filtered, direct:       hung for its whole timeout, 0 requests — the backstop, intact
   ```
 
   I said the next step would be to split the ruleset — admit the proxy's traffic by uid, confine the
-  box to its loopback. **That cannot work**, and the reading is why: the proxy is uid **0** inside the
-  box, the same principal as the box's root (§4), so there is nothing for a ruleset to match on. The
-  split has to be *structural* instead, and the topology for it is measured to be **buildable and
-  working** — see §7a. Until it is built, `--egress-proxy` on `filtered` buys **refusals by name** and
-  not yet the retirement of the boot-time IP snapshot.
+  box to its loopback. **That could not work**: the proxy is uid **0** inside the box, the same
+  principal as the box's root (§4), so there is nothing for a ruleset to match on. The split is
+  structural instead, and it is built — §7a.
 
-### 7a. The structural split: measured buildable, not yet built
+### 7a. The structural split: built, with one deliberate exception
 
-The design is two network namespaces instead of one: the **box** keeps only a link to the proxy (its
-own slirp is *removed*, so its loopback and that link are all it has, and it needs no ruleset to
-confine it), and the **proxy** gets a namespace of its own with slirp as *its* uplink and no ruleset at
-all — the proxy is the policy. What has to be true first is that a rootless moat can build that
-topology at all, and it can, measured on a live box:
+The proxy gets a network namespace of its own (`sandbox/proxy-netns.ts`), with slirp attached to *that*
+namespace rather than the box's, and no ruleset at all — the proxy is the policy. The box reaches it
+across a veth pair, and **the box keeps its own datapath and ruleset as the backstop** for traffic
+that ignores the proxy. What had to be true first is that a rootless moat can build the topology, and
+it can, measured on a live box:
 
 ```
 # the second namespace, created from inside the box's USER namespace so that one userns owns both
@@ -339,13 +339,26 @@ What that costs and what it does not settle:
   than installed in the image, so the image is unchanged — but the host's default path stops being
   "util-linux and nothing else", and `moat doctor` should report it the way it reports `unshare` and
   `chroot`. That is a deliberate, reportable change rather than a hidden one.
-* **Building it and running it are different things.** Above is the topology, built by hand on a live
-  box. Not yet measured: slirp attached to the *proxy's* namespace instead of the box's; the small
-  ruleset that lets the box reach only the proxy; the proxy doing its real work from there (it resolves
-  through a resolver that must now be slirp's *in that namespace*); the veth's and the second
-  namespace's lifecycle — they must be reaped with the box the way slirp is, or a boot that dies
-  out of band leaves them behind; and what the box's profile installs do when their only egress is the
-  proxy.
+* **Built, verified, and one thing learned the hard way.** `sandbox/proxy-netns.ts` builds the
+  namespace, the link and the addressing, and the launcher attaches slirp to the *holder* and places
+  the proxy there with the box's resolver (`slirp-proxy.log` beside `slirp.log`). Verified on a
+  `filtered` box: the proxy dialed a port the ruleset never opens (`ALLOWED POST …:8443`, seven
+  requests to the endpoint), the same port *without* the proxy still hung with zero requests, and the
+  real provider still answered `401` through the tunnel.
+  The thing learned: **the box's own ruleset then drops the box's SYN to the proxy** — the link's
+  address is in no allowlist and the port is not 80/443 — and the failure is *silent*. Measured before
+  the exception was added: the turn hung for its whole 45-second timeout with **no** error and nothing
+  in the proxy's log, because a dropped packet reads as a slow network rather than a refusal. The
+  ruleset therefore carries one deliberate accept rule naming the proxy's address and port, and
+  `test/unit/egress.test.ts` pins it — including that it admits nothing else beyond the allowlist.
+* **Still open.** The box's own datapath is a *backstop*, not a second policy: the box can still reach
+  the allowlist directly on 80/443 and resolve through slirp, so the proxy governs clients that honour
+  it and the ruleset governs the rest. Making the proxy the *only* path means removing the box's
+  slirp, which changes the boot's readiness wait, the doctor's network probes and the egress suite —
+  a step of its own. Also open: `ip` is now a real host requirement (checked before provisioning, and
+  it should appear in `moat doctor` beside `unshare` and `chroot`); the topology's lifecycle is reaped
+  through `stopDatapath` but has not been tested against a box that dies out of band; `exec`, `verify`
+  and `take` still read egress from state and are not proxied; and the container backend is refused.
 * One trap worth repeating, because I hit it twice taking these readings: **every boot has its own
   network namespace** (§4). Building the topology in the keepalive's namespace and then dialing from
   `moat exec` measures two different namespaces, and the honest answer there is "refused" for a
