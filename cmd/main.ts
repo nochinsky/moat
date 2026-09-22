@@ -2410,8 +2410,18 @@ async function cmdDoctor(argv: string[]): Promise<number> {
   // The environment this doctor is describing, when there is one: the mount plan depends on the
   // backend, and a container environment has a different one from the unshare default.
   const envState = readState(paths)
+  const containerOnHost = containerRuntime()
   const out: Record<string, unknown> = {
     host,
+    // The backends this host could boot, and the one this environment uses — the same facts the
+    // text view prints, in the shape a script reads. `unshare` is the default and needs nothing;
+    // `container` is an option that requires a runtime.
+    backends: {
+      default: DEFAULT_BACKEND,
+      unshare: host.userns,
+      container: containerOnHost.usable ? containerOnHost.command : null,
+      environment: envState?.backend ?? null,
+    },
     credential: {
       envVar: DEEPSEEK.envVar,
       present: Boolean(process.env[DEEPSEEK.envVar] || process.env.MOAT_CREDENTIAL),
@@ -2429,7 +2439,6 @@ async function cmdDoctor(argv: string[]): Promise<number> {
     // Which backends this host could boot, so `--backend container` is a choice made with the
     // facts rather than discovered at a refusal. The container runtime is not required — the
     // default backend needs nothing but unshare — so this is a note, not a check.
-    const containerOnHost = containerRuntime()
     log.info(
       `  backends   unshare (default)${containerOnHost.usable ? `, container (${containerOnHost.command})` : ", container unavailable (no podman on PATH)"}`,
     )
