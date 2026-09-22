@@ -1,0 +1,13 @@
+--- $ moat up --backend container --egress isolated
+  next: moat         open a session here and tell it what to do
+        moat apply   merge what it did into this directory
+        moat down    stop the sandbox (state and snapshots are kept)
+--- $ moat exec -- sh -c 'id -u; ls -d $HOME'
+0
+no-host-home
+--- $ moat verify
+  pass  npm test                 0.4s
+--- $ moat down
+  resume with: moat up
+  remove with: moat destroy
+--- containers: while up = 1, after down = 0

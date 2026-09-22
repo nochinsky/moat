@@ -16,7 +16,7 @@ blast radius is a box, and copy-out is a decision you make afterwards.
 | --- | --- | --- |
 | unit tests | Pure logic, no sandbox — this is the suite CI enforces on every change. | `npm run test:unit` |
 | acceptance (Codex, keyless) | `acceptance (codex runtime): all criteria passed` | `bash test/e2e-codex.sh` |
-| extras | `checks passed: 52, failed: 0` | `bash test/e2e-extras.sh` |
+| extras | `checks passed: 53, failed: 0` | `bash test/e2e-extras.sh` |
 | egress | `egress checks passed` | `bash test/e2e-egress.sh` |
 | provider | `checks passed: 9, failed: 0` | `bash test/e2e-provider.sh` |
 | demo | `checks passed: 9, failed: 0` | `bash test/e2e-demo.sh` |

@@ -1372,6 +1372,66 @@ else
   fail "claude runtime" "up=$AN_UP run=$AN_RUN reqs=$AN_REQS key=$AN_KEY ceiling=$AN_CEIL take=$AN_TAKE json=$AN_JSON"
 fi
 ( cd "$AN" && $MOAT destroy --yes >/dev/null 2>&1 )
+section "AO. the container backend runs a turn, on a host that has a container runtime"
+# The second backend, end to end. It needs a container runtime the CI runner does not have, so the
+# section *skips with a reason* rather than pretending — the same shape as the sandbox suites that
+# cannot run on GitHub's runners. What is asserted is the lifecycle: a boot, a check inside it, and
+# that `down` leaves nothing behind. That last one is the defect this section exists for: killing
+# the `podman run` client left the container running while state.json said stopped.
+AO="$WORK/container-backend"
+rm -rf "$AO"; mkdir -p "$AO"
+(
+  cd "$AO"
+  git init -q -b main .
+  git config user.email a@b
+  git config user.name t
+  printf '{"name":"container-backend","scripts":{"test":"test -f package.json"}}\n' > package.json
+  git add -A && git commit -qm base
+)
+if ! command -v podman >/dev/null 2>&1 || ! podman info >/dev/null 2>&1; then
+  {
+    echo "  SKIPPED  no usable container runtime on this host"
+    echo "  the backend is exercised by test/unit/backend.test.ts everywhere, and end to end"
+    echo "  wherever a runtime exists; docs/PORTABILITY.md §3 has the readings taken on one."
+  } | scrub | tee -a "$EVIDENCE/extras.txt" > "$EVIDENCE/container-backend.txt"
+  pass "container backend" "no container runtime here, so the end-to-end half is skipped"
+else
+  ( cd "$AO" && $MOAT up --backend container --quiet --no-credential --no-detect --profile node --egress isolated --model deepseek-flash ) > "$AO/up.log" 2>&1
+  AO_UP=$?
+  ( cd "$AO" && $MOAT exec -- sh -c 'id -u; ls -d /home/ektor 2>/dev/null || echo no-host-home' ) > "$AO/exec.log" 2>&1
+  AO_EXEC=$?
+  ( cd "$AO" && $MOAT verify --quiet ) > "$AO/verify.log" 2>&1
+  AO_VERIFY=$?
+  AO_CONTAINERS_WHILE=$(podman ps --format '{{.ID}}' 2>/dev/null | wc -l)
+  ( cd "$AO" && $MOAT down ) > "$AO/down.log" 2>&1
+  AO_DOWN=$?
+  sleep 2
+  AO_CONTAINERS_AFTER=$(podman ps -a --format '{{.ID}}' 2>/dev/null | wc -l)
+  {
+    echo "--- \$ moat up --backend container --egress isolated"
+    tail -3 "$AO/up.log"
+    echo "--- \$ moat exec -- sh -c 'id -u; ls -d \$HOME'"
+    tail -3 "$AO/exec.log"
+    echo "--- \$ moat verify"
+    grep -E "pass|FAIL" "$AO/verify.log" | tail -2
+    echo "--- \$ moat down"
+    tail -2 "$AO/down.log"
+    echo "--- containers: while up = $AO_CONTAINERS_WHILE, after down = $AO_CONTAINERS_AFTER"
+  } | scrub | tee -a "$EVIDENCE/extras.txt" > "$EVIDENCE/container-backend.txt"
+
+  if [ "$AO_UP" = "0" ] \
+     && [ "$AO_EXEC" = "0" ] \
+     && grep -q "^0$" "$AO/exec.log" \
+     && grep -q "no-host-home" "$AO/exec.log" \
+     && [ "$AO_VERIFY" = "0" ] \
+     && [ "$AO_CONTAINERS_WHILE" -ge 1 ] \
+     && [ "$AO_CONTAINERS_AFTER" = "0" ]; then
+    pass "container backend" "a box booted in a container, ran the project's check as uid 0 with no host home, and left no container behind"
+  else
+    fail "container backend" "up=$AO_UP exec=$AO_EXEC verify=$AO_VERIFY while=$AO_CONTAINERS_WHILE after=$AO_CONTAINERS_AFTER"
+  fi
+  ( cd "$AO" && $MOAT destroy --yes >/dev/null 2>&1 )
+fi
 # The stub belongs to this suite: e2e.sh used to start it and extras used to inherit it.
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; rm -f "$MOCK_PIDFILE"; fi
 echo "" | tee -a "$EVIDENCE/extras.txt"
