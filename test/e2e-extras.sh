@@ -1306,12 +1306,25 @@ sleep 1.2
 ( cd "$AN" && $MOAT up --quiet --runtime claude --credential "$CREDENTIAL" \
     --base-url "http://127.0.0.1:$AN_PORT" --model claude-opus-5 --no-detect --profile node --egress open ) > "$WORK/claude-up.log" 2>&1
 AN_UP=$?
-( cd "$AN" && $MOAT run "run the check" --quiet ) > "$WORK/claude-run.log" 2>&1
+# Every boot re-mints the credential from the host — state.json keeps a fingerprint and never the
+# value — so the runs need the source too, not only the `up` above. They used to omit it, and the
+# section passed only where the host happened to carry a key of its own (`DEEPSEEK_API_KEY`, or
+# `~/.moat/credentials.json`): measured, the committed capture records fingerprint
+# `sha256:34c4e933b47c1fb3` while this section's own value is `sha256:7726b438889c7f57`, so what the
+# run injected was never the credential this test passes in. On a host with no ambient key the box
+# logs `Not logged in · Please run /login`, nothing reaches the stub, and the section fails. Codex
+# tolerates a keyless custom endpoint, which is why the acceptance suite never noticed the shape;
+# Claude Code does not.
+#
+# `--credential` and not `--credential-env`: this script re-points `MOAT_MOCK_CREDENTIAL` at the
+# Responses stub further up, so naming the value here keeps the section's credential its own
+# instead of silently inheriting whatever that export happens to hold.
+( cd "$AN" && $MOAT run "run the check" --quiet --credential "$CREDENTIAL" ) > "$WORK/claude-run.log" 2>&1
 AN_RUN=$?
 # And a ceiling stops one mid-turn: the stub reports 160 tokens on its first request, so a limit of
 # 100 has to kill the box before the second request is paid for. The control above (no ceiling) is
 # what makes this a measurement rather than a claim.
-( cd "$AN" && $MOAT run "run the check" --quiet --max-tokens 100 ) > "$WORK/claude-ceiling.log" 2>&1
+( cd "$AN" && $MOAT run "run the check" --quiet --max-tokens 100 --credential "$CREDENTIAL" ) > "$WORK/claude-ceiling.log" 2>&1
 AN_CEIL=$?
 # The machine-readable review: `moat take` fetches the agent's branch, classifies the three trees
 # and runs the project's own checks, and `--json` is the same decision in a shape a pipeline reads.
