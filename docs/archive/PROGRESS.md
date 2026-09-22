@@ -1384,3 +1384,84 @@ old guard (`2 failing, 11 passing` on that file); with the fix, `13 pass` and `n
 **259 tests, 259 pass, 0 fail**. The escapes it was written for (`..`, `../x`, `a/../../x`, a
 symlinked directory) are still refused, asserted in the same test.
 
+---
+
+## Session 7 — Phase 1: a partial accept is checked for coherence
+
+The first phase of the plan: the review surface's one documented weakness, turned into a feature.
+`moat apply` now runs the project's own checks against **exactly the accepted subset** before it
+writes, and refuses when they fail. SPEC §4.1 carried this as a limitation — "Taking hunk 2 of a
+file and none of the file that makes it compile is a state `moat apply` will write" — and it was the
+one gap that undermined the whole per-hunk story: a partial accept is only worth having if the part
+you took still works.
+
+### What it does, measured
+
+The fixture is a project whose check is a shell one-liner: `config.txt` holds `1`, and
+`test.sh` asserts it holds `1`. The agent changes **both** together — the config to `2`, the check
+to assert `2` — so accepting one file without the other yields a tree that cannot pass its own
+check. Extras §AM, run for real:
+
+```
+--- $ moat apply --only config.txt             (the subset whose check fails)
+  agent    config.txt  modify
+  agent    test.sh  modify
+→ verifying the accepted subset: npm run test
+  FAIL  npm test                 0.2s
+! the accepted subset does not pass the project's own checks; nothing was written
+  to write it anyway:   moat apply --no-verify
+--- exit 1   config.txt after = 1
+
+--- $ moat apply --only config.txt --no-verify  (the same subset, verification off)
+✓ applied 1 change(s)
+--- exit 0   config.txt after = 2
+```
+
+The `--no-verify` half is not decoration: it is the **same code path with the check off**, so it is
+also the before-measurement. Before this session `moat apply --only config.txt` did what
+`--no-verify` does now — wrote `2` and reported success — and the check that would have caught it
+was never run.
+
+### Why the candidate is the host's tree, and not the box's `/work`
+
+The obvious implementation is to run the checks in the box against `/work`, where the project
+already is. It is wrong, and the reason is the whole point of the feature: `/work` is *what the
+agent changed*, while the subset is *what the user accepted*, and the two differ by every rejected
+hunk. Checking `/work` would pass a subset that does not build, which is the failure the check
+exists to catch. So the candidate is built from **the host project** (HEAD plus uncommitted work)
+with the accepted hunks written in — and to keep it faithful, it is built by reusing `copyIn` and
+`applySelection` rather than a hand-rolled copy, so deletes, renames, symlinks and binaries come out
+the way the real boot sees them.
+
+### The two invariants it had to keep
+
+* **The host project is never touched to run the check** (SPEC §2.2, invariant 4). The candidate is
+  assembled in a host temp dir and then copied *into* the environment's rootfs, so the check runs
+  through the same `runInSandbox` every other check uses. The scratch tree is removed afterwards
+  whether the checks pass or fail — a leak would leave a copy of the project, with accepted changes,
+  inside the agent's own box.
+* **The check runs in the box, never on the host.** The accepted subset can contain agent-authored
+  test code; running it on the host is exactly what the box exists to prevent.
+
+### Scope, and what it is not
+
+On by default for a **partial** selection only: accepting the whole tree is the agent's own work,
+which `moat verify` and `moat take` already cover, so re-checking it here would be a second run of
+the same thing. `--verify` forces it, `--no-verify` opts out, `--timeout <seconds>` bounds it
+(read as seconds, like every other timeout). A project whose checks cannot be detected is written
+with a warning that coherence was not verified, not a silent pass. And it is a *floor*: it re-runs
+the check the project already declares, so a subset that is wrong in a way those checks do not cover
+still goes through. The README's "what it does not do" bullet and `docs/VERIFICATION.md`'s
+not-verified table were both rewritten to say that rather than claiming more.
+
+### What it cost
+
+`runChecks` grew a `workdir` option (`checkScript` already took one; the runner did not pass it), and
+`copyIn` grew a `quiet` option so the two copies do not print "copy-in: git clone" in the middle of a
+verify step. The unit test that pins `workdir` is the anti-regression that matters: a `workdir`
+accepted and then dropped would run the check against `/work` and pass a broken subset.
+
+Verified: `npm run test:unit` at **260 tests, 260 pass, 0 fail**; `bash test/e2e-extras.sh` at
+**51 checks, 0 failed**, with §AM the new one and its evidence in `test/evidence/coherence.txt`.
+
+

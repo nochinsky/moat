@@ -67,6 +67,14 @@ export async function runChecks(
     /** Run the checks in the same kind of network as the environment. */
     egress?: EgressMode
     slirpBinary?: string
+    /**
+     * Directory inside the sandbox to run in, when it is not `/work`.
+     *
+     * The coherence check runs the project's checks against the *accepted subset* of a change,
+     * which lives in a scratch tree beside `/work` rather than in it. Without this the check
+     * would run against the agent's full tree and measure the wrong thing.
+     */
+    workdir?: string
   } = {},
 ): Promise<CheckResult[]> {
   if (checks.length === 0) return []
@@ -77,7 +85,7 @@ export async function runChecks(
     const started = Date.now()
     // `timeout` is coreutils and present in the base image, so a hung test suite
     // cannot hang moat.
-    const script = checkScript(check.command, timeout)
+    const script = checkScript(check.command, timeout, opts.workdir)
     const result = await runInSandbox(paths, script, {
       onOutput: opts.onOutput,
       egress: opts.egress,

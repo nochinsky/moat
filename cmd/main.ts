@@ -123,6 +123,7 @@ import {
   type ReviewedChange,
   type Selection,
 } from "../sync/apply.ts"
+import { checkCoherence, type CoherenceOutcome } from "../sync/coherence.ts"
 import { COMMAND_FLAGS, SPEC, flag, parse, type Parsed } from "../lib/flags.ts"
 
 // ---------------------------------------------------------------------------
@@ -1844,8 +1845,62 @@ async function cmdApply(argv: string[]): Promise<number> {
     return 0
   }
 
+  // --- coherence -------------------------------------------------------------
+  //
+  // The accepted subset is not the agent's tree, and nothing has checked it: take hunk 2, reject
+  // the hunk that makes the project compile, and `moat apply` would write a state no program has
+  // ever been in. This runs the project's own checks against exactly what is about to be written,
+  // before anything reaches the host. On by default for a *partial* accept — accepting the whole
+  // tree is the agent's own work, which `moat verify` and `moat take` already cover — with
+  // `--verify` to force it and `--no-verify` to opt out.
+  const writable = reviewed.filter((row) => !row.conflict)
+  const wholeTree = selections.length === writable.length && selections.every((entry) => entry.accepted === null)
+  const verifyWanted =
+    selections.length > 0 && (flag<boolean>(p, "no-verify") ? false : (flag<boolean>(p, "verify") ?? !wholeTree))
+
+  let coherence: CoherenceOutcome | null = null
+  if (verifyWanted) {
+    const checks = detectChecks(paths.projectDir)
+    if (checks.length === 0) {
+      log.warn("coherence not checked: no test, lint or typecheck command found for this project")
+    } else {
+      log.step(`verifying the accepted subset: ${checks.map((check) => check.command).join(", ")}`)
+      const runtime = await egressRuntime(state, paths)
+      coherence = await checkCoherence(paths, plan, selections, {
+        timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
+        // The project's own check output is written by code the agent can edit, so it goes through
+        // the same print boundary as every other string out of the sandbox.
+        onOutput: (chunk) => process.stderr.write(stripAnsi(chunk)),
+        ...runtime,
+      })
+      if (!json) {
+        log.info("")
+        for (const check of coherence.results) {
+          const mark = check.ok ? log.green("pass") : log.red("FAIL")
+          log.info(`  ${mark}  ${check.label.padEnd(24)} ${log.dim(`${(check.ms / 1000).toFixed(1)}s`)}`)
+          if (!check.ok) {
+            for (const line of check.output.split("\n").slice(-6)) log.info(`      ${log.dim(stripAnsi(line))}`)
+          }
+        }
+      }
+      // `!ok` covers both a failed check and a subset that could not be built at all (ran === false);
+      // the second must refuse too, and checking `ran` first would have written it with a warning.
+      if (!coherence.ok) {
+        if (json) log.emit({ ...plan, reviewed, selection: selections, coherence })
+        else {
+          log.info("")
+          log.warn("the accepted subset does not pass the project's own checks; nothing was written")
+          log.info(`  ${log.dim("to write it anyway:")}   moat apply --no-verify`)
+          log.info(`  ${log.dim("to take the whole change:")}  moat take`)
+        }
+        return 1
+      }
+      if (!coherence.ran) log.warn(`coherence not checked: ${coherence.reason}`)
+    }
+  }
+
   const result = await applySelection(paths, plan, selections)
-  if (json) log.emit({ ...plan, reviewed, selection: selections, ...result })
+  if (json) log.emit({ ...plan, reviewed, selection: selections, ...result, ...(coherence ? { coherence } : {}) })
   else {
     const partial = result.applied.filter((entry) => entry.mode === "partial")
     log.success(
@@ -2796,6 +2851,8 @@ Branches and history
                          --only PATH        just this change; comma-separated, repeatable
                          --skip PATH        everything but this change
                          --hunks SPEC       part of a file: 1,3-5 of a hunk list, or all/none
+                         --no-verify        write the accepted subset without running the checks
+                         --verify           run the checks even when the whole change is taken
                          --checkout         land it on a local branch too
                          --name BRANCH      the branch --checkout writes
 

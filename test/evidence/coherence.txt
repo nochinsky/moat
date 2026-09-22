@@ -1,0 +1,47 @@
+--- $ moat apply --only config.txt             (the subset whose check fails)
+
+  agent    config.txt  modify
+    hunk 1  a new file
+      - 1
+      + 2
+  agent    test.sh  modify
+    hunk 1  lines 1-2 of your file
+      - #!/bin/sh
+      - grep -q "^1$" config.txt
+      + #!/bin/sh
+      + grep -q "^2$" config.txt
+
+→ verifying the accepted subset: npm run test
+$ npm run test
+
+> test
+> sh test.sh
+
+[moat] exit 1
+
+  FAIL  npm test                 0.2s
+      $ npm run test
+      > test
+      > sh test.sh
+      [moat] exit 1
+
+! the accepted subset does not pass the project's own checks; nothing was written
+  to write it anyway:   moat apply --no-verify
+  to take the whole change:  moat take
+--- exit 1   config.txt after = 1
+
+--- $ moat apply --only config.txt --no-verify  (the same subset, verification off)
+
+  agent    config.txt  modify
+    hunk 1  a new file
+      - 1
+      + 2
+  agent    test.sh  modify
+    hunk 1  lines 1-2 of your file
+      - #!/bin/sh
+      - grep -q "^1$" config.txt
+      + #!/bin/sh
+      + grep -q "^2$" config.txt
+
+✓ applied 1 change(s) to /home/user/moat-demo/coherence
+--- exit 0   config.txt after = 2
