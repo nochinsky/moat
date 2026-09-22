@@ -1016,8 +1016,10 @@ So there are two backends and **one is chosen, never inferred**:
 * **`unshare` (default).** `unshare` + `mount` + `chroot`, built by moat, needing nothing
   installed. It is the default because it runs on a bare Linux host — a property nothing else in
   this list has — and because every capture in `docs/VERIFICATION.md` was produced with it.
-* **`container`** (`--backend container`). The box is run by a container runtime (rootless podman
-  or docker), with `--rootfs` pointed at the same persistent rootfs directory. moat renders the
+* **`container`** (`--backend container`). The box is run by a container runtime, with `--rootfs`
+  pointed at the same persistent rootfs directory. **Verified against rootless podman**
+  (`docs/PORTABILITY.md` §3); docker is accepted by the same code path and is **not** verified here,
+  because it is not installed on the host that took the measurement. moat renders the
   same config, the same brief and the same `/work`, and applies its own nftables ruleset inside the
   box for `filtered`; the runtime supplies the mount table, the device nodes and the datapath.
 
