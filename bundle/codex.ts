@@ -3,6 +3,7 @@ import { writeRootfsFile } from "../lib/rootfs-fs.ts"
 import * as log from "../lib/log.ts"
 import { catalogEntryForModel, reasoningLevelsFor, renderModelCatalog, type CodexCatalogModel } from "./model-catalog.ts"
 import { CODEX_BUILTIN_PROMPT } from "./codex-prompt.ts"
+import { describeTurn, type ToolRun, type Turn, type Usage } from "./turn.ts"
 
 export type { CodexCatalogModel } from "./model-catalog.ts"
 
@@ -266,39 +267,17 @@ export function installCodexFiles(
   writeRootfsFile(rootfs, CODEX_CATALOG_PATH, catalog, 0o600)
 }
 
-export type CodexToolRun = {
-  id: string
-  /** `command_execution`, `file_change`, `mcp_tool_call`, `reasoning`, … */
-  kind: string
-  /** The command, path or query the item carries. */
-  detail: string
-  status: "started" | "completed"
-  exitCode?: number | null
-}
-
-export type CodexUsage = {
-  /** Cache-*miss* input tokens, the field opencode also calls `input`. */
-  input: number
-  /** Cache-hit input tokens. */
-  cached: number
-  output: number
-  reasoning: number
-}
-
-export type CodexTurn = {
-  tools: CodexToolRun[]
-  messages: string[]
-  usage: CodexUsage | null
-  errors: string[]
-  /**
-   * Advisories that arrive on the same channel as errors but are not failures.
-   *
-   * Codex prints "Model metadata for <id> not found. Defaulting to fallback metadata" as an
-   * `error` item on the first run in a fresh `~/.codex` — it is a cache miss, not a broken
-   * turn, and counting it made a successful run read `1 error` in the footer (measured).
-   */
-  notices: string[]
-}
+/**
+ * The turn shape is `bundle/turn.ts`'s: one contract for every runtime, so the cost footer prices a
+ * turn without knowing which agent produced it. `docs/SEAM.md` §2.3 is the argument for that.
+ *
+ * `CodexTurn`/`describeCodexTurn` used to be defined here, and the names are kept as aliases for the
+ * call sites that are about Codex specifically.
+ */
+export type CodexToolRun = ToolRun
+export type CodexUsage = Usage
+export type CodexTurn = Turn
+export const describeCodexTurn = describeTurn
 
 /** The one advisory this parser knows is not a failure. */
 function isNotice(message: string): boolean {
@@ -325,9 +304,9 @@ function detailOf(item: Record<string, unknown>): string {
  * one row per tool. Unknown event types are ignored rather than guessed at: a newer Codex
  * must not make this parser invent rows.
  */
-export function parseCodexEvents(text: string): CodexTurn {
-  const turn: CodexTurn = { tools: [], messages: [], usage: null, errors: [], notices: [] }
-  const byId = new Map<string, CodexToolRun>()
+export function parseCodexEvents(text: string): Turn {
+  const turn: Turn = { tools: [], messages: [], usage: null, errors: [], notices: [] }
+  const byId = new Map<string, ToolRun>()
   for (const line of text.split("\n")) {
     const trimmed = line.trim()
     if (!trimmed.startsWith("{")) continue
@@ -403,7 +382,7 @@ export function parseCodexEvents(text: string): CodexTurn {
       }
     }
     const rowID = id ?? `item-synthetic-${turn.tools.length}`
-    const row: CodexToolRun = {
+    const row: ToolRun = {
       id: rowID,
       kind,
       detail,
@@ -421,12 +400,4 @@ export function parseCodexEvents(text: string): CodexTurn {
 }
 
 /** A one-line summary, for the footer. */
-export function describeCodexTurn(turn: CodexTurn): string {
-  const failed = turn.tools.filter((tool) => tool.status === "completed" && (tool.exitCode ?? 0) !== 0).length
-  const parts = [
-    turn.tools.length === 1 ? "1 tool" : `${turn.tools.length} tools`,
-  ]
-  if (failed > 0) parts.push(`${failed} failed`)
-  if (turn.errors.length > 0) parts.push(turn.errors.length === 1 ? "1 error" : `${turn.errors.length} errors`)
-  return parts.join(" · ")
-}
+
