@@ -480,6 +480,40 @@ socket inside the sandbox is a v1 hardening item; it is not built.
 
 ---
 
+### 4.2 The review, machine-readable
+
+`moat take --json` and `moat apply --json` emit the review on **stdout** — progress stays on stderr,
+so `moat take --json | jq` is the whole interface. `take` is read-only and `apply --dry-run` writes
+nothing, so either can be run by a pipeline that only wants to look.
+
+```
+{
+  "branch": "moat-session-2026-09-22-14-56",
+  "ref": "refs/moat/<branch>",
+  "sha": "…", "commits": 2,
+  "commitsFetched": [{ "sha": "…", "subject": "…" }],
+  "reviewed": [ { "path": "notes.txt", "verdict": "agent", "kind": "add",
+                  "conflict": false, "note": null, "hunks": [ … ] } ],
+  "checks": { "ok": true, "summary": "npm test passed", "results": [ … ] },
+  "treeUntouched": true
+}
+```
+
+Three things about it are load-bearing:
+
+* **`verdict` is the planner's own word** (`agent` / `you` / `both` / `conflict`), carried through
+  rather than re-derived, so a consumer cannot disagree with the classification `moat apply` acts
+  on. `conflict: true` means nothing may write it, whatever a caller selects.
+* **`treeUntouched` is measured, not asserted**: it compares the project's tree digest before and
+  after the fetch, so it is the same reading the human output prints.
+* **The temp files a plan merges with are dropped.** They are host paths inside moat's own state
+  directory, not part of the review, and publishing them would leak a machine's layout into a
+  pipeline's logs.
+
+`docs/CI.md` is a consumer: `scripts/ci/run-task.sh` runs `moat take --json`, writes `review.json`,
+and derives the human summary from that JSON rather than from the CLI's prose — one producer, and a
+pipeline reads fields instead of grepping text.
+
 ## 5. Credential axiom
 
 **Requirements: inject one scoped, short-lived credential at boot. Never bake keys into

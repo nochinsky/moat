@@ -2,6 +2,6 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-! reaped the datapath of a sandbox that is no longer running (pid 159681)
-! the recorded sandbox is gone: pid 159658 now belongs to another process, so moat did not signal it.
+! reaped the datapath of a sandbox that is no longer running (pid 184107)
+! the recorded sandbox is gone: pid 184084 now belongs to another process, so moat did not signal it.
   the environment and its snapshots are kept

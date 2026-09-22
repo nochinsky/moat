@@ -2033,3 +2033,35 @@ ENTRY_EXIT=0
 `review.txt` holds the classification (`hunk 1 a new file + ci-changed`), the project's own check
 result, and the fact that the host tree was not written. `test/ci-entrypoint.test.sh` at **7 checks,
 0 failed**; `npm run test:unit` at 272; typecheck clean; `action.yml` and `ci.yml` both parse.
+
+---
+
+## Session 16 — Phase 6: the review becomes something a program can read
+
+Phase 6's goal is to turn the evidence discipline into something a stranger can act on. Most of that
+is prose, and prose is not this repository's problem — but one piece of it is engineering, and the
+plan named it: **the review was only machine-readable on one of the two commands that produce it.**
+`moat apply --json` had emitted the classification and the hunks for several phases; `moat take`,
+the command whose whole job is *show me what happened and let me decide*, printed prose and nothing
+else.
+
+`moat take --json` now emits it. Progress stays on stderr and the review goes to stdout, so
+`moat take --json | jq` is the whole interface, and a pipeline reads fields instead of grepping
+sentences. Three properties are load-bearing and are in SPEC §4.2:
+
+* **`verdict` is the planner's own word** — `agent` / `you` / `both` / `conflict`, carried through
+  rather than re-derived, so a consumer cannot disagree with the classification `moat apply` acts on.
+* **`treeUntouched` is measured, not asserted**: it is the tree digest comparison the human output
+  already printed, so the machine's answer and the person's answer are the same reading.
+* **The plan's temp files are dropped.** A `ReviewedChange` carries `sourceFile`/`destFile` paths
+  inside moat's own state directory — publishing them would leak a machine's layout into a
+  pipeline's logs, and they are not part of the review.
+
+Then the consumer was rewritten to use it, because a JSON contract nobody reads is a claim rather
+than a test: `scripts/ci/run-task.sh` runs `moat take --json`, writes `review.json`, and **derives
+the human summary from that JSON** instead of parsing the CLI's prose. One producer; the pipeline
+formats fields.
+
+Extras §AN grew the end-to-end half. Its stub's tool call now edits a file *and commits*, so the
+fetch `take` performs has a branch to find, and the section asserts the JSON parses and says what it
+should: `treeUntouched` true, `notes.txt` in the classification, `checks.ok` true.

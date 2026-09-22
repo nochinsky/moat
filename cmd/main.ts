@@ -24,7 +24,7 @@ import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/ca
 import { catalogEntryFromFacts, catalogPriceForFacts, checkEffort, defaultEffortLevels, describeModelFacts, renderCatalogFromFacts, resolveModelFacts, type ModelFacts } from "../lib/model-facts.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES, PROFILES, FULL_PROFILE_ID } from "../sandbox/profiles.ts"
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
-import { runChecks, summarise } from "../sandbox/checks.ts"
+import { runChecks, summarise, type CheckResult } from "../sandbox/checks.ts"
 import {
   allowHostProblem,
   defaultAllowHosts,
@@ -1477,6 +1477,7 @@ async function cmdVerify(argv: string[]): Promise<number> {
  */
 async function cmdTake(argv: string[]): Promise<number> {
   const p = parse(argv, SPEC)
+  const json = flag<boolean>(p, "json") ?? false
   const paths = resolveEnv()
   const state = requireState(paths)
   const runtime = await egressRuntime(state, paths)
@@ -1522,8 +1523,10 @@ async function cmdTake(argv: string[]): Promise<number> {
       log.warn(`the review is unavailable: ${stripAnsi(plan.baselineProblem)}`)
     } else if (!plan.empty) {
       reviewed = await reviewPlan(paths, plan)
-      log.info("")
-      printReview(reviewed, { showContext: true })
+      if (!json) {
+        log.info("")
+        printReview(reviewed, { showContext: true })
+      }
       // `planApply` warns about anything that looks like the credential on its own, in both callers;
       // repeating it here would say the same thing twice.
     }
@@ -1537,7 +1540,7 @@ async function cmdTake(argv: string[]): Promise<number> {
 
   // The point of take is to decide whether to keep the work, and the single most
   // useful input to that decision is whether the project's own checks pass on it.
-  let verified: { ok: boolean; summary: string } | null = null
+  let verified: { ok: boolean; summary: string; results: CheckResult[] } | null = null
   if (!flag<boolean>(p, "no-verify")) {
     const checks = detectChecks(paths.projectDir)
     if (checks.length > 0) {
@@ -1546,7 +1549,7 @@ async function cmdTake(argv: string[]): Promise<number> {
         timeoutSeconds: optionalPositiveIntFlag(p, "timeout"),
         ...runtime,
       })
-      verified = { ok: results.every((r) => r.ok), summary: summarise(results) }
+      verified = { ok: results.every((r) => r.ok), summary: summarise(results), results }
       log.info("")
       for (const check of results) {
         const mark = check.ok ? log.green("pass") : log.red("FAIL")
@@ -1558,16 +1561,46 @@ async function cmdTake(argv: string[]): Promise<number> {
     }
   }
 
+  const treeUntouched = before.digest === after.digest
+
+  // The machine-readable review, for a pipeline rather than a person: the same classification
+  // `moat apply` acts on, the hunks it would write, and the project's own verdict on the work.
+  // It is emitted on stdout and the progress above is on stderr, so `moat take --json | jq` is the
+  // whole interface — which is what a CI step needs, and what `docs/CI.md` uses.
+  if (json) {
+    log.emit({
+      branch: target,
+      ref: result.hostRef,
+      sha: result.sha,
+      commits: result.commits,
+      commitsFetched: result.commitsFetched.map((commit) => ({ sha: commit.sha, subject: stripAnsi(commit.subject) })),
+      // The temp files a plan merges with are host paths inside moat's own state directory, not
+      // part of the review; they are dropped rather than published.
+      reviewed:
+        reviewed?.map((row) => ({
+          path: row.path,
+          verdict: row.verdict,
+          kind: row.kind,
+          note: row.note ?? null,
+          conflict: row.conflict,
+          hunks: row.hunks,
+        })) ?? null,
+      checks: verified ? { ok: verified.ok, summary: verified.summary, results: verified.results } : null,
+      treeUntouched,
+    })
+    return treeUntouched ? 0 : 1
+  }
+
   log.info("")
   if (verified) {
     log.info(`  checks:  ${verified.ok ? log.green(verified.summary) : log.red(verified.summary)}`)
   }
-  log.info(`  your working tree is ${before.digest === after.digest ? log.green("untouched") : log.red("CHANGED")}`)
+  log.info(`  your working tree is ${treeUntouched ? log.green("untouched") : log.red("CHANGED")}`)
   log.info(`  review:  git log ${result.hostRef}`)
   log.info(`  accept:  moat apply` + log.dim("   (three-way merge into your tree)"))
   log.info(`           moat apply ${target} --checkout` + log.dim("   (or switch to the agent's branch)"))
   log.info(`  reject:  git update-ref -d ${result.hostRef}`)
-  return before.digest === after.digest ? 0 : 1
+  return treeUntouched ? 0 : 1
 }
 
 /** A comma or whitespace separated flag value, as a list. */

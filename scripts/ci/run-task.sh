@@ -111,12 +111,22 @@ tail -30 "$OUTPUT_DIR/task.log" | tee -a "$OUTPUT_DIR/ci.log"
 # is why a CI run can produce a review without the host project being touched (§2.2).
 # ---------------------------------------------------------------------------
 say ""
-say "== moat take (the review; the tree is not written)"
+say "== moat take --json (the review; the tree is not written)"
 set +e
-$MOAT take --quiet < /dev/null > "$OUTPUT_DIR/review.txt" 2>&1
+$MOAT take --json --quiet < /dev/null > "$OUTPUT_DIR/review.json" 2> "$OUTPUT_DIR/take.log"
 take_code=$?
 set -e
-tail -40 "$OUTPUT_DIR/review.txt" | tee -a "$OUTPUT_DIR/ci.log"
+# The human view is derived from the JSON rather than parsed out of the CLI's own prose, which is
+# the whole point of `--json`: one producer, and a pipeline reads fields instead of grepping text.
+node -e '
+  const fs = require("fs")
+  let d
+  try { d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")) }
+  catch { console.log("  (no machine-readable review was produced; see take.log)"); process.exit(0) }
+  console.log(`  branch   ${d.branch}  ${d.commits} commit(s)  treeUntouched=${d.treeUntouched}`)
+  for (const r of d.reviewed ?? []) console.log(`  ${String(r.verdict).padEnd(8)} ${r.path} (${r.kind})${r.conflict ? " — never written" : ""}`)
+  console.log(`  checks   ${d.checks ? (d.checks.ok ? "pass" : "FAIL") + ": " + d.checks.summary : "(none detected)"}`)
+' "$OUTPUT_DIR/review.json" | tee -a "$OUTPUT_DIR/ci.log"
 
 say ""
 if [ "$task_code" != "0" ]; then
@@ -124,8 +134,8 @@ if [ "$task_code" != "0" ]; then
   exit 1
 fi
 if [ "$take_code" != "0" ]; then
-  say "moat-ci: the task ran but the review failed (exit $take_code) — see $OUTPUT_DIR/review.txt"
+  say "moat-ci: the task ran but the review failed (exit $take_code) — see $OUTPUT_DIR/take.log"
   exit 1
 fi
-say "moat-ci: the task ran and the review is in $OUTPUT_DIR/review.txt (the host tree was not written)"
+say "moat-ci: the task ran and the review is in $OUTPUT_DIR/review.json (the host tree was not written)"
 exit 0
