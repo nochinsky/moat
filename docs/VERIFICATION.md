@@ -11,7 +11,7 @@ any command or its output was altered.
 ```
 bash test/e2e-codex.sh    # the acceptance list, keyless        -> test/evidence/codex-summary.txt
 bash test/e2e-extras.sh   # the state and process traps         -> test/evidence/extras.txt
-bash test/e2e-egress.sh   # netns, slirp datapath, allowlist    -> test/evidence/egress.txt
+bash test/e2e-egress.sh   # netns, datapath, allowlist, proxy path -> test/evidence/egress.txt
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
 ```
 
@@ -286,7 +286,12 @@ The check count is the **mode's**, not a constant: this capture is `open` and pr
 14 checks (plus 4 exposures and 1 note). `isolated` prints 16
 (`test/evidence/doctor.txt`) and `filtered` 17 (`test/evidence/doctor-filtered.txt`);
 the extra checks are the network namespace, the host loopback as a check rather than a
-documented exposure, and the two-sided egress check. `docs/SPEC.md` §2.4 deliberately
+documented exposure, and the two-sided egress check. With `--egress-proxy` the reachability
+probe goes *through the proxy* rather than around it — a proxied box keeps no resolver, so
+`/dev/tcp` to a provider by name would report a working box as broken — and the row says so
+(`… api.deepseek.com:443 is reachable through the proxy`). The probe boot is the box the
+agent gets, proxy included, which it was not until recently: it dropped the `egressProxy`
+its caller spread in, so it measured a *different, more permissive* box. `docs/SPEC.md` §2.4 deliberately
 carries no number (it said "15 isolation assertions" for a while and nothing kept it
 honest), and `test/unit/docs-claims.test.ts` fails if a count comes back.
 
@@ -1000,9 +1005,17 @@ at an unrelated live process warns and leaves that process running.
 
 `bash test/e2e-egress.sh` needs no key: reachability is proven by the provider
 answering 401 to an unauthenticated request, which a stub on the host's loopback
-cannot fake from inside the namespace. It runs three boots: `--egress isolated`,
-the same environment restarted `--egress filtered`, and then a **fresh project
-with no `--egress` flag at all** to prove what a new environment gets.
+cannot fake from inside the namespace. It runs a boot per policy —
+`--egress isolated`, the same environment restarted `--egress filtered`, and a
+**fresh project with no `--egress` flag at all** to prove what a new environment
+gets — and then the two environments that are not about the ruleset: one with
+`--egress-proxy`, where the box has no datapath of its own and the proxy is the
+only path (checked by its interfaces, its missing default route, its refusing
+resolver, a direct dial reporting `Network unreachable`, the proxy answering
+`200 Connection Established`, and `apk` repairing a deleted `nftables` with no
+datapath to fetch it through), and an unproxied control that must fail those
+same checks. The count is deliberately not stated: it was three, and it grew —
+prose counts are the thing this repository keeps catching.
 
 ```
 $ bash test/e2e-egress.sh

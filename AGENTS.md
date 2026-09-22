@@ -813,8 +813,15 @@ Not built, in rough order of how much they matter:
   boot of the environment is proxied too, closes the box's own resolver, and does not start
   the box's datapath at all, so the policy is the only path rather than the one a
   well-behaved client takes. `docs/EGRESS.md` §7 has the measurements. What is left is the
-  step after it: the default (unproxied) boot still has all three holes, and the v1 microVM
-  is what should hold the next boundary. The proxy is viable, and every piece of *whether it
+  step after it: **the default (unproxied) boot still has all three holes, and it has not
+  been changed to proxied on purpose.** The flag stays explicit because the proxy needs
+  `ip(8)` on the host — `moat up` refuses without it, naming the tool — and invariant 7's
+  substance is that the default path runs on a bare host with nothing installed. Making it
+  the default means either accepting that requirement or degrading silently to the ruleset
+  when `ip` is absent, and a policy that differs by host is worse than one that is chosen.
+  That is a product decision for the owner, and it is written here so it is a decision
+  rather than an omission. The step after it is the v1 microVM, which is what should hold
+  the next boundary. The proxy is viable, and every piece of *whether it
   can be reached* is now measured rather than assumed: both runtimes send their model traffic through
   one when the box is told to use it; an isolated box reaches the host on its non-loopback address
   while the loopback stays closed; a plain `setns` — the box's **user** namespace first, then its
