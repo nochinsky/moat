@@ -40,3 +40,12 @@ test("a check that ignores SIGTERM is killed after the grace period", () => {
   assert.notEqual(result.code, 0)
   assert.match(result.output, /TIMED OUT/)
 })
+
+test("a check runs in /work by default and in the directory it is given", () => {
+  // The coherence check runs the project's checks against the *accepted subset* of a change, which
+  // lives in a scratch tree beside /work rather than in it (`sync/coherence.ts`). A `workdir` that
+  // was accepted and then dropped would run the check against the agent's full tree, so a subset
+  // that does not build would pass — the exact failure the check exists to catch.
+  assert.match(checkScript("npm test", 30), /^cd \/work$/m, "no workdir means /work")
+  assert.match(checkScript("npm test", 30, "/moat-verify-abc123"), /^cd \/moat-verify-abc123$/m)
+})

@@ -90,9 +90,11 @@ This is the part most projects leave out. Read it before deciding how much to tr
 * **moat does not curate the agent's tools.** Codex ships its own and the box bounds them.
   `web_search` is the one entry the config can switch off, and it is off: DeepSeek's API
   accepts that tool and ignores it.
-* **A partial accept is not checked for coherence.** The review is per file and per hunk, with
-  no cross-file reasoning: taking one hunk and rejecting the one that makes it compile is a
-  state `moat apply` will write. Nothing verifies that an accepted subset builds.
+* **A partial accept is checked for coherence, not for correctness.** Taking a subset of a
+  change now runs the project's own checks against exactly what is about to be written, and
+  refuses to write when they fail — so "take hunk 2 and reject the hunk that makes it compile"
+  is caught rather than written. What that does *not* buy is cross-file reasoning or a proof
+  the subset is what you meant: it says the check you already have still passes, no more.
 
 `docs/VERIFICATION.md` ends with a table of everything that is **not** verified. It is the
 honest half of this section and it is longer.

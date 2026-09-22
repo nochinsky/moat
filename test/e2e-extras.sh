@@ -1207,6 +1207,71 @@ else
   fail "codex tui" "moat did not reach a live TUI (exit $TUI_RC)"
 fi
 ( cd "$WORK/codex-tui" && $MOAT destroy --yes >/dev/null 2>&1 )
+
+section "AM. a partial accept that breaks the project's check is refused, not written"
+# The one failure the review exists to prevent, and the one it used to admit to: take the change
+# to one file and reject the change to the file that makes it compile. SPEC §4.1 listed that as a
+# limitation. The check is the project's own, run against exactly the accepted subset, and the
+# host tree is not touched to run it.
+AM="$WORK/coherence"
+rm -rf "$AM"; mkdir -p "$AM"
+(
+  cd "$AM"
+  git init -q -b main .
+  git config user.email a@b
+  git config user.name t
+  printf '{"name":"coherence","scripts":{"test":"sh test.sh"}}\n' > package.json
+  printf '1\n' > config.txt
+  printf '#!/bin/sh\ngrep -q "^1$" config.txt\n' > test.sh
+  git add -A && git commit -qm base
+)
+( cd "$AM" && $MOAT up --quiet --no-credential --no-detect --profile node --egress isolated --model deepseek-flash ) > "$WORK/coh-up.log" 2>&1
+# The agent changes both files together: the config to 2, and the check that asserts 2.
+cat > "$WORK/coh-agent.sh" <<'BOX'
+cd /work
+printf '2\n' > config.txt
+cat > test.sh <<'INNER'
+#!/bin/sh
+grep -q "^2$" config.txt
+INNER
+git add -A
+git -c user.email=a@b -c user.name=a commit -qm agent
+BOX
+( cd "$AM" && $MOAT exec -- sh -c "$(cat "$WORK/coh-agent.sh")" ) > "$WORK/coh-agent.log" 2>&1
+
+# The incoherent subset: the config change only, so the check (now expecting 2) runs against a tree
+# that still holds 1. Nothing may be written.
+( cd "$AM" && $MOAT apply --only config.txt ) > "$WORK/coh-partial.out" 2>&1
+COH_PARTIAL=$?
+COH_LEFT=$(cat "$AM/config.txt")
+
+# The control, so the check above cannot pass on a broken apply: --no-verify writes the same subset
+# through, which is what shows it was the *verify* that stopped it and not something else.
+( cd "$AM" && $MOAT apply --only config.txt --no-verify ) > "$WORK/coh-forced.out" 2>&1
+COH_FORCED=$?
+COH_FORCED_VAL=$(cat "$AM/config.txt")
+
+{
+  echo "--- \$ moat apply --only config.txt             (the subset whose check fails)"
+  cat "$WORK/coh-partial.out"
+  echo "--- exit $COH_PARTIAL   config.txt after = $COH_LEFT"
+  echo ""
+  echo "--- \$ moat apply --only config.txt --no-verify  (the same subset, verification off)"
+  cat "$WORK/coh-forced.out"
+  echo "--- exit $COH_FORCED   config.txt after = $COH_FORCED_VAL"
+} | scrub | tee -a "$EVIDENCE/extras.txt" > "$EVIDENCE/coherence.txt"
+
+if [ "$COH_PARTIAL" != "0" ] \
+   && grep -q "does not pass the project's own checks" "$WORK/coh-partial.out" \
+   && [ "$COH_LEFT" = "1" ] \
+   && [ "$COH_FORCED" = "0" ] \
+   && grep -q "applied 1 change" "$WORK/coh-forced.out" \
+   && [ "$COH_FORCED_VAL" = "2" ]; then
+  pass "coherence" "an accepted subset that fails the project's own check is refused with nothing written, and --no-verify still writes it"
+else
+  fail "coherence" "expected a refusal (exit=$COH_PARTIAL, left=$COH_LEFT) and a forced write (exit=$COH_FORCED, wrote=$COH_FORCED_VAL)"
+fi
+( cd "$AM" && $MOAT destroy --yes >/dev/null 2>&1 )
 # The stub belongs to this suite: e2e.sh used to start it and extras used to inherit it.
 if [ -f "$MOCK_PIDFILE" ]; then kill "$(cat "$MOCK_PIDFILE")" 2>/dev/null; rm -f "$MOCK_PIDFILE"; fi
 echo "" | tee -a "$EVIDENCE/extras.txt"

@@ -146,7 +146,13 @@ export async function isGitRepo(dir: string): Promise<boolean> {
   return await ok("git", ["-C", dir, "rev-parse", "--git-dir"], { env: SANITIZED_GIT_ENV })
 }
 
-export async function copyIn(p: EnvPaths): Promise<CopyInResult> {
+/**
+ * `quiet` suppresses the progress lines (and the advisory warnings) for a copy the
+ * user did not ask for directly: the coherence check copies the project twice, and
+ * "copy-in: git clone" printed for a verify step reads as the wrong command running.
+ * Errors still surface — only the narration is muted.
+ */
+export async function copyIn(p: EnvPaths, opts: { quiet?: boolean } = {}): Promise<CopyInResult> {
   // Fail before cloning when a name cannot be addressed: git carries the bytes,
   // but every host-side walk after it (untracked files, hashing, drift) does not.
   assertAddressableNames(p.projectDir)
@@ -155,15 +161,17 @@ export async function copyIn(p: EnvPaths): Promise<CopyInResult> {
 
   let result: CopyInResult
   if (await isGitRepo(p.projectDir)) {
-    const skipped = await cloneGit(p)
+    const skipped = await cloneGit(p, opts.quiet ?? false)
     result = await finalize(p, "git", skipped)
   } else {
-    log.warn(`${p.projectDir} is not a git repository; falling back to rsync + a fresh in-sandbox repo`)
+    if (!opts.quiet) {
+      log.warn(`${p.projectDir} is not a git repository; falling back to rsync + a fresh in-sandbox repo`)
+    }
     await rsyncCopy(p)
     result = await finalize(p, "rsync", [])
   }
 
-  if (result.skippedFromCopy.length > 0) {
+  if (result.skippedFromCopy.length > 0 && !opts.quiet) {
     log.warn(
       `${result.skippedFromCopy.length} path(s) cannot be represented in the sandbox: ` +
         `${result.skippedFromCopy.slice(0, 5).join(", ")}${result.skippedFromCopy.length > 5 ? ", …" : ""}\n` +
@@ -238,8 +246,8 @@ async function ignoredPaths(projectDir: string, paths: string[]): Promise<Set<st
   return new Set(result.stdout.split("\0").filter((name) => name.length > 0))
 }
 
-async function cloneGit(p: EnvPaths): Promise<string[]> {
-  log.step("copy-in: git clone --no-hardlinks")
+async function cloneGit(p: EnvPaths, quiet = false): Promise<string[]> {
+  if (!quiet) log.step("copy-in: git clone --no-hardlinks")
   await run("git", ["clone", "--no-hardlinks", "--quiet", p.projectDir, p.work], { env: SANITIZED_GIT_ENV })
 
   // Reproduce the uncommitted working tree exactly. The patch goes through a

@@ -256,6 +256,21 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   `null`). `path.relative` normalises, so the escape is exactly `..` or a `../` prefix;
   the guard tests `relative === ".." || relative.startsWith(".." + path.sep)`, and
   `test/unit/apply.test.ts` pins both the refusal and the dotted name being written.
+* **A partial accept is checked for coherence, and the candidate tree is the *host's*, not the
+  box's.** `sync/coherence.ts` (`checkCoherence`) runs the project's own checks against exactly
+  the accepted subset before `moat apply` writes it — take hunk 2, reject the hunk that makes it
+  compile, and the subset fails the check and nothing is written. Two things are load-bearing:
+  the candidate is **the host project with the accepted hunks written in**, not the sandbox's `/work`
+  (those differ by every rejected hunk, so checking `/work` measures the wrong tree), and it is
+  built by reusing `copyIn` + `applySelection` so deletes, renames, symlinks and binaries come out
+  the way the real boot sees them. The subset is copied into a scratch dir *inside the env's
+  rootfs* and removed afterwards, so the check runs through `runInSandbox` like every other check
+  and the host project is never touched (invariant 4). `runChecks` grew a `workdir` option for it
+  (default `/work`), and `copyIn` grew a `quiet` option so the two copies do not print
+  "copy-in: git clone" for a verify step. On by default for a **partial** selection only — a
+  whole-tree accept is the agent's own work, which `moat verify`/`moat take` already cover —
+  forced with `--verify`, skipped with `--no-verify`, bounded by `--timeout`. No detectable check
+  means a warning, not a pass.
 
 **Processes, scripts and logs**
 

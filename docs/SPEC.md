@@ -372,6 +372,28 @@ into are kept until `applyPlan` finishes with them (or reaped by age), because d
 at the end of planning made a plan single-use and made a concurrent apply skip a change
 without a word.
 
+**The accepted subset is checked for coherence before it is written.** A partial accept is a
+tree no program has been in — take hunk 2 and reject the hunk that makes the project compile,
+and the result cannot build — so `moat apply` runs the project's own checks against **exactly
+the subset about to be written**, not the agent's full tree (which `moat verify` and
+`moat take` already cover), and refuses to write when a check fails:
+
+* on by default when the selection is **partial** (a change skipped, or a `--hunks` subset); a
+  whole-tree accept is the agent's own work and is not re-checked here, because nothing has
+  diverged from what the agent produced;
+* `--verify` forces it even for a whole-tree accept, `--no-verify` opts out, and
+  `--timeout <seconds>` bounds the checks (the `moat verify` default applies otherwise);
+* the subset is assembled from **your** tree (HEAD plus uncommitted work) with the accepted
+  hunks written into it, copied into a scratch tree inside the sandbox, and removed again
+  afterwards — your project is not touched to run the check, and the check runs in the box like
+  every other check, never on the host;
+* a project with no detectable check (no test/lint/typecheck script) is written, with a warning
+  that coherence was not verified, because there is nothing to run.
+
+This is the review's own promise kept: the point of per-hunk acceptance is to take a *sound*
+part of a change, and "the part you took still builds" is what makes it sound rather than
+merely small.
+
 This makes copy-out work for **any** directory: a plain directory has no repository for
 `git fetch` to write into, and the baseline commit supplies the missing third input,
 recorded with a temporary index so neither the working tree nor the index is disturbed.
