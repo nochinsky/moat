@@ -432,27 +432,31 @@ What that costs and what it does not settle:
   line — the check that would have caught it on the first pass, because the request legitimately carries
   `\r\n` for `printf` while a *statement* separator must be a real newline.
 
-* **Still open.** The box's own datapath is a *backstop*, not a second policy: the box can still reach
-  the allowlist directly on 80/443 and resolve through slirp, so the proxy governs clients that honour
-  it and the ruleset governs the rest. Making the proxy the *only* path means removing the box's
-  slirp, which changes the boot's readiness wait, the doctor's network probes and the egress suite —
-  a step of its own. Also open: `ip` is now a real host requirement (checked before provisioning, and
-  it should appear in `moat doctor` beside `unshare` and `chroot`); the topology's lifecycle is reaped
-  through `stopDatapath` but has not been tested against a box that dies out of band; `exec`, `verify`
-  and `take` still read egress from state and are not proxied; and the container backend is refused.
-* One trap worth repeating, because I hit it twice taking these readings: **every boot has its own
-  network namespace** (§4). Building the topology in the keepalive's namespace and then dialing from
-  `moat exec` measures two different namespaces, and the honest answer there is "refused" for a
-  topology that works.
-* **`moat exec`, `moat verify` and `moat take` are not proxied.** The policy arrives as a flag on
-  `up`/`run`; those commands read egress from `state.json`, so the policy has to become an
-  environment property (recorded, like `egress` and `egressAllow`) before they can carry it. Until
-  then a check that makes a network call does so under the ruleset alone.
-* **The container backend is refused, not ignored** — `--egress-proxy` says so, and attaching to a
-  container's namespace needs the runtime's pid (§4 measured that the mechanism works).
-* **A proxy is not a jail.** It governs clients that honour a proxy setting; a raw socket under
-  `isolated`/`filtered` still reaches what the ruleset admits. SPEC §7.3 already says the filter is a
-  policy rather than a jail, and this narrows where traffic *goes* without pretending otherwise.
+* **The proxy is the only path, when there is one.** The box's own datapath is not started at all under
+  `--egress-proxy`: what is left in its namespace is `lo` and the link to the proxy. That is the
+  difference between a policy and a boundary — with a datapath of its own, a client that ignores
+  `HTTP_PROXY` still has a route out and the proxy governs only the well-behaved. Measured on a
+  `filtered` proxied environment, against a control that is not proxied:
+
+  ```
+  proxied:  interfaces  lo moatp          no tap0, no default route
+            resolv.conf nameserver 127.0.0.1
+            1.1.1.1:443 -> Network unreachable after 4ms     (a refusal, not a timeout)
+            through the proxy: HTTP/1.1 200 Connection Established
+            a real turn: the provider's 401, and the proxy logged ALLOWED CONNECT api.deepseek.com:443
+            moat doctor: pass, including "api.deepseek.com:443 is reachable through the proxy"
+  control:  interfaces  lo tap0            slirp still present when no proxy decides
+  ```
+
+  Two consequences worth naming. The ruleset still applies, and with the allowlist's addresses
+  unreachable it reduces in practice to the one rule that admits the proxy — belt and braces rather than
+  the bound. And the host-loopback hole that `--disable-host-loopback` exists to close is structurally
+  gone for these boots: the doctor's row now reads "reached the host's loopback through neither
+  127.0.0.1 nor slirp's 10.0.2.2 gateway", because there is no such gateway in the box.
+
+  What is *not* changed: a boot without `--egress-proxy` is exactly as it was — its own namespace, its
+  own slirp, its own allowlist — so the three holes in the boot-time IP snapshot are closed for proxied
+  environments only, which is what the flag is for.
 
 ## 8. Two pre-existing defects this increment ran into
 

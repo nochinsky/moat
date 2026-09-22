@@ -642,7 +642,10 @@ export async function runInSandbox(
     ? ""
     : writeOuterScript(p, {
         innerScript: inner,
-        waitForTap: isolated,
+        // No tap when a proxy decides: the box's own datapath is what makes the policy a suggestion
+        // rather than a boundary, because a client that ignores the proxy still has a route out. With
+        // the box's namespace holding only `lo` and the link to the proxy, the proxy is the only path.
+        waitForTap: isolated && !opts.egressProxy,
         waitForLink: opts.egressProxy ? VETH_BOX_IFACE : undefined,
         egressRules: opts.egressRules,
       })
@@ -726,14 +729,18 @@ export async function runInSandbox(
       const egress = await import("./egress.ts")
       const ready = child.pid ? await waitForNewNetns(child.pid) : false
       if (!ready) throw new Error("the sandbox did not enter its network namespace")
-      slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
-      stage("the box's datapath is up")
+      if (!opts.egressProxy) {
+        slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
+        stage("the box's datapath is up")
+      }
       if (opts.egressProxy) {
         // The proxy gets a namespace of its own with its own datapath, because a process inside the
         // box's namespace is subject to the box's ruleset — and the ruleset's addresses were resolved
         // at boot, which is the very snapshot this exists to retire. Measured both ways in
-        // docs/EGRESS.md §7. The box keeps its own datapath and ruleset as the backstop for traffic
-        // that ignores the proxy.
+        // docs/EGRESS.md §7. It is now the *only* path: the box's own datapath is not started at all
+        // when a proxy decides, so what bounds the box is the policy rather than the proxy's goodwill.
+        // The ruleset still applies, and with the allowlist unreachable it reduces to the one rule that
+        // admits the proxy.
         const proxies = await import("./proxy.ts")
         const nets = await import("./proxy-netns.ts")
         const proxyLog = path.join(p.logs, "proxy.log")
@@ -838,7 +845,10 @@ export async function runInteractive(
     ? ""
     : writeOuterScript(p, {
         innerScript: inner,
-        waitForTap: isolated,
+        // No tap when a proxy decides: the box's own datapath is what makes the policy a suggestion
+        // rather than a boundary, because a client that ignores the proxy still has a route out. With
+        // the box's namespace holding only `lo` and the link to the proxy, the proxy is the only path.
+        waitForTap: isolated && !opts.egressProxy,
         waitForLink: opts.egressProxy ? VETH_BOX_IFACE : undefined,
         egressRules: opts.egressRules,
       })
@@ -875,13 +885,17 @@ export async function runInteractive(
       const egress = await import("./egress.ts")
       const ready = child.pid ? await waitForNewNetns(child.pid) : false
       if (!ready) throw new Error("the sandbox did not enter its network namespace")
-      slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
+      if (!opts.egressProxy) {
+        slirp = await egress.startSlirp(opts.slirpBinary!, child.pid!, { logFile: path.join(p.logs, "slirp.log") })
+      }
       if (opts.egressProxy) {
         // The proxy gets a namespace of its own with its own datapath, because a process inside the
         // box's namespace is subject to the box's ruleset — and the ruleset's addresses were resolved
         // at boot, which is the very snapshot this exists to retire. Measured both ways in
-        // docs/EGRESS.md §7. The box keeps its own datapath and ruleset as the backstop for traffic
-        // that ignores the proxy.
+        // docs/EGRESS.md §7. It is now the *only* path: the box's own datapath is not started at all
+        // when a proxy decides, so what bounds the box is the policy rather than the proxy's goodwill.
+        // The ruleset still applies, and with the allowlist unreachable it reduces to the one rule that
+        // admits the proxy.
         const proxies = await import("./proxy.ts")
         const nets = await import("./proxy-netns.ts")
         const proxyLog = path.join(p.logs, "proxy.log")

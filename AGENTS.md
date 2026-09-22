@@ -569,6 +569,11 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   Supporting them means Buffer paths through every host-side walk (hashing, the
   untracked-file pass, apply's tree reads); that does not exist yet, and pretending
   otherwise would drop files silently.
+* **A proxied boot has no `tap0` and no default route**, deliberately: the box's namespace holds
+  `lo` and the link to the proxy, and nothing else. Any code that assumes a datapath — a readiness
+  wait for the tap, a helper that dials an address directly, a probe that resolves a name in the box
+  (the box keeps a resolver that *refuses*, `nameserver 127.0.0.1`) — will read as a broken box when
+  it is the box working as designed. `waitForTap` is gated on `!egressProxy` for exactly this reason.
 * A filtered boot needs `nft` inside the image, and *every* path that boots one has to
   ensure it (`ensureFilterTool` in `cmd/main.ts`), not just `moat up`. An environment
   restored from a snapshot taken before nftables was baked in used to fail `doctor` and
@@ -803,7 +808,13 @@ Not built, in rough order of how much they matter:
   is wrong. What is left is the allowlist's shape: it is an IP snapshot taken at boot (a
   rotating CDN address falls out until the next `moat up`), it cannot express per-host
   ports, and DNS to slirp's resolver remains an outbound channel. Closing those means a
-  resolving proxy moat owns, not a bigger ruleset. The proxy is viable, and every piece of *whether it
+  resolving proxy moat owns, not a bigger ruleset — and there is one now: `--egress-proxy`
+  runs a proxy moat owns in a namespace of its own, records that in `state.json` so every
+  boot of the environment is proxied too, closes the box's own resolver, and does not start
+  the box's datapath at all, so the policy is the only path rather than the one a
+  well-behaved client takes. `docs/EGRESS.md` §7 has the measurements. What is left is the
+  step after it: the default (unproxied) boot still has all three holes, and the v1 microVM
+  is what should hold the next boundary. The proxy is viable, and every piece of *whether it
   can be reached* is now measured rather than assumed: both runtimes send their model traffic through
   one when the box is told to use it; an isolated box reaches the host on its non-loopback address
   while the loopback stays closed; a plain `setns` — the box's **user** namespace first, then its
