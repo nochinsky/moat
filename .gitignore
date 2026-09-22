@@ -13,3 +13,6 @@ test/evidence/onboard.txt
 
 # `scripts/ci/run-task.sh` and the moat action write their review here by default.
 moat-ci/
+
+# Reasonix host scratch (task dirs, background-job output): not part of the project
+.reasonix/

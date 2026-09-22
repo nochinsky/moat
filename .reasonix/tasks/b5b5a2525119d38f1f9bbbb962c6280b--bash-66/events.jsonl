@@ -1,2 +1,0 @@
-{"sequence":1,"timestamp":"2026-09-23T01:07:49.162654218+03:00","event_type":"state_change","task_id":"b5b5a2525119d38f1f9bbbb962c6280b--bash-66","session_id":"b5b5a2525119d38f1f9bbbb962c6280b","state":"running","runtime_state":"alive"}
-{"sequence":2,"timestamp":"2026-09-23T01:08:18.906606292+03:00","event_type":"state_change","task_id":"b5b5a2525119d38f1f9bbbb962c6280b--bash-66","session_id":"b5b5a2525119d38f1f9bbbb962c6280b","state":"succeeded","runtime_state":"exited"}
