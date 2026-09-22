@@ -382,6 +382,24 @@ What that costs and what it does not settle:
   The fix itself is the property, not the event: `child.exitCode` is set the moment the process exits,
   so the wait asks rather than waits.
 
+* **The DNS channel is closed: the box keeps no resolver of its own.** One of the three holes
+  `AGENTS.md` names for a boot-time IP snapshot is that DNS to slirp's resolver is an outbound channel —
+  it carries a key out as well as a name. Under `--egress-proxy` the box no longer has one: what it
+  gets is a resolver that *refuses* rather than one that is absent, so a tool that asks fails at once
+  instead of waiting out a timeout. Measured on a `filtered` proxied environment:
+
+  ```
+  $ cat /etc/resolv.conf                     nameserver 127.0.0.1
+  $ nslookup api.deepseek.com                exit=1 after 1ms
+  and the proxy still resolves for it:       ALLOWED CONNECT api.deepseek.com:443 -> the provider's 401
+  moat doctor:                               pass  egress filtered — … and api.deepseek.com:443 is reachable
+  ```
+
+  The doctor row is the one worth checking, because a probe that resolved the provider *inside* the box
+  would have called this a failure: it resolves host-side, so closing the box's DNS leaves its verdict
+  intact. And the reason the box can still reach the provider is the point — the *proxy* resolved the
+  name, in its own namespace, with nothing resolvable in the box at all.
+
 * **Still open.** The box's own datapath is a *backstop*, not a second policy: the box can still reach
   the allowlist directly on 80/443 and resolve through slirp, so the proxy governs clients that honour
   it and the ruleset governs the rest. Making the proxy the *only* path means removing the box's

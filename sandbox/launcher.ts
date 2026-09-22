@@ -244,6 +244,13 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
   if (opts.waitForLink) {
     // A boot that cannot get its link must not run anyway: it would come up with a proxy in its
     // environment and no way to reach it, which reads as a broken network rather than a failed boot.
+    //
+    // And the box keeps no resolver of its own. A proxy is what decides by name, and it resolves the
+    // name itself — so a resolver inside the box is not a convenience, it is one of the three holes
+    // `AGENTS.md` names for a boot-time IP snapshot: DNS is an outbound channel that carries a key out
+    // as well as a name. What the box gets is a resolver that *refuses* rather than one that is absent,
+    // so a tool that asks fails at once instead of waiting for a timeout: slirp's resolver is
+    // unreachable across the link, and nothing listens on the box's own loopback.
     lines.push('echo "[moat] boot: waiting for the proxy link"')
     lines.push("i=0")
     lines.push(`while ! grep -q ${opts.waitForLink} /proc/net/dev; do`)
@@ -251,6 +258,7 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
     lines.push(`  if [ "$i" -ge 100 ]; then echo '[moat] the proxy link did not appear' >&2; exit 1; fi`)
     lines.push("  sleep 0.1")
     lines.push("done")
+    lines.push('echo nameserver 127.0.0.1 > "$N/etc/resolv.conf"')
   }
   if (opts.egressRules) {
     lines.push('echo "[moat] boot: applying the egress policy"')
