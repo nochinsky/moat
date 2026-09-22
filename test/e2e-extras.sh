@@ -1299,6 +1299,11 @@ sleep 1.2
 AN_UP=$?
 ( cd "$AN" && $MOAT run "run the check" --quiet ) > "$WORK/claude-run.log" 2>&1
 AN_RUN=$?
+# And a ceiling stops one mid-turn: the stub reports 160 tokens on its first request, so a limit of
+# 100 has to kill the box before the second request is paid for. The control above (no ceiling) is
+# what makes this a measurement rather than a claim.
+( cd "$AN" && $MOAT run "run the check" --quiet --max-tokens 100 ) > "$WORK/claude-ceiling.log" 2>&1
+AN_CEIL=$?
 AN_REQS=$(grep -c '/v1/messages' "$WORK/anthropic-record.jsonl" 2>/dev/null || echo 0)
 # The credential has to reach the runtime under the name *it* reads, not moat's: Claude Code reads
 # ANTHROPIC_API_KEY, and the stub records the header the provider actually received.
@@ -1317,6 +1322,8 @@ kill $AN_STUB 2>/dev/null
   grep -E "runtime|prov" "$WORK/claude-up.log" | head -4
   echo "--- \$ moat run \"run the check\"   (a turn through the Claude runtime)"
   cat "$WORK/claude-run.log"
+  echo "--- \$ moat run \"run the check\" --max-tokens 100   (a ceiling, mid-turn)"
+  tail -4 "$WORK/claude-ceiling.log"
   echo "--- the provider's own record ---"
   echo "requests to /v1/messages: $AN_REQS    credential reached the runtime: $AN_KEY"
 } | scrub | tee -a "$EVIDENCE/extras.txt" > "$EVIDENCE/claude-runtime.txt"
@@ -1325,10 +1332,13 @@ if [ "$AN_UP" = "0" ] \
    && [ "$AN_RUN" = "0" ] \
    && grep -q "stub-tool-ran" "$WORK/claude-run.log" \
    && [ "$AN_REQS" -ge 2 ] \
-   && [ "$AN_KEY" = "yes" ]; then
-  pass "claude runtime" "a turn ran under the second runtime: the model asked for a tool, the box ran it, and the credential arrived as ANTHROPIC_API_KEY"
+   && [ "$AN_KEY" = "yes" ] \
+   && [ "$AN_CEIL" = "1" ] \
+   && grep -q "reached its token ceiling" "$WORK/claude-ceiling.log" \
+   && grep -qi "sandbox was killed" "$WORK/claude-ceiling.log"; then
+  pass "claude runtime" "a turn ran under the second runtime, and a token ceiling killed one mid-turn before the next request was paid for"
 else
-  fail "claude runtime" "up=$AN_UP run=$AN_RUN requests=$AN_REQS key=$AN_KEY"
+  fail "claude runtime" "up=$AN_UP run=$AN_RUN reqs=$AN_REQS key=$AN_KEY ceiling=$AN_CEIL"
 fi
 ( cd "$AN" && $MOAT destroy --yes >/dev/null 2>&1 )
 # The stub belongs to this suite: e2e.sh used to start it and extras used to inherit it.

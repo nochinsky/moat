@@ -177,6 +177,28 @@ identical trivial task Codex used 17,692 tokens ($0.000259) against opencode's 9
 ($0.0000937), because it carries a larger harness prompt and does more work per step
 (`docs/HISTORY.md`).
 
+### 2.2c Spend ceilings
+
+A turn reports what it cost; by default nothing stops it. Two flags change that, and they are
+enforced **while the turn runs**, not priced afterwards:
+
+* **`--max-tokens <n>`** — total tokens (`input + cached + output + reasoning`) for the turn. It
+  needs no price, so it works for any model, including a `--base-url` endpoint nobody has published.
+* **`--max-cost <usd>`** — spend for the turn. It needs a price: moat's own table, or models.dev via
+  the catalog. When the model cannot be priced, moat **says so and carries on** rather than passing
+  silently, because a ceiling that cannot be enforced is worse than none if it reads as protection.
+
+Enforcement is a kill, not a report. The runtime's own stream is re-read as it arrives — the same
+parser the footer uses, so the number compared is the number printed — and the moment the running
+total crosses the ceiling the sandbox is killed with `SIGKILL` through `unshare --kill-child`, so it
+cannot outlive the ceiling and the next request is never paid for. `moat run` then exits non-zero
+and names the ceiling it hit.
+
+One honest limit, and it is the protocol's rather than moat's: **Codex sends usage only at
+`turn.completed`**, so for Codex the check can only fire at the end of the turn. Claude Code reports
+usage on every assistant event, so it is stopped mid-turn. `docs/SEAM.md` §3 records the same
+asymmetry. There is no budget that spans several `moat run` invocations.
+
 ### 2.3 Boot sequence, the exact commands
 
 `moat up` performs, in order:

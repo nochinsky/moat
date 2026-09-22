@@ -159,6 +159,20 @@ function positiveIntFlag(p: Parsed, key: string, fallback: number, max?: number)
   return optionalPositiveIntFlag(p, key, max) ?? fallback
 }
 
+/**
+ * A positive, finite number of dollars, or nothing.
+ *
+ * `--max-cost` is the only float moat takes, and it needs the same validation the integers get: a
+ * ceiling of `NaN`, `Infinity` or `-1` compares as "never breached" and would read as protection
+ * the user does not have.
+ */
+function optionalPositiveFloatFlag(p: Parsed, key: string): number | undefined {
+  const value = flag<number>(p, key)
+  if (value === undefined) return undefined
+  if (!Number.isFinite(value) || value <= 0) log.fail(`--${key} must be a positive number`)
+  return value
+}
+
 // ---------------------------------------------------------------------------
 // shared helpers
 // ---------------------------------------------------------------------------
@@ -1235,11 +1249,23 @@ ${command}
   // a batch run drives one turn and reports it.
   const showOutput = flag<boolean>(p, "show-output") ?? false
   const timeoutSeconds = optionalPositiveIntFlag(p, "timeout")
+  // The spend ceilings. `--max-tokens` needs no price and works for any model; `--max-cost` only
+  // means something when moat can price the model, and says so rather than passing silently.
+  const maxTokens = optionalPositiveIntFlag(p, "max-tokens")
+  const maxCost = optionalPositiveFloatFlag(p, "max-cost")
   // Resolved here rather than inside the runner: this is where the boot's own `ModelFacts` and
   // the loaded catalog are both in hand, so the price belongs to the model that actually ran.
   const catalogPrice = catalogPriceForFacts(facts, catalog)
+  if (maxCost !== undefined && !computeCost(facts.id, { input: 1, cacheRead: 0, output: 0, reasoning: 0 }, new Date(), catalogPrice).known) {
+    log.warn(
+      `--max-cost cannot be enforced: no price is known for ${facts.id}, so moat cannot price the tokens the runtime reports.\n` +
+        "  Use --max-tokens, which needs no price, or --timeout for a wall-clock bound.",
+    )
+  }
   const runOptions = {
     env: sandboxEnvVars,
+    maxTokens,
+    maxCost,
     egress,
     slirpBinary: egressConfig.slirpBinary,
     egressRules: egressConfig.egressRules,
@@ -2953,6 +2979,39 @@ type AgentRunOptions = {
   json?: boolean
   /** Which runtime produced the stream, so the footer prices and describes the right one. */
   runtime: RuntimeSpec
+  /** Stop the turn once the stream has reported this many tokens. Needs no price. */
+  maxTokens?: number
+  /** Stop the turn once the stream has reported this much spend. Only when the price is known. */
+  maxCost?: number
+}
+
+/**
+ * The spend ceiling, evaluated against the stream so far.
+ *
+ * It re-reads the runtime's own output rather than counting anything on the side, so the number it
+ * compares is the same number the footer will print — one parser, one accounting. The bytes-cost
+ * of doing this repeatedly is bounded by `runInSandbox`'s throttle.
+ */
+function ceilingBreach(output: string, opts: AgentRunOptions): string | null {
+  if (opts.maxTokens === undefined && opts.maxCost === undefined) return null
+  const usage = opts.runtime.parse(output).usage
+  if (usage === null) return null
+  const tokens = usage.input + usage.cached + usage.output + usage.reasoning
+  if (opts.maxTokens !== undefined && tokens >= opts.maxTokens) {
+    return `the turn reached its token ceiling: ${tokens} tokens reported, limit ${opts.maxTokens}`
+  }
+  if (opts.maxCost !== undefined) {
+    const cost = computeCost(
+      opts.env.MOAT_MODEL_ID ?? "",
+      { input: usage.input, cacheRead: usage.cached, output: usage.output, reasoning: usage.reasoning },
+      new Date(),
+      opts.catalogPrice,
+    )
+    if (cost.known && cost.usd >= opts.maxCost) {
+      return `the turn reached its cost ceiling: ${formatUSD(cost.usd)} reported, limit ${formatUSD(opts.maxCost)}`
+    }
+  }
+  return null
 }
 
 /**
@@ -2969,6 +3028,11 @@ async function runAgentTask(paths: EnvPaths, body: string, opts: AgentRunOptions
     slirpBinary: opts.slirpBinary,
     egressRules: opts.egressRules,
     timeoutMs: (opts.timeoutSeconds ?? 2700) * 1000,
+    // The ceiling is checked *while* the turn runs, against the usage the runtime has already
+    // reported. It cannot be exact for every runtime — Codex only sends usage at `turn.completed`,
+    // so for Codex the check can only fire at the end — but where the protocol reports as it goes
+    // (Claude Code, on every assistant event) the box is killed before the next request is paid for.
+    abortWhen: (output) => ceilingBreach(output, opts),
   })
   const turn = opts.runtime.parse(result.output)
   if (opts.json) {
@@ -3001,6 +3065,10 @@ async function runAgentTask(paths: EnvPaths, body: string, opts: AgentRunOptions
     log.info(`  ${log.dim(opts.runtime.describe(turn))}`)
   }
   if (result.timedOut) log.warn(`the turn was still running after ${opts.timeoutSeconds ?? 2700}s and was killed`)
+  if (result.aborted) {
+    log.warn(`${result.aborted}\n  the sandbox was killed; set a higher ceiling, or none, to let a turn finish.`)
+    return 1
+  }
   return result.code
 }
 /**

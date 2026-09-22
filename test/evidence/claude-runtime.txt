@@ -1,14 +1,14 @@
 --- $ moat up --runtime claude   (a second runtime, provisioned and booted)
-✓ image provisioned in 1.83s (extract cached image 1.58s)
+✓ image provisioned in 1.82s (extract cached image 1.56s)
   project    /home/user/moat-demo/claude-runtime
   runtime    claude (moat/claude-opus-5): `moat` opens its TUI
 --- $ moat run "run the check"   (a turn through the Claude runtime)
-sandbox already running (pid 148733); restarting it for this run
+sandbox already running (pid 162627); restarting it for this run
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/claude-opus-5
 ! injecting moat credential sha256:34c4e933b47c1fb3 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-22-14-30
+agent branch: moat-session-2026-09-22-14-37
 checks: npm run test
   ✓ Bash echo stub-tool-ran
 
@@ -16,5 +16,10 @@ Running the check.
 
 Done: the tool ran.
   432 tokens  1 tool
+--- $ moat run "run the check" --max-tokens 100   (a ceiling, mid-turn)
+Running the check.
+  160 tokens  0 tools
+! the turn reached its token ceiling: 160 tokens reported, limit 100
+  the sandbox was killed; set a higher ceiling, or none, to let a turn finish.
 --- the provider's own record ---
-requests to /v1/messages: 2    credential reached the runtime: yes
+requests to /v1/messages: 3    credential reached the runtime: yes

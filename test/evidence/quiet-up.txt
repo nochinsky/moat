@@ -6,15 +6,15 @@ profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
 model: moat/mock-model
 ! injecting moat credential sha256:7726b438889c7f57 (ttl 14400s) as MOAT_INJECTED_CREDENTIAL. The agent can read this value and, with the network open, exfiltrate it. Use a spend-capped key with a low limit. See docs/SPEC.md §1.2.
-agent branch: moat-session-2026-09-22-14-28
+agent branch: moat-session-2026-09-22-14-35
 checks: npm run test
-✓ sandbox up, warm start 217ms (image reused)
+✓ sandbox up, warm start 222ms (image reused)
 
   project    /home/user/moat-demo/project
   env        /home/user/.moat/envs/18620c2c4f34
   runtime    codex (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
-  credential moat sha256:7726b438889c7f57 expires 2026-09-22T18:28:01.772Z
+  credential moat sha256:7726b438889c7f57 expires 2026-09-22T18:35:49.027Z
 
   next: moat         open a session here and tell it what to do
         moat apply   merge what it did into this directory
