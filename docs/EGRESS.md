@@ -155,3 +155,22 @@ while writing it, which is the same reason no count is kept in a status table.)
 
 Every one was found by running the thing and disbelieving the result, which is the only way any of
 them is found.
+
+## 6. The shapes a proxy could take, with what each one costs
+
+Not a recommendation and not a decision — the three placements the measurements above leave open,
+each with the cost that was measured rather than assumed. Whoever picks one should be able to say
+which reading justified it.
+
+| shape | reachable from the box | what it costs |
+| --- | --- | --- |
+| **Host process, on the host's LAN address** | `isolated`: any port. `filtered` (default): 80/443 only, since the ruleset accepts `@allowed4 tcp dport { 80, 443 }` over `policy drop` | the listener is on the LAN, so it needs a deliberate bind address and caller authentication; and `filtered` needs one ruleset entry naming the proxy's port — the "cannot express per-host ports" hole, narrowed to one entry. A rootless process cannot bind 443 |
+| **A slirp4netns-style helper** (does the `setns` dance: user namespace first, then network) | the box's own loopback, in every mode | a new privileged component to write and audit: `nsenter --target <pid> --net` is `Operation not permitted`, and slirp4netns runs in the *host's* namespace and creates the tap from outside, so this is not a configuration change. Keeps the listener off the LAN |
+| **A proxy inside the box** | its own loopback | agent-visible and agent-killable — the agent is root in there — which is what invariant 6's reason forbids ("the host is a terminal and a log reader") |
+
+What is settled by measurement and does not depend on the choice: both runtimes send their model
+traffic through a proxy without per-runtime integration (§1); the hosts they call besides the model
+can be refused or dropped for free, and doing so makes a turn ~8x faster (§2); moat cannot set the
+proxy variables today, so any shape needs a `managedEnv` change (`sandbox/launcher.ts` accepts only
+`MOAT_` names through `MOAT_SANDBOX_ENV`); and whatever is built terminates egress on the host, which
+invariant 6 would need amended for, in writing, by a named phase.
