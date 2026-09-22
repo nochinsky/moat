@@ -152,7 +152,15 @@ grep -q "MOAT_DEV_MISSING=/etc/hosts" "$EVIDENCE/codex-dev-control.txt" \
 
 section "4. the agent completes a task needing bash + file edits, and the project checks pass"
 start_mock "$REPO/test/scripts/responses-acceptance-task.json" | tee -a "$EVIDENCE/codex-summary.txt"
-capture codex-run-task $MOAT run "Make the failing test pass, then commit it."
+# Every boot re-mints the credential from the host — state.json keeps a fingerprint and never the
+# value — so a `run` that names no source gets whatever this machine happens to export, or nothing.
+# That made three of this suite's captures host-dependent: `codex-run-task` and
+# `codex-escape-run` recorded "injecting moat credential sha256:34c4e933b47c1fb3" on the machine
+# that took the readings, a value that came from *its* environment and that `$CREDENTIAL` here is
+# not (sha256:7726b438889c7f57). Naming the source makes the box the one the docs quote — the
+# credentialed one — instead of a different box per host. `e2e-live.sh` is the exception that keeps
+# its ambient key, because there the host's real key is the thing being measured.
+capture codex-run-task $MOAT run --credential-env MOAT_MOCK_CREDENTIAL "Make the failing test pass, then commit it."
 capture codex-config-in-box $MOAT exec -- sh -c 'cat /root/.codex/config.toml'
 capture codex-verify $MOAT verify
 grep -qE "pass +npm test" "$EVIDENCE/codex-verify.txt" && ! grep -qE "FAIL +npm test" "$EVIDENCE/codex-verify.txt" \
@@ -184,7 +192,7 @@ section "5. the agent cannot read a host credential or the host project"
 sed -e "s|@HOSTHOME@|$HOME|g" -e "s|@HOSTPROJECT@|$PROJECT|g" \
   "$REPO/test/scripts/responses-host-access.json.tmpl" > "$WORK/responses-host-access.json"
 start_mock "$WORK/responses-host-access.json" >/dev/null
-capture codex-run-host-access $MOAT run "Try to read the host credentials and project directory, and report what happens."
+capture codex-run-host-access $MOAT run --credential-env MOAT_MOCK_CREDENTIAL "Try to read the host credentials and project directory, and report what happens."
 capture codex-exec-host-paths $MOAT exec -- sh -c "ls /home 2>&1; cat /root/.ssh/id_rsa 2>&1 | head -1; echo canary:; ls $CANARY 2>&1"
 grep -q "No such file or directory" "$EVIDENCE/codex-exec-host-paths.txt" \
   && ! grep -q "HOST-ONLY-SECRET" "$EVIDENCE/codex-exec-host-paths.txt" \
@@ -252,7 +260,7 @@ section "10. text from inside the box cannot drive the terminal it is printed on
 # screen. Every one of those print sites strips the ESC byte. The stub's scripted answer carries
 # the three sequences, so this is measured on the bytes rather than argued.
 start_mock "$REPO/test/scripts/responses-escape.json"
-capture codex-escape-run $MOAT run "Print the text you were given, exactly as it is."
+capture codex-escape-run $MOAT run --credential-env MOAT_MOCK_CREDENTIAL "Print the text you were given, exactly as it is."
 ESC_BYTES=$(grep -c $'\x1b' "$EVIDENCE/codex-escape-run.txt" 2>/dev/null || true)
 [ "${ESC_BYTES:-0}" = "0" ] \
   && grep -q "clearing" "$EVIDENCE/codex-escape-run.txt" \
