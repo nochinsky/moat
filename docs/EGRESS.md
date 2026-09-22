@@ -400,44 +400,37 @@ What that costs and what it does not settle:
   intact. And the reason the box can still reach the provider is the point — the *proxy* resolved the
   name, in its own namespace, with nothing resolvable in the box at all.
 
-* **Open, with both readings: the doctor does not yet model the proxied box.** Found while making the
-  proxy's policy reach the state-driven boots, and left open rather than half-landed.
-
-  `runIsolationChecks` calls `runInSandbox` with `egress`, `slirpBinary` and `egressRules`, and drops
-  the `egressProxy` that the caller spreads in beside them — so with `--egress-proxy` the doctor's probe
-  boots a box *without* the proxy: a different, more permissive box than the agent gets, which is the
-  same defect class as `injectedVarNames`. Worse, the probe could not simply be handed the proxy: its
-  reachability probe is `$MOAT_PROBE_TIMEOUT /bin/bash -c 'exec 3<>/dev/tcp/<provider>/<port>'`, and
-  `/dev/tcp/<host>/<port>` resolves the host **in the box** — a proxied box keeps no resolver, so the
-  probe would report a working proxy as an unreachable provider.
-
-  The shape of the fix is measured and works: pass `egressProxy` through, and ask the proxy with
-  `CONNECT` over `/dev/tcp` to its own address, reading the status line — `200` means the proxy dialed
-  it, `403` means the policy refused. Measured on a `filtered` proxied environment:
+* **The doctor measures the box the agent gets, proxy included — and getting there cost three wrong
+  diagnoses of one missing newline.** `runIsolationChecks` used to drop the `egressProxy` its caller
+  spreads in beside `egress`/`egressRules`, so with `--egress-proxy` the doctor probed a box *without*
+  the proxy: a different, more permissive box than the agent gets, which is the `injectedVarNames`
+  defect class. It also could not simply be handed the proxy, because its reachability probe was
+  `$MOAT_PROBE_TIMEOUT /bin/bash -c 'exec 3<>/dev/tcp/<provider>/<port>'` — and `/dev/tcp/<host>/<port>`
+  resolves the host *in the box*, where a proxied box keeps no resolver. So the probe goes through the
+  proxy now: `CONNECT` over `/dev/tcp` to the proxy's own address, read from its status line, where
+  `200` means the proxy dialed it and a refusal means the policy did. Measured, with the control:
 
   ```
-  egress filtered   an address outside the allowlist (1.1.1.1:443) is refused, and
-                    api.deepseek.com:443 is reachable through the proxy        pass
-  control, no proxy  … and api.deepseek.com:443 is reachable                     pass (unchanged)
+  proxied  egress filtered  … api.deepseek.com:443 is reachable through the proxy   pass
+  control  egress filtered  … api.deepseek.com:443 is reachable                     pass (unchanged)
   ```
 
-  What is **not** explained, and is why nothing was landed: the second half of that row — the refusal
-  side, an absolute-URI request for a name no policy allows — answered on its own:
+  The reason this took three attempts is worth keeping: the generated probe joined its statements with
+  a **literal backslash-n** instead of a newline, so the shell read `\ncase` as a *command name*, the
+  `case` never ran, and the variable the row reads was never emitted. The row then reported a working
+  proxy as unreachable — and because the same commands typed into the box by hand worked (real
+  newlines), the reading looked like a readiness problem. It was "fixed" once for that reason and
+  reverted when it did not help, then "explained" as a first-connection effect after `CONNECT` worked
+  where an absolute-URI `GET` had not. Both were the same missing newline: with two probes, the *first*
+  one's `echo` was glued to its assignment and the second one's `case` survived, so the symptom moved
+  with the probe order and looked like a timing asymmetry in both directions.
 
-  ```
-  inside a proxied box, by hand:   GET     http://moat-egress-probe.invalid/ -> HTTP/1.1 403 Forbidden
-                                   CONNECT moat-egress-probe.invalid:443     -> HTTP/1.1 403 Forbidden
-                                   CONNECT api.deepseek.com:443              -> HTTP/1.1 200 Connection Established
-  from the doctor's own probe:     CONNECT api.deepseek.com:443              -> 200   (the row above)
-                                   GET     http://moat-egress-probe.invalid/ -> nothing at all
-  ```
-
-  The same boot, the same port, the same request: `CONNECT` answered and the absolute-URI form answered
-  nothing. A readiness story does not fit — the two probes are milliseconds apart in one boot — and a
-  wait for the proxy to answer, added on that theory, changed nothing and was reverted. So the doctor
-  states the half it can measure and claims nothing about the other half; a check that cannot be
-  explained cannot be trusted to pass, and one that fails for an unknown reason is the false failure
-  this repo keeps having to unwind.
+  Two instruments ended it, and they are the ones to reach for first next time. The script moat actually
+  ran is on disk — `grep -rl MOAT_ALLOWED_REACHABLE ~/.moat/envs/<id>` finds it under
+  `rootfs/.moat/entry-*.sh`, and the broken line is visibly broken in it. And the generator is exported
+  with a test over its output, `test/unit/proxy-doctor.test.ts`, which asserts the `case` begins its own
+  line — the check that would have caught it on the first pass, because the request legitimately carries
+  `\r\n` for `printf` while a *statement* separator must be a real newline.
 
 * **Still open.** The box's own datapath is a *backstop*, not a second policy: the box can still reach
   the allowlist directly on 80/443 and resolve through slirp, so the proxy governs clients that honour

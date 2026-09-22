@@ -5,6 +5,7 @@ import { moatHome, type EnvPaths } from "../lib/paths.ts"
 import { ownNetns, type EgressMode } from "../lib/pins.ts"
 import { shellQuote } from "../lib/shell.ts"
 import { runInSandbox } from "./launcher.ts"
+import { PROXY_ADDRESS, PROXY_PORT } from "./proxy.ts"
 
 /**
  * The isolation self-test.
@@ -311,6 +312,8 @@ export function filteredEgressCheck(opts: {
   egressOpen: boolean
   allowedProbe?: { host: string; port: number }
   allowedReachable: boolean
+  /** Whether the reachability probe went through the proxy, which is the component that decided. */
+  viaProxy?: boolean
 }): { ok: boolean; detail: string } {
   const refused = "an address outside the allowlist (1.1.1.1:443) is refused"
   if (opts.egressOpen) {
@@ -320,9 +323,36 @@ export function filteredEgressCheck(opts: {
     return { ok: true, detail: `${refused}; no allowlisted endpoint was probed, so this check is one-sided` }
   }
   const label = `${opts.allowedProbe.host}:${opts.allowedProbe.port}`
+  const how = opts.viaProxy ? " through the proxy" : ""
   return opts.allowedReachable
-    ? { ok: true, detail: `${refused}, and ${label} is reachable` }
-    : { ok: false, detail: `the allowlisted endpoint ${label} was not reachable` }
+    ? { ok: true, detail: `${refused}, and ${label} is reachable${how}` }
+    : { ok: false, detail: `the allowlisted endpoint ${label} was not reachable${how}` }
+}
+
+/**
+ * The reachability probe when a proxy moat owns decides the egress, rather than the boot-time ruleset.
+ *
+ * It goes to the proxy over `/dev/tcp`, which needs no resolver in the box — and that is the point: a
+ * proxied box keeps none, so asking for a provider by *name* directly would fail for a reason that is
+ * not a failure. The endpoint is asked with `CONNECT` and read from its status line, so "the proxy
+ * dialed it" (200) is distinguishable from "the policy refused it" (403).
+ *
+ * There is deliberately no probe here for the refusal side. The shape it would take — an absolute-URI
+ * request for a name no policy allows — answered `403` run by hand inside a proxied box and answered
+ * nothing at all from the doctor's own probe boot, in the same boot and on the same port where the
+ * `CONNECT` probe below returned 200. Until that is understood, the doctor states the half it can
+ * measure and claims nothing about the other. `docs/EGRESS.md` §7 has both readings.
+ */
+export function proxyProbeScript(allowed: { host: string; port: number } | undefined): string {
+  if (!allowed) return ""
+  const ask = (request: string): string =>
+    `printf '${request}\\r\\n\\r\\n' | $MOAT_PROBE_TIMEOUT /bin/bash -c ` +
+    `'exec 3<>/dev/tcp/${PROXY_ADDRESS}/${PROXY_PORT}; cat >&3; head -1 <&3' 2>/dev/null`
+  return [
+    `line=$(${ask(`CONNECT ${allowed.host}:${allowed.port} HTTP/1.0`)})`,
+    'case "$line" in *" 200"*) echo "MOAT_ALLOWED_REACHABLE=yes";; *) echo "MOAT_ALLOWED_REACHABLE=no";; esac',
+    "",
+  ].join("\n")
 }
 
 export async function runIsolationChecks(
@@ -344,6 +374,16 @@ export async function runIsolationChecks(
     egressRules?: string
     /** An endpoint the filtered policy should still allow. */
     allowedProbe?: { host: string; port: number }
+    /**
+     * The proxy moat owns, when this environment has one.
+     *
+     * It has to be here, and not only in the boot: the probe is part of the measurement, and a probe
+     * booted without the proxy measures a *different, more permissive* box than the agent gets — the
+     * same way `injectedVarNames` had to be derived from the boot rather than invented for the probe.
+     * It is also what the reachability probe needs: a proxied box keeps no resolver, so asking for a
+     * provider *by name* with `/dev/tcp` would report a working box as broken.
+     */
+    egressProxy?: { allow: readonly string[] }
   },
 ): Promise<IsolationReport> {
   const hostNamespaces = opts.hostNamespaces ?? hostNamespaceIds()
@@ -367,13 +407,15 @@ export async function runIsolationChecks(
       hostProject: p.projectDir,
       hostLoopbackPort: probe.port,
     }) +
-    (opts.allowedProbe
-      ? "if $MOAT_PROBE_TIMEOUT /bin/bash -c 'exec 3<>/dev/tcp/" +
-        shellQuote(opts.allowedProbe.host) +
-        "/" +
-        opts.allowedProbe.port +
-        "' 2>/dev/null; then echo \"MOAT_ALLOWED_REACHABLE=yes\"; else echo \"MOAT_ALLOWED_REACHABLE=no\"; fi\n"
-      : "")
+    (opts.egressProxy
+      ? proxyProbeScript(opts.allowedProbe)
+      : opts.allowedProbe
+        ? "if $MOAT_PROBE_TIMEOUT /bin/bash -c 'exec 3<>/dev/tcp/" +
+          shellQuote(opts.allowedProbe.host) +
+          "/" +
+          opts.allowedProbe.port +
+          "' 2>/dev/null; then echo \"MOAT_ALLOWED_REACHABLE=yes\"; else echo \"MOAT_ALLOWED_REACHABLE=no\"; fi\n"
+        : "")
 
   const injected = Object.fromEntries((opts.injectedVarNames ?? []).map((name) => [name, "REDACTED-BY-DOCTOR"]))
   let result: { output: string; code: number }
@@ -383,6 +425,8 @@ export async function runIsolationChecks(
       egress: opts.egress,
       slirpBinary: opts.slirpBinary,
       egressRules: opts.egressRules,
+      // The probe boots the box the agent gets, and with a proxy that box is the proxied one.
+      egressProxy: opts.egressProxy,
     })
   } finally {
     await probe.close()
@@ -536,6 +580,7 @@ export async function runIsolationChecks(
         egressOpen,
         allowedProbe: opts.allowedProbe,
         allowedReachable: parsed.MOAT_ALLOWED_REACHABLE === "yes",
+        viaProxy: Boolean(opts.egressProxy),
       }),
     })
   } else {
