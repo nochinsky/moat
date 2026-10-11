@@ -1,15 +1,3 @@
---- $ moat up --backend container   (default egress: filtered)
-  next: moat         open a session here and tell it what to do
-        moat apply   merge what it did into this directory
-        moat down    stop the sandbox (state and snapshots are kept)
---- $ moat exec -- sh -c 'id -u; ls -d $HOME'
-0
-no-host-home
---- $ moat verify
-  pass  npm test                 0.3s
---- $ moat down
-  resume with: moat up
-  remove with: moat destroy
---- $ moat exec -- nft list ruleset | grep -c 'policy drop'   (is the allowlist really applied?)
-    1
---- containers: while up = 1, after down = 0
+  SKIPPED  no usable container runtime on this host
+  the backend is exercised by test/unit/backend.test.ts everywhere, and end to end
+  wherever a runtime exists; docs/PORTABILITY.md §3 has the readings taken on one.

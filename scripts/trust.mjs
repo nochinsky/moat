@@ -39,11 +39,15 @@ const SUITES = [
     note: "Pure logic, no sandbox — this is the suite CI enforces on every change.",
   },
   {
-    name: "acceptance (Codex, keyless)",
-    command: "bash test/e2e-codex.sh",
-    evidence: "codex-summary.txt",
-    pattern: /acceptance \(codex runtime\): .*/,
+    name: "acceptance (Pi, keyless)",
+    command: "bash test/e2e-pi.sh",
+    evidence: "pi-summary.txt",
+    pattern: /acceptance \(pi runtime\): .*/,
   },
+  { name: "Pi TUI", command: "python3 test/pi-tui.py", evidence: "pi-tui.txt", pattern: /^pi tui: .*/m },
+  { name: "published-env upgrade", command: "bash test/pi-legacy.sh", evidence: "pi-legacy.txt", pattern: /^pi legacy: .*/m },
+  { name: "installed package", command: "bash test/pi-package.sh", evidence: "pi-package.txt", pattern: /^pi package: .*/m },
+  { name: "Pi live DeepSeek (paid)", command: "bash test/pi-live.sh", evidence: "pi-live.txt", pattern: /^pi live: .*/m },
   { name: "extras", command: "bash test/e2e-extras.sh", evidence: "extras.txt", pattern: /^checks passed: .*/m },
   { name: "egress", command: "bash test/e2e-egress.sh", evidence: "egress.txt", pattern: /^egress checks passed.*/m },
   { name: "provider", command: "bash test/e2e-provider.sh", evidence: "provider.txt", pattern: /^checks passed: .*/m },
@@ -102,12 +106,14 @@ export function renderTrust() {
     "moat runs an AI coding agent inside a disposable Linux sandbox — `unshare`, `mount` and",
   )
   lines.push(
-    "`chroot`, no container runtime, no daemon — and reviews what it did hunk by hunk before any of",
+    "`chroot` by default, with no required container runtime or daemon — and reviews it before any of",
   )
   lines.push(
-    "it reaches your machine. The point of that shape is **autonomy without approval prompts**: the",
+    "it reaches your working tree. The point is **autonomy without built-in approval prompts**: the",
   )
   lines.push("blast radius is a box, and copy-out is a decision you make afterwards.")
+  lines.push("Pi's built-in tools need no approval dialogs; copied extensions are trusted code and can add")
+  lines.push("their own policies or UI waits. The sandbox is not a confidentiality or resource-quota boundary.")
   lines.push("")
   lines.push("## What is verified, and by what")
   lines.push("")
@@ -148,7 +154,7 @@ export function renderTrust() {
   lines.push("")
   lines.push("* [`SPEC.md`](SPEC.md) — what each command promises, and where the sharp edges are.")
   lines.push(
-    "* [`SEAM.md`](SEAM.md) / [`RUNTIMES.md`](RUNTIMES.md) — the agent-harness boundary, and what a second runtime costs.",
+    "* [`PI.md`](PI.md) / [`SEAM.md`](SEAM.md) — project customization and the host/agent boundary.",
   )
   lines.push(
     "* [`PORTABILITY.md`](PORTABILITY.md) — what is measured about running outside Linux, and what a container backend would cost.",

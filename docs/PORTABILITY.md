@@ -1,5 +1,9 @@
 # Portability: what is measured, what a container backend would cost, and what is not measured
 
+> **Historical backend measurements:** agent turns below used retired harnesses. Current Pi is
+> tested on Linux x86-64/WSL2 with the namespace backend; a current-Pi container turn is unverified.
+> macOS, native Windows and ARM are not supported by 0.1.0. See [`VERIFICATION.md`](VERIFICATION.md#not-verified).
+
 Phase 4's question is whether moat should escape Linux. Invariant 7 ("no container runtime, no
 daemon") is exactly what blocks macOS, Windows and CI runners, so answering it means either breaking
 that invariant deliberately or accepting the narrow audience.
@@ -8,7 +12,8 @@ This page exists so the decision does not rest on a spike nobody ran. It records
 measured**, **what a container backend would cost** (a static analysis of this tree, not a guess),
 and **what remains unmeasured** — with the script that closes each gap.
 
-Everything here is reproducible: `bash test/portability-spike.sh`.
+Host probes are reproducible with `bash test/portability-spike.sh`. Retired-agent sections require
+the corresponding old checkout; their runtime flags are not supported by current moat.
 
 ---
 

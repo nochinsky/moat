@@ -1,177 +1,176 @@
 # moat
 
 [![ci](https://github.com/nochinsky/moat/actions/workflows/ci.yml/badge.svg)](https://github.com/nochinsky/moat/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/moat-sandbox)](https://www.npmjs.com/package/moat-sandbox)
 
-**See exactly what your agent did, accept it hunk by hunk, and know it never touched your
-machine.**
+**Run an extensible coding agent on a project copy. Review its work hunk by hunk before
+it reaches your working tree.**
 
-Every other tool works inside your repo, where the agent's edits and yours are
-indistinguishable. moat records a baseline before the agent starts, so afterwards it can tell
-you which changes are the agent's, which are yours, and which are both — and then apply the
-part you actually want.
+moat copies your project into a persistent, disposable Linux sandbox and runs **Pi** there.
+The agent gets tools, a package manager and room to work without built-in tool approval dialogs.
+Your authoritative project stays on the host. Fetching creates a review ref; applying changes is a
+separate, explicit decision.
 
-It does that by copying your project into a disposable Linux sandbox and running the agent
-there. Nothing crosses back until you say so. The default way moat builds that box needs nothing
-installed — `unshare`, `mount` and `chroot` directly, no Docker, no podman, no daemon. If you would
-rather it used a container runtime you already have, `--backend container` runs the same box, with
-the same project copy and the same rules, under rootless podman.
+The default backend uses Linux namespaces and chroot directly: **no Docker, podman or daemon is
+required**. The box limits the filesystem blast radius; it is **not a confidentiality boundary**
+and does not impose CPU, memory or disk quotas.
 
-That is the whole idea: **autonomy without prompts**, bought by making the blast radius a box
-instead of your home directory.
+> **Pi is the only harness from 0.1.0 onward.** Earlier npm releases use the retired harnesses.
+> Existing environments upgrade in place, preserving sandbox work. There is no `--runtime` selector.
+> If 0.1.0 is not yet available on npm, use the checkout instructions below.
 
-## See it work, in a minute, with no API key
-
-```bash
-npx -y moat-sandbox demo
-```
-
-This makes a scratch project, boots a real sandbox, runs a real agent against a scripted model,
-and shows the three-way classification on your terminal: what the agent changed, what you
-changed, and the file you both touched — which moat refuses to write and hands back to you. It
-costs nothing and needs no credential, because the point being demonstrated is not the model.
-It leaves your directory alone and removes its scratch project afterwards.
-
-## Install
+## Try it without a key
 
 ```bash
-npx -y moat-sandbox       # run without installing
-npm i -g moat-sandbox     # or install it; the command is still `moat`
+npx -y moat-sandbox@latest demo
 ```
 
-Then, in a project you have committed to git:
+The demo boots a real sandbox, runs Pi against a scripted model, and shows a three-way review:
+the agent's changes, your changes and a conflict that moat refuses to overwrite. It uses a scratch
+project, leaves your current directory alone, and spends no model tokens.
+
+## Install and run
+
+**Requirements:** Linux x86-64 (including WSL2), Node **22.18+**, Git and the usual Linux namespace,
+mount and archive utilities. Unprivileged user namespaces must be available. No root or container
+runtime is required. macOS, native Windows and ARM are not supported by this release.
 
 ```bash
-moat                     # open the agent in this project; boot the box if needed
-moat run "fix the failing tests"
-moat verify              # run the project's own checks inside the box
-moat take                # review what the agent did, per file and per hunk
-moat apply               # write the part you accepted — a separate, explicit step
-moat down                # stop the box; nothing is lost
+npm install -g moat-sandbox@latest    # package: moat-sandbox; installed command: moat
+moat doctor                         # check the host before creating an environment
 ```
 
-`moat apply` is not one decision. It classifies every changed path as *agent*, *you*, *both* or
-*conflict*, shows each change per hunk, and writes only what you choose: whole files with
-`--only`/`--skip`, or `--hunks 1,3-5` for part of one. A file you both changed is never written
-unless you ask for it by name, and even then only after moat tells you it is a conflict.
-
-Also useful: `moat exec -- <cmd>` and `moat shell` to work in the box yourself, `moat logs
-sandbox` for the boot log, `moat snapshot <name>` / `moat restore <name>`, `moat doctor` for
-what the box actually is, and `--profile node,python,cc,...` to have a toolchain installed when
-the project needs one.
-
-## What a boot does
-
-1. Copies the project with git (`clone --no-hardlinks`), never a bind mount. The only host
-   things inside are six device nodes.
-2. Builds an Alpine image once and reuses it: bash, git, curl, ripgrep, nftables, and the
-   pinned Codex CLI as a musl binary. No Docker, no podman, no daemon — unless you asked for
-   `--backend container`, which needs a runtime you installed and nothing else.
-3. Boots it with its own mount, pid, user, uts and ipc namespaces, and its own network
-   namespace behind slirp4netns unless egress is `open`.
-4. Renders `/root/.codex/config.toml`, `/root/.codex/models.json` and
-   `/root/.codex/AGENTS.md` into the box on every boot, through a guard that refuses to
-   follow a symlink the agent planted.
-5. Passes the provider key as an environment variable, never as a file. `moat doctor` shows
-   what the box can see — including which backends this host could boot.
-
-`--backend container` is the same box through a container runtime instead of moat's own
-`unshare`: the project copy, the config, the brief, the egress allowlist applied inside, and the
-rule that nothing reaches your tree without `moat apply` are unchanged. It needs a runtime on the
-host; the default backend needs nothing. See `docs/SPEC.md` §7.5.
-
-The agent runs as a task (`codex exec --json`, whose stream moat reads and prices) or as its
-own TUI, which moat hands a real terminal. Both run inside the box. The host is a terminal
-and a log reader, nothing more.
-
-## What it does not do
-
-This is the part most projects leave out. Read it before deciding how much to trust the box.
-
-* **It does not keep your project or your key secret from the model.** It gives the agent both;
-  the allowlist only narrows where they can be sent. Egress to an allowlisted address, or over
-  DNS, can still carry them out.
-* **The network policy is a policy, not a jail.** Inside the box, root owns its network
-  namespace and can flush the ruleset. moat re-applies it on every boot and `moat doctor`
-  re-measures it, so you find out on the next run — never before.
-* **Isolation is namespaces, which is v0.** A microVM is the next step, not a claim.
-* **Spending is bounded only if you bound it.** A turn reports what it cost, and `--max-tokens`
-  stops one mid-stream — but the default is no ceiling, `--max-cost` can only be enforced when moat
-  can price the model (it says so rather than pretending), and there is no budget across runs.
-* **moat does not curate the agent's tools.** Codex ships its own and the box bounds them.
-  `web_search` is the one entry the config can switch off, and it is off: DeepSeek's API
-  accepts that tool and ignores it.
-* **A partial accept is checked for coherence, not for correctness.** Taking a subset of a
-  change now runs the project's own checks against exactly what is about to be written, and
-  refuses to write when they fail — so "take hunk 2 and reject the hunk that makes it compile"
-  is caught rather than written. What that does *not* buy is cross-file reasoning or a proof
-  the subset is what you meant: it says the check you already have still passes, no more.
-
-`docs/VERIFICATION.md` ends with a table of everything that is **not** verified. It is the
-honest half of this section and it is longer.
-
-## Requirements
-
-Linux, `node` 22.18 or newer, and an unprivileged user namespace. No container runtime, no
-daemon, no root.
-
-`moat doctor` checks the host and prints its findings — including the sandbox's mount table and
-the environment it can see — before anything is copied. If your machine cannot create a user
-namespace, it says so instead of failing later.
-
-## Layout
-
-```
-cmd/main.ts      the CLI; all UX lives here
-sandbox/         rootfs, namespaces, profiles, snapshots, isolation checks
-sync/            copy-in, copy-out, the three-way apply
-secrets/         credential broker, first-run onboarding
-bundle/          the rendered Codex config, the model catalog, the agent brief
-lib/             provider, catalog, pricing, git, host probe
-stub/            the keyless model stub (`moat demo` ships it, so it lives here)
-test/            the suite scripts and the committed evidence they write
-docs/            SPEC (the contract), VERIFICATION (the evidence), HISTORY, SEAM
-```
-
-## Working on moat
-
-`node` 22.18+ strips TypeScript types natively, so development has no build step: the CLI runs the
-sources directly. `npm run build` exists only for the published tarball, whose `dist/` is compiled
-because **Node refuses to strip types inside `node_modules`** — a published package cannot ship
-`.ts`.
+In a project with a Git commit:
 
 ```bash
-npm run test:unit         # pure unit tests, no sandbox, CI runs these
-bash test/e2e-codex.sh    # the acceptance list, against a keyless model stub
-bash test/e2e-extras.sh   # snapshots, apply, credential expiry, state and process traps
-bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced
-bash test/e2e-provider.sh # a named, non-DeepSeek provider, end to end
-bash test/e2e-demo.sh     # `moat demo`: three-way attribution, keyless
-bash test/e2e-review.sh   # the review surface: per-hunk attribution, a partial accept
-DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # one real model, one real task
+moat                                # boot and open Pi's TUI
+moat run "fix the failing tests"     # run a task in the sandbox
+moat verify                         # run the project's checks inside the box
+moat take                           # fetch and review; your tree stays unchanged
+moat apply                          # explicitly accept files or hunks
+moat down                           # stop; retain work, packages and sessions
 ```
 
-The sandbox suites need a user namespace, which GitHub's runners cannot provide, so they run
-locally. They write `test/evidence/`, which is committed and quoted by `docs/VERIFICATION.md` —
-regenerate it by running them rather than editing it. Do not run two at once; they share
-`~/moat-demo`.
+DeepSeek is the default provider. At a terminal, first-run onboarding asks for a key; for automation,
+set `DEEPSEEK_API_KEY` in the launching environment. Prefer a short-lived, provider-scoped key with
+a low provider-side spend limit. **Do not put keys in project files or command arguments.** Named
+providers must be configured explicitly with `moat provider add`; moat never chooses a provider
+because it found another vendor's key. `--base-url` supports OpenAI-compatible endpoints, and
+`--wire-api responses|chat` selects the protocol. See [`docs/PI.md`](docs/PI.md).
 
-Bug reports and pull requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers what a
-change has to come with and what will get sent back. Found a security problem?
-[`SECURITY.md`](SECURITY.md) says how to report it privately, and lists what moat deliberately does
-**not** protect against.
+For a monitored headless task:
 
-## Reading order
+```bash
+moat run --no-follow --timeout 180 --max-tokens 30000 --max-cost 0.10 \
+  "fix the failing tests, run them, and commit your changes"
+```
 
-* `docs/TRUST.md` is **generated** from the evidence — what is verified, by which suite, and the
-  list of what is explicitly **not**. Start there.
-* `docs/SPEC.md` is the contract: what each command promises, and where the sharp edges are.
-* `docs/VERIFICATION.md` is the evidence: the criteria, the captures, and the closing table of
-  what is **not** verified. Read that table before believing anything here.
-* `docs/HISTORY.md` is how the project got here, including the runtime it used before this one.
-* `docs/SEAM.md` is the interface a second agent runtime would have to satisfy, and
-  `docs/RUNTIMES.md` is what adding one costs
-* `docs/PORTABILITY.md` is what is measured about running moat outside Linux, and what a
-  container backend would cost
-* `docs/CI.md` is how to run moat in a pipeline — and why that needs a **self-hosted** runner — including why it is not a protocol problem.
-* `AGENTS.md` is for people changing the code: the invariants, the traps that cost real time,
-  and what is still unbuilt.
+Ceilings cover **reported usage for that invocation**, not a session or day. Unknown prices warn
+rather than become free; providers may report only after a request finishes, and extensions can
+make unreported calls. Provider-side limits are the hard spending bound.
+
+## Review is a separate step
+
+moat records the original HEAD as a baseline while copying your uncommitted work for the agent to
+see. Review compares that baseline, the agent's proposal and your current files. Each change is
+classified as *agent*, *you*, *both* or *conflict*.
+
+`moat apply` writes only what you accept. Use `--only`/`--skip` for files, or `--hunks 1,3-5` for
+part of a file. Paths changed by both sides need explicit selection; unresolved conflicts are
+never overwritten. Rejecting everything writes nothing. Partial accepts run your project's checks
+against **your current tree plus exactly the accepted subset**, in scratch space inside the box.
+A failing check writes nothing. Passing checks establish coherence, not correctness or intent.
+
+Other useful commands:
+
+| command | purpose |
+| --- | --- |
+| `moat exec -- <command>` / `moat shell` | Work inside the box yourself. |
+| `moat status` / `moat logs sandbox` | Inspect lifecycle and bounded boot logs. |
+| `moat snapshot <name>` / `moat restore <name>` | Save/restore installed state while retaining project work. |
+| `moat up --sync` | Explicitly re-copy the host project. |
+| `moat destroy` | Delete the environment and snapshots after confirmation. |
+| `moat profiles` | List available toolchains; database services are opt-in. |
+
+## Customize Pi, inside the box
+
+Commit `.pi/settings.json`, `.pi/extensions/`, skills, prompts or MCP configuration with your
+project. Pi loads the copied resources **inside the sandbox**, so extensions can add tools and
+workflows without a host-side agent SDK. Moat does not forward host `~/.pi`, auth/OAuth state,
+SSH agents, settings or extensions. Pi session history stays in the persistent rootfs.
+
+Moat provisions Alpine with Node/npm and a pinned Pi CLI whose complete dependency graph is
+SHA-256 locked and whose archives are SHA-512 verified. No dependency installation scripts execute
+on the host. Every boot regenerates sandbox-local settings, the model definition and the brief;
+missing runtime files or an old in-box Node are repaired without re-provisioning over `/work`.
+
+Copied extensions are **trusted executable configuration**, not vetted confinement. They can read
+the project and key, change models, introduce approval dialogs or wait for UI input. Packages and
+MCP servers may need in-box installation and additional network destinations. See
+[`docs/PI.md`](docs/PI.md) for examples and compatibility limits.
+
+## Boundaries and limitations
+
+- **The host project is copied, never mounted.** On the default backend only six device nodes
+  are host binds; other mounts are sandbox-local or fresh pseudo-filesystems. `moat doctor`
+  measures the environment once one exists, including mounts, namespaces and exposures.
+- **The key is readable by the agent.** Moat injects it through the environment, not image files,
+  config or argv. An agent or extension can still persist or send it elsewhere. Copy-out leak
+  scans are bounded warnings, not guarantees or apply gates.
+- **Default egress is filtered, not tamper-proof.** The allowlist is a boot-time IP snapshot, DNS
+  remains an outbound channel, and root inside the box can flush nftables. Host loopback is closed
+  in filtered/isolated modes; `open` shares the host network. Loopback providers default to open.
+- **`--egress-proxy` is the separately enforced option.** It requires host `ip(8)` and gives the
+  box no direct route or working resolver. Allowed destinations can still carry out data or keys.
+- **Namespaces share the host kernel and resources.** A microVM backend and resource quotas are
+  not implemented. This is not a promise against kernel exploits or resource exhaustion.
+- **`--backend container` is explicit rootless podman support.** It still uses a copied project.
+  The current Pi integration has not yet been validated with a real container turn; the default
+  namespace backend has. Choosing it does not make macOS or native Windows supported.
+
+The [`verification limits`](docs/VERIFICATION.md#not-verified) are part of the product, not fine
+print. Read them before choosing how much to trust the box.
+
+## Develop from a checkout
+
+```bash
+git clone https://github.com/nochinsky/moat.git
+cd moat
+npm ci
+npm run moat -- demo                 # current sources, no API key
+npm run typecheck
+npm run test:unit                    # pure logic; runs on hosted CI
+bash test/e2e-pi.sh                  # real Pi CLI, scripted model, sandbox acceptance
+python3 test/pi-tui.py               # Pi's TUI on a real pty
+bash test/pi-legacy.sh               # upgrade an actual 0.0.3 environment in place
+bash test/pi-package.sh              # install the tarball and run its sandbox demo
+bash test/e2e-extras.sh              # lifecycle, snapshots, expiry and state regressions
+bash test/e2e-egress.sh              # datapath, loopback, allowlist and proxy
+bash test/e2e-provider.sh
+bash test/e2e-demo.sh
+bash test/e2e-review.sh
+# With a spend-capped DEEPSEEK_API_KEY in this shell:
+bash test/pi-live.sh                 # bounded current-Pi provider smoke test
+```
+
+Development runs TypeScript directly through Node's type stripping. `npm run build` is for the
+published tarball: it ships compiled `dist/` because Node cannot strip types inside `node_modules`.
+
+Run sandbox suites **sequentially** on a host that supports user namespaces. GitHub-hosted runners
+cannot run them; absence is reported, not counted as a pass. Suites write committed evidence under
+`test/evidence/`; regenerate it rather than editing it.
+
+## Read more
+
+- [`docs/TRUST.md`](docs/TRUST.md): generated suite verdicts and unverified claims.
+- [`docs/SPEC.md`](docs/SPEC.md): the current contract.
+- [`docs/PI.md`](docs/PI.md) / [`docs/SEAM.md`](docs/SEAM.md): customization and the host/agent boundary.
+- [`docs/PROGRESS.md`](docs/PROGRESS.md): status and open work.
+- [`docs/RELEASE.md`](docs/RELEASE.md) / [`CHANGELOG.md`](CHANGELOG.md): release gates and migration notes.
+- [`docs/CI.md`](docs/CI.md): unattended tasks on self-hosted runners.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) / [`AGENTS.md`](AGENTS.md): contributing and load-bearing constraints.
+- [`SECURITY.md`](SECURITY.md): private vulnerability reporting and documented non-goals.
+
+`docs/archive/`, `HISTORY.md` and `RUNTIMES.md` preserve earlier measurements; they do not describe
+supported runtime switches. The npm name is **moat-sandbox**: `npx moat` and `npx moat-cli` fetch
+unrelated packages.

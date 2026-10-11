@@ -62,7 +62,7 @@ export type ProviderSpec = {
    */
   envVar?: string
   /** Which wire API the endpoint speaks. `responses` unless it only speaks chat completions. */
-  wireApi?: "responses"
+  wireApi?: "responses" | "chat"
   /** The model to use when the user names none. */
   defaultModel?: string
   /**
@@ -70,13 +70,11 @@ export type ProviderSpec = {
    *
    * models.dev describes *whether* a model reasons and nothing finer, so the ladder is the one
    * fact neither catalog can supply. A provider that implements `none`/`medium` declares it here
-   * rather than being offered `max` and having Codex drop it.
+   * rather than advertising an effort the model does not implement.
    */
   effortLevels?: string[]
   /** The level to use when the user passes no `--effort`. */
   defaultEffort?: string
-  /** A pre-validated `[model_providers.<id>]` key, when the id itself is not one. */
-  codexProviderID?: string
 }
 
 /** Used when `--base-url` points somewhere else. */
@@ -89,8 +87,8 @@ export const CUSTOM_ENDPOINT = {
 /**
  * The spec for an endpoint given only as an address.
  *
- * Its id is fixed rather than derived from the host: the id is also the `[model_providers.<id>]`
- * TOML key and the prefix in `provider/model`, and a hostname is neither of those (it can carry
+ * Its id is fixed rather than derived from the host: it is the Pi provider key and
+ * the prefix in `provider/model`, and a hostname is neither of those (it can carry
  * dots and a port). The host goes in the provider's *label*, where a human reads it, and in the
  * base URL, where the runtime reads it.
  */
@@ -110,18 +108,13 @@ export function customEndpoint(baseUrl: string): ProviderSpec {
 }
 
 /**
- * A `[model_providers.<id>]` key Codex will accept.
- *
- * The rendered block is `[model_providers.${id}]` in TOML, so anything that is not a bare key —
- * a dot, a space, a quote, a newline — either breaks the parse or, worse, appends a section the
- * user did not ask for. A provider id comes from a flag or from state, so it is checked rather
- * than trusted. This is the same rule `renderCodexConfig` applies, in the place that can name
- * the offending value.
+ * A provider id is both a config key and a model-string prefix. Validate flag/state values
+ * rather than permitting separators or controls that change their meaning.
  */
 export function checkProviderID(id: string): string {
   if (!/^[A-Za-z0-9_-]+$/.test(id)) {
     throw new Error(
-      `invalid provider id "${id}": a provider id becomes a TOML key (model_providers.${id}), ` +
+      `invalid provider id "${id}": a provider id becomes a model-string prefix, ` +
         "so it may contain only letters, digits, dashes and underscores",
     )
   }

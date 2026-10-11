@@ -6,14 +6,14 @@
 no project manifest found; booting with the base image only (see `moat profiles`)
 profiles: everything requested is already installed
 copy-in: reusing the sandbox working tree (use --sync to re-copy from the host)
-model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-22-22-33
-→ sandbox booted (pid 324710); the codex runtime has no server to wait for
-✓ sandbox up, warm start 520ms (image reused)
+model: deepseek/deepseek-flash (context 1M, out 393k)
+agent branch: moat-session-2026-10-11-18-57
+→ sandbox booted (pid 62375); Pi runs inside the box, with no server
+✓ sandbox up, warm start 834ms (image reused)
 
   project    /home/user/moat-demo/egress-project
   env        /home/user/.moat/envs/16a525996d67
-  runtime    codex (deepseek/deepseek-flash): `moat` opens its TUI
+  runtime    pi (deepseek/deepseek-flash): `moat` opens its TUI
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do

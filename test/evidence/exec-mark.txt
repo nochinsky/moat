@@ -4,5 +4,6 @@
 [moat] boot: mounts are up, network next
 [moat] boot: entering the sandbox
 in-sandbox /opt now contains:
+moat
 moat-extra
 --- stderr ---

@@ -5,9 +5,9 @@
 [moat] boot: entering the sandbox
   experiment
   main
-* moat-session-2026-09-22-22-37
+* moat-session-2026-10-11-18-59
 --- all commits ---
-f602ebb important work on a side branch
-79e138e moat: state copied from the host
-a965d6d base
+426eb50 important work on a side branch
+7e7e44e moat: state copied from the host
+ab1210a base
 --- stderr ---

@@ -3,61 +3,33 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
+import { installPiFiles, renderPiFiles } from "../../bundle/pi.ts"
+import { resolveModelFacts } from "../../lib/model-facts.ts"
 
-import { installCodexFiles } from "../../bundle/codex.ts"
-import { CODEX_BUILTIN_PROMPT } from "../../bundle/codex-prompt.ts"
-import { renderModelCatalog } from "../../bundle/model-catalog.ts"
-import { renderInstructions } from "../../bundle/instructions.ts"
-
-const CATALOG_MODEL = "deepseek-flash"
-
-const BRIEF = {
-  provider: "DeepSeek",
-  model: "deepseek/deepseek-flash",
-  branch: "moat-session",
-  profiles: [] as string[],
-  installedPackages: [] as string[],
-  hasCredential: true,
-  canAsk: false,
-  egress: "open" as const,
-  workspace: "/work",
+function root(t: { after(fn: () => void): void }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "moat-pi-files-"))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  return dir
 }
+const facts = resolveModelFacts({ catalog: null, providerID: "acme", modelID: "model", providerIsNative: false })
 
-function tempRoot(t: { after: (fn: () => void) => void }): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "moat-install-"))
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
-  return root
-}
-
-test("a literal key in either file written into the sandbox is refused", (t) => {
-  const root = tempRoot(t)
-  // The old regex missed this shape entirely: the hyphen ended the run.
-  const command = "curl -H 'Authorization: Bearer sk-proj-" + "A".repeat(40) + "'"
-  const brief = renderInstructions({ ...BRIEF, checks: [{ label: "test", command }] })
-  assert.throws(() => installCodexFiles(root, { config: 'model = "deepseek-flash"\n', brief }), /literal API key/)
-  // The refused call writes none of the three files: a half-installed set is its own bug.
-  assert.equal(fs.existsSync(path.join(root, "root/.codex/AGENTS.md")), false)
-  assert.equal(fs.existsSync(path.join(root, "root/.codex/config.toml")), false)
-  assert.equal(fs.existsSync(path.join(root, "root/.codex/models.json")), false)
+test("a literal key refuses the entire set before writing anything", (t) => {
+  const dir = root(t)
+  const files = { ...renderPiFiles({ facts, providerID: "acme", baseURL: "https://acme.example/v1", envKey: "ACME_KEY" }), brief: "instructions" }
+  assert.throws(() => installPiFiles(dir, { ...files, brief: "sk-proj-" + "A".repeat(40) }), /literal API key/)
+  assert.deepEqual(fs.readdirSync(dir), [])
 })
 
-test("a clean config, brief and model catalog are written where Codex reads them, and nowhere else", (t) => {
-  const root = tempRoot(t)
-  const config = 'model = "deepseek-flash"\napproval_policy = "never"\n'
-  const brief = renderInstructions({ ...BRIEF, checks: [{ label: "test", command: "npm test" }] })
-  installCodexFiles(root, { config, brief, catalog: renderModelCatalog({ model: CATALOG_MODEL }) })
-  assert.equal(fs.readFileSync(path.join(root, "root/.codex/config.toml"), "utf8"), config)
-  assert.equal(fs.readFileSync(path.join(root, "root/.codex/AGENTS.md"), "utf8"), brief)
-  // The catalog is rendered per boot from the model being configured, and installed at the path
-  // `renderCodexConfig` names in model_catalog_json. It used to be a vendored file copied in
-  // byte-for-byte; the assertion that matters now is that what lands in the box is a catalog for
-  // the model it was rendered from, with the pinned prompt and no vendor's metadata.
-  const installed = fs.readFileSync(path.join(root, "root/.codex/models.json"), "utf8")
-  const parsed = JSON.parse(installed) as { models: { slug: string; base_instructions: string }[] }
-  assert.equal(parsed.models.length, 1)
-  assert.equal(parsed.models[0]!.slug, CATALOG_MODEL)
-  assert.equal(parsed.models[0]!.base_instructions, CODEX_BUILTIN_PROMPT)
-  for (const f of ["root/.codex/config.toml", "root/.codex/AGENTS.md", "root/.codex/models.json"]) {
-    assert.equal(fs.statSync(path.join(root, f)).mode & 0o777, 0o600, f)
+test("Pi settings, model and brief land at private paths, but no auth file or project instruction file does", (t) => {
+  const dir = root(t)
+  const files = { ...renderPiFiles({ facts, providerID: "acme", baseURL: "https://acme.example/v1", envKey: "ACME_KEY" }), brief: "instructions" }
+  installPiFiles(dir, files)
+  for (const [file, text] of [["settings.json", files.config], ["models.json", files.catalog], ["AGENTS.md", files.brief]]) {
+    const target = path.join(dir, "root/.pi/agent", file!)
+    assert.equal(fs.readFileSync(target, "utf8"), text)
+    assert.equal(fs.statSync(target).mode & 0o777, 0o600)
   }
+  assert.equal(fs.existsSync(path.join(dir, "root/.pi/agent/auth.json")), false)
+  assert.equal(fs.existsSync(path.join(dir, "work/AGENTS.md")), false)
+  assert.equal(fs.existsSync(path.join(dir, "root/.codex")), false)
 })

@@ -1,5 +1,80 @@
 # Verification
 
+## Current: Pi-only migration
+
+Current moat runs Pi inside the sandbox. The retired Codex/Claude captures below remain historical
+measurements, **not evidence that the current harness has passed a live paid-provider test**.
+The current suite outputs are in `test/evidence/pi-summary.txt`, `pi-tui.txt`, `pi-legacy.txt`,
+`pi-package.txt`, `provider.txt`, `demo.txt`, `review.txt`, `egress.txt` and `extras.txt`; the trust generator reads
+those verdicts rather than carrying a hand-maintained test count.
+
+```sh
+npm run typecheck
+npm run test:unit
+bash test/e2e-pi.sh
+python3 test/pi-tui.py
+bash test/pi-legacy.sh
+bash test/pi-package.sh
+bash test/e2e-provider.sh
+bash test/e2e-demo.sh
+bash test/e2e-review.sh
+bash test/e2e-egress.sh
+bash test/e2e-extras.sh
+npm pack
+# Separate paid gate; DEEPSEEK_API_KEY must already be in this shell:
+bash test/pi-live.sh
+```
+
+The bounded Pi live gate writes `test/evidence/pi-live.txt` only after a credential is available.
+It uses the real default DeepSeek model, tools, reported usage, fresh project verification and a
+read-only review. An absent capture is not a pass; older `live-session.txt` readings remain history.
+It is not a quality benchmark or proof of universal spending limits.
+
+The Pi acceptance drives the real pinned CLI through a deterministic local endpoint. It checks
+shell/edit/commit work, project hook and custom-tool execution inside the box, provider-side
+credential/effort/brief delivery, a passing project check, host-tree/HEAD preservation after
+fetch and `take --json`, environment-only auth including session files, in-place runtime repair,
+terminal escapes, final API errors, reported-usage ceilings, accounting beyond raw-capture truncation,
+host-owned ephemeral credential expiry and keyless Chat Completions. On a host
+with `ip(8)` it also runs a Pi provider request through the separate-namespace proxy with no direct
+route or working resolver; an unavailable optional proxy test is explicitly named, not a pass.
+
+The pty check reaches Pi's own model screen and verifies that leaving it retains the box. The
+legacy test boots the actual published `v0.0.3` source, adds a sandbox commit/branch and installed
+state, then upgrades that same rootfs without `--fresh`; Pi, the work, refs and recorded baseline
+must all survive. It does not relabel an old rootfs as new or assert only on the status string.
+
+Pi's manifest/dependency lock ship beside the compiled installer. A local tarball install checks
+both shipped assets, stale-adapter output cleanup and the compiled CLI's real sandbox demo
+(`test/pi-package.sh`); this is not a hosted npm release. Egress regression
+exposed a readiness race: a visible veth let short commands exit before the peer/listener was ready.
+The boot now waits for actual connectivity and the egress suite is rerun, not waived as unrelated.
+
+A separate pre-existing backend unit-fixture defect surfaced while validating concurrently: its
+cleanup targeted the shared `~/.moat/envs` directory. The fixture now scopes `MOAT_HOME` to its own
+temp root and asserts that containment before touching files. Unit validation must not clean
+real user environments. The failed cleanup interrupted another test boot; whether any non-test
+sandbox work was present or lost cannot be established from that failure. Host project files were
+not its target.
+
+Rootfs read regressions deliberately swap a parent after the path walk; full/head/tail readers
+must refuse the opened outside file. Descriptor verification, nonblocking regular-file checks and
+bounded capped reads cover the observed race/FIFO/growth cases, not a comprehensive audit.
+
+Release preparation also exposed a composite-action bug: `../../scripts/ci/run-task.sh` did not
+exist relative to `.github/actions/moat`, and its output named `review.txt` instead of the actual
+`review.json`. `test/unit/ci-action.test.ts` executes the declared shell body with a fake CLI;
+it failed before both fixes and passes after. This checks action plumbing, not model behavior.
+The hosted-CI namespace probe also lacked its mount target, which could falsely skip capable
+runners. It now creates a unique target; the declared probe is tested with a fake `unshare` that
+accepts only a real directory. Restoring the old probe fails that test. This does not establish
+that GitHub-hosted runners allow namespaces.
+The tag workflow checks the compiled package graph/assets and publishes that checked tarball.
+
+Read the **Not verified** table at the end before interpreting any historical capture below.
+
+## Historical measurements before Pi
+
 The acceptance criteria, each with the command that produced it and its real
 output. Nothing here is paraphrased: the blocks are copied from `test/evidence/`,
 which the suites write.
@@ -9,7 +84,8 @@ A note on paths: the captured output was produced on the author's machine, and
 any command or its output was altered.
 
 ```
-bash test/e2e-codex.sh    # the acceptance list, keyless        -> test/evidence/codex-summary.txt
+# Retired entrypoint: test/archive/e2e-codex.sh; captured then, not run against current moat
+bash test/e2e-codex.sh    # historical acceptance              -> test/evidence/codex-summary.txt
 bash test/e2e-extras.sh   # the state and process traps         -> test/evidence/extras.txt
 bash test/e2e-egress.sh   # netns, datapath, allowlist, proxy path -> test/evidence/egress.txt
 DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
@@ -2182,22 +2258,22 @@ Listed so that absence is not mistaken for success.
 
 | thing | why |
 | --- | --- |
-| v1 (microVM on KVM): boot time, image size, delta vs v0 | `/dev/kvm` is present but not accessible to this user (mode 660, gid 991, not a member). v1 is a separate phase and is not claimed here. |
-| v2 (provider-side credential revocation and spend caps, concurrent sandboxes) | explicitly gated on v0 *and* v1 passing. Egress rules landed ahead of v2 and are verified in §L. |
-| Model quality, as opposed to model reachability | a real DeepSeek session is verified above. That is one task, one model, one run: a smoke test with teeth, not a benchmark. |
-| Non-DeepSeek providers | a *named* provider configured with `moat provider add` is verified end to end against a stub (`test/e2e-provider.sh`, 9 checks: the model id and base URL on the wire, no credential name from the default provider in the image or the environment, the rendered catalog describing that provider's model). No second **hosted** provider has been called with a real key, and moat still refuses a provider name nobody configured and infers nothing from the environment. |
+| Production microVM backend and Pi inside a microVM | `MICROVM.md` contains separate historical KVM measurements. No microVM backend or Pi microVM task is implemented/claimed by this migration. |
+| Provider-side credential revocation, scoped keys and aggregate spend caps | Local TTL enforcement is not provider revocation. Per-boot spend-capped tokens and aggregate session/day budgets are not implemented. |
+| Live Pi provider behavior and model quality | Pi's migration gate is keyless. Historical DeepSeek live turns above used retired harnesses; no paid-provider Pi turn or quality benchmark is implied by them. |
+| Non-DeepSeek providers | Explicit named-provider configuration and Pi model/auth/effort delivery are checked at a compatible stub. Responses and Chat Completions are supported; native Anthropic/Google protocols and another hosted provider with a real key are not validated by those tests. |
 | The `countUnfetched` / host-drift logic under adversarial git states | §AB and §AC cover multiple branches, tags, an already-fetched ref, a non-git host, a detached host HEAD and a detached sandbox HEAD; a *rebased* sandbox branch, and commits that survive only in the sandbox reflog after a `reset --hard`, are still not staged. |
 | The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |
-| The absolute correctness of a cost figure against a DeepSeek invoice | the figure is the published table applied to the billed token counts in the CLI's own usage block. Codex reports one usage block per turn, so a turn that crosses a peak-pricing boundary is priced at one rate and the label names one side; only per-request timestamps could split it, and they are not reported. Nothing here is compared against a real bill. |
-| Codex's tool list over time | the `codex-*.txt` captures record what one pinned version advertised on one turn. Another version may advertise a different set, and nothing in moat reads or constrains it. |
-| The interactive screen beyond reaching it | extras section AL (`test/codex-tui.py`) proves moat reaches a live TUI and that leaving it leaves the box running. What the TUI draws, its keybindings, its model picker and its session resume behaviour are the CLI's own, and are not automated here. |
+| Cost figures against an invoice, and universal spend caps | Prices are applied to Pi's reported normalized usage, not checked against a bill. Peak-boundary work is priced at one rate; cache writes use the input rate. Extensions can make unreported requests or change models. No aggregate session/boot/day budget or provider-side cap is enforced. |
+| Arbitrary Pi extensions, packages, skills and MCP servers | A project hook and model-invoked custom tool run inside the real box. That does not prove every plugin compatible or safe: network/dependencies, interactive approval policies and unreported model calls remain the extension author's responsibility. No host plugins/auth are imported. |
+| Pi's interactive workflows beyond the pty gate | `test/pi-tui.py` reaches the model screen, stays interactive and leaves the keepalive running. Session resume/tree navigation, arbitrary custom UI and every keybinding are Pi's own and are not comprehensively automated here. |
 | Exfiltration through an allowed channel | §L verifies that the allowlist admits the provider and refuses an arbitrary address, and that the host's loopback is unreachable on both routes. It does not attempt to push data out *through* an allowlisted address or over DNS, both of which remain possible by construction. |
 | Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), and §AE covers a box killed out of band and a stale recorded identity, but a real reboot (with the kernel's own pid reuse) was not staged. |
 | Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all: a refusal, not support, and not a silent drop. |
 | What the copy-out credential scan cannot see | it compares against the values the host holds at fetch/apply time (`DEEPSEEK_API_KEY`, `MOAT_CREDENTIAL`, the credential store) and searches the commits a fetch brought in (the most recent 50) or the files an apply plan would write (up to 64 MiB each). A key rotated since the boot, a secret the agent obtained somewhere else, older commits and larger files are outside it: each bound is named when it is reached (extras §AB, `test/unit/leak-scan.test.ts`). A file that does not match is not a claim that it is clean. |
-| Whether the Codex loop is better than the old runtime's on long work | cost per turn is measured (`docs/HISTORY.md`), but the old runtime is deleted, so that comparison is history rather than a live A/B, and "which harness does long autonomous work better" would need a task suite and many runs. |
+| Pi performance and long-task quality relative to retired harnesses | There is no current cold-cache benchmark or live A/B task suite. Older startup/cost captures are history, not Pi measurements. |
 | Whether a partially accepted subset of a change is coherent | **partly.** `moat apply` runs the project's own checks against exactly the accepted subset before writing, so a subset that breaks a *declared* check is refused, and extras §AM is that end to end. What is **not** verified: a project with no detectable check (the run warns instead), and a subset that is wrong in a way the project's checks do not cover — the review has no cross-file reasoning and moat has no model of what the project means. The check is the project's own floor, not a proof of intent. |
 | A merge's hunks as an exhaustive description of the merge | a `both` path is presented as the hunks between your file and the merged bytes, so the review shows what would change in your copy. A conflict between the *two sides'* intentions that the three-way merge resolved silently is not surfaced as such: it arrives as an ordinary hunk, and the review does not say that the merge chose one side. |
-| Harness interchangeability, and ACP | **Measured but deliberately not adopted.** The agent-harness seam is written down in `docs/SEAM.md`. A Phase 4 spike drove `@agentclientprotocol/codex-acp` 1.12.0 (digest recomputed and matched, so it pins like everything else in `lib/pins.ts`) against moat's own pinned Codex binary inside a sandbox, over stdio with no port: `initialize`, `authenticate`, `session/new`, a full turn to `end_turn`. Two facts matter for anyone who takes it further and neither is a claim that it is adopted: the adapter is a Node program and the default image has **no `node`** (`node` is a profile, not `BASE_PACKAGES`), and it overrides `approval_policy` per turn from its own mode table, so moat's rendered `approval_policy = "never"` would stop being what decides whether the box asks. The one question that decides whether it *fits* — whether a client can answer `session/request_permission` under moat's configuration — **was not settled**: the adapter never asked in any of its three modes, so "moat keeps its never-ask stance at the protocol level" is unverified. The recommendation in `docs/archive/PROGRESS.md` is not to migrate in this program. |
-| Anything about a real model other than what the live suite ran | `bash test/e2e-live.sh` is the only evidence against the hosted model. Everything else runs against the deterministic stub, which cannot show model quality, refusals, or provider-side behaviour. |
+| Harness interchangeability and ACP | Historical ACP measurements were not adopted. Current moat is Pi-only, CLI-driven; Node/npm are now base packages. No host-side agent SDK, extra runtime selector or ACP permission protocol is implemented. |
+| Pi under the container backend, a comprehensive security audit and resource exhaustion | The namespace backend is the migration's exercised path. Container Pi turns depend on a usable runtime; skipped tests are named. Namespaces share the host kernel, and moat has no CPU/memory/disk quotas. Keyless acceptance is neither a full audit nor a resource-containment proof. |
 

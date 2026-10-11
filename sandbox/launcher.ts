@@ -8,8 +8,9 @@ import { SLIRP_DNS, ownNetns, type EgressMode } from "../lib/pins.ts"
 import { containerName, containerPlan, containerRunning, containerStop, containerRuntime, type BackendId } from "./backend.ts"
 import { ensureRootfsDir, openRootfsFileForAppend, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { shellQuote } from "../lib/shell.ts"
-import { proxyEnv } from "./proxy.ts"
+import { PROXY_ADDRESS, PROXY_PORT, proxyEnv } from "./proxy.ts"
 import { VETH_BOX_IFACE } from "./proxy-netns.ts"
+import { credentialDeadline, watchCredentialExpiry } from "./credential-deadline.ts"
 import * as log from "../lib/log.ts"
 
 /**
@@ -258,6 +259,14 @@ export function outerScript(p: EnvPaths, opts: OuterScriptOptions = {}): string 
     lines.push(`  if [ "$i" -ge 100 ]; then echo '[moat] the proxy link did not appear' >&2; exit 1; fi`)
     lines.push("  sleep 0.1")
     lines.push("done")
+    // A visible veth is not readiness: a short command could exit after link creation,
+    // before its addresses/peer/listener were installed, and strand nsenter mid-setup.
+    lines.push("i=0")
+    lines.push(`while ! chroot "$N" /usr/bin/timeout 1 /bin/bash -c 'exec 3<>/dev/tcp/${PROXY_ADDRESS}/${PROXY_PORT}' >/dev/null 2>&1; do`)
+    lines.push("  i=$((i+1))")
+    lines.push(`  if [ "$i" -ge 100 ]; then echo '[moat] the proxy listener did not become reachable' >&2; exit 1; fi`)
+    lines.push("  sleep 0.1")
+    lines.push("done")
     lines.push('echo nameserver 127.0.0.1 > "$N/etc/resolv.conf"')
   }
   if (opts.egressRules) {
@@ -426,7 +435,7 @@ function bootCommand(
     env?: SandboxEnv
     isolated: boolean
     egressRules?: string
-    /** Set only for the long-running box; see ContainerPlanOptions.name. */
+    /** Stable for keepalive; unique per invocation for ephemeral containers. */
     name?: string
   },
 ): { command: string; args: string[]; env: NodeJS.ProcessEnv; needsSlirp: boolean } {
@@ -434,7 +443,7 @@ function bootCommand(
     // A filtered boot still needs the ruleset applied, and there is no outer script to apply it in.
     const inner = opts.egressRules ? writeEgressWrapper(p, opts.inner, opts.egressRules) : opts.inner
     const plan = containerPlan(p, inner, { egress: opts.egress, env: opts.env, ...(opts.name ? { name: opts.name } : {}) })
-    return { command: plan.command, args: plan.args, env: process.env, needsSlirp: false }
+    return { command: plan.command, args: plan.args, env: plan.clientEnv ?? process.env, needsSlirp: false }
   }
   const isolated = opts.isolated
   return {
@@ -578,6 +587,7 @@ export type RunInSandboxResult = {
   code: number
   output: string
   timedOut: boolean
+  credentialExpired?: boolean
   /**
    * Why the box was stopped early, when something other than the clock ended it.
    *
@@ -600,7 +610,7 @@ export type SandboxRunOptions = {
   env?: SandboxEnv
   /** Which backend boots this box: the default `unshare` path, or a container runtime. */
   backend?: BackendId
-  onOutput?: (chunk: string) => void
+  onOutput?: (chunk: string, stream: "stdout" | "stderr") => void
   timeoutMs?: number
   egress?: EgressMode
   /** Path to the slirp4netns binary; required when egress is isolated. */
@@ -617,12 +627,11 @@ export type SandboxRunOptions = {
    */
   egressProxy?: { allow: readonly string[] }
   /**
-   * Called with the output so far, and may stop the box by returning a reason.
+   * Called after newline-bearing output, after onOutput; a reason stops the box.
    *
-   * This is how a spend ceiling is enforced *while* the turn is running: the runtime's own stream
-   * reports usage as it goes (Claude Code sends it on every assistant event), so the host can price
-   * what has been spent and kill the namespace before the next request is made. Returning null lets
-   * it run.
+   * The supplied text is bounded diagnostic capture, not a complete accounting source. Pi's
+   * caller uses its incremental stdout parser's snapshot for this predicate and the footer.
+   * Usage can still arrive only after a request completes. Returning null lets the boot run.
    */
   abortWhen?: (output: string) => string | null
 }
@@ -633,7 +642,12 @@ export async function runInSandbox(
   innerBody: string,
   opts: SandboxRunOptions = {},
 ): Promise<RunInSandboxResult> {
+  const deadline = credentialDeadline(opts.env)
+  if (deadline !== null && deadline <= Date.now()) {
+    return { code: 124, output: "[moat] credential expired before the agent started\n", timedOut: false, credentialExpired: true }
+  }
   const containerBackend = opts.backend === "container"
+  const ephemeralId = containerBackend ? `${p.id}-task-${crypto.randomBytes(8).toString("hex")}` : null
   const isolated = containerBackend ? false : bootIsolation(opts)
   const inner = writeInnerScript(p, innerBody)
   // No outer script for a container: the mount table, the chroot and the device nodes are the
@@ -657,6 +671,7 @@ export async function runInSandbox(
     outer: boot,
     egress: opts.egress,
     env: opts.egressProxy ? { ...(opts.env ?? {}), ...proxyEnv() } : opts.env,
+    ...(ephemeralId ? { name: containerName(ephemeralId) } : {}),
     isolated,
     egressRules: opts.egressRules,
   })
@@ -673,7 +688,17 @@ export async function runInSandbox(
   let output = ""
   let timedOut = false
   let aborted: string | null = null
-  const sink = (chunk: string) => {
+  let credentialExpired = false
+  const stopChild = () => {
+    child.kill("SIGKILL")
+    if (ephemeralId) containerStop(ephemeralId)
+  }
+  const cancelExpiry = watchCredentialExpiry(deadline, () => {
+    if (child.exitCode !== null || child.signalCode !== null) return
+    credentialExpired = true
+    stopChild()
+  })
+  const sink = (chunk: string, stream: "stdout" | "stderr") => {
     output += chunk
     if (output.length > MAX_CAPTURED_OUTPUT + 64 * 1024) {
       output =
@@ -681,7 +706,7 @@ export async function runInSandbox(
         "\n[moat] output truncated by the host\n" +
         output.slice(-OUTPUT_TAIL)
     }
-    opts.onOutput?.(chunk)
+    opts.onOutput?.(chunk, stream)
     // Checked when a *line* has arrived, not per byte and not on a byte threshold: a byte gate
     // skips the check that matters whenever the runtime's events are small, and re-parsing on every
     // byte would make a long turn quadratic. A newline is exactly when a report could have changed.
@@ -689,15 +714,15 @@ export async function runInSandbox(
       const reason = opts.abortWhen(output)
       if (reason !== null) {
         aborted = reason
-        // --kill-child takes the whole namespace with it, so the agent cannot outlive the ceiling.
-        child.kill("SIGKILL")
+        // Kill the namespace, or explicitly remove the uniquely named container, not just its client.
+        stopChild()
       }
     }
   }
   child.stdout.setEncoding("utf8")
   child.stderr.setEncoding("utf8")
-  child.stdout.on("data", sink)
-  child.stderr.on("data", sink)
+  child.stdout.on("data", (chunk: string) => sink(chunk, "stdout"))
+  child.stderr.on("data", (chunk: string) => sink(chunk, "stderr"))
 
   // The host's own stages, in a file, as they happen: the boot's markers report the boot, and the side
   // that can be stuck is this one — so a run that stops during setup names its stage here even when the
@@ -778,16 +803,17 @@ export async function runInSandbox(
       }
     }
   } catch (error) {
+    cancelExpiry()
     stopDatapath()
-    child.kill("SIGKILL")
+    stopChild()
+    if (credentialExpired) return { code: 124, output, timedOut: false, credentialExpired: true }
     throw error
   }
 
   const timer = opts.timeoutMs
     ? setTimeout(() => {
         timedOut = true
-        // unshare --kill-child takes the namespace down with it.
-        child.kill("SIGKILL")
+        stopChild()
       }, opts.timeoutMs)
     : null
 
@@ -797,11 +823,13 @@ export async function runInSandbox(
       if (settled) return
       settled = true
       if (timer) clearTimeout(timer)
+      cancelExpiry()
       stopDatapath()
-      resolve({ code, output, timedOut, ...(aborted ? { aborted } : {}) })
+      resolve({ code: credentialExpired ? 124 : code, output, timedOut, ...(aborted ? { aborted } : {}), ...(credentialExpired ? { credentialExpired } : {}) })
     }
     child.on("error", (error) => {
       if (timer) clearTimeout(timer)
+      cancelExpiry()
       stopDatapath()
       reject(error)
     })
@@ -838,7 +866,13 @@ export async function runInteractive(
   innerBody: string,
   opts: SandboxRunOptions = {},
 ): Promise<number> {
+  const deadline = credentialDeadline(opts.env)
+  if (deadline !== null && deadline <= Date.now()) {
+    log.warn("the credential expired before Pi could start")
+    return 124
+  }
   const containerBackend = opts.backend === "container"
+  const ephemeralId = containerBackend ? `${p.id}-tui-${crypto.randomBytes(8).toString("hex")}` : null
   const isolated = containerBackend ? false : bootIsolation(opts)
   const inner = writeInnerScript(p, innerBody)
   const boot = containerBackend
@@ -853,7 +887,7 @@ export async function runInteractive(
         egressRules: opts.egressRules,
       })
   // An interactive boot is the one case where the terminal type has to come from the terminal:
-  // TERM=dumb makes Codex's TUI ask "Continue anyway?" before it starts. A container gets it as an
+  // TERM=dumb is for headless boots, not Pi's interactive TUI. A container gets it as an
   // --env argument like every other variable; the unshare path puts it in the process environment.
   const plan = bootCommand(p, {
     backend: opts.backend,
@@ -861,12 +895,24 @@ export async function runInteractive(
     outer: boot,
     egress: opts.egress,
     env: { TERM: interactiveTerm(), ...opts.env, ...(opts.egressProxy ? proxyEnv() : {}) },
+    ...(ephemeralId ? { name: containerName(ephemeralId) } : {}),
     isolated,
     egressRules: opts.egressRules,
   })
   const child = spawn(plan.command, plan.args, {
     stdio: "inherit",
     env: plan.env,
+  })
+  let credentialExpired = false
+  const stopChild = () => {
+    child.kill("SIGKILL")
+    if (ephemeralId) containerStop(ephemeralId)
+  }
+  const cancelExpiry = watchCredentialExpiry(deadline, () => {
+    if (child.exitCode !== null || child.signalCode !== null) return
+    credentialExpired = true
+    log.warn("the credential expired; stopping Pi's sandbox")
+    stopChild()
   })
   let slirp: { stop: () => void } | null = null
   let proxy: { stop: () => void } | null = null
@@ -929,19 +975,31 @@ export async function runInteractive(
       }
     }
   } catch (error) {
+    cancelExpiry()
     stopDatapath()
-    child.kill("SIGKILL")
+    stopChild()
+    if (credentialExpired) return 124
     throw error
   }
   return await new Promise<number>((resolve, reject) => {
+    let settled = false
+    const done = (code: number) => {
+      if (settled) return
+      settled = true
+      cancelExpiry()
+      stopDatapath()
+      resolve(credentialExpired ? 124 : code)
+    }
     child.on("error", (error) => {
+      if (settled) return
+      settled = true
+      cancelExpiry()
       stopDatapath()
       reject(error)
     })
-    child.on("close", (code) => {
-      stopDatapath()
-      resolve(code ?? 0)
-    })
+    child.on("close", (code) => done(code ?? 1))
+    // Setup awaits the network; expiry or a fast command may have closed the child already.
+    if (child.exitCode !== null || child.signalCode !== null) done(child.exitCode ?? 1)
   })
 }
 

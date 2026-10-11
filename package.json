@@ -1,7 +1,7 @@
 {
   "name": "moat-sandbox",
-  "version": "0.0.3",
-  "description": "Run an AI coding agent in a disposable Linux sandbox, and review what it did hunk by hunk before any of it reaches your machine.",
+  "version": "0.1.0",
+  "description": "Run Pi in a disposable Linux sandbox and review its changes hunk by hunk before applying them to your working tree.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -12,15 +12,16 @@
   },
   "scripts": {
     "moat": "node cmd/main.ts",
-    "build": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
     "coverage": "node --experimental-test-coverage --test test/unit/*.test.ts",
     "test:unit": "node --test test/unit/*.test.ts",
-    "test:e2e": "bash test/e2e-codex.sh",
+    "test:e2e": "bash test/e2e-pi.sh",
     "test:extras": "bash test/e2e-extras.sh",
     "test:provider": "bash test/e2e-provider.sh",
     "test:demo": "bash test/e2e-demo.sh",
     "test:review": "bash test/e2e-review.sh",
+    "test:live": "bash test/pi-live.sh",
     "prepublishOnly": "npm run typecheck && npm run test:unit",
     "prepack": "npm run build"
   },
@@ -33,6 +34,7 @@
     "stub",
     "docs",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "CONTRIBUTING.md",
     "SECURITY.md"
@@ -41,7 +43,7 @@
     "sandbox",
     "ai-agent",
     "coding-agent",
-    "codex",
+    "pi",
     "code-review",
     "isolation",
     "userns",

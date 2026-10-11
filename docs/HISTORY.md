@@ -1,7 +1,17 @@
 # How moat got here
 
-This page exists so the old runtime documents can stay deleted. It records what was
-tried, what was measured, and why the current shape won. Nothing here is a plan.
+This page preserves the opencode/Codex lineage and its measurements. Those harnesses are retired;
+none of the configuration or cost readings below selects the current runtime.
+
+## 0.1.0: Pi only
+
+The owner chose Pi to replace both Codex and the later optional Claude Code adapter. Pi's CLI,
+tools, extensions and sessions execute inside the sandbox, reached through one pinned npm graph.
+The host still owns lifecycle, reported-usage limits and explicit review/apply, not the agent loop.
+No host Pi SDK, settings or auth are imported. Existing work upgrades in place; old runtime data
+may remain unused. See `PI.md`, `SEAM.md` and `CHANGELOG.md` at the repository root.
+
+The older prompt/cost measurements below are not Pi benchmarks.
 
 ## The runtime before this one
 

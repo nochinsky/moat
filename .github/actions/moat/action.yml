@@ -11,7 +11,7 @@ inputs:
     required: true
   moat-args:
     description: >-
-      Extra flags for `moat run`, space-separated, e.g. "--profile node --runtime claude
+      Extra flags for `moat run`, space-separated, e.g. "--profile node --wire-api chat
       --max-tokens 200000".
     required: false
     default: ""
@@ -55,8 +55,8 @@ runs:
         MOAT_ARGS: ${{ inputs.moat-args }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
       run: |
-        bash "${{ github.action_path }}/../../scripts/ci/run-task.sh"
-        echo "review=$OUTPUT_DIR/review.txt" >> "$GITHUB_OUTPUT"
+        bash "${{ github.action_path }}/../../../scripts/ci/run-task.sh"
+        echo "review=$OUTPUT_DIR/review.json" >> "$GITHUB_OUTPUT"
 
     - name: upload the review
       if: ${{ always() && inputs.upload-artifact == 'true' }}

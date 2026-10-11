@@ -3,10 +3,9 @@ import fs from "node:fs"
 import http from "node:http"
 
 /*
- * A keyless OpenAI **Responses** stub, for Codex.
+ * A keyless OpenAI-compatible stub for Pi (Responses and Chat Completions).
  *
- * The other stub (test/mock-model.mjs) speaks chat completions for opencode. Codex only
- * speaks the Responses wire API, so a keyless suite cannot drive it without this. Every
+ * The Responses replay preserves the original acceptance fixtures. Every
  * event shape below was copied from a real DeepSeek stream captured through a recording
  * proxy (2 turns, 13 event types: response.created/in_progress, output_item.added/done,
  * content_part.added/done, output_text.delta/done, function_call_arguments.delta/done,
@@ -24,6 +23,7 @@ const flagOf = (name, fallback) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback
 }
 const port = Number(flagOf("port", "5599"))
+const host = flagOf("host", "127.0.0.1")
 const scriptPath = flagOf("script", "test/scripts/responses-basic.json")
 const recordPath = flagOf("record", "")
 const script = JSON.parse(fs.readFileSync(scriptPath, "utf8"))
@@ -116,9 +116,9 @@ function streamTurn(res, turn) {
       type: "function_call",
       id: itemId,
       status: "completed",
-      arguments: JSON.stringify(turn.tool),
+      arguments: JSON.stringify(toolArgs(turn)),
       call_id: callId,
-      name: turn.toolName || "exec_command",
+      name: turn.toolName === "exec_command" ? "bash" : turn.toolName || "bash",
     }
     sse(res, "response.output_item.added", { item: { ...item, arguments: "", status: "in_progress" }, output_index: 0 }, seq++)
     for (const piece of chunks(item.arguments, 16)) {
@@ -151,6 +151,31 @@ function streamTurn(res, turn) {
   res.end()
 }
 
+// Keep historical fixtures usable while emitting Pi's actual tool schema.
+function toolArgs(turn) {
+  if (turn.tool?.cmd && (!turn.toolName || turn.toolName === "exec_command" || turn.toolName === "bash")) {
+    return { command: turn.tool.cmd }
+  }
+  return turn.tool
+}
+
+function streamChatTurn(res, turn) {
+  res.writeHead(200, { "content-type": "text/event-stream" })
+  const chunk = (delta, finish_reason = null, reportedUsage) => res.write("data: " + JSON.stringify({
+    id: "chatcmpl_mock", object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model,
+    choices: [{ index: 0, delta, finish_reason }], ...(reportedUsage ? { usage: reportedUsage } : {}),
+  }) + "\n\n")
+  if (turn.tool) {
+    chunk({ role: "assistant", tool_calls: [{ index: 0, id: "call_mock_" + crypto.randomBytes(6).toString("hex"), type: "function", function: { name: turn.toolName || "bash", arguments: JSON.stringify(toolArgs(turn)) } }] })
+    chunk({}, "tool_calls")
+  } else {
+    chunk({ role: "assistant", content: turn.text || "Done." })
+    chunk({}, "stop")
+  }
+  chunk({}, null, { prompt_tokens: inputTokens, completion_tokens: outputTokens, total_tokens: inputTokens + outputTokens, prompt_tokens_details: { cached_tokens: scriptUsage.cached_tokens ?? 8400 } })
+  res.write("data: [DONE]\n\n"); res.end()
+}
+
 const server = http.createServer((req, res) => {
   const body = []
   req.on("data", (c) => body.push(c))
@@ -169,9 +194,9 @@ const server = http.createServer((req, res) => {
           // moat's account of it.
           authorization: req.headers.authorization ?? null,
           model: parsed.model,
-          reasoning: parsed.reasoning ?? null,
+          reasoning: parsed.reasoning ?? (parsed.reasoning_effort ? { effort: parsed.reasoning_effort } : null),
           toolChoice: parsed.tool_choice ?? null,
-          tools: (parsed.tools ?? []).map((t) => t.name ?? t.type),
+          tools: (parsed.tools ?? []).map((t) => t.name ?? t.function?.name ?? t.type),
           inputCount: Array.isArray(parsed.input) ? parsed.input.length : null,
           lastInput: Array.isArray(parsed.input) ? parsed.input[parsed.input.length - 1] : null,
           // The whole instructions block: a test may need to prove that a brief reached the
@@ -186,16 +211,26 @@ const server = http.createServer((req, res) => {
       }
       record.write(JSON.stringify(summary) + "\n")
     }
-    if (!/\/responses$/.test((req.url || "").split("?")[0] || "")) {
+    const pathname = (req.url || "").split("?")[0] || ""
+    if (!/\/(responses|chat\/completions)$/.test(pathname)) {
       res.writeHead(404, { "content-type": "application/json" })
       res.end(JSON.stringify({ error: { message: "the responses mock only serves /responses" } }))
       return
     }
     const turn = turns[Math.min(requestCount, turns.length - 1)]
     requestCount += 1
-    streamTurn(res, turn)
+    const send = () => {
+      if (res.destroyed) return
+      if (turn.error) {
+        res.writeHead(turn.status || 401, { "content-type": "application/json" })
+        res.end(JSON.stringify({ error: { message: turn.error, type: "invalid_request_error", code: "invalid_api_key" } }))
+      } else if (pathname.endsWith("/chat/completions")) streamChatTurn(res, turn)
+      else streamTurn(res, turn)
+    }
+    if (turn.delayMs) setTimeout(send, turn.delayMs)
+    else send()
   })
 })
-server.listen(port, "127.0.0.1", () => {
+server.listen(port, host, () => {
   console.log("[mock-responses] listening on http://127.0.0.1:" + port + "/v1/responses (" + turns.length + " scripted turn(s))")
 })

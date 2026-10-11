@@ -9,22 +9,16 @@ import {
   ALPINE_ROOTFS_SHA256,
   ALPINE_ROOTFS_URL,
   ALPINE_VERSION,
-  CLAUDE_PLATFORM_PACKAGE,
-  CLAUDE_TARBALL_PATH,
-  CLAUDE_TARBALL_SHA256,
-  CLAUDE_VERSION,
-  CODEX_PLATFORM_PACKAGE,
-  CODEX_TARBALL_SHA256,
-  CODEX_VENDOR_TRIPLE,
-  CODEX_VERSION,
-  NPM_REGISTRY,
+  PI_LOCK_SHA256,
+  PI_VERSION,
   PROVISION_PACKAGES,
   RUNTIME_BINARY,
   SANDBOX_TRIPLE,
   SANDBOX_WORKDIR,
 } from "../lib/pins.ts"
-import { cacheDir, claudeCachePath, codexCachePath, partPath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
-import { CLAUDE_BINARY, type RuntimeId } from "../lib/pins.ts"
+import { cacheDir, partPath, rootfsCachePath, type EnvPaths } from "../lib/paths.ts"
+import { installRuntimeBinary } from "./pi-install.ts"
+export { installRuntimeBinary, runtimeNeedsRepair, nodeSupportsPi } from "./pi-install.ts"
 import type { BackendId } from "./backend.ts"
 import { chmodRootfsDir, ensureRootfsDir, writeRootfsFile } from "../lib/rootfs-fs.ts"
 import { out, run } from "../lib/shell.ts"
@@ -54,12 +48,12 @@ export async function verifyFile(file: string, digest: DownloadDigest): Promise<
   if (digest.integrity) {
     if (!digest.integrity.startsWith("sha512-")) return false
     const actual = await hashFile(file, "sha512", "base64")
-    return `sha512-${actual}`.toLowerCase() === digest.integrity.toLowerCase()
+    return `sha512-${actual}` === digest.integrity
   }
   if (digest.sha256) {
     return (await hashFile(file, "sha256", "hex")).toLowerCase() === digest.sha256.toLowerCase()
   }
-  return true
+  return false
 }
 
 /**
@@ -119,141 +113,6 @@ export async function ensureRootfsTarball(): Promise<string> {
   return dest
 }
 
-/**
- * The Codex CLI binary, fetched from the npm registry and cached on the host.
- *
- * It is a *binary*, not a credential: it is copied into the rootfs as part of the image, and
- * the image contains no key material.
- *
- * The npm platform tarball ships a **musl** build under `vendor/<triple>/bin/codex`, which
- * is why it runs on the Alpine image with no gcompat and no Node runtime: the CLI is the one
- * thing moat installs that is neither Alpine's nor the project's.
- *
- * A triple with no pinned digest is refused. An unverified binary that becomes the agent
- * runtime is the one artefact moat cannot be casual about.
- */
-export async function ensureCodexBinary(triple = SANDBOX_TRIPLE): Promise<string> {
-  const dest = codexCachePath(triple)
-  if (fs.existsSync(dest)) return dest
-  const platform = CODEX_PLATFORM_PACKAGE[triple]
-  const vendor = CODEX_VENDOR_TRIPLE[triple]
-  const sha256 = CODEX_TARBALL_SHA256[triple]
-  if (!platform || !vendor) throw new Error(`codex is not pinned for the ${triple} sandbox triple`)
-  if (!sha256) throw new Error(`codex has no pinned digest for ${triple}, so moat will not install it`)
-  const pkg = `codex-${CODEX_VERSION}-${platform}`
-  const url = `${NPM_REGISTRY}/@openai/codex/-/${pkg}.tgz`
-  const tarball = path.join(path.dirname(dest), `${pkg}.tgz`)
-  await download(url, tarball, { sha256 })
-  fs.mkdirSync(path.dirname(dest), { recursive: true })
-  const tmp = partPath(dest)
-  // Straight to disk: 269 MiB must never pass through a utf8-decoding string buffer.
-  const fd = fs.openSync(tmp, "w")
-  try {
-    const result = spawnSync("tar", ["-xzOf", tarball, `package/vendor/${vendor}/bin/codex`], {
-      stdio: ["ignore", fd, "inherit"],
-    })
-    if (result.status !== 0) throw new Error(`failed to extract the codex binary from ${tarball}`)
-  } finally {
-    fs.closeSync(fd)
-  }
-  fs.chmodSync(tmp, 0o755)
-  fs.renameSync(tmp, dest)
-  return dest
-}
-
-/**
- * The Claude Code CLI binary, fetched from the npm registry and cached on the host.
- *
- * The second agent runtime, under the same rules as the first: it is a *binary*, not a
- * credential; it is pinned by digest per platform, and a triple with no digest is refused rather
- * than downloaded unverified. Two things differ from `ensureCodexBinary` and are the whole
- * reason this is a separate function rather than a parameter: the tarball names its executable
- * at the **root** (`package/claude`) instead of under `vendor/<triple>/bin/`, and the platform
- * package carries no version in its name (`@anthropic-ai/claude-code-linux-x64-musl`), so the
- * tarball file name is `<package>-<version>.tgz`.
- */
-export async function ensureClaudeBinary(triple = SANDBOX_TRIPLE): Promise<string> {
-  const dest = claudeCachePath(triple)
-  if (fs.existsSync(dest)) return dest
-  const pkg = CLAUDE_PLATFORM_PACKAGE[triple]
-  const sha256 = CLAUDE_TARBALL_SHA256[triple]
-  if (!pkg) throw new Error(`claude is not pinned for the ${triple} sandbox triple`)
-  if (!sha256) throw new Error(`claude has no pinned digest for ${triple}, so moat will not install it`)
-  const file = `${pkg.split("/").pop()}-${CLAUDE_VERSION}.tgz`
-  const url = `${NPM_REGISTRY}/${pkg}/-/${file}`
-  const tarball = path.join(path.dirname(dest), file)
-  await download(url, tarball, { sha256 })
-  fs.mkdirSync(path.dirname(dest), { recursive: true })
-  const tmp = partPath(dest)
-  // Straight to disk: 228 MiB must never pass through a utf8-decoding string buffer.
-  const fd = fs.openSync(tmp, "w")
-  try {
-    const result = spawnSync("tar", ["-xzOf", tarball, CLAUDE_TARBALL_PATH], { stdio: ["ignore", fd, "inherit"] })
-    if (result.status !== 0) throw new Error(`failed to extract the claude binary from ${tarball}`)
-  } finally {
-    fs.closeSync(fd)
-  }
-  fs.chmodSync(tmp, 0o755)
-  fs.renameSync(tmp, dest)
-  return dest
-}
-
-/**
- * Put the runtime binary into an existing rootfs, without re-provisioning.
- *
- * The agent is root inside its box, so the binary can simply be gone: deleted by the agent, or
- * never there because the image was built by an older moat. Re-provisioning is **not** an
- * option — it deletes the rootfs first, taking \`/work\`, the agent's uncommitted work, with it.
- *
- * The destination is inside the agent-writable rootfs, so this goes through the same guard as
- * every other host-side write there: a symlinked component is refused rather than followed,
- * and the copy lands on a temp name that is renamed into place. The box must not be running;
- * callers stop it first (a running box has the old binary open anyway).
- */
-/**
- * Which binary belongs to which runtime, and where it lands in the rootfs.
- *
- * One place, so the image cache key, the provisioner and the repair path cannot disagree about
- * what a `claude` environment is supposed to contain — the shape of the bug that once handed an
- * environment an image with no runtime in it at all.
- */
-export function runtimeBinaryPath(id: RuntimeId): string {
-  return id === "claude" ? CLAUDE_BINARY : RUNTIME_BINARY
-}
-
-/**
- * The runtime's pinned version, as it appears in the image cache key.
- *
- * Codex's value is the bare version, unchanged from before the second runtime existed, so a
- * cached image is not invalidated by this refactor — the key for a codex environment is byte for
- * byte what it was.
- */
-export function runtimeCacheKey(id: RuntimeId): string {
-  return id === "claude" ? `claude-${CLAUDE_VERSION}` : CODEX_VERSION
-}
-
-/** The host-side cache for a runtime's binary, fetched and digest-verified if it is not there. */
-export async function ensureRuntimeBinary(id: RuntimeId, triple = SANDBOX_TRIPLE): Promise<string> {
-  return id === "claude" ? await ensureClaudeBinary(triple) : await ensureCodexBinary(triple)
-}
-
-export async function installRuntimeBinary(p: EnvPaths, id: RuntimeId = "codex"): Promise<void> {
-  const target = runtimeBinaryPath(id)
-  // Guard first, so a planted symlink fails before anything is downloaded or copied.
-  ensureRootfsDir(p.rootfs, path.posix.dirname(target))
-  const source = await ensureRuntimeBinary(id)
-  const dest = path.join(p.rootfs, target.slice(1))
-  const tmp = partPath(dest)
-  try {
-    fs.copyFileSync(source, tmp, fs.constants.COPYFILE_EXCL)
-    fs.chmodSync(tmp, 0o755)
-    fs.renameSync(tmp, dest)
-  } catch (error) {
-    fs.rmSync(tmp, { force: true })
-    throw error
-  }
-}
-
 export function extractRootfs(tarball: string, rootfs: string): void {
   fs.mkdirSync(rootfs, { recursive: true })
   const result = spawnSync("tar", ["-xzf", tarball, "-C", rootfs], { stdio: ["ignore", "ignore", "pipe"] })
@@ -280,7 +139,7 @@ const IMAGE_EXCLUDES = ["./work", "./proc", "./sys", "./dev", "./tmp", "./run", 
 export function imageCachePath(
   packages: string[] = PROVISION_PACKAGES,
   binaries: readonly string[] = [RUNTIME_BINARY],
-  runtimeKey: string = CODEX_VERSION,
+  runtimeKey: string = `pi-${PI_VERSION}-${PI_LOCK_SHA256}`,
 ): string {
   // The binaries and their pinned versions are part of the key: an image built before a binary
   // existed, or before its version changed, must never be handed to an environment that needs
@@ -317,9 +176,9 @@ export type ProvisionResult = {
  */
 export async function provisionEnv(
   p: EnvPaths,
-  opts: { useImageCache?: boolean; packages?: string[]; runtime?: RuntimeId; backend?: BackendId } = {},
+  opts: { useImageCache?: boolean; packages?: string[]; backend?: BackendId } = {},
 ): Promise<ProvisionResult> {
-  const packages = opts.packages ?? [...PROVISION_PACKAGES]
+  const packages = [...new Set([...(opts.packages ?? PROVISION_PACKAGES), "nodejs", "npm"])]
   const started = Date.now()
   const steps: ProvisionStep[] = []
   const mark = (name: string, from: number) => {
@@ -329,8 +188,7 @@ export async function provisionEnv(
     return Date.now()
   }
 
-  const runtime = opts.runtime ?? "codex"
-  const imageCache = imageCachePath(packages, [runtimeBinaryPath(runtime)], runtimeCacheKey(runtime))
+  const imageCache = imageCachePath(packages)
   const useImageCache = opts.useImageCache !== false
 
   if (useImageCache && fs.existsSync(imageCache)) {
@@ -425,14 +283,8 @@ rm -rf /var/cache/apk/*
   }
   t = mark("apk packages", t)
 
-  {
-    const binary = await ensureRuntimeBinary(runtime)
-    const target = path.join(p.rootfs, runtimeBinaryPath(runtime).slice(1))
-    fs.mkdirSync(path.dirname(target), { recursive: true })
-    fs.copyFileSync(binary, target)
-    fs.chmodSync(target, 0o755)
-    t = mark(`install ${runtime}`, t)
-  }
+  await installRuntimeBinary(p)
+  t = mark("install pi", t)
 
   // The config and the brief are NOT baked into the image: `moat up` renders and writes them
   // on every boot, so there is exactly one place that decides the policy and a cached image
@@ -443,7 +295,7 @@ rm -rf /var/cache/apk/*
   fs.mkdirSync(p.logs, { recursive: true })
 
   // Save the finished image for the next environment, so the mirror is a
-  // one-time dependency per (alpine, codex, package-set) combination.
+  // one-time dependency per (alpine, Pi lock, package-set) combination.
   t = Date.now()
   try {
     await saveImage(p, imageCache)
@@ -497,7 +349,7 @@ function mkdirsForRootfs(rootfs: string): void {
     "var/log/moat",
     "usr/local/bin",
     ".moat",
-    "root/.codex",
+    "root/.pi/agent",
   ]) {
     ensureRootfsDir(rootfs, `/${dir}`)
   }
@@ -550,14 +402,14 @@ async function saveImage(p: EnvPaths, dest: string): Promise<void> {
 export async function ensurePackages(
   p: EnvPaths,
   packages: string[],
-  opts: { post?: string[]; onOutput?: (chunk: string) => void; resetFirst?: boolean } = {},
+  opts: { post?: string[]; onOutput?: (chunk: string) => void; resetFirst?: boolean; upgrade?: boolean; backend?: BackendId } = {},
 ): Promise<{ installed: string[]; alreadyPresent: string[] }> {
   const post = (opts.post ?? []).join("\n")
   // `apk add` trusts the package database, and the database can be right while the
   // files are gone: the agent is root inside the box and can delete a binary
   // without touching apk's records. `resetFirst` clears the entry so the install
   // actually restores the files.
-  const installedTest = opts.resetFirst ? "false" : 'apk info -e "$pkg" >/dev/null 2>&1'
+  const installedTest = opts.resetFirst || opts.upgrade ? "false" : 'apk info -e "$pkg" >/dev/null 2>&1'
   const reset = opts.resetFirst ? "apk del $wanted >/dev/null 2>&1 || true" : ""
   const script = `#!/bin/sh
 set -u
@@ -587,7 +439,7 @@ for base in $mirrors $mirrors; do
   printf '%s/v3.21/main\\n%s/v3.21/community\\n' "$base" "$base" > /etc/apk/repositories
   if ! apk update >/tmp/apk-update.log 2>&1; then sleep 3; continue; fi
   if grep -q 'temporary error' /tmp/apk-update.log; then sleep 3; continue; fi
-  apk add $missing >/tmp/apk-add.log 2>&1 || true
+  apk add ${opts.upgrade ? "--upgrade " : ""}$missing >/tmp/apk-add.log 2>&1 || true
   still=""
   for pkg in $missing; do apk info -e "$pkg" >/dev/null 2>&1 || still="$still $pkg"; done
   if [ -z "$still" ]; then ok=1; echo "[moat] installed on attempt $attempt via $base"; break; fi
@@ -604,7 +456,7 @@ ${post}
 echo "[moat] MOAT_PRESENT:$present"
 echo "[moat] MOAT_INSTALLED:$toinstall"
 `
-  const result = await runInSandbox(p, script, { onOutput: opts.onOutput })
+  const result = await runInSandbox(p, script, { onOutput: opts.onOutput, backend: opts.backend })
   if (result.code !== 0) {
     throw new Error(`package installation failed (exit ${result.code}):\n${tailOf(result.output, 20)}`)
   }

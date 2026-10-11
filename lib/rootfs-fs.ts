@@ -211,6 +211,35 @@ export function writeRootfsFile(rootfs: string, target: string, content: string 
 }
 
 /**
+ * Install a host-prepared directory through a held parent descriptor. Extract archives outside
+ * the agent-writable rootfs first; tar -C <rootfs staging path> could otherwise follow a swapped
+ * symlink. Both replacement and rollback must use the descriptor, never re-resolve the parent.
+ */
+export function replaceRootfsDir(rootfs: string, target: string, prepared: string, installed?: () => void): void {
+  ensureRootfsDir(rootfs, target)
+  const dir = openParentDir(rootfs, target)
+  const destination = `/proc/self/fd/${dir.fd}/${path.basename(target)}`
+  const backup = `/proc/self/fd/${dir.fd}/.old-${process.pid}-${crypto.randomBytes(8).toString("hex")}`
+  let parked = false
+  try {
+    fs.renameSync(destination, backup)
+    parked = true
+    fs.renameSync(prepared, destination)
+    installed?.()
+    fs.rmSync(backup, { recursive: true, force: true })
+    parked = false
+  } catch (error) {
+    if (parked) {
+      fs.rmSync(destination, { recursive: true, force: true })
+      fs.renameSync(backup, destination)
+    }
+    throw error
+  } finally {
+    fs.closeSync(dir.fd)
+  }
+}
+
+/**
  * Open a file inside the rootfs for appending, without following a symlink.
  *
  * The returned descriptor is handed to a child process, so the child never
@@ -255,8 +284,17 @@ export function chmodRootfsDir(rootfs: string, target: string, mode: number): vo
  */
 export function readRootfsFile(rootfs: string, target: string, opts: { maxBytes?: number } = {}): string | null {
   return read(rootfs, target, (size, fd) => {
-    if (opts.maxBytes !== undefined && size > opts.maxBytes) return null
-    return fs.readFileSync(fd, "utf8")
+    if (opts.maxBytes === undefined) return fs.readFileSync(fd, "utf8")
+    if (size > opts.maxBytes) return null
+    // Do not re-stat/read the whole file after the check: it can grow between those operations.
+    const buffer = Buffer.allocUnsafe(size + 1)
+    let position = 0
+    while (position < buffer.length) {
+      const n = fs.readSync(fd, buffer, position, buffer.length - position, position)
+      if (n <= 0) break
+      position += n
+    }
+    return position > size ? null : buffer.subarray(0, position).toString("utf8")
   })
 }
 
@@ -313,8 +351,12 @@ function read(rootfs: string, target: string, consume: (size: number, fd: number
   }
   let fd: number | null = null
   try {
-    fd = fs.openSync(full, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
-    return consume(fs.fstatSync(fd).size, fd)
+    fd = fs.openSync(full, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK)
+    // O_NOFOLLOW covers the leaf, not a parent the agent swapped after walk().
+    if (fs.readlinkSync(`/proc/self/fd/${fd}`) !== full) return null
+    const stat = fs.fstatSync(fd)
+    if (!stat.isFile()) return null
+    return consume(stat.size, fd)
   } catch {
     return null
   } finally {

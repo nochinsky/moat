@@ -183,6 +183,15 @@ test("an allowlist entry that cannot work is refused, not silently dropped", () 
   assert.equal(allowHostProblem("[2001:db8::1]"), null)
 })
 
+test("a proxied boot waits for the reachable listener, not just a visible link", () => {
+  const p = { mountpoint: "/tmp/moat-test/mnt", rootfs: "/tmp/moat-test/rootfs", entryScript: "/tmp/moat-test/rootfs/.moat/entry.sh" } as EnvPaths
+  const script = outerScript(p, { waitForLink: "moatp" })
+  assert.match(script, /chroot "\$N" \/usr\/bin\/timeout 1 \/bin\/bash -c 'exec 3<>\/dev\/tcp\/10\.0\.9\.2\/41417'/)
+  assert.match(script, /the proxy listener did not become reachable/)
+  assert.ok(script.indexOf("/dev/tcp/") < script.lastIndexOf("exec chroot"))
+  assert.doesNotMatch(outerScript(p), /\/dev\/tcp\//)
+})
+
 test("open egress needs no datapath binary", () => {
   return (async () => {
     assert.deepEqual(await runtimeForEgress("open"), { egress: "open" })

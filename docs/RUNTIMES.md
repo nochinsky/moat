@@ -1,6 +1,9 @@
 # Adding another agent runtime
 
-moat drives one agent today: the pinned Codex CLI. This file records what it would take to drive
+> **Historical measurements.** This file describes retired Codex/Claude adapters. Current moat
+> uses Pi only; see [`PI.md`](PI.md) and [`SEAM.md`](SEAM.md). No switch described below is supported.
+
+At the time of this measurement moat drove the pinned Codex CLI. This file records what it would take to drive
 a second one, and why the answer is *not* to adopt a protocol for it. It exists because "should we
 support more agents, and do we need ACP to do it?" is a question that will come back, and the
 measurements below are cheaper to re-read than to redo.

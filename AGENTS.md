@@ -7,6 +7,32 @@ This file is the contract for the code. `docs/PROGRESS.md` says where the projec
 what is open; `docs/archive/` holds the build journal and the finished phase program, which are
 history rather than instructions.
 
+## Current harness: Pi only
+
+The owner approved replacing Codex and Claude Code with **Pi as the only runtime**. There is no
+runtime selector. Historical runtime notes below and archived measurements are not instructions
+to restore the old adapters or their policy files.
+
+* Pi's CLI, extensions, tools, MCP processes and sessions execute inside the sandbox. Never load
+  a project extension or a host-side Pi SDK to run the agent on the host.
+* `bundle/pi.ts` owns sandbox settings/model/brief rendering and JSON-event normalization;
+  `bundle/runtime.ts` owns the single CLI seam and keepalive. `docs/PI.md` explains customization.
+* `sandbox/pi-install.ts` checks the SHA-256-pinned lock in `bundle/pi-runtime/`, verifies each
+  tarball's SHA-512 SRI and runs no npm lifecycle scripts on the host. Node/npm are in Alpine.
+  Change the graph and `PI_LOCK_SHA256` together; ship both assets in the compiled package.
+* No host Pi auth/OAuth, settings or extensions are forwarded. Keys remain environment references,
+  not values in files/argv. The keyless header hook is tested at the receiving endpoint.
+* Copied `.pi` resources are approved executable configuration inside the box. Built-in tools
+  need no approval dialogs; extensions can add policies/UI waits or unreported model requests.
+  They are not a universal spending or confidentiality guarantee.
+* Count authoritative `message_end` usage once, replacing snapshots. Cache reads are already
+  separate and reasoning already belongs to output. Final errors/aborts fail even if Pi exits
+  zero. Budgeted tasks are headless; do not price switched/unknown models as free.
+* Repair/migrate in place without re-provisioning over `/work`. Legacy state and restored snapshots
+  retain work; old runtime files may remain as data, never as a driven path.
+* `test/e2e-pi.sh` is acceptance; `test/pi-tui.py` is the pty test. Regenerate evidence and the
+  generated trust page; distinguish current Pi readings from historical ones. No release is implied.
+
 ## The idea
 
 moat runs an AI coding agent inside a disposable Linux sandbox. The agent gets a copy of
@@ -35,12 +61,12 @@ Breaking any of these breaks the product, not a feature.
    nodes, bound read-write because a read-only bind makes `> /dev/null` fail; they are
    interfaces, not host data. `moat doctor` prints the mount table, root field included.
 2. **No credential ever reaches the image.** It is passed as an environment variable to
-   the sandbox process, and `installCodexFiles` (`bundle/codex.ts`) refuses to write a
+   the sandbox process, and `installPiFiles` (`bundle/pi.ts`) refuses to write a
    config or a brief that looks like it carries a literal key.
-3. **The agent never asks for approval and never gets a second
-   sandbox.** `approval_policy = "never"` and `sandbox_mode = "danger-full-access"` are
-   rendered by moat on every boot, in one file the agent does not own. moat's box is the
-   boundary; a weaker one next to it is worse than none.
+3. **moat imposes no tool approval or second sandbox layer.** Pi runs inside moat's box
+   with approved project configuration; its built-in tools need no approval dialogs.
+   Custom extensions are trusted executable workflow and can add their own policy, which
+   unattended users must account for. The box, not a tool allowlist, is the boundary.
 4. **Copy-out is explicit.** `moat fetch` writes one ref; `moat apply` is a separate
    command. The host tree is provably unchanged until the user says so.
 5. **No host environment, SSH agent or dotfiles are forwarded.** `moat doctor` diffs the
@@ -73,7 +99,7 @@ cmd/main.ts      the CLI; all UX lives here
 sandbox/         rootfs, namespaces, profiles, snapshots, isolation checks
 sync/            copy-in and copy-out, and the three-way apply
 secrets/         the credential broker and first-run onboarding
-bundle/          the rendered Codex config, the agent brief, the event parser
+bundle/          Pi config, dependency lock, agent brief and event parser
 lib/             provider, models.dev catalog, pricing, host probe, hashing
 stub/            the keyless model stub and its scripts — runtime, not test, because
                  `moat demo` ships them and a published package cannot reach into test/
@@ -137,9 +163,10 @@ precisely when an account has 2FA on. `0.0.1` was published through the browser 
 this existed.
 
 ```bash
-npm version patch --no-git-tag-version   # edits package.json only
-git commit -am "0.0.2: ..."
-git tag v0.0.2 && git push origin main v0.0.2
+npm version patch --no-git-tag-version   # edits package.json and package-lock.json
+git add <reviewed paths>                # include intended new files, not just tracked edits
+git commit -m "<version>: ..."
+git tag v<version> && git push --atomic origin main v<version>
 ```
 
 One-time setup, in the npm web UI rather than here: npm has to be told which repository and
@@ -148,6 +175,8 @@ publisher exists the workflow fails at the publish step with an authentication e
 
 The version in `package.json` and the tag must match, and a published version can never be
 reused — not even after `npm unpublish`. When in doubt, bump rather than retry.
+`docs/RELEASE.md` defines the local gates and registry confirmation. The tag workflow checks and
+publishes the same compiled tarball; a push alone is not evidence of npm publication.
 
 ## Running it
 
@@ -157,13 +186,14 @@ published tarball — see *Packaging* above.
 
 ```bash
 npm run test:unit         # pure unit tests, no sandbox, so CI runs them
-bash test/e2e-codex.sh    # the acceptance list, against a keyless model stub
+bash test/e2e-pi.sh       # Pi acceptance, against a keyless model stub
+python3 test/pi-tui.py    # Pi's own TUI on a real pty
 bash test/e2e-extras.sh   # snapshots, apply, credential expiry, state and process traps
 bash test/e2e-egress.sh   # netns, slirp datapath, loopback closed, allowlist enforced, default (no key)
 bash test/e2e-provider.sh # a named, non-DeepSeek provider end to end, no credential in the image
 bash test/e2e-demo.sh     # `moat demo`: three-way attribution, keyless
 bash test/e2e-review.sh   # the review surface: per-hunk attribution, a partial accept
-DEEPSEEK_API_KEY=... bash test/e2e-live.sh   # a real model, a real task
+bash test/pi-live.sh     # bounded real DeepSeek gate; key already in the launching environment
 ```
 
 Raw output lands in `test/evidence/`, which is committed and quoted by
@@ -321,13 +351,18 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   the old `stdio: [fd, fd]` gave it. `moat logs sandbox` and the boot-failure tail read
   the rootfs file through the guard, capped at 512 KiB so a log the agent grew cannot
   exhaust host memory; `logs/sandbox.log` only holds the lines before the dup.
+* Ephemeral task/TUI boots enforce the broker's deadline on the host (`sandbox/credential-deadline.ts`),
+  so expiry stops the agent, not only the separate keepalive. Containers get unique per-invocation
+  names and explicit removal: killing a podman client alone can leave its box running. The container
+  plan forwards credential names through its process environment, never credential values in argv;
+  this plan is unit-tested, but a Pi container turn remains unverified on this host.
 * The credential deadline is the credential's **own timestamp**, not the boot's start. The
   host passes `MOAT_CREDENTIAL_EXPIRES_EPOCH`, and the entry script checks it before
   spawning the agent (an already-dead credential must not start one) and then sleeps the
   remaining seconds; the TTL is only the fallback for state that predates the variable.
   Counting the TTL from the script's start let the box outlive its key by however long the
   boot took.
-* `--timeout` is **seconds** everywhere (`runCodexTask` and the checks runner take
+* `--timeout` is **seconds** everywhere (`runAgentTask` and the checks runner take
   `timeoutSeconds`; the turn default is 2700, the checks runner's is 600). One caller read
   it as *milliseconds*, so a ten-minute budget became an instant failure, measured as a
   boot that gave up after 600 ms. One flag, one unit.
@@ -453,6 +488,10 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   file with `O_EXCL|O_NOFOLLOW`, verifies the file it actually opened via `/proc/self/fd`,
   and renames it into place. Do not `fs.writeFileSync(path.join(rootfs, ...))` directly.
   `test/unit/rootfs-write.test.ts` guards it.
+* Reads verify the opened descriptor's path, not just a pre-open walk: the agent can swap a
+  parent between those operations. Nonblocking opens and regular-file checks refuse FIFOs/devices,
+  and capped full reads cannot pull an agent-grown file past the checked size. Regression guards
+  inject the parent swap in all three readers (`test/unit/rootfs-read-race.test.ts`).
 * Reads of agent-controlled files go through `readRootfsFile`, same reason: a symlinked
   `boot.log` would otherwise print a host file to your terminal. Writes *outside* the
   rootfs (`runtime/boot-*.sh`, `logs/`) are not reachable by the agent and stay on plain
@@ -500,7 +539,7 @@ Things that cost real time. Each of these was hit and diagnosed once already.
 **Downloads and caches**
 
 * Every network artefact is checked against a digest pinned in `lib/pins.ts` (Alpine's
-  release SHA-256, the Codex platform tarball's `sha256`) through `verifyFile` before
+  release SHA-256, Pi's lock SHA-256 and each dependency's SHA-512 SRI) through `verifyFile` before
   anything unpacks it, and an already-cached file is re-checked. Do not add a download
   path that skips this.
 * Temp files are named with `partPath()`: pid **and** a random suffix. A pid alone
@@ -600,6 +639,11 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   guard, `test/unit/datapath-reap.test.ts` fails on a direct `slirpPid: null` write
   outside `forgetBox`, and extras section AG is the end-to-end reap.
 
+### Historical runtime notes (superseded by Pi)
+
+The next three notes describe retired harnesses, not current implementation instructions.
+Use the Pi rules above and `docs/PI.md` for current runtime work.
+
 * **One runtime, and it is a CLI.** Codex is driven two ways (`codex exec --json` for a
   task and its own TUI for a session), and neither is a server, so the long-running box is
   a keepalive (`keepaliveEntryScript` in `bundle/runtime.ts` — runtime-neutral and shared, so
@@ -670,9 +714,11 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   AK asserts the metadata notice's absence, the level on the wire, and no `web_search` from
   the stub's record, and `test/e2e-provider.sh` asserts the same for a non-DeepSeek
   provider.
+### Current model and sync traps
+
 * **One model, described once.** The model a boot is configured to use is resolved into a single
   `ModelFacts` record (`lib/model-facts.ts`), and every consumer reads that record: the rendered
-  TOML, the catalog Codex parses, `--effort` validation, the boot log and the task report. It
+  Pi model definition, `--effort` validation, the boot log and the task report. It
   used to be described twice by two modules that disagreed — models.dev knew the default model's
   name (`DeepSeek V4.1 Flash`) while the catalog handed to Codex carried the raw id
   (`deepseek-flash`), so one boot used two names for one model. **Do not build a catalog entry or
@@ -703,25 +749,27 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   documented by a test rather than fixed.
 * **A spend ceiling is enforced on the stream, and `abortWhen` is where it lives.**
   `--max-tokens`/`--max-cost` (`cmd/main.ts:ceilingBreach`) are checked *while* a turn runs, by
-  re-reading the runtime's own output with **the same parser the footer uses** — one parser, one
-  accounting, no parallel counter to drift from the number printed. `runInSandbox` grew
+  incrementally consuming stdout with **the same normalizer the footer uses** — one parser, one
+  accounting, independent of truncated diagnostic capture. Text/row retention is bounded, but
+  reported usage keeps accumulating; oversized events fail explicitly. `runInSandbox` grew
   `abortWhen`/`aborted` for it (separate from `timedOut`: "the money ran out" and "the clock ran out"
   are different things to tell a user). Two traps, both measured: the check must fire on a
   **newline**, not on a byte threshold — the first cut gated on 2 KiB, which is larger than a
   runtime's per-request event, so the check that mattered would never have run; and `--max-cost` on a
   model moat cannot price must **warn and carry on**, never pass silently, because an unenforceable
-  ceiling reads as protection. **Codex sends usage only at `turn.completed`**, so under Codex the
-  check can only fire at the end; Claude Code reports per assistant event and is stopped mid-turn.
-  `test/e2e-extras.sh` §AN holds both halves — the control turn's 432 tokens and the killed one at
-  160, with the stub's record showing the killed run made **one** request, not two.
+  ceiling reads as protection. Pi reports cumulative/final usage per message; providers can still
+  withhold it until completion. `createPiEventParser` serves the footer and abort predicate.
+  Model IDs are provider-qualified; `ModelFacts.pricingID` keeps another provider's same-named
+  model from borrowing DeepSeek's price. Budgeted
+  tasks run headless, and `test/e2e-pi.sh` asserts the stopped invocation at the receiving stub.
 
 * **A missing runtime binary is repaired, never re-provisioned.** The agent is root in its
-  own rootfs, so it can `rm /usr/local/bin/codex`, and an environment made by an older
+  own rootfs, so it can `rm /usr/local/bin/pi`, and an environment made by an older
   moat never had it. The next boot copies it into the live rootfs through
   `installRuntimeBinary` **instead of** provisioning: `provisionEnv` starts with
   `fs.rmSync(rootfs)` and takes `/work` with it, measured, and an untracked file was lost
-  that way. `test/unit/runtime-install.test.ts` holds the symlink guard and extras section
-  AJ holds the /work half end to end. The image cache key names the binary and its pinned
+  that way. `test/unit/runtime-install.test.ts` holds the symlink guard and `test/e2e-pi.sh`
+  holds the /work half end to end. The image cache key names the binary and its pinned
   version (`imageCachePath`), so a cached image cannot silently lack one.
 
 * **An interactive boot forwards TERM; nothing else does.** `sandboxEnv` fixes `TERM=dumb`,
@@ -733,10 +781,10 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   capability name from the host environment, not host data, and no whitespace or
   punctuation reaches the box. `test/unit/interactive-term.test.ts` holds both halves,
   including that a check or a batch boot still gets `dumb`, so the environment the other
-  suites measure is unchanged; `test/codex-tui.py` (extras section AL) is the pty proof
+  suites measure is unchanged; `test/pi-tui.py` (extras section AL) is the current Pi pty proof
   that `moat` reaches a live TUI and that leaving it leaves the box running.
 
-* **`test/e2e-codex.sh` is the acceptance suite.** It drives `moat run` through
+* **The retired Codex acceptance measurement.** `test/archive/e2e-codex.sh` It drives `moat run` through
   `stub/mock-responses.mjs`, the Responses wire API, whose event shapes were captured from
   a real DeepSeek stream, and asserts the whole list with no key: cold start, the doctor's
   isolation checks, a mocked turn that fixes the fixture and whose `moat verify` passes,
@@ -849,17 +897,12 @@ Not built, in rough order of how much they matter:
   them today with a clear message instead of an ENOENT for a file that exists; supporting
   them means Buffer paths through hashing, the untracked-file pass and apply's tree reads,
   plus a digest encoding that keeps today's hashes for UTF-8 names.
-* **Tool-set curation.** Under Codex moat does not choose the tool list: the CLI ships its
-  own (`exec_command`, `write_stdin`, `view_image`, `multi_agent`, the goal tools) and
-  moat's box, not a tool filter, is what bounds them. `web_search` is the one entry the
-  config can turn off, and it is off (`web_search = "disabled"`): DeepSeek's API accepts
-  the tool and ignores it (measured live: HTTP 200, no `web_search_call`, the model
-  answering that it cannot search), so advertising it only invites calls that cannot work.
-  The opencode-era plugin had a guard that refused tools outside a curated set; there is
-  no equivalent here, and the docs say so instead of implying one.
+* **Tool-set curation.** Pi can configure active tools and extensions can add their own.
+  Moat does not universally vet this code or treat the tool list as confinement. Hooks,
+  tools and direct extension execution all stay inside the box. Missing package/network
+  dependencies and extension UI waits are compatibility issues to measure.
 
 If you are picking this up: the sandbox, the copy-in/copy-out and the credential broker
-are the parts that matter and they are done. The agent runtime is Codex's CLI, reached
-through one pinned binary: `moat` renders its config, hands it a pty or reads its JSONL
-stream, and owns nothing else about it. Treat that boundary as the seam to change things
-at.
+are the parts that matter. The agent runtime is Pi's CLI, reached through one pinned dependency
+lock. Moat renders sandbox-local configuration, attaches a pty or reads JSONL, and owns lifecycle,
+review and reported-usage limits. Customization executes inside the box; keep that boundary.

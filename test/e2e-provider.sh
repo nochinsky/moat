@@ -96,33 +96,33 @@ say "variable and the model catalog it was handed."
 ( cd "$WORK/project" && $M up --provider acme --model mock-model --egress open --no-detect ) > "$WORK/up.log" 2>&1
 
 # Read the three files back out of the box.
-( cd "$WORK/project" && $M exec -- /bin/sh -c 'cat /root/.codex/config.toml' ) > "$WORK/config.txt" 2>&1
-( cd "$WORK/project" && $M exec -- /bin/sh -c 'cat /root/.codex/models.json' ) > "$WORK/catalog.json" 2>&1
+( cd "$WORK/project" && $M exec -- /bin/sh -c 'cat /root/.pi/agent/settings.json; cat /root/.pi/agent/models.json' ) > "$WORK/config.txt" 2>&1
+( cd "$WORK/project" && $M exec -- /bin/sh -c 'cat /root/.pi/agent/models.json' ) > "$WORK/catalog.json" 2>&1
 say ""
 say "--- the config in the box ---"
 scrub < "$WORK/config.txt" | tee -a "$LOG"
 
-if grep -q 'name = "acme"' "$WORK/config.txt"; then
+if grep -q '"defaultProvider": "acme"' "$WORK/config.txt"; then
   pass "the provider block" "carries the configured provider's label, not DeepSeek's"
 else
   fail "the provider block" "does not name the configured provider"
 fi
-if grep -q "base_url = \"http://127.0.0.1:$PORT/v1\"" "$WORK/config.txt"; then
+if grep -q "\"baseUrl\": \"http://127.0.0.1:$PORT/v1\"" "$WORK/config.txt"; then
   pass "the base URL" "is the configured endpoint"
 else
   fail "the base URL" "is not the configured endpoint"
 fi
-if grep -q 'env_key = "ACME_API_KEY"' "$WORK/config.txt"; then
-  pass "env_key" "is the provider's own variable, not DEEPSEEK_API_KEY"
+if grep -q '"apiKey": "$MOAT_INJECTED_CREDENTIAL"' "$WORK/config.txt"; then
+  pass "apiKey" "references the injected environment variable, never a literal key"
 else
-  fail "env_key" "is not the provider's own variable"
+  fail "apiKey" "does not reference the injected environment variable"
 fi
 if grep -qi 'deepseek' "$WORK/config.txt"; then
   fail "the rendered config" "still names DeepSeek for a non-DeepSeek provider"
 else
   pass "the rendered config" "names no vendor but the configured one"
 fi
-if grep -q 'model = "mock-model"' "$WORK/config.txt"; then
+if grep -q '"defaultModel": "mock-model"' "$WORK/config.txt"; then
   pass "the model" "is the configured one"
 else
   fail "the model" "is not the configured one"
@@ -132,14 +132,15 @@ fi
 # nothing else. It used to be one provider's file, installed byte for byte on every boot.
 if python3 - "$WORK/catalog.json" > "$WORK/catalog-check.txt" 2>&1 <<'PY'
 import json, sys
-cat = json.load(open(sys.argv[1]))
-models = cat.get("models") or []
-assert [m.get("slug") for m in models] == ["mock-model"], "slugs: %s" % [m.get("slug") for m in models]
+text = open(sys.argv[1]).read()
+cat = json.loads(text[text.index('{'):])
+provider = cat["providers"]["acme"]
+assert [m.get("id") for m in provider["models"]] == ["mock-model"]
+assert provider["api"] == "openai-responses"
 assert "deepseek" not in json.dumps(cat).lower(), "the catalog names DeepSeek"
-assert all("base_instructions" in m for m in models), "an entry is missing base_instructions"
 PY
 then
-  pass "the model catalog" "describes the configured model, with the required prompt field and no vendor's metadata"
+  pass "the model catalog" "describes the configured model and protocol, with no other vendor's metadata"
 else
   fail "the model catalog" "$(tail -2 "$WORK/catalog-check.txt" | head -1)"
 fi
@@ -157,7 +158,7 @@ rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 assert rows, "the provider received no request"
 assert all(r.get("model") == "mock-model" for r in rows), "a request carried the wrong model"
 assert all("acme-secret" in (r.get("authorization") or "") for r in rows), "a request carried no key"
-assert all(len(r.get("instructions") or "") > 1000 for r in rows), "a request carried no agent prompt"
+assert all("disposable Linux container" in (r.get("body") or "") for r in rows), "a request carried no moat brief"
 assert not any("Model metadata for" in json.dumps(r) for r in rows), "the metadata advisory is back"
 PY
 then

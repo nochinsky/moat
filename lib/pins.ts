@@ -2,8 +2,8 @@
  * Pinned, verified-against-source constants.
  *
  * Every version here was confirmed against a real artifact, not memory:
- *  - CODEX_VERSION: `npm view @openai/codex version`, and the platform tarball's
- *    sha256 after download.
+ *  - PI_VERSION: the locked npm dependency graph in bundle/pi-runtime/.
+ *    PI_LOCK_SHA256 pins the graph; each tarball has its own SHA-512 SRI.
  *  - ALPINE_VERSION / ALPINE_ROOTFS: `curl -sSI` on the release tarball
  *    returned HTTP 200 with a concrete Content-Length.
  */
@@ -11,83 +11,12 @@
 /** Target triple we provision inside the rootfs. Alpine is musl, so we take the musl build. */
 export const SANDBOX_TRIPLE = "linux-x64-musl"
 
-/**
- * Codex CLI, the agent runtime.
- *
- * 0.155.1 was checked against the real artifact: `npm view @openai/codex version`, and the
- * platform tarball's sha256 after download. The linux platform packages are named
- * `<version>-linux-x64` / `-linux-arm64` and ship **musl** binaries under
- * `vendor/<triple>/bin/codex`, so they run on the Alpine image unmodified — measured, no
- * gcompat, no Node. `docs/HISTORY.md` has the capture.
- */
-export const CODEX_VERSION = "0.155.1"
-
-/**
- * Where the agent runtime's binary lands inside the rootfs.
- *
- * There is exactly one runtime. The image cache key carries this path, so adding a binary to
- * the image without invalidating a cached one cannot happen silently — which is the shape of
- * the bug that once handed an environment an image with no runtime in it at all.
- */
-export const RUNTIME_BINARY = "/usr/local/bin/codex"
-
-/** npm platform package suffix per sandbox triple. Only what moat actually provisions. */
-export const CODEX_PLATFORM_PACKAGE: Record<string, string> = {
-  "linux-x64-musl": "linux-x64",
-  "linux-arm64-musl": "linux-arm64",
-}
-
-/** Target directory inside the tarball per sandbox triple. */
-export const CODEX_VENDOR_TRIPLE: Record<string, string> = {
-  "linux-x64-musl": "x86_64-unknown-linux-musl",
-  "linux-arm64-musl": "aarch64-unknown-linux-musl",
-}
-
-/**
- * Published digests, per platform package. A triple with no digest is **refused** rather
- * than downloaded unverified: an unpinned binary that becomes the agent runtime is the one
- * artefact moat cannot be casual about.
- */
-export const CODEX_TARBALL_SHA256: Record<string, string> = {
-  "linux-x64-musl": "f110cccdd50b0be8130b84f45b3144ea775c233f1c8bd8226da6ee719d63d206",
-}
-
-/**
- * Claude Code, the second agent runtime.
- *
- * The same shape as Codex, and for the same reason: the npm package is a *platform* package
- * with `dependencies: {}` that carries a **musl** build, so it runs on the Alpine image with no
- * gcompat and no Node runtime. Measured, not read from a summary: `npm pack
- * @anthropic-ai/claude-code-linux-x64-musl@2.1.278` produced a tarball whose only executable is
- * `package/claude` (228 MB), and running that file inside a moat sandbox printed
- * `2.1.278 (Claude Code)`.
- *
- * Two differences from Codex matter and are not incidental: the platform packages are named
- * `claude-code-<os>-<arch>[-musl]` (no version segment), and the executable sits at the tarball
- * **root** (`package/claude`) rather than under `vendor/<triple>/bin/`.
- */
-export const CLAUDE_VERSION = "2.1.278"
-
-/** Where the second runtime's binary lands inside the rootfs. */
-export const CLAUDE_BINARY = "/usr/local/bin/claude"
-
-/** npm platform package per sandbox triple. Only what moat actually provisions. */
-export const CLAUDE_PLATFORM_PACKAGE: Record<string, string> = {
-  "linux-x64-musl": "@anthropic-ai/claude-code-linux-x64-musl",
-  "linux-arm64-musl": "@anthropic-ai/claude-code-linux-arm64-musl",
-}
-
-/** The executable's path inside the tarball. A constant, because it is not `vendor/…` here. */
-export const CLAUDE_TARBALL_PATH = "package/claude"
-
-/**
- * Published digests, per platform. A triple with no digest is **refused** rather than downloaded
- * unverified, exactly as for Codex: an unpinned binary that becomes the agent runtime is the one
- * artefact moat cannot be casual about.
- */
-export const CLAUDE_TARBALL_SHA256: Record<string, string> = {
-  "linux-x64-musl": "7f11bbabdd47961ad497b29316df2caee1e8df943bc79dff6971328a73de79c9",
-}
+/** The sole agent runtime. Bump version and the locked dependency graph together. */
+export const PI_VERSION = "1.1.0"
+export const PI_LOCK_SHA256 = "8cacb39393dc7752dfeb6a3e6026e741159bdf4b3b7f43bf500e7a57e39436d0"
+export const PI_INSTALL_DIR = "/opt/moat/pi"
+export const RUNTIME_BINARY = "/usr/local/bin/pi"
+export const PI_CLI = `${PI_INSTALL_DIR}/node_modules/@earendil-works/pi-coding-agent/dist/cli.js`
 
 export const ALPINE_BRANCH = "v3.21"
 export const ALPINE_VERSION = "3.21.4"
@@ -98,6 +27,8 @@ export const ALPINE_ROOTFS_URL =
 /** Packages baked into every rootfs snapshot. Nothing here is a credential. */
 export const PROVISION_PACKAGES = [
   "bash",
+  "nodejs",
+  "npm",
   "git",
   "curl",
   "ripgrep",
@@ -121,7 +52,7 @@ export const NPM_REGISTRY = "https://registry.npmjs.org"
  *
  * It comes from the release directory's `alpine-minirootfs-3.21.4-x86_64.tar.gz.sha256` file,
  * fetched over TLS and then matched against the tarball moat had already downloaded. The other
- * is the runtime binary, pinned in `CODEX_TARBALL_SHA256` above.
+ * is Pi's dependency graph, pinned by PI_LOCK_SHA256 and its tarball SRI values.
  *
  * A download that does not match is rejected rather than unpacked.
  */
@@ -246,12 +177,3 @@ export const EGRESS_ALLOWED_PORTS = [80, 443]
 
 /** Where the agent works inside the sandbox rootfs. */
 export const SANDBOX_WORKDIR = "/work"
-
-/**
- * Which agent CLI a box runs.
- *
- * A small union rather than a string, because a name moat does not ship must be refused rather than
- * fall back to the default — the same discipline as invariant 8, one layer down. The registry that
- * implements each one is `bundle/runtime.ts`.
- */
-export type RuntimeId = "codex" | "claude"

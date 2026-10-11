@@ -19,11 +19,20 @@ import { envPaths } from "../../lib/paths.ts"
  * datapath of moat's own and why `needsSlirp` is false here.
  */
 
-function fixture(): { paths: ReturnType<typeof envPaths>; inner: string } {
+function fixture(t: { after: (fn: () => void) => void }): { paths: ReturnType<typeof envPaths>; inner: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "moat-backend-"))
   const project = path.join(root, "project")
   fs.mkdirSync(project, { recursive: true })
-  const paths = envPaths(project)
+  const previous = process.env.MOAT_HOME
+  process.env.MOAT_HOME = path.join(root, "home")
+  let paths: ReturnType<typeof envPaths>
+  try { paths = envPaths(project) } finally {
+    if (previous === undefined) delete process.env.MOAT_HOME
+    else process.env.MOAT_HOME = previous
+  }
+  // Never clean the caller's ~/.moat/envs: this fixture used to delete that entire directory.
+  assert.ok(paths.rootfs.startsWith(root + path.sep))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   fs.mkdirSync(path.join(paths.rootfs, ".moat"), { recursive: true })
   const inner = path.join(paths.rootfs, ".moat", "entry-1-abc.sh")
   fs.writeFileSync(inner, "#!/bin/sh\necho hi\n", { mode: 0o755 })
@@ -40,8 +49,8 @@ test("a backend moat does not ship is refused by name", () => {
   }
 })
 
-test("the container plan runs the inner script against the rootfs directory", () => {
-  const { paths, inner } = fixture()
+test("the container plan runs the inner script against the rootfs directory", (t) => {
+  const { paths, inner } = fixture(t)
   const plan = containerPlan(paths, inner, { egress: "isolated" })
   assert.ok(plan.args.includes("--rm"))
   // Ephemeral boots are NOT named: moat runs them alongside the long-running box, so a name derived
@@ -69,11 +78,10 @@ test("the container plan runs the inner script against the rootfs directory", ()
   // A container runtime brings the datapath: moat must not start slirp beside it.
   assert.equal(plan.needsSlirp, false)
   assert.doesNotMatch(plan.args.join(" "), /slirp/)
-  fs.rmSync(path.dirname(path.dirname(paths.rootfs)), { recursive: true, force: true })
 })
 
-test("open shares the host's network, and nothing else does", () => {
-  const { paths, inner } = fixture()
+test("open shares the host's network, and nothing else does", (t) => {
+  const { paths, inner } = fixture(t)
   const open = containerPlan(paths, inner, { egress: "open" })
   assert.ok(open.args.includes("--network=host"), "open means the host's namespace, as it does today")
   for (const egress of ["isolated", "filtered"] as const) {
@@ -91,11 +99,10 @@ test("open shares the host's network, and nothing else does", () => {
   assert.ok(containerPlan(paths, inner, { egress: "filtered" }).args.includes("--cap-add=net_admin"))
   assert.ok(!containerPlan(paths, inner, { egress: "isolated" }).args.includes("--cap-add=net_admin"))
   assert.ok(!containerPlan(paths, inner, { egress: "open" }).args.includes("--cap-add=net_admin"))
-  fs.rmSync(path.dirname(path.dirname(paths.rootfs)), { recursive: true, force: true })
 })
 
-test("the box's environment travels as --env, never as the runtime's own", () => {
-  const { paths, inner } = fixture()
+test("nonsecret box settings travel as explicit --env values", (t) => {
+  const { paths, inner } = fixture(t)
   const plan = containerPlan(paths, inner, { env: { MOAT_PROVIDER_BASE_URL: "http://127.0.0.1:1", MOAT_MODEL_ID: "m" } })
   const joined = plan.args.join(" ")
   assert.match(joined, /--env MOAT_PROVIDER_BASE_URL=http:\/\/127\.0\.0\.1:1/)
@@ -103,5 +110,16 @@ test("the box's environment travels as --env, never as the runtime's own", () =>
   // An undefined value is a variable that is not set, not one set to the string "undefined".
   const sparse = containerPlan(paths, inner, { env: { PRESENT: "1", ABSENT: undefined } })
   assert.doesNotMatch(sparse.args.join(" "), /ABSENT/)
-  fs.rmSync(path.dirname(path.dirname(paths.rootfs)), { recursive: true, force: true })
+})
+
+test("container credentials are env references, not world-readable argv values", (t) => {
+  const { paths, inner } = fixture(t)
+  const key = "fixture-secret-not-for-argv"
+  const plan = containerPlan(paths, inner, { env: { MOAT_INJECTED_CREDENTIAL: key, ACME_API_KEY: key, MOAT_MODEL: "acme/m" } })
+  assert.ok(!plan.args.join(" ").includes(key))
+  assert.ok(plan.args.includes("MOAT_INJECTED_CREDENTIAL"))
+  assert.ok(plan.args.includes("ACME_API_KEY"))
+  assert.equal(plan.clientEnv?.MOAT_INJECTED_CREDENTIAL, key)
+  assert.equal(plan.clientEnv?.ACME_API_KEY, key)
+  assert.ok(plan.args.includes("MOAT_MODEL=acme/m"))
 })

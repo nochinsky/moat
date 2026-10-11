@@ -1,16 +1,17 @@
 ==============================================================
 == moat demo: three-way attribution, keyless
 ==============================================================
-a real sandbox, the real pinned Codex driven against the keyless stub, a real git repo, and
+a real sandbox, the real pinned Pi driven against the keyless stub, a real git repo, and
 the real apply path. Nothing here is asserted by the demo itself: the three classifications
 are what sync/apply.ts computed, and the suite checks they are the right three.
 
 moat demo three-way attribution, on a real sandbox, with no API key
 
-→ building a project in /home/user/moat-demo/demo-gate/project
+→ building a project in /tmp/moat-release-fixtures.xgaPBR/demo-gate/project
 → booting a real sandbox (the runtime, the tools and the filesystem are all inside it)
 → the agent is working in the copy, not in your directory
 → fetching the agent's one ref (nothing has touched your files)
+! copy-out: apply: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
 
   what changed   digest 591ad68830b02a5e…  (unchanged)
     agent              app.js
@@ -21,7 +22,7 @@ moat demo three-way attribution, on a real sandbox, with no API key
   touch them and there is nothing to decide. moat only reports what it has to merge.
 → applying the changes you accepted (the conflict is left alone)
 
-  host project /home/user/moat-demo/demo-gate/project
+  host project /tmp/moat-release-fixtures.xgaPBR/demo-gate/project
   digest before any of this   591ad68830b02a5eb9a1a2fc457bec45e75c06371c7eacde1e86713142262f5e
   digest after the agent      591ad68830b02a5eb9a1a2fc457bec45e75c06371c7eacde1e86713142262f5e
     identical: nothing reached your tree until you said so
@@ -34,9 +35,9 @@ moat demo three-way attribution, on a real sandbox, with no API key
   applied 1 change(s); skipped 1: notes.txt
   your notes.txt is exactly as you left it: moat does not write a file you both changed
 
-  build 0.0s  hash before 0.0s  up 1.8s  turn 6.2s  fetch 0.2s  plan 0.0s  apply 0.0s  hash after 0.0s
-  total 8.2s (warm cache; a cold one downloads the image first)
-  left in place: /home/user/moat-demo/demo-gate/project
+  build 0.0s  hash before 0.0s  up 1.2s  turn 4.1s  fetch 0.1s  plan 0.0s  apply 0.0s  hash after 0.0s
+  total 5.4s (warm cache; a cold one downloads the image first)
+  left in place: /tmp/moat-release-fixtures.xgaPBR/demo-gate/project
 
 --- exit 0
   pass  the demo
@@ -51,6 +52,6 @@ moat demo three-way attribution, on a real sandbox, with no API key
   pass  the accepted change
   pass  the warm budget
 
-demo evidence written to /home/user/Projects/moat/test/evidence/demo.txt
+demo evidence written to /home/ektor/Projects/moat/test/evidence/demo.txt
 
 checks passed: 9, failed: 0

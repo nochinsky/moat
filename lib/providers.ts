@@ -28,12 +28,8 @@ export type StoredProvider = {
   baseUrl?: string
   /** Name of the environment variable on the HOST holding the key. Never the value. */
   envVar?: string
-  /**
-   * Codex removed the `chat` protocol in February 2026, so `responses` is the only value the
-   * pinned binary accepts. A stored `chat` is read as `responses` and a warning says so; writing
-   * it would boot a box whose runtime refuses to start. See `docs/SPEC.md` §6.2.
-   */
-  wireApi?: "responses"
+  /** The protocol at the configured endpoint. Pi supports both compatible OpenAI APIs. */
+  wireApi?: "responses" | "chat"
   defaultModel?: string
   /** The reasoning levels this provider's models implement, when they are not moat's default. */
   effortLevels?: string[]
@@ -79,7 +75,8 @@ export function validateStoredProvider(id: string, entry: unknown): StoredProvid
   const record = entry as Record<string, unknown>
   const str = (key: string): string | undefined =>
     typeof record[key] === "string" && (record[key] as string).trim().length > 0 ? (record[key] as string).trim() : undefined
-  const wireApi = record.wireApi === "responses" ? "responses" : undefined
+  if (record.wireApi !== undefined && record.wireApi !== "responses" && record.wireApi !== "chat") return null
+  const wireApi = record.wireApi as "responses" | "chat" | undefined
   const envVar = str("envVar")
   if (envVar !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(envVar)) return null
   const baseUrl = str("baseUrl")
@@ -130,6 +127,8 @@ export function resolveProviderSpec(id: string, store: ProviderStore = readProvi
       envVar: DEEPSEEK.envVar,
       wireApi: "responses",
       defaultModel: DEEPSEEK.defaultModel,
+      effortLevels: ["low", "high", "max"],
+      defaultEffort: DEEPSEEK.defaultEffort,
     }
   }
   const stored = store[id]
@@ -162,7 +161,7 @@ export function assertProviderID(id: string): string {
   if (!PROVIDER_ID.test(id)) {
     throw new Error(
       `invalid provider id "${id}": use 1-64 characters of lowercase letters, digits, dash or underscore ` +
-        "(it becomes a TOML key and a model-string prefix)",
+        "(it becomes a model-string prefix)",
     )
   }
   checkProviderID(id)

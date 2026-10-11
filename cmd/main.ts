@@ -11,7 +11,7 @@ import { probeHost, assertHostUsable, describeHost } from "../lib/host.ts"
 import { PACKAGE_ROOT, ensureMoatHome, envPaths, type EnvPaths, validateLogName } from "../lib/paths.ts"
 import {
   ALPINE_VERSION,
-  CODEX_VERSION,
+  PI_VERSION,
   EGRESS_ALLOWED_PORTS,
   EGRESS_REGISTRY_HOSTS,
   RUNTIME_BINARY,
@@ -23,7 +23,7 @@ import {
 import { CUSTOM_ENDPOINT, DEEPSEEK, FALLBACK_MODELS, checkBaseUrl, isDeepSeekHost, type ProviderSpec } from "../lib/provider.ts"
 import { resolveProvider, type ResolvedProvider } from "../lib/resolve-provider.ts"
 import { catalogModel, formatTokens, loadCatalog, type Catalog } from "../lib/catalog.ts"
-import { catalogEntryFromFacts, catalogPriceForFacts, checkEffort, defaultEffortLevels, describeModelFacts, renderCatalogFromFacts, resolveModelFacts, type ModelFacts } from "../lib/model-facts.ts"
+import { catalogPriceForFacts, checkEffort, defaultEffortLevels, describeModelFacts, resolveModelFacts, type ModelFacts } from "../lib/model-facts.ts"
 import { describeProfiles, PROFILE_IDS, resolveProfiles, BASE_PACKAGES, PROFILES, FULL_PROFILE_ID } from "../sandbox/profiles.ts"
 import { checkDirectoryIsSane, detectChecks, detectProfiles } from "../lib/detect.ts"
 import { runChecks, summarise, type CheckResult } from "../sandbox/checks.ts"
@@ -55,6 +55,8 @@ import {
   destroyEnv,
   ensurePackages,
   installRuntimeBinary,
+  runtimeNeedsRepair,
+  nodeSupportsPi,
   listSnapshots,
   provisionEnv,
   restoreEnv,
@@ -77,16 +79,8 @@ import {
   writeOuterScript,
 } from "../sandbox/launcher.ts"
 import { renderInstructions } from "../bundle/instructions.ts"
-import {
-  codexExecBody,
-  codexTuiBody,
-  describeCodexTurn,
-  installCodexFiles,
-  parseCodexEvents,
-  renderCodexConfig,
-} from "../bundle/codex.ts"
-import { installClaudeFiles } from "../bundle/claude.ts"
-import { DEFAULT_RUNTIME, keepaliveEntryScript, resolveRuntime, type RuntimeId, type RuntimeSpec } from "../bundle/runtime.ts"
+import { installPiFiles, renderPiFiles, piThinkingLevel } from "../bundle/pi.ts"
+import { PI_RUNTIME, keepaliveEntryScript } from "../bundle/runtime.ts"
 import { BACKEND_IDS, DEFAULT_BACKEND, containerRunning, containerRuntime, resolveBackend, type BackendId } from "../sandbox/backend.ts"
 import {
   assertProviderID,
@@ -456,7 +450,7 @@ async function resolveModel(provider: ResolvedProvider, catalog: Catalog | null)
   const useNative = provider.native && (known !== null || !catalog)
   const facts = resolveModelFacts({
     catalog,
-    providerID: useNative ? provider.id : CUSTOM_ENDPOINT.id,
+    providerID: provider.id,
     modelID,
     providerIsNative: useNative,
     effortLevels: provider.effortLevels,
@@ -522,20 +516,27 @@ async function cmdUp(argv: string[]): Promise<number> {
   // Whether a human is actually attached. This decides two things that must
   // agree: whether the agent may ask a question, and what its instructions say
   // about asking. Getting them out of step is how you get a hang.
-  const interactive = process.stdin.isTTY === true && !json && !flag<boolean>(p, "no-follow")
+  const maxTokens = optionalPositiveIntFlag(p, "max-tokens")
+  const maxCost = optionalPositiveFloatFlag(p, "max-cost")
+  if (task.length === 0 && (maxTokens !== undefined || maxCost !== undefined)) {
+    log.fail("spend ceilings apply to a headless task: moat run --max-tokens 10000 \"task\"")
+  }
+  const bounded = maxTokens !== undefined || maxCost !== undefined
+  const interactive = process.stdin.isTTY === true && !json && !flag<boolean>(p, "no-follow") && !bounded
+  if (bounded && process.stdin.isTTY) log.info("spend ceiling requested; running the task headless so moat can monitor Pi's usage stream")
 
   const fresh = flag<boolean>(p, "fresh") ?? false
   const sync = flag<boolean>(p, "sync") ?? false
   // --timeout is seconds everywhere. Validating it here means a typo fails before
   // provisioning rather than after the boot.
   optionalPositiveIntFlag(p, "timeout")
-  // --effort is validated before provisioning, because a level Codex would silently drop is the
+  // --effort is validated before provisioning, because silently dropping a requested level is the
   // bug class this project keeps finding. The list is the *provider's* when the configured
   // provider declares one, and moat's default ladder otherwise — models.dev describes whether a
   // model reasons, not which levels it implements, so the ladder is the one fact neither catalog
   // can supply. Resolving the provider here (rather than a few hundred lines later, where it is
   // resolved anyway) is what lets the check name the provider's own levels.
-  const effortFlag = flag<string>(p, "effort")
+  const effortFlag = flag<string>(p, "effort") ?? state?.reasoningEffort
   if (effortFlag !== undefined) {
     let ladder = defaultEffortLevels()
     try {
@@ -598,16 +599,7 @@ async function cmdUp(argv: string[]): Promise<number> {
   // The binary can be missing: the agent can delete it, and an environment provisioned by an
   // older moat never had it. It is put back into the live rootfs below, not by re-provisioning
   // — provisioning deletes the rootfs first and would take the agent's work with it.
-  // Which agent runtime this boot uses. `--runtime` sets it, an existing environment keeps the one
-  // it was created with, and a new one gets codex. Resolved *before* provisioning: a typo has to
-  // fail in under a second rather than after a multi-minute image build.
-  let runtime: RuntimeSpec
-  try {
-    runtime = resolveRuntime(flag<string>(p, "runtime") ?? state?.runtime ?? DEFAULT_RUNTIME)
-  } catch (error) {
-    return log.fail((error as Error).message)
-  }
-  const runtimeId: RuntimeId = runtime.id
+  const runtime = PI_RUNTIME
 
   // Which backend boots the box. `--backend` sets it, an existing environment keeps the one it was
   // created with, and a new one gets the unshare path that needs nothing installed. Resolved here,
@@ -627,7 +619,7 @@ async function cmdUp(argv: string[]): Promise<number> {
       )
     }
   }
-  const runtimePresent = fs.existsSync(path.join(paths.rootfs, runtime.binary))
+  const runtimePresent = !runtimeNeedsRepair(paths)
   const needsProvision = fresh || !envExists(paths) || !state
 
   // Where the provider lives decides the default network policy, so resolve it
@@ -814,13 +806,12 @@ async function cmdUp(argv: string[]): Promise<number> {
 
   if (needsProvision) {
     log.step(
-      `provisioning sandbox image (alpine ${ALPINE_VERSION} + ${runtime.id} ${runtime.version}` +
+      `provisioning sandbox image (alpine ${ALPINE_VERSION} + ${runtime.label} ${runtime.version}` +
         `${resolvedProfiles.profiles.length > 0 ? ` + ${resolvedProfiles.profiles.join(", ")}` : ""})`,
     )
     const provision = await provisionEnv(paths, {
       useImageCache: !fresh,
       packages: resolvedProfiles.packages,
-      runtime: runtimeId,
       backend,
     })
     report.provisionMs = provision.totalMs
@@ -840,8 +831,15 @@ async function cmdUp(argv: string[]): Promise<number> {
   // back here rather than by re-provisioning: provisioning deletes the rootfs first and would
   // take /work with it, and a copy into /usr/local/bin touches nothing the agent owns.
   if (!needsProvision && !runtimePresent) {
-    log.step(`installing the ${runtimeId} runtime into this environment`)
-    await installRuntimeBinary(paths, runtimeId)
+    if (state && sandboxAlive(state, paths)) {
+      await stopSandbox(state.pid!, { backend: state.backend, startTime: state.pidStart, envId: paths.id, slirpPid: state.slirpPid, slirpStart: state.slirpStart })
+      state = await forgetBox(paths, state)
+    }
+    log.step("installing the pi runtime into this environment (preserving /work)")
+    await ensurePackages(paths, ["nodejs", "npm"], { backend, upgrade: !nodeSupportsPi(paths) })
+    if (!fs.existsSync(path.join(paths.rootfs, "usr/bin/node"))) await ensurePackages(paths, ["nodejs"], { backend, resetFirst: true, upgrade: true })
+    if (!nodeSupportsPi(paths)) log.fail("Pi needs Node 22.19+ inside the image; the in-place package upgrade did not provide it. /work was retained.")
+    await installRuntimeBinary(paths)
   }
 
   // The recorded pid is only meaningful if it is still the process moat started.
@@ -1044,7 +1042,7 @@ ${command}
   // --- provider, model, catalog ---------------------------------------------
   const catalog = flag<boolean>(p, "refresh") ? await loadCatalog({ refresh: true }) : await loadCatalog()
   const baseUrl = provider.baseUrl
-  // One resolution, one record: the rendered config, the catalog Codex parses, this report and
+  // One resolution, one record: the Pi model definition, this report and
   // the `--effort` check below all read these facts, so nothing describes the model differently
   // from anything else.
   const facts = await resolveModel(provider, catalog)
@@ -1092,12 +1090,12 @@ ${command}
       // is indexed by, and what `onboard` writes.
       provider: provider.id,
       baseUrl,
-      model: facts.id,
+      model: facts.label,
       ttlSeconds,
       // The key goes into the box under the name this provider's own client expects: the
       // variable the user configured, or the default provider's name, or (for an endpoint that
       // declared none) moat's own name, which the rendered provider block references.
-      targetEnvVars: [...credentialVarNames(provider), ...(runtimeId === "claude" ? ["ANTHROPIC_API_KEY"] : [])],
+      targetEnvVars: credentialVarNames(provider),
     })
     if (!credential && interactive) {
       // At a terminal, do not explain what is missing: ask for it. The key is
@@ -1108,9 +1106,9 @@ ${command}
         credential = mint({
           provider: provider.id,
           baseUrl,
-          model: facts.id,
+          model: facts.label,
           ttlSeconds,
-          targetEnvVars: [...credentialVarNames(provider), ...(runtimeId === "claude" ? ["ANTHROPIC_API_KEY"] : [])],
+          targetEnvVars: credentialVarNames(provider),
         })
       }
     }
@@ -1154,6 +1152,7 @@ ${command}
   // The boot the agent is told about is rendered from this, and it is the same object the
   // config and the brief below are written from: an input that is declared but never read is
   // how the brief came to describe a boot that was not the one being made.
+  const proxyInUse = egressProxy && egress !== "open" && backend !== "container"
   const briefInput = {
     provider: provider.label,
     model: facts.label,
@@ -1163,6 +1162,7 @@ ${command}
     hasCredential: Boolean(credential),
     canAsk: interactive,
     egress,
+    egressProxy: proxyInUse,
     checks: projectChecks.map((c) => ({ label: c.label, command: c.command })),
   }
   // Fail before booting, not after. Asking for a task with no model means the
@@ -1183,51 +1183,26 @@ ${command}
   // --- boot -----------------------------------------------------------------
   const entry = keepaliveEntryScript()
 
-  // Both files are rendered on every boot and written through the rootfs guard: the agent's
-  // home is inside the box, the config is what decides that Codex asks for no approvals and
-  // adds no second sandbox next to moat's, and the brief is what tells the agent where it is.
-  // A stale one from a cached image or an environment created days ago is a bug that already
-  // happened once, so neither is left to provisioning.
-  // The provider block, the model id and the catalog are all rendered from the resolved
-  // provider. Every one of these used to be DeepSeek's: the config key was the literal
-  // `deepseek-moat`, the block's `name` was the literal `"DeepSeek"`, the key variable was
-  // `DEEPSEEK_API_KEY`, and the catalog was the vendored DeepSeek file — so a box pointed at
-  // any other endpoint was described to itself and to the runtime as DeepSeek.
+  const effortProblem = effortFlag === undefined ? null : checkEffort(effortFlag, facts.effortLevels)
+  if (effortProblem) log.fail(effortProblem)
+  const reasoningEffort = effortFlag ?? facts.defaultEffort
   const renderedFiles = {
-    config: renderCodexConfig({
-      model: facts.id,
-      providerID: provider.codexProviderID,
-      providerLabel: provider.label,
+    ...renderPiFiles({
+      facts,
+      providerID: provider.id,
       baseURL: baseUrl,
       wireApi: provider.wireApi,
-      // The key's variable is the provider's own when it declares one, and moat's injected name
-      // otherwise. With --no-credential there is nothing to read, so no env_key is written at all
-      // rather than pointing Codex at a name nothing sets.
-      envKey: provider.envVar ?? (credential ? "MOAT_INJECTED_CREDENTIAL" : undefined),
-      reasoningEffort: effortFlag,
-      contextWindow: facts.contextWindow,
-      maxOutputTokens: facts.maxOutputTokens,
+      envKey: credential ? "MOAT_INJECTED_CREDENTIAL" : undefined,
+      reasoningEffort,
     }),
-    // The catalog describes the model this boot configured, from the same facts the config
-    // above was rendered from — so the box never advertises a name, a context window or a
-    // reasoning ladder belonging to a different model. `displayName` used to be the raw id
-    // here while models.dev knew the real one: two descriptions of one model in one boot.
-    catalog: renderCatalogFromFacts(facts),
-    // Codex reads a global brief from its home directory (default ~/.codex, or CODEX_HOME if
-    // that is set). Measured through the recording proxy: the content arrives in the request
-    // body wrapped as AGENTS.md instructions, not in the top-level instructions field.
     brief: renderInstructions({ ...briefInput, workspace: SANDBOX_WORKDIR }),
   }
-  // Each runtime owns the files it reads: Codex wants a TOML config, a rendered catalog and a
-  // brief; Claude wants the brief alone, and its policy travels as arguments (bundle/claude.ts).
-  if (runtimeId === "claude") installClaudeFiles(paths.rootfs, { brief: renderedFiles.brief })
-  else installCodexFiles(paths.rootfs, renderedFiles)
+  installPiFiles(paths.rootfs, renderedFiles)
 
   // The proxy's policy, built from the same names the nftables ruleset is built from — but paired
   // with the ports actually in play. The provider keeps the port its base URL uses, which the
   // ruleset cannot express at all (its accept rule is `tcp dport { 80, 443 }` for every allowed
   // address), and an `--egress-allow` entry may name one.
-  const proxyInUse = egressProxy && egress !== "open" && backend !== "container"
   if (proxyInUse) {
     proxyAllow.push(...proxyPolicyFor(providerHost(baseUrl), baseUrl, egressAllow))
   } else if (egressProxy) {
@@ -1248,9 +1223,7 @@ ${command}
     // The box is *told* to use the proxy, because nothing else can: MOAT_SANDBOX_ENV accepts only
     // `MOAT_` names, so a variable the agent's own HTTP client reads has to be managed here.
     ...(proxyInUse ? proxyEnv() : {}),
-    // Claude Code reads its endpoint from its own variable, not from moat's provider block, so the
-    // base URL travels under both names. The credential's variable is handled at the mint.
-    ...(runtimeId === "claude" ? { ANTHROPIC_BASE_URL: baseUrl } : {}),
+    MOAT_REASONING_EFFORT: piThinkingLevel(reasoningEffort),
     ...(credential ? toSandboxEnv(credential) : {}),
   }
   // The escape hatch is spread first and the managed values last, and it may not
@@ -1314,7 +1287,9 @@ ${command}
     egress,
     egressAllow,
     egressProxy: proxyInUse,
-    runtime: runtimeId,
+    agentVersion: PI_VERSION,
+    wireApi: provider.wireApi,
+    reasoningEffort,
     backend,
     slirpPid: sandbox.slirp?.pid ?? null,
     slirpStart: sandbox.slirp?.startTime ?? null,
@@ -1344,7 +1319,7 @@ ${command}
   // its own ephemeral boot of this rootfs, so "ready" is the entry script's own
   // readiness line (`waitForSandboxReady`, checked above) rather than a port.
   // --timeout is SECONDS and is the budget for one of those turns, not for this boot.
-  log.step(`sandbox booted (pid ${sandbox.pid}); the codex runtime has no server to wait for`)
+  log.step(`sandbox booted (pid ${sandbox.pid}); Pi runs inside the box, with no server`)
   const bootMs = Date.now() - bootStart
 
   // The value is only ever meant to exist in the sandbox process environment.
@@ -1376,18 +1351,16 @@ ${command}
 
   // `moat up "fix the tests"` and `moat run "fix the tests"` are the same thing: bringing up a
   // box you are not going to use is not a step worth having. At a terminal, a task opens
-  // Codex's own TUI with the task as its first message, so it can be steered while it runs;
+  // Pi's own TUI with the task as its first message, so it can be steered while it runs;
   // a batch run drives one turn and reports it.
   const showOutput = flag<boolean>(p, "show-output") ?? false
   const timeoutSeconds = optionalPositiveIntFlag(p, "timeout")
   // The spend ceilings. `--max-tokens` needs no price and works for any model; `--max-cost` only
   // means something when moat can price the model, and says so rather than passing silently.
-  const maxTokens = optionalPositiveIntFlag(p, "max-tokens")
-  const maxCost = optionalPositiveFloatFlag(p, "max-cost")
   // Resolved here rather than inside the runner: this is where the boot's own `ModelFacts` and
   // the loaded catalog are both in hand, so the price belongs to the model that actually ran.
   const catalogPrice = catalogPriceForFacts(facts, catalog)
-  if (maxCost !== undefined && !computeCost(facts.id, { input: 1, cacheRead: 0, output: 0, reasoning: 0 }, new Date(), catalogPrice).known) {
+  if (maxCost !== undefined && !computeCost(facts.pricingID, { input: 1, cacheRead: 0, output: 0, reasoning: 0 }, new Date(), catalogPrice).known) {
     log.warn(
       `--max-cost cannot be enforced: no price is known for ${facts.id}, so moat cannot price the tokens the runtime reports.\n` +
         "  Use --max-tokens, which needs no price, or --timeout for a wall-clock bound.",
@@ -1395,6 +1368,7 @@ ${command}
   }
   const runOptions = {
     env: sandboxEnvVars,
+    pricingID: facts.pricingID,
     backend,
     maxTokens,
     maxCost,
@@ -1414,7 +1388,7 @@ ${command}
   }
   if (task.length > 0 && interactive) return await runInteractive(paths, runtime.tuiBody(task), runOptions)
   if (task.length > 0) {
-    return await runAgentTask(paths, runtime.execBody(task), { ...runOptions, timeoutSeconds, showOutput, json, runtime })
+    return await runAgentTask(paths, runtime.execBody(task), { ...runOptions, timeoutSeconds, showOutput, json })
   }
   if (interactive) return await runInteractive(paths, runtime.tuiBody(), runOptions)
 
@@ -1459,7 +1433,7 @@ function printUpSummary(
   log.info(`  env        ${paths.dir}`)
   // No server, so no endpoint and no password to report: the TUI and the tasks run in the
   // box's own rootfs, and the credential is what the box talks to the provider with.
-  log.info(`  runtime    ${state.runtime} (${state.model ?? "default model"}): \`moat\` opens its TUI`)
+  log.info(`  runtime    pi (${state.model ?? "default model"}): \`moat\` opens its TUI`)
   log.info(`  workspace  ${SANDBOX_WORKDIR} (inside the sandbox)`)
   if (state.credential) {
     log.info(`  credential ${state.credential.provider} ${state.credential.fingerprint} expires ${state.credential.expiresAt}`)
@@ -2352,7 +2326,7 @@ async function cmdStatus(argv: string[]): Promise<number> {
       `status       ${booting ? log.cyan(`booting (pid ${booting.pid}, ${bootAgeSeconds(booting)}s in)`) : running ? log.green("running") : log.yellow("stopped")}`,
     )
     // No server, no endpoint and no password: the version that matters is the runtime's.
-    log.info(`codex        ${CODEX_VERSION} / alpine ${state!.alpineVersion}`)
+    log.info(`pi           ${state!.agentVersion ?? "not installed; run moat up"} / alpine ${state!.alpineVersion}`)
     if (state!.pid) log.info(`pid          ${state!.pid}`)
     if (state!.model) log.info(`model        ${state!.model}${state!.provider ? ` (${state!.provider})` : ""}`)
     if (state!.branch) log.info(`branch       ${state!.branch}`)
@@ -2793,11 +2767,10 @@ function doctorCredentialVars(state: EnvState): string[] {
     id: providerId,
     envVar: spec?.envVar,
     label: spec?.label ?? providerId,
-    codexProviderID: providerId,
     baseUrl: state.providerBaseUrl ?? spec?.baseUrl ?? "",
     wireApi: spec?.wireApi ?? "responses",
     native: providerId === DEEPSEEK.id,
-    modelID: state.model?.split("/").pop() ?? "",
+    modelID: state.model?.slice(providerId.length + 1) ?? "",
   })
 }
 
@@ -2825,10 +2798,8 @@ function safeProviderSpec(id: string): ProviderSpec | undefined {
  * Providers moat can configure from its own knowledge, so `provider add <id>` needs no lookup.
  *
  * Deliberately short. The gate is not popularity — it is whether the endpoint serves the
- * **Responses** API, because the pinned runtime speaks nothing else (`--wire-api chat` is refused
- * for that reason). OpenRouter and OpenAI publish Responses endpoints; most OpenAI-compatible
- * providers only expose chat completions and are reachable through `--base-url` alone, where moat
- * makes no claim about them.
+ * Responses API by default. Other compatible providers are explicitly configurable with their
+ * endpoint and `--wire-api chat` when needed; Pi supports both compatible OpenAI protocols.
  *
  * Nothing here is invented: the endpoint, the key variable and the display name come from the
  * models.dev catalog, which moat already fetches and caches. A provider in this list whose
@@ -2978,16 +2949,8 @@ async function cmdProvider(argv: string[]): Promise<number> {
   if (filledEnvVar !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(filledEnvVar)) {
     log.fail(`--env-var must be an environment variable name (letters, digits, underscore): ${filledEnvVar}`)
   }
-  // `chat` was accepted until it turned out Codex had removed the protocol: the pinned binary
-  // exits with `wire_api = "chat" is no longer supported`, so a provider configured that way
-  // booted a box whose runtime would not start. The value is refused here, with the reason,
-  // rather than written into a config that cannot load.
-  if (wireApi !== undefined && wireApi !== "responses") {
-    log.fail(
-      wireApi === "chat"
-        ? `--wire-api chat: Codex removed the chat protocol in February 2026, so the pinned runtime refuses to start with it.\n  Use --wire-api responses (the default) and an endpoint that speaks the Responses API.`
-        : `--wire-api must be "responses": ${wireApi}`,
-    )
+  if (wireApi !== undefined && wireApi !== "responses" && wireApi !== "chat") {
+    log.fail(`--wire-api must be "responses" or "chat": ${wireApi}`)
   }
 
   const store = readProviderStore()
@@ -3132,12 +3095,12 @@ Diagnostics
 
 Options that apply to up/run
   --model ID             DeepSeek model id; see: moat models
-  --effort LEVEL         reasoning effort: low, high or max, the levels the
-                         vendored DeepSeek model catalog declares. Renders Codex's
-                         model_reasoning_effort; default is the catalog's own.
+  --effort LEVEL         Pi thinking level, constrained by the configured provider.
+                         DeepSeek: low, high or max (default high).
   --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project
+  --wire-api WHICH       responses (default) or chat (Chat Completions)
   --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek.
                          Must be an http:// or https:// URL with a host: a
                          scheme-less localhost:11434/v1 has no host to allow.
@@ -3156,8 +3119,8 @@ Options that apply to up/run
                          box cannot reach it there.
   --egress-allow HOSTS   extra hosts the filtered allowlist permits, comma-separated
   --timeout SECONDS      how long one turn may take (default 2700). Seconds, always.
-  --no-follow            run the task headless instead of opening Codex's TUI
-  --show-output          print each tool's output as it runs
+  --no-follow            run the task headless instead of opening Pi's TUI
+  --show-output          include completed tools' output in the report
   --json                 machine-readable output on stdout
 
 Options that apply to every command
@@ -3171,6 +3134,7 @@ Docs: docs/SPEC.md, docs/VERIFICATION.md
 `
 
 type AgentRunOptions = {
+  pricingID: string
   env: Record<string, string>
   /**
    * What the catalog says this model costs, when the model is not one of DeepSeek's.
@@ -3190,8 +3154,6 @@ type AgentRunOptions = {
   timeoutSeconds?: number
   showOutput?: boolean
   json?: boolean
-  /** Which runtime produced the stream, so the footer prices and describes the right one. */
-  runtime: RuntimeSpec
   /** Stop the turn once the stream has reported this many tokens. Needs no price. */
   maxTokens?: number
   /** Stop the turn once the stream has reported this much spend. Only when the price is known. */
@@ -3201,21 +3163,20 @@ type AgentRunOptions = {
 /**
  * The spend ceiling, evaluated against the stream so far.
  *
- * It re-reads the runtime's own output rather than counting anything on the side, so the number it
- * compares is the same number the footer will print — one parser, one accounting. The bytes-cost
- * of doing this repeatedly is bounded by `runInSandbox`'s throttle.
+ * One incremental normalizer supplies this snapshot and the footer. Re-reading a truncated raw
+ * capture would lose earlier requests on a long invocation and quietly weaken its budget.
  */
-function ceilingBreach(output: string, opts: AgentRunOptions): string | null {
+function ceilingBreach(turn: ReturnType<typeof PI_RUNTIME.parse>, opts: AgentRunOptions): string | null {
   if (opts.maxTokens === undefined && opts.maxCost === undefined) return null
-  const usage = opts.runtime.parse(output).usage
+  const usage = turn.usage
   if (usage === null) return null
   const tokens = usage.input + usage.cached + usage.output + usage.reasoning
   if (opts.maxTokens !== undefined && tokens >= opts.maxTokens) {
     return `the turn reached its token ceiling: ${tokens} tokens reported, limit ${opts.maxTokens}`
   }
-  if (opts.maxCost !== undefined) {
+  if (opts.maxCost !== undefined && (!turn.models?.length || turn.models.every((id) => id === opts.env.MOAT_MODEL))) {
     const cost = computeCost(
-      opts.env.MOAT_MODEL_ID ?? "",
+      opts.pricingID,
       { input: usage.input, cacheRead: usage.cached, output: usage.output, reasoning: usage.reasoning },
       new Date(),
       opts.catalogPrice,
@@ -3228,13 +3189,15 @@ function ceilingBreach(output: string, opts: AgentRunOptions): string | null {
 }
 
 /**
- * Drive one Codex turn and report it.
+ * Drive one Pi invocation and report it.
  *
- * Everything the host sees is the JSONL stream, parsed by `parseCodexEvents`; its usage
+ * Everything the host sees is Pi's JSONL stream; its usage
  * fields are normalised into the shape `lib/pricing.ts` prices, so the footer is the same
  * arithmetic as every other cost moat reports.
  */
 async function runAgentTask(paths: EnvPaths, body: string, opts: AgentRunOptions): Promise<number> {
+  const parser = PI_RUNTIME.createParser()
+  let warnedModelChange = false
   const result = await runInSandbox(paths, body, {
     env: opts.env,
     egress: opts.egress,
@@ -3243,22 +3206,33 @@ async function runAgentTask(paths: EnvPaths, body: string, opts: AgentRunOptions
     egressRules: opts.egressRules,
     egressProxy: opts.egressProxy,
     timeoutMs: (opts.timeoutSeconds ?? 2700) * 1000,
-    // The ceiling is checked *while* the turn runs, against the usage the runtime has already
-    // reported. It cannot be exact for every runtime — Codex only sends usage at `turn.completed`,
-    // so for Codex the check can only fire at the end — but where the protocol reports as it goes
-    // (Claude Code, on every assistant event) the box is killed before the next request is paid for.
-    abortWhen: (output) => ceilingBreach(output, opts),
+    onOutput: (chunk, stream) => { if (stream === "stdout") parser.feed(chunk) },
+    // Stop on reported usage. Providers that report only at completion cannot be cut off earlier.
+    abortWhen: () => {
+      const turn = parser.snapshot()
+      if (opts.maxCost !== undefined && turn.models?.some((id) => id !== opts.env.MOAT_MODEL) && !warnedModelChange) {
+        warnedModelChange = true
+        log.warn("--max-cost cannot price the observed model switch; use --max-tokens or provider-side spend limits")
+      }
+      return parser.problem() ?? ceilingBreach(turn, opts)
+    },
   })
-  const turn = opts.runtime.parse(result.output)
+  const turn = parser.finish()
+  if (result.credentialExpired) turn.errors.push("the credential expired; the sandbox agent was stopped")
+  if (result.code !== 0 && turn.errors.length === 0 && !result.aborted && !result.timedOut) {
+    turn.errors.push(`Pi exited ${result.code}: ${stripAnsi(result.output).slice(-2048)}`)
+  }
+  const code = result.code || (turn.errors.length > 0 || result.aborted ? 1 : 0)
   if (opts.json) {
-    log.emit({ ...turn, code: result.code, timedOut: result.timedOut })
-    return result.code
+    log.emit({ ...turn, code, timedOut: result.timedOut, aborted: result.aborted, credentialExpired: result.credentialExpired })
+    return code
   }
   for (const tool of turn.tools) {
     const failed = tool.status === "completed" && (tool.exitCode ?? 0) !== 0
     const marker = tool.status === "started" ? log.dim("…") : failed ? log.red("✗") : log.green("✓")
-    const label = tool.kind === "command_execution" ? "" : log.dim(tool.kind + " ")
+    const label = tool.kind === "command_execution" ? "" : log.dim(stripAnsi(tool.kind) + " ")
     log.info(`  ${marker} ${label}${log.dim(stripAnsi(tool.detail.split("\n")[0] ?? "").slice(0, 120))}`)
+    if (opts.showOutput && tool.output) log.info(stripAnsi(tool.output).trimEnd())
   }
   for (const message of turn.messages) log.info(`\n${stripAnsi(message).trimEnd()}`)
   for (const error of turn.errors) log.warn(stripAnsi(error))
@@ -3271,20 +3245,21 @@ async function runAgentTask(paths: EnvPaths, body: string, opts: AgentRunOptions
       reasoning: turn.usage.reasoning,
       cacheRead: turn.usage.cached,
     }
-    const modelID = opts.env.MOAT_MODEL_ID ?? ""
-    const cost = computeCost(modelID, usage, new Date(), opts.catalogPrice)
+    const modelID = opts.env.MOAT_MODEL ?? ""
+    const cost = computeCost(opts.pricingID, usage, new Date(), opts.catalogPrice)
     const tokens = usage.input + usage.cacheRead + usage.output + usage.reasoning
-    const money = cost.known ? `  ${log.dim(`${formatUSD(cost.usd)} ${cost.peak ? "peak" : "off-peak"}`)}` : ""
-    log.info(`  ${log.dim(`${tokens} tokens`)}${money}  ${log.dim(opts.runtime.describe(turn))}`)
+    const oneModel = !turn.models?.length || turn.models.every((id) => id === modelID)
+    const money = cost.known && oneModel ? `  ${log.dim(`${formatUSD(cost.usd)} ${cost.peak ? "peak" : "off-peak"}`)}` : `  ${log.dim("cost unknown")}`
+    log.info(`  ${log.dim(`${tokens} tokens`)}${money}  ${log.dim(PI_RUNTIME.describe(turn))}`)
   } else if (turn.tools.length > 0) {
-    log.info(`  ${log.dim(opts.runtime.describe(turn))}`)
+    log.info(`  ${log.dim(PI_RUNTIME.describe(turn))}`)
   }
   if (result.timedOut) log.warn(`the turn was still running after ${opts.timeoutSeconds ?? 2700}s and was killed`)
   if (result.aborted) {
     log.warn(`${result.aborted}\n  the sandbox was killed; set a higher ceiling, or none, to let a turn finish.`)
     return 1
   }
-  return result.code
+  return code
 }
 /**
  * The package's own version, read rather than repeated.
@@ -3311,8 +3286,11 @@ async function main(): Promise<number> {
   // 0700 before anything reads or writes there.
   ensureMoatHome()
   const argv = process.argv.slice(2)
-  const command = argv[0]
-  const rest = argv.slice(1)
+  const first = argv[0]
+  // `moat --profile node --no-credential` configures the normal interactive entry point.
+  const implicitUp = first?.startsWith("-") && !["--help", "-h", "--version"].includes(first)
+  const command = implicitUp ? "up" : first
+  const rest = implicitUp ? argv : argv.slice(1)
 
   if (!command) {
     // `moat` on its own is the product: open a session in whatever directory you
@@ -3326,7 +3304,7 @@ async function main(): Promise<number> {
     return 0
   }
   if (command === "--version" || command === "version") {
-    process.stdout.write(`moat ${VERSION} (codex ${CODEX_VERSION}, alpine ${ALPINE_VERSION})\n`)
+    process.stdout.write(`moat ${VERSION} (pi ${PI_VERSION}, alpine ${ALPINE_VERSION})\n`)
     return 0
   }
   // Parse once before dispatch: this is where a flag the command does not read is

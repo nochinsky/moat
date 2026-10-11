@@ -133,7 +133,7 @@ run $MOAT up --model "$MODEL" --profile "$PROFILE" --credential-env "$KEYVAR"
 say ""
 say "== 3. the agent does the work"
 # ---------------------------------------------------------------------------
-say "the turn streams Codex's own events; --show-output adds each tool's output as it runs"
+say "the turn streams Pi's own events; --show-output adds each tool's output as it runs"
 run timeout "$TIMEOUT" $MOAT run --show-output \
   "npm test is failing. Run it, find the bug in src/slugify.js, and fix it so the whole suite passes. Then run npm install and verify the CLI works end to end. Commit everything to the branch you are on, and report the final test output."
 
@@ -237,20 +237,20 @@ fi
 
 # ---------------------------------------------------------------------------
 say ""
-say "== 7. a second turn in the same environment, without booting it again"
+say "== 7. a second turn in the same environment, without copying it again"
 # ---------------------------------------------------------------------------
-say "one runtime, so this is the same box and the same /work: a second task must not"
-say "need another boot, and the file it writes must be there to read afterwards."
+say "the same persistent rootfs and /work; each task runs in its own ephemeral boot."
+say "No re-copy is needed, and the file must be there to read afterwards."
 say ""
-run timeout "$TIMEOUT" $MOAT run "Create a file named CODEX-LIVE.txt in the working tree whose contents are exactly: codex live. Do not modify any other file. Then finish."
+run timeout "$TIMEOUT" $MOAT run "Create a file named PI-LIVE.txt in the working tree whose contents are exactly: pi live. Do not modify any other file. Then finish."
 say ""
 say "--- the file, read by moat, and what the work tree looks like now ---"
-SECOND_TURN=$($MOAT exec -- /bin/sh -c 'cat /work/CODEX-LIVE.txt; echo; git -C /work status --short | head -4' 2>&1)
+SECOND_TURN=$($MOAT exec -- /bin/sh -c 'cat /work/PI-LIVE.txt; echo; git -C /work status --short | head -4' 2>&1)
 printf '%s\n' "$SECOND_TURN" | tee -a "$LOG"
-if printf '%s' "$SECOND_TURN" | grep -qx "codex live"; then
-  pass "a second turn works in the same box" "CODEX-LIVE.txt reads 'codex live' in the box that ran the first turn"
+if printf '%s' "$SECOND_TURN" | grep -qx "pi live"; then
+  pass "a second turn works in the same box" "PI-LIVE.txt reads 'pi live' in the rootfs that ran the first turn"
 else
-  fail "a second turn works in the same box" "CODEX-LIVE.txt was not there or not the right contents: $SECOND_TURN"
+  fail "a second turn works in the same box" "PI-LIVE.txt was not there or not the right contents: $SECOND_TURN"
 fi
 
 # ---------------------------------------------------------------------------

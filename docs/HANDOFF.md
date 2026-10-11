@@ -1,5 +1,8 @@
 # Handoff: picking moat up on a new machine
 
+> **Historical handoff.** The runtime/cold-cache readings below predate the Pi-only migration.
+> Read current `PROGRESS.md`, `PI.md` and `AGENTS.md` before using this as implementation guidance.
+
 You are the next agent on this project. This document is a **point-in-time handoff**, rewritten after the
 egress phase — the previous one was written when the work moved from a WSL2 host to this Arch Linux one,
 and it is in `docs/archive/` if you want to see what has and has not moved since. Read this, then read

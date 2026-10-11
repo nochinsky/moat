@@ -5,22 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
 
-/**
- * `--wire-api chat` is refused, because the pinned runtime will not start with it.
- *
- * Codex removed the chat protocol in February 2026 and the pinned binary says so plainly:
- *
- *     Error loading config.toml: `wire_api = "chat"` is no longer supported.
- *     How to fix: set `wire_api = "responses"` in your provider config.
- *
- * moat accepted the value anyway and wrote it into the rendered config, so a provider configured
- * with it produced a box whose agent could not load its own config. Found by measuring rather than
- * by reading: the value was accepted, the boot succeeded, and only running the runtime inside the
- * box showed the failure.
- *
- * Run through the real CLI rather than by importing a helper, because the validation lives in the
- * command and the thing being checked is what a user sees when they type it.
- */
+/** Pi supports both compatible OpenAI protocols. Verify the user-facing CLI and stored intent. */
 const REPO = path.join(import.meta.dirname, "..", "..")
 const CLI = path.join(REPO, "cmd", "main.ts")
 
@@ -44,23 +29,16 @@ function tempHome(t: { after: (fn: () => void) => void }): string {
   return home
 }
 
-test("--wire-api chat is refused with the reason, not written into a config", (t) => {
+test("--wire-api chat is stored explicitly, not silently normalized to responses", (t) => {
   const home = tempHome(t)
   const result = runProvider(
     ["add", "chatty", "--base-url", "https://example.test/v1", "--wire-api", "chat"],
     home,
   )
 
-  assert.notEqual(result.code, 0, "the CLI accepted a wire API the pinned runtime rejects")
-  assert.match(result.out, /chat protocol in February 2026/, "the refusal does not say why")
-  assert.match(result.out, /--wire-api responses/, "the refusal does not name the way out")
-
-  // The control: it must not have been written either. A refusal that still saves the provider
-  // would leave a box that boots and then dies, which is the failure this guards.
-  const store = path.join(home, "providers.json")
-  if (fs.existsSync(store)) {
-    assert.ok(!/chatty/.test(fs.readFileSync(store, "utf8")), "the refused provider was stored anyway")
-  }
+  assert.equal(result.code, 0, result.out)
+  const store = JSON.parse(fs.readFileSync(path.join(home, "providers.json"), "utf8"))
+  assert.equal(store.chatty.wireApi, "chat")
 })
 
 test("--wire-api responses is accepted, and an unknown value is refused", (t) => {

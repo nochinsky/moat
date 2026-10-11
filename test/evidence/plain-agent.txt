@@ -3,5 +3,5 @@
 --- stdout ---
 [moat] boot: mounts are up, network next
 [moat] boot: entering the sandbox
-9de1330 agent: add agent.txt
+dc3ba54 agent: add agent.txt
 --- stderr ---

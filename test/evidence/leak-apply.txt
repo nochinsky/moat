@@ -13,4 +13,4 @@
     hunk 1  a new file
       + DEEPSEEK_API_KEY=moat-e2e-scoped-credential-8c1d4e
 
-✓ applied 2 change(s) to /home/user/moat-demo/leakscan
+✓ applied 2 change(s) to /tmp/moat-release-fixtures.xgaPBR/leakscan

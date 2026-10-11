@@ -6,11 +6,11 @@
 project      /home/user/moat-demo/egress-project
 env          /home/user/.moat/envs/16a525996d67
 status       running
-codex        0.155.1 / alpine 3.21.4
-pid          324710
+pi           1.1.0 / alpine 3.21.4
+pid          62375
 model        deepseek/deepseek-flash (deepseek)
-branch       moat-session-2026-09-22-22-33
+branch       moat-session-2026-10-11-18-57
 egress       filtered (own network namespace, default-deny allowlist)
-rootfs       298.7 MiB
+rootfs       225.2 MiB
 snapshots    none
-branches     main, moat-session-2026-09-22-22-33*
+branches     main, moat-session-2026-10-11-18-57*

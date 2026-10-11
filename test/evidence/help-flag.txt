@@ -50,12 +50,12 @@ Diagnostics
 
 Options that apply to up/run
   --model ID             DeepSeek model id; see: moat models
-  --effort LEVEL         reasoning effort: low, high or max, the levels the
-                         vendored DeepSeek model catalog declares. Renders Codex's
-                         model_reasoning_effort; default is the catalog's own.
+  --effort LEVEL         Pi thinking level, constrained by the configured provider.
+                         DeepSeek: low, high or max (default high).
   --profile LIST         node,python,cc,go,rust,java,db,net,browser,cli,full
                          (auto-detected from the project if you do not say)
   --no-detect            do not guess a profile from the project
+  --wire-api WHICH       responses (default) or chat (Chat Completions)
   --base-url URL         point at any OpenAI-compatible endpoint instead of DeepSeek.
                          Must be an http:// or https:// URL with a host: a
                          scheme-less localhost:11434/v1 has no host to allow.
@@ -74,8 +74,8 @@ Options that apply to up/run
                          box cannot reach it there.
   --egress-allow HOSTS   extra hosts the filtered allowlist permits, comma-separated
   --timeout SECONDS      how long one turn may take (default 2700). Seconds, always.
-  --no-follow            run the task headless instead of opening Codex's TUI
-  --show-output          print each tool's output as it runs
+  --no-follow            run the task headless instead of opening Pi's TUI
+  --show-output          include completed tools' output in the report
   --json                 machine-readable output on stdout
 
 Options that apply to every command

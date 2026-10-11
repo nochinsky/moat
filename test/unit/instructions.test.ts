@@ -39,6 +39,15 @@ test("the brief tells the agent what the box can actually reach", () => {
   assert.doesNotMatch(open, /allowlist/)
 })
 
+test("the brief does not promise complete host protection or default-filter containment", () => {
+  const proxied = brief({ egressProxy: true })
+  assert.match(proxied, /no direct route or working resolver/)
+  assert.doesNotMatch(proxied, /DNS snapshot/)
+  assert.doesNotMatch(brief(), /Nothing you do here can damage|host's own\s+network is unreachable|Every tool call runs/)
+  assert.match(brief(), /not a confidentiality boundary/)
+  assert.match(brief(), /extensions may add tools or policies/)
+})
+
 test("the brief describes the box it is in, not a fuller one", () => {
   // Two inputs were declared and never read: `hasCredential` and the profile list.
   // Measured: a boot against a local endpoint (which needs no key) was told to

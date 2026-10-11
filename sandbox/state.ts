@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { ENV_ID, envPathsForId, envsDir, partPath, type EnvPaths } from "../lib/paths.ts"
-import type { EgressMode, RuntimeId } from "../lib/pins.ts"
+import type { EgressMode } from "../lib/pins.ts"
 import type { BackendId } from "./backend.ts"
 
 export type EnvStatus = "provisioning" | "stopped" | "running"
@@ -61,8 +61,11 @@ export type EnvState = {
   /** Extra hosts the filtered allowlist permits, beyond the defaults. */
   egressAllow: string[]
   egressProxy: boolean
-  /** Which agent CLI this environment runs. One at a time, recorded so every later command agrees. */
-  runtime: RuntimeId
+  /** Pi version installed by moat. Missing/null means an older environment needs an in-place upgrade. */
+  agentVersion: string | null
+  /** The configured wire protocol, kept independently of the harness. */
+  wireApi?: "responses" | "chat"
+  reasoningEffort?: string
   /** How the box is started: `unshare`, or a container runtime. Recorded so every command agrees. */
   backend: BackendId
   /** slirp4netns pid for an isolated environment, and its identity. */
@@ -102,7 +105,7 @@ export function initialState(p: EnvPaths, versions: { alpine: string }): EnvStat
     egress: "open",
     egressAllow: [],
     egressProxy: false,
-    runtime: "codex",
+    agentVersion: null,
     backend: "unshare",
     slirpPid: null,
     slirpStart: null,
@@ -160,7 +163,9 @@ export function readState(p: EnvPaths): EnvState | null {
     // them in rather than making every reader defend against undefined.
     if (raw.pidStart === undefined) raw.pidStart = null
     if (raw.egress === undefined) raw.egress = "open"
-    if (raw.runtime === undefined) raw.runtime = "codex"
+    // Ignore the old runtime selector without dropping any project/state data.
+    delete (raw as EnvState & { runtime?: unknown }).runtime
+    if (raw.agentVersion === undefined) raw.agentVersion = null
     if (raw.backend === undefined) raw.backend = "unshare"
     if (raw.egressAllow === undefined) raw.egressAllow = []
     if (raw.egressProxy === undefined) raw.egressProxy = false

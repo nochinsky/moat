@@ -8,4 +8,4 @@
     hunk 1  a new file
       + made inside the box
 
-✓ applied 1 change(s) to /home/user/moat-demo/plain
+✓ applied 1 change(s) to /tmp/moat-release-fixtures.xgaPBR/plain

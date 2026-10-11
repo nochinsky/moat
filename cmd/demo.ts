@@ -24,7 +24,7 @@ import { PACKAGE_ROOT } from "../lib/paths.ts"
  *
  * This runs that end to end, keyless, with no configuration: it writes a small project to a
  * scratch directory, makes one change of its own (standing in for you), boots a real sandbox,
- * drives the **real pinned Codex** against the same keyless stub the test suites use so the
+ * drives the **real pinned Pi** against the same keyless stub the test suites use so the
  * agent makes real edits with real tools, then plans and applies the result.
  *
  * Two rules this file follows, because breaking either would make the demo a puppet show:
@@ -144,7 +144,7 @@ async function freePort(): Promise<number> {
 /**
  * Say what a cold cache is about to download, before it does it.
  *
- * A first run pulls a ~250 MB Alpine rootfs and the pinned Codex binary. Saying so up front is
+ * A first run pulls Alpine packages and Pi's pinned dependency graph. Saying so up front is
  * the difference between "this is doing something" and "this is hanging", and the demo is the
  * one command a person runs before they trust the tool with a repository.
  */
@@ -165,7 +165,7 @@ function coldCacheNotice(): string[] {
   }
   const missing: string[] = []
   if (!filled("images")) missing.push("the Alpine rootfs image (~250 MB, plus the packages the image bakes in)")
-  if (!filled("codex")) missing.push("the pinned Codex runtime (~140 MB tarball, verified against its digest in lib/pins.ts)")
+  if (!filled("pi")) missing.push("the pinned Pi runtime and its digest-verified npm dependency graph")
   return missing
 }
 

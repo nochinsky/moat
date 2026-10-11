@@ -4,10 +4,11 @@
 [moat] boot: mounts are up, network next
 [moat] boot: entering the sandbox
 in-sandbox /opt after restore:
+moat
 --- /work preserved? ---
 package.json
 src
 test
 --- agent commit still present? ---
-5a05dd4 initial project
+b14e655 initial project
 --- stderr ---

@@ -1,5 +1,10 @@
 # The egress datapath: what is measured, and what is open
 
+> **Measurement context:** the Codex/Claude client spikes below predate the Pi-only migration.
+> They remain historical evidence, not current agent commands. Current Pi proxy behavior is
+> checked by `test/e2e-pi.sh` and recorded in `test/evidence/pi-summary.txt`; current policy is in
+> [`SPEC.md` §7](SPEC.md#7-isolation-and-networking). `--egress-proxy` is implemented but opt-in.
+
 moat's egress policy today is a network namespace, the pinned slirp4netns datapath, and an nftables
 default-deny allowlist over addresses resolved at boot. `AGENTS.md` names its three remaining holes
 — the allowlist is an IP snapshot (a rotating CDN address falls out until the next `moat up`), it

@@ -15,7 +15,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - name: typecheck (the source, and the tests that exercise it)
         run: npm run typecheck
       - name: unit tests (no sandbox required, so these run in CI)
@@ -57,7 +57,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor,
       # which is the one kernel feature moat cannot work without. GitHub runners
       # have passwordless sudo, so lift the restriction and then check whether
@@ -76,23 +76,25 @@ jobs:
           echo "max_user_namespaces: $(cat /proc/sys/user/max_user_namespaces 2>/dev/null || echo n/a)"
           echo "apparmor_restrict:   $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
           echo "inside a container:  $( [ -e /.dockerenv ] && echo yes || echo no )"
+          probe="$(mktemp -d)"
+          trap 'rmdir "$probe"' EXIT
           echo "--- unshare --user --map-root-user --mount (full output) ---"
-          unshare --user --map-root-user --mount sh -c 'mount -t tmpfs none /tmp/.probe && echo PROBE_OK' || true
+          unshare --user --map-root-user --mount sh -c 'mount -t tmpfs none "$1" && echo PROBE_OK' sh "$probe" || true
           echo "---"
-          if unshare --user --map-root-user --mount sh -c 'mount -t tmpfs none /tmp/.probe' 2>/dev/null; then
+          if unshare --user --map-root-user --mount sh -c 'mount -t tmpfs none "$1"' sh "$probe" 2>/dev/null; then
             echo "available=true" >> "$GITHUB_OUTPUT"
             echo "user namespaces: available, running the full suite"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Sandbox suite skipped::This runner cannot create unprivileged user namespaces, which moat requires and will not work around. The build, CLI and catalog checks above still ran; run 'bash test/e2e-codex.sh' on a real machine for the sandbox suite."
+            echo "::warning title=Sandbox suite skipped::This runner cannot create unprivileged user namespaces, which moat requires and will not work around. The build, CLI and catalog checks above still ran; run 'bash test/e2e-pi.sh' on a real machine for the sandbox suite."
           fi
       - name: list the toolchain profiles
         run: ./cmd/main.ts profiles
       - name: model catalog (network)
         run: ./cmd/main.ts models deepseek
-      - name: acceptance suite, keyless (Codex against the Responses stub)
+      - name: acceptance suite, keyless (Pi against the compatible API stub)
         if: steps.userns.outputs.available == 'true'
-        run: bash test/e2e-codex.sh
+        run: bash test/e2e-pi.sh
       - name: secondary suite (snapshots, apply, credential expiry)
         if: steps.userns.outputs.available == 'true'
         run: bash test/e2e-extras.sh
@@ -103,6 +105,6 @@ jobs:
         if: always() && steps.userns.outputs.available == 'true'
         uses: actions/upload-artifact@v5
         with:
-          name: evidence
+          name: evidence-${{ matrix.os }}
           path: test/evidence/
           if-no-files-found: warn

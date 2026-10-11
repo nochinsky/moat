@@ -17,7 +17,7 @@
 # Environment (the action's inputs land here):
 #   MOAT            how to invoke the CLI            (default: npx -y moat-sandbox)
 #   TASK            the prompt for the agent         (required)
-#   MOAT_ARGS       extra flags, e.g. "--profile node --runtime claude"
+#   MOAT_ARGS       extra flags, e.g. "--profile node --wire-api chat"
 #   OUTPUT_DIR      where the logs and the review go (default: ./moat-ci)
 #
 # Exit status:

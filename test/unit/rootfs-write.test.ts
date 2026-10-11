@@ -5,7 +5,7 @@ import path from "node:path"
 import { test } from "node:test"
 
 import type { EnvPaths } from "../../lib/paths.ts"
-import { installCodexFiles } from "../../bundle/codex.ts"
+import { installPiFiles } from "../../bundle/pi.ts"
 import { outerScript } from "../../sandbox/launcher.ts"
 import {
   chmodRootfsDir,
@@ -31,7 +31,7 @@ function withDirs(t: { after: (fn: () => void) => void }): { rootfs: string; out
   return { rootfs, outside }
 }
 
-const CODEX_FILES = { config: 'model = "deepseek-flash"\n', brief: "the brief\n" }
+const PI_FILES = { config: '{}\n', catalog: '{"providers":{}}\n', brief: "the brief\n" }
 
 test("the per-boot write refuses to go through a symlink the agent planted", (t) => {
   // Measured before the guard: the agent replaces a directory in its own rootfs with a
@@ -39,16 +39,16 @@ test("the per-boot write refuses to go through a symlink the agent planted", (t)
   // boot, with no error anywhere.
   const { rootfs, outside } = withDirs(t)
   fs.mkdirSync(path.join(rootfs, "root"), { recursive: true })
-  fs.symlinkSync(outside, path.join(rootfs, "root", ".codex"))
+  fs.symlinkSync(outside, path.join(rootfs, "root", ".pi"))
 
-  assert.throws(() => installCodexFiles(rootfs, CODEX_FILES), /symlink/)
+  assert.throws(() => installPiFiles(rootfs, PI_FILES), /symlink/)
   assert.deepEqual(fs.readdirSync(outside), [])
 })
 
 test("a normal boot writes both files, inside the rootfs", (t) => {
   const { rootfs } = withDirs(t)
-  installCodexFiles(rootfs, CODEX_FILES)
-  for (const target of ["root/.codex/config.toml", "root/.codex/AGENTS.md"]) {
+  installPiFiles(rootfs, PI_FILES)
+  for (const target of ["root/.pi/agent/settings.json", "root/.pi/agent/AGENTS.md", "root/.pi/agent/models.json"]) {
     assert.equal(fs.existsSync(path.join(rootfs, target)), true, target)
   }
 })

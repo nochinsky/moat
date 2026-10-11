@@ -3,10 +3,8 @@ import { SANDBOX_WORKDIR, type EgressMode } from "../lib/pins.ts"
 /**
  * The agent's environment brief.
  *
- * Written to `/root/.codex/AGENTS.md` inside the sandbox, the global instruction file of the
- * runtime in the box, and never to the project. The user's repository is copied in
- * byte-for-byte and moat does not add files to it. Measured through the recording proxy: Codex
- * sends the file's content in the request body, wrapped as AGENTS.md instructions.
+ * Written to `/root/.pi/agent/AGENTS.md`, never to the project. Pi discovers this global
+ * brief and the copied project's own instructions. The provider-side stub checks delivery.
  *
  * Why this exists: an agent that does not know it is in a disposable box wastes
  * turns being cautious, and an agent that does not know the network is open will
@@ -30,6 +28,7 @@ export type InstructionsInput = {
    * is open will retry a dropped download instead of reporting the allowlist.
    */
   egress: EgressMode
+  egressProxy?: boolean
   /** The commands this project uses to check itself, if moat found any. */
   checks: { label: string; command: string }[]
   workspace: string
@@ -48,16 +47,21 @@ export function renderInstructions(input: InstructionsInput): string {
   work, and say clearly in your final message what you assumed and what you would
   have asked.`
   const network =
-    input.egress === "filtered"
+    input.egressProxy
+      ? `- **You have the network through a destination allowlist proxy.** Use the supplied
+  HTTP_PROXY/HTTPS_PROXY variables. There is no direct route or working resolver
+  in this box; the proxy resolves admitted destinations. Report a refused host or
+  port rather than trying to bypass the policy. Install dependencies from the
+  admitted package registries.`
+      : input.egress === "filtered"
       ? `- **You have the network, narrowed to an allowlist.** The package registries
   (\`apk add\`, \`npm install\`, \`pip install\`, \`go get\`, \`cargo add\`, Maven Central)
-  and GitHub are reachable; every other address is dropped, and the host's own
-  network is unreachable. The allowlist is a DNS snapshot taken when the box
+  and GitHub are admitted; other addresses are dropped. Host loopback is closed. The allowlist is a DNS snapshot taken when the box
   booted, so a host that rotates its address can time out: report that rather
   than retrying. If a tool is missing, install it from those registries.`
       : input.egress === "isolated"
         ? `- **You have the network**, unrestricted outbound access through a userspace
-  datapath, though the host's own network is not reachable. If a tool is missing,
+  datapath, with host loopback closed. If a tool is missing,
   install it rather than working around it.`
         : `- **You have the network**, unrestricted. \`apk add\`, \`npm install\`, \`pip install\`,
   \`go get\`, \`cargo add\`, \`git clone\`, \`curl\` all work. If a tool is missing,
@@ -66,8 +70,9 @@ export function renderInstructions(input: InstructionsInput): string {
     input.egress === "open"
       ? `- The sandbox shares the host's network position. Do not probe the host's
   services; there is nothing there for you and it is not your machine.`
-      : `- The sandbox has its own network namespace: the host's loopback and its
-  services are not reachable from here, by design. Do not try to reach them.`
+      : `- The sandbox has its own network namespace and host loopback is closed.
+  Non-loopback host addresses may still be reachable through allowed egress.
+  Do not probe the host's services or try to bypass the chosen network policy.`
   // The credential paragraph is conditional because the boot that has no credential
   // is a real one: a local --base-url endpoint needs none. Telling an agent to guard
   // a key it does not have is a false statement about its environment, and the
@@ -108,13 +113,15 @@ not shared with anything else. You are root here.
 ## What that means for how you work
 
 - **Move freely.** Install anything, delete anything, break anything in
-  \`${input.workspace}\`. Nothing you do here can damage the host: it holds the
-  authoritative copy of the project, and the user decides separately whether to
-  take your work.
+  \`${input.workspace}\`. File edits affect the sandbox's copy, not the user's working
+  tree. The host holds the authoritative copy and the user explicitly decides
+  whether to take your work. This is not a confidentiality boundary or a separate
+  kernel; do not attack the host or exfiltrate project data.
 ${network}
 ${askParagraph}
-- **You will not be interrupted by permission prompts.** Every tool call runs. If
-  a tool is not in your toolset, it is not available at all, find another way.
+- **The built-in tools need no permission prompts.** Act without asking for approval.
+  Project extensions may add tools or policies; if a tool is unavailable or denied,
+  find another way and report the limitation. Do not wait for unattended UI input.
 
 ## Environment
 
@@ -168,7 +175,7 @@ ${databases}
 
 - No permission prompts, do not ask for approval, just act.
 - No one to ask, decide and document.
-- Nothing you can break permanently, the host copy is authoritative.
+- Project edits stay in the sandbox until the user explicitly applies them.
 
 ## Limits of this box
 

@@ -2,14 +2,14 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-project      /home/user/moat-demo/project
-env          /home/user/.moat/envs/18620c2c4f34
+project      /tmp/moat-release-fixtures.xgaPBR/project
+env          /home/user/.moat/envs/9a1031ce3457
 status       stopped
-codex        0.155.1 / alpine 3.21.4
+pi           1.1.0 / alpine 3.21.4
 model        moat/mock-model (moat)
-branch       moat-session-2026-09-22-22-36
+branch       moat-session-2026-10-11-18-59
 egress       open (host network namespace)
-rootfs       400.1 MiB
+rootfs       261.0 MiB
 credential   moat sha256:7726b438889c7f57 expires in -6s (EXPIRED: the box stops at this deadline)
 snapshots    before-extras
-branches     main, moat-session-2026-09-22-22-36*
+branches     main, moat-session-2026-10-11-18-58, moat-session-2026-10-11-18-59*

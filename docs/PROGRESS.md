@@ -1,180 +1,112 @@
 # Where the project stands
 
-moat is built. This page is the short version: what runs, what is green, and what is still open.
-The session-by-session record, including every defect found and how each was settled, is in
-[`archive/PROGRESS.md`](archive/PROGRESS.md), and the phase program that produced it is in
-[`archive/PROGRAM.md`](archive/PROGRAM.md). Both are history; neither tells you what to do next.
+moat now uses **Pi only**. The owner explicitly chose to replace both Codex and Claude Code rather
+than add another runtime. The sandbox/copy/review architecture is retained; harness customization
+belongs to Pi inside the box. **0.1.0 is the Pi-only release candidate**, with matching package and
+root-lock versions. A tag is not publication; check the release workflow and npm registry before
+calling it released. 0.0.x packages use the previous harnesses.
 
-`AGENTS.md` remains the contract for anyone changing the code. `SPEC.md` is what the tool
-promises. `VERIFICATION.md` is the evidence, and its closing table lists what is *not* verified.
+`AGENTS.md` and [`SPEC.md`](SPEC.md) are the contracts. [`PI.md`](PI.md) explains customization.
+[`VERIFICATION.md`](VERIFICATION.md) distinguishes current captures from historical measurements;
+[`TRUST.md`](TRUST.md) derives verdicts from suite output. `archive/` is history, not instructions.
 
-## Where things live
+## Implemented
 
-`docs/archive/` holds two documents that were once live instructions and are now records: the
-build journal, and the six-phase program that produced the tool. They are worth reading for the
-reasoning behind a decision — the journal is where every defect and measurement is written down —
-and they are not a to-do list.
+* One pinned Pi CLI, no runtime selector, no Codex/Claude adapters or vendored Codex prompt.
+* Complete SHA-256-pinned npm dependency lock; dependency tarballs verified with SHA-512 SRI.
+  No dependency lifecycle scripts execute on the host. Node/npm are in the Alpine base image.
+* Sandbox-local Pi settings/model definitions/global brief, rewritten through the rootfs guard
+  each boot. Credentials remain environment-only; no host Pi configuration/auth is imported.
+* Project-local extensions, skills, prompts, settings and package declarations are Pi's
+  customization surface, copied with the project and executed inside the sandbox.
+* Pi's own TUI on a pty; JSON-mode tasks with normalized tool rows, messages, errors and usage.
+  A failed Pi response returns nonzero even when Pi's process returns zero.
+* Reported-usage ceilings use the same parser as the footer; budgeted tasks run headless.
+  Cache reads, cumulative streaming usage, reasoning, compaction and reported nested calls are
+  handled without summing snapshots twice. Incremental accounting survives raw-log truncation;
+  provider-qualified models cannot borrow another provider's prices.
+* Both compatible OpenAI protocols, Responses and Chat Completions. Model ids containing slashes,
+  protocol, endpoint and effort persist. Keyless requests suppress the SDK's dummy Bearer header
+  through a small in-box hook; this is asserted at the receiving stub.
+* Existing sandboxes upgrade/repair in place rather than destroying `/work`; the published 0.0.3
+  rootfs upgrade is tested with a real old binary, recorded baseline and sandbox branch. Installed
+  Node alone is not enough: APK metadata below 22.19 triggers an in-place upgrade, never host
+  execution of the sandbox's Node binary.
+* Archive extraction stages outside the agent-writable rootfs; directory replacement/rollback
+  uses the rootfs guard's held parent descriptor, with a tested parent-swap attack.
+* Rootfs reads verify the opened descriptor after a parent-swap race; capped reads remain bounded
+  if the file grows. FIFOs/devices are refused without blocking the host.
+* Credential expiry bounds ephemeral tasks/TUIs through a host-owned timer as well as the keepalive.
+  Container plans avoid credential values in argv and give ephemeral boots unique names for removal;
+  actual Pi container execution is still unverified here.
+* A pre-existing backend unit fixture that deleted shared `~/.moat/envs` is isolated to a temp
+  `MOAT_HOME`, with a containment assertion before filesystem operations.
+* A proxy readiness race exposed during regression testing is fixed: a visible veth is not a
+  ready network; the boot waits for the actual listener before a short command can exit.
+* The composite CI action now resolves the real script and returns the produced `review.json`.
+  Its declared shell body is exercised, not just the script it was meant to call. The hosted-CI
+  namespace probe now creates its mount target so capable runners are not falsely skipped.
+* Release notes, supported-platform requirements and a bounded current-Pi provider smoke gate
+  are documented. The tag workflow checks and publishes the same compiled tarball.
 
-`SPEC.md` is the contract and `VERIFICATION.md` is the evidence, so both are long by design:
-one states what each command promises, the other quotes the raw output that shows it. The two
-files worth reading first are this page and `../README.md`.
+## Validation
 
-The build journal used to sit at `docs/PROGRESS.md` and grew to 1,285 lines of session history
-doubling as a status page. It now lives in `archive/PROGRESS.md`, and this page took its place.
-Nothing was discarded; the defects, the measurements and the reasoning behind each decision are
-all still there.
+Current Pi migration checks are reproduced with:
 
-## State
-
-All five phases passed their gates, and the half of the egress policy that was left open is now built:
-a proxy moat owns, in a namespace of its own, decides egress by name and port rather than by a boot-time
-address snapshot, resolves names for boxes that no longer resolve anything, refuses out loud, and — under
-`--egress-proxy` — is the **only** path out, because the box's own datapath is not started at all. That
-closes the three holes `AGENTS.md` named for an IP allowlist. It is not the default: it needs `ip(8)` on
-the host, and the default's property is that it runs on a bare host. `docs/EGRESS.md` §7 has every
-measurement and every wrong turn.
-
-The suites run green on `main`:
-
-| suite | result |
-| --- | --- |
-| `npm run test:unit` | run it — the count is not copied here (a hand-maintained number drifted from 243 to 278 before anyone noticed; `docs/TRUST.md` is generated from the evidence for exactly this reason) |
-| `test/e2e-codex.sh` | acceptance list, all criteria passed |
-| `test/e2e-extras.sh` | run it — the number written here had drifted from 50 to 53 before anyone noticed, so the suite prints its own count into `test/evidence/extras.txt` |
-| `test/e2e-egress.sh` | all egress checks passed |
-| `test/e2e-provider.sh` | 9 checks, 0 failed |
-| `test/e2e-demo.sh` | 9 checks, 0 failed |
-| `test/e2e-review.sh` | 21 checks, 0 failed |
-
-`test/evidence/` holds the raw output from the last clean run of all of them. Regenerate it by
-running the suites; never edit it by hand.
-
-## Published
-
-`moat-sandbox` is on npm, currently **0.0.3**, with a provenance record. Note the gap: the egress phase
-described under *State* — the proxy moat owns — is on `main` and **not in that release**. A release is a
-tag, so publishing it is `npm version minor --no-git-tag-version`, a commit, and `git tag v0.0.4 && git push
-origin main v0.0.4`; nothing is published without that, deliberately. A release is a tag: the
-`v*` tag runs `.github/workflows/release.yml`, which typechecks, tests, checks the tag against
-`package.json`, and publishes over GitHub OIDC — no token anywhere. The installed command is
-`moat`. Both `moat` and `moat-cli` were already taken by unrelated packages, which is why the
-package name and the command differ.
-
-```bash
-npx -y moat-sandbox demo     # the first thing a stranger should run
+```sh
+npm run typecheck
+npm run test:unit
+bash test/e2e-pi.sh
+python3 test/pi-tui.py
+bash test/pi-legacy.sh
+bash test/pi-package.sh
+bash test/e2e-provider.sh
+bash test/e2e-demo.sh
+bash test/e2e-review.sh
+bash test/e2e-egress.sh
+bash test/e2e-extras.sh
+npm pack
+# With a spend-capped DEEPSEEK_API_KEY already in the launching shell:
+bash test/pi-live.sh
 ```
 
-A cold start downloads about 560 MB (the Alpine rootfs and the pinned Codex binary) and takes
-roughly a minute; later runs are under ten seconds. Verified by running `npx` from a clean
-directory with an empty cache, no API key, and no repository — a real boot, a real three-way
-classification, and a conflict left alone. That is Phase 5's gate, measured, and the demo says
-which artifacts it is about to fetch before it fetches them.
+Read the generated trust page and captures for verdicts rather than a copied test count here.
+The Pi acceptance suite measures a real in-box shell/edit/commit task, a project extension,
+provider-side credential/effort/brief delivery, immutable host files after fetch, runtime repair,
+terminal escape stripping, API failure reporting, a request-stopping token ceiling, long-stream
+accounting beyond diagnostic capture, ephemeral credential expiry and keyless Chat Completions. The pty check measures Pi's actual model screen, not just an escape byte.
 
-Three things had to change for that to be true, and none of them are visible from inside the
-repository: a published package cannot ship TypeScript (Node refuses to strip types under
-`node_modules`, so `bin` points at `dist/`), the package root sits at a different depth in the
-build than in the source, and `moat demo` read two files from `test/`, which the tarball does not
-carry. `AGENTS.md` has a *Packaging* section covering all three, because each was a trap that
-looked fine until the artifact was installed.
+No real paid model turn is part of the migration's keyless gate. `test/pi-live.sh` is the separate,
+bounded real-DeepSeek gate; until its current capture exists, paid-provider Pi behavior is unverified.
+Native provider-specific protocols,
+arbitrary extensions/packages/MCP servers and their billing behavior are not universally validated.
+A Pi cold-cache startup benchmark and container-backend Pi turn are not implied by the namespace
+suite. Historical runtime and cold-start measurements are preserved, not relabeled as Pi readings.
 
-## Open
+## Open decisions and limitations
 
-**Whether the proxy becomes the default egress policy.** It is built and verified, and it makes the
-policy the only path instead of the route well-behaved clients take — but it needs `ip(8)` on the host and
-`moat up` refuses without it, naming the tool, while the default's whole property is that it runs on a bare
-host. So flipping it means either accepting that requirement or degrading silently to the ruleset when `ip`
-is absent, and a policy that differs by host is worse than one that is chosen. This is the owner's call,
-recorded in `AGENTS.md` so that it reads as a decision rather than an omission.
+* **Default egress:** filtered nftables remains the default; the separately enforced resolving
+  proxy is explicit because it needs host `ip(8)`. No silent fallback makes policy depend on host
+  capabilities. DNS/IP snapshot/agent-modifiable rules remain limits of unproxied filtered mode.
+* **Credentials and spend:** no provider-side per-boot scoped credential or aggregate boot/session/
+  day budget. Stream ceilings cannot cover unreported extension requests or stop a provider before
+  it reports usage. Cache writes are currently priced as input, not at a separate write rate.
+* **Resource isolation:** namespaces share the host kernel; no moat-managed CPU/memory/disk quotas.
+  The microVM path has historical measurements, not a production backend.
+* **Project integration:** accepted-subset checks test coherence, not intent/correctness. Unborn Git
+  copy-in and non-UTF-8 path support retain their documented limitations.
+* **Customization compatibility:** installed package state and network/tool dependencies must be
+  available inside the box. Offline startup does not silently install missing packages. Extensions
+  can add approval dialogs or UI waits; unattended workflows must be designed accordingly.
 
-One other item, and it is a question rather than a task:
+The earlier phase program, ACP experiments and Codex/Claude measurements live in `archive/` and
+`RUNTIMES.md`. They are not pending implementation tasks or supported runtime switches.
 
-**The ACP permission question.** Phase 4's spike showed that the official Codex ACP adapter drives
-moat's pinned binary over stdio with no port, which answers the question that mattered most. It
-could not show whether `session/request_permission` is answerable under moat's configuration,
-because the adapter never asked. This only matters if ACP is ever adopted, and the recommendation
-in `archive/PROGRESS.md` is not to adopt it in this program.
+## Release
 
-Everything else that was open has been closed:
-
-- **Publishing** is done, and it is a tag: `npm version patch --no-git-tag-version`, commit, then
-  `git tag v0.0.3 && git push origin main v0.0.3`. `.github/workflows/release.yml` publishes over
-  GitHub OIDC, so there is no token to store and every release carries provenance. `AGENTS.md` has
-  the details, including the one-time publisher setup on npmjs.com.
-- **The cold cache is measured**, not argued: see *Published* above.
-- **Package metadata is current as of 0.0.3**, which carries the corrected keywords and the
-  `SECURITY.md`, `CONTRIBUTING.md` and `RUNTIMES.md` that 0.0.2 predated.
-
-**The cold-cache half of Phase 5's gate.** The tarball install and `moat demo` were measured with
-a warm cache. A genuinely cold one means roughly 560 MB of downloads, and it was skipped rather
-than run. The download path is untouched by packaging and the tarball carries no data files, so a
-cold start should fetch exactly what a warm-cache source run does. That reasoning has not been
-tested, and it is the cheapest open item to close.
-
-**The ACP permission question.** Phase 4's spike showed that the official Codex ACP adapter drives
-moat's pinned binary over stdio with no port, which answers the question that mattered most. It
-could not show whether `session/request_permission` is answerable under moat's configuration,
-because the adapter never asked. This only matters if ACP is ever adopted, and the recommendation
-in `archive/PROGRESS.md` is not to adopt it in this program.
-
-## Not built, and not claimed
-
-Listed in `AGENTS.md` under *Where this is going*: provider-side credential scoping, cost ceilings,
-byte paths for filenames that are not valid UTF-8, tool-set curation, and the v1 microVM — which is the
-one that would hold the next boundary, and which is measurement-complete here (`/dev/kvm` is accessible,
-`krun` is installed, `docs/MICROVM.md` holds the readings) and backend-incomplete. The second half of the
-egress policy used to lead this list; it is built now, and described under *State* above.
-`VERIFICATION.md`'s closing table is the authoritative list of what remains unverified.
-
-## The first run asks for the key before it downloads anything
-
-A cold `moat up` used to provision first and ask second: the image download (several hundred
-megabytes, minutes on a cold cache) completed before the prompt that said a key was needed. Someone
-without one paid for the whole download and then hit a question they could not answer.
-
-Everything that can fail cheaply is now checked before the download, and there are two of those:
-
-* **A `--credential-env NAME` naming an unset variable** used to be reported after the image was
-  provisioned — measured at 42 seconds, and minutes on a genuinely cold cache. It is a typo, and it
-  now fails in under a second with no cache directory created at all.
-* **A terminal with no key anywhere** is asked before provisioning rather than after. `onboard`
-  saves the key and the unchanged mint below reads it, so this is when the question is asked, not
-  what happens with the answer.
-
-Asking is guarded on `findCredential` returning nothing: a key in the environment, in the store or
-on the command line needs no prompt, and an existing environment does not provision at all. The
-prompt is offered only for the native provider, because `onboard` writes a credential the store can
-find for that one; for any other provider there is nothing it could usefully save, and the mint
-resolves it from the flags or the store as before.
-
-`onboard` degrades the way it always did: cancelling returns null and the boot carries on to the
-same "no credential" notice, and an unreachable provider saves the key unchecked.
-
-**Not verified at the end-to-end level.** The prompt only appears when stdin is a terminal, and
-exercising that needs a pty. Every suite passes, and the failure path was measured by hand, but
-nothing in `test/` would catch a regression that moved the prompt back after provisioning. Recorded
-rather than papered over.
-
-## Repository surface
-
-`SECURITY.md` says how to report a vulnerability privately and, more usefully, lists what is *not*
-one: the agent reading your key, the egress policy being a policy rather than a jail, namespaces
-rather than a VM, and the bounds on the copy-out leak scan. Each of those is a documented tradeoff
-in `SPEC.md` §1.2 or the Not-verified table, so a report about one is a documentation question
-rather than a security one.
-
-`CONTRIBUTING.md` holds what `AGENTS.md` does not: setup, which suite covers what, and what gets a
-pull request sent back. Its hardest rule is the one the project keeps relearning — a change arrives
-with a test that fails without it. Three guards in this repository's history looked like coverage
-and were not: an assertion satisfied by unrelated warning text, a check of a guard the CLI filters
-before it can be reached, and a regex that matched nothing because the file had CRLF endings.
-
-Both ship in the npm tarball, and the README points at them.
-
-## Two things worth knowing before you touch anything
-
-The published history was rewritten once, on the owner's instruction, to remove session passwords
-that had been committed. Every commit SHA changed as a result, so a clone from before that work
-must be re-created rather than pulled.
-
-`test/evidence/onboard.txt` is gitignored and must stay that way: the onboarding smoke test writes
-the CLI's own first-run output into it, and that output contains a session password.
+A release is an explicit matching package version and `v*` tag. The release workflow typechecks,
+tests and publishes with GitHub OIDC provenance, without a stored npm token. Do not reuse an
+already-published version. Pi's manifest and dependency lock must be present in the compiled
+package under `dist/bundle/pi-runtime/`; source files under `test/` are not runtime assets.
+[`RELEASE.md`](RELEASE.md) defines local gates, version/tag handling and publication confirmation;
+[`../CHANGELOG.md`](../CHANGELOG.md) records the 0.1.0 migration.

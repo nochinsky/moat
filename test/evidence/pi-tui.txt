@@ -1,0 +1,4 @@
+pass  Pi's own model screen was reached
+pass  the TUI waited for input
+pass  leaving Pi kept the sandbox running
+pi tui: the default runtime opens a live TUI

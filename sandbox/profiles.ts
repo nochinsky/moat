@@ -35,6 +35,9 @@ export type Profile = {
 /** Installed in every image, always. The agent cannot work without these. */
 export const BASE_PACKAGES = [
   "bash",
+  // Pi and project extensions need Node even when the project is not a Node project.
+  "nodejs",
+  "npm",
   "git",
   "curl",
   "wget",

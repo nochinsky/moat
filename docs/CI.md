@@ -20,7 +20,7 @@ jobs:
 
 The action uploads the output directory as a `moat-review` artifact: the doctor report, the task's
 own log, and `review.json` — `moat take --json`, the three-way classification plus the project's own
-checks, in the shape SPEC §4.2 documents.
+checks. [`SPEC.md` §4](SPEC.md#4-review-and-apply) describes the review contract.
 
 ## GitHub-hosted runners cannot run this
 
@@ -38,10 +38,10 @@ sandbox end-to-end (ubuntu-24.04):
 ```
 
 moat isolates with `unshare` + `mount` + `chroot` and **has no host fallback by design**
-(`docs/SPEC.md` §2.3, step 1). A runner that cannot create unprivileged user namespaces cannot run
+(`docs/SPEC.md` §§2.3 and 7.1). A runner that cannot create unprivileged user namespaces cannot run
 it, and lifting AppArmor is not enough because the runner's own confinement kills `unshare`
-afterwards. This is the same wall as macOS — see `docs/PORTABILITY.md`, which is where the
-container-backend answer would have to come from.
+afterwards. macOS and native Windows are not supported by this release. `docs/PORTABILITY.md` retains the
+older backend experiments; they are not evidence that current Pi works on a hosted runner or Mac.
 
 ## What the entrypoint does
 
@@ -55,8 +55,8 @@ YAML nobody can run locally and this has two branches that both have to be prova
    is the run's.
 3. **`moat take --json --quiet`** — fetch the agent's branch, classify the three trees, and run the
    project's own checks. The human summary in the log is **derived from that JSON**, not parsed out
-   of the CLI's prose (SPEC §4.2). **Read-only**: nothing reaches the working tree, which is why a CI run can
-   produce a review without the host project being touched (SPEC §2.2).
+   of the CLI's prose (SPEC §4). **Read-only**: nothing reaches the working tree, which is why a CI run can
+   produce a review without the host project being touched (SPEC §4).
 
 | exit | meaning |
 | --- | --- |
@@ -79,3 +79,6 @@ YAML nobody can run locally and this has two branches that both have to be prova
 namespaces and **does** run on a hosted runner — `ci.yml` runs it in the `checks` job for exactly
 that reason. It asserts the refusal, the happy path, a failed task, a failed review, and an empty
 task, and it was proved to bite by deleting the user-namespace gate (two checks fail).
+`test/unit/ci-action.test.ts` additionally executes the action's declared shell body with a fake CLI,
+so a nonexistent relative entrypoint or a nonexistent review output fails before release.
+The actual task still uses the real sandbox; these fake-CLI checks do not validate a model turn.

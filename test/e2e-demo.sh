@@ -36,7 +36,7 @@ scrub() { sed -e "s|$HOME|/home/user|g" -e "s|${USER:-$(id -un)}|user|g"; }
 say "=============================================================="
 say "== moat demo: three-way attribution, keyless"
 say "=============================================================="
-say "a real sandbox, the real pinned Codex driven against the keyless stub, a real git repo, and"
+say "a real sandbox, the real pinned Pi driven against the keyless stub, a real git repo, and"
 say "the real apply path. Nothing here is asserted by the demo itself: the three classifications"
 say "are what sync/apply.ts computed, and the suite checks they are the right three."
 

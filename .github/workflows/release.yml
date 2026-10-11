@@ -13,9 +13,8 @@ name: release
 #   Repository: moat            Workflow filename: release.yml
 #   Environment: (leave empty)  Allowed actions: npm publish
 #
-# To cut a release: bump the version, commit, then push a matching tag.
-#   npm version patch --no-git-tag-version && git commit -am "0.0.3" && git tag v0.0.3
-#   git push origin main v0.0.3
+# To cut a release: complete docs/RELEASE.md, bump both package manifests, review/stage the
+# intended new files as well as tracked edits, commit, then push main and a matching tag.
 
 on:
   push:
@@ -44,9 +43,10 @@ jobs:
       - name: npm is new enough for OIDC
         run: |
           node -e '
-            const [maj, min] = require("child_process").execSync("npm --version").toString().trim().split(".").map(Number);
-            const ok = maj > 11 || (maj === 11 && min >= 5);
-            if (!ok) { console.error(`npm ${maj}.${min} is too old for trusted publishing`); process.exit(1) }
+            const version = require("child_process").execSync("npm --version").toString().trim();
+            const [maj, min, patch] = version.split(".").map(Number);
+            const ok = maj > 11 || (maj === 11 && (min > 5 || (min === 5 && patch >= 1)));
+            if (!ok) { console.error(`npm ${version} is too old for trusted publishing (need 11.5.1+)`); process.exit(1) }
           '
 
       - run: npm ci --no-audit --no-fund
@@ -56,6 +56,8 @@ jobs:
       # user namespaces (see ci.yml).
       - run: npm run typecheck
       - run: npm run test:unit
+      - run: bash test/ci-entrypoint.test.sh
+      - run: node scripts/trust.mjs --check
 
       # The tag is the version. Checking it here means a mistyped tag fails in ten seconds rather
       # than publishing a version nobody meant — and a published version can never be reused.
@@ -70,6 +72,27 @@ jobs:
             }
           '
 
-      # `prepack` builds dist/. Provenance is explicit because the whole reason this workflow
-      # exists is that the artifact should be traceable to this commit.
-      - run: npm publish --provenance --access public
+      # `prepack` builds dist/. Validate the shipped graph/assets and publish this same tarball,
+      # not a fresh uninspected rebuild. The actual sandbox demo is a local gate, not a CI pass.
+      - name: pack and check runtime assets
+        id: pack
+        run: |
+          npm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/moat-pack.json"
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          import { piDependencyGraph } from './dist/sandbox/pi-install.js';
+          const text = fs.readFileSync(process.env.RUNNER_TEMP + '/moat-pack.json', 'utf8');
+          const [packed] = JSON.parse(text.slice(text.indexOf('[')));
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (packed.name !== pkg.name || packed.version !== pkg.version) throw Error('packed version mismatch');
+          for (const asset of ['dist/cmd/main.js', 'dist/bundle/pi-runtime/package.json', 'dist/bundle/pi-runtime/package-lock.json', 'CHANGELOG.md']) {
+            if (!packed.files.some(file => file.path === asset)) throw Error('not shipped: ' + asset);
+          }
+          if (packed.files.some(file => /^dist\/bundle\/(codex|claude|codex-prompt|model-catalog)\.js$/.test(file.path))) throw Error('retired adapter shipped');
+          const graph = piDependencyGraph(fs.readFileSync('dist/bundle/pi-runtime/package-lock.json', 'utf8'));
+          if (!graph.length) throw Error('empty Pi dependency graph');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'tarball=' + process.env.RUNNER_TEMP + '/' + packed.filename + '\n');
+          console.log('checked packed CLI and ' + graph.length + ' pinned Pi packages');
+          JS
+
+      - run: npm publish "${{ steps.pack.outputs.tarball }}" --provenance --access public

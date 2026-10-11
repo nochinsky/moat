@@ -73,7 +73,7 @@ test("no print site decides the rate from the clock", () => {
   // whichever side it finished on. `isPeak` belongs to lib/pricing.ts; a caller reads the
   // answer off the priced usage.
   const here = path.dirname(fileURLToPath(import.meta.url))
-  for (const file of ["cmd/main.ts", "bundle/codex.ts"]) {
+  for (const file of ["cmd/main.ts", "bundle/pi.ts"]) {
     const source = fs.readFileSync(path.join(here, "..", "..", ...file.split("/")), "utf8")
     const offenders = source
       .split("\n")

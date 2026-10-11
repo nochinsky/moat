@@ -38,7 +38,8 @@ test("verifyFile accepts the published digests and rejects anything else", (t) =
   return (async () => {
     assert.equal(await verifyFile(file, { sha256: SHA256 }), true)
     assert.equal(await verifyFile(file, { integrity: SRI }), true)
-    assert.equal(await verifyFile(file, {}), true)
+    assert.equal(await verifyFile(file, {}), false, "an unpinned artifact is never accepted")
+    assert.equal(await verifyFile(file, { integrity: SRI.slice(0, 7) + SRI.slice(7).replace(/[A-Za-z]/, (c) => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase()) }), false, "base64 digests are case-sensitive")
     assert.equal(await verifyFile(file, { sha256: "0".repeat(64) }), false)
     assert.equal(await verifyFile(file, { integrity: "sha512-AAAA" }), false)
     assert.equal(await verifyFile(file, { integrity: "md5-whatever" }), false)

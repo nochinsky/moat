@@ -86,7 +86,7 @@ capture() {
   cat "$EVIDENCE/$name.txt" | tee -a "$EVIDENCE/extras.txt"
 }
 
-# The keyless model: Codex speaks the Responses wire API, so the stub replays the event shapes
+# The keyless model: Pi is configured for the Responses wire API, so the stub replays the event shapes
 # captured from a real DeepSeek stream. It serves the last scripted turn for any further
 # request, so one start covers every section that needs a model.
 start_mock() {
@@ -1044,176 +1044,29 @@ else
   fail "check output" "an escape byte reached the terminal, or the output was dropped"
 fi
 ( cd "$ESC_PROJECT" && $MOAT destroy --yes >/dev/null 2>&1 )
-section "AJ. the runtime boots, and a deleted runtime binary is repaired without touching /work"
-# Codex ships a musl binary in its npm platform tarball, so it runs on the Alpine image with no
-# gcompat and no Node runtime. The agent is root inside its own rootfs, so it can delete that
-# binary; the next boot has to put it back by copying into the live rootfs, because
-# re-provisioning deletes the rootfs first and takes /work with it (measured: an untracked file
-# was lost that way before the installer was written).
-CDX="$WORK/codex-runtime"
-rm -rf "$CDX"; mkdir -p "$CDX"
-( cd "$CDX" && git init -q -b main . && printf 'x\n' > a.txt && git add -A \
-  && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
-( cd "$CDX" && $MOAT destroy --yes >/dev/null 2>&1 )
-CODEX_VERSION=$(node -e "import('$REPO/lib/pins.ts').then((m) => console.log(m.CODEX_VERSION))")
-( cd "$CDX" && capture codex-up $MOAT up --quiet --no-detect --no-credential )
-( cd "$CDX" && capture codex-status $MOAT status )
-( cd "$CDX" && capture codex-config $MOAT exec -- sh -c 'codex --version; cat /root/.codex/config.toml; head -1 /root/.codex/AGENTS.md; command -v opencode >/dev/null && echo "opencode PRESENT" || echo "opencode absent"' )
-if grep -q "codex        0.155.1 / alpine" "$EVIDENCE/codex-status.txt" \
-   && grep -q "codex-cli $CODEX_VERSION" "$EVIDENCE/codex-config.txt" \
-   && grep -q '^approval_policy = "never"$' "$EVIDENCE/codex-config.txt" \
-   && grep -q '^sandbox_mode = "danger-full-access"$' "$EVIDENCE/codex-config.txt" \
-   && grep -q '^wire_api = "responses"$' "$EVIDENCE/codex-config.txt" \
-   && grep -q "^opencode absent$" "$EVIDENCE/codex-config.txt"; then
-  pass "codex" "the default runtime boots, moat renders its config and its brief, and no opencode is in the image"
+section "AJ–AK. Pi tasks, extensions, credential handling and runtime repair"
+# The runtime-specific assertions live in one acceptance suite, not two drifting copies.
+# A previous acceptance ended in proxy mode. Reusing its project also reused that env's policy;
+# isolate this fixture instead of resetting/destroying a persistent environment under it.
+MOAT_E2E_DIR="$(mktemp -d "$WORK/pi-acceptance.XXXXXX")" bash "$REPO/test/e2e-pi.sh" > "$WORK/pi-acceptance.log" 2>&1
+PI_RC=$?
+scrub < "$WORK/pi-acceptance.log" | tee -a "$EVIDENCE/extras.txt"
+if [ "$PI_RC" = "0" ]; then
+  pass "pi runtime" "task, project extension, repair, protocol, failure and ceiling checks passed"
 else
-  fail "codex" "the default runtime or its rendered config is not what moat claims"
+  fail "pi runtime" "acceptance exited $PI_RC; see pi-summary.txt"
 fi
-( cd "$CDX" && capture codex-rm $MOAT exec -- sh -c 'rm -f /usr/local/bin/codex; command -v codex || echo "codex gone"; echo keep > /work/KEEP.txt; mkdir -p /work/sub && echo deep > /work/sub/DEEP.txt' )
-( cd "$CDX" && capture codex-down $MOAT down )
-# No --quiet here: the install step is a progress line, and this check reads it.
-( cd "$CDX" && capture codex-repair $MOAT up --no-detect --no-credential )
-( cd "$CDX" && capture codex-repair-check $MOAT exec -- sh -c 'codex --version; cat /work/KEEP.txt /work/sub/DEEP.txt' )
-if grep -q "codex-cli $CODEX_VERSION" "$EVIDENCE/codex-repair-check.txt" \
-   && grep -q "^keep$" "$EVIDENCE/codex-repair-check.txt" \
-   && grep -q "^deep$" "$EVIDENCE/codex-repair-check.txt" \
-   && grep -q "installing the codex runtime into this environment" "$EVIDENCE/codex-repair.txt"; then
-  pass "runtime repair" "a deleted runtime binary: reinstalled into the live rootfs on the next boot, and /work survived"
-else
-  fail "runtime repair" "the binary was not reinstalled, or /work was lost"
-fi
-( cd "$CDX" && $MOAT destroy --yes >/dev/null 2>&1 )
-section "AK. the codex runtime drives a keyless model stub end to end"
-# Codex speaks the Responses wire API, so the chat-completions stub that drives opencode
-# cannot drive it. stub/mock-responses.mjs replays the event shapes captured from a real
-# DeepSeek stream through a recording proxy, which makes the DEFAULT runtime testable
-# without a key — including the project's own checks, which are the verdict the user reads.
-CK="$WORK/codex-mock"
-rm -rf "$CK"; mkdir -p "$CK/src" "$CK/test"
-cat > "$CK/package.json" <<'JSON'
-{ "name": "ak-fix", "type": "module", "scripts": { "test": "node --test" } }
-JSON
-cat > "$CK/src/sum.js" <<'JS'
-export const sum = (a, b) => a - b
-JS
-cat > "$CK/test/sum.test.js" <<'JS'
-import test from "node:test"
-import assert from "node:assert/strict"
-import { sum } from "../src/sum.js"
-test("adds", () => assert.equal(sum(1, 2), 3))
-JS
-( cd "$CK" && git init -q -b main . && git add -A \
-  && git -c user.email=e2e@example.com -c user.name=e2e commit -qm base )
-( cd "$CK" && $MOAT destroy --yes >/dev/null 2>&1 )
-RESP_PORT=5597
-rm -f "$WORK/responses-requests.jsonl"
-node "$REPO/stub/mock-responses.mjs" --port "$RESP_PORT" --script "$REPO/test/scripts/responses-basic.json" \
-  --record "$WORK/responses-requests.jsonl" > "$WORK/mock-responses.log" 2>&1 &
-RESP_PID=$!
-sleep 1
-export MOAT_MOCK_CREDENTIAL="moat-e2e-responses-stub"
-# deepseek-flash, not mock-model: it is the model the vendored catalog describes, which is what
-# removes Codex's fallback-metadata notice and gives --effort something to move. The endpoint is
-# still the stub; only the id changes, and the stub ignores it.
-( cd "$CK" && capture codex-mock-up $MOAT up --quiet --profile node --model deepseek-flash --effort high \
-  --base-url "http://127.0.0.1:$RESP_PORT/v1" --credential-env MOAT_MOCK_CREDENTIAL )
-( cd "$CK" && capture codex-mock-run $MOAT run --effort high --credential-env MOAT_MOCK_CREDENTIAL "Make the failing test pass." )
-( cd "$CK" && capture codex-mock-fix $MOAT exec -- sh -c 'cat /work/src/sum.js; git -C /work log --oneline -1' )
-# The project's own checks are the verdict the user reads, and they run inside the box with
-# no model involved. This is the half that says the runtime swap did not cost moat its loop.
-( cd "$CK" && capture codex-mock-verify $MOAT verify )
-( cd "$CK" && capture codex-mock-fetch $MOAT fetch )
-# moat's brief has to reach the model under this runtime, and Codex reads it from its own
-# home: measured through the recording proxy, the content arrives in the request body wrapped
-# as AGENTS.md instructions. Both halves are checked — the file in the box, and the text the
-# provider actually received.
-# The marker is a line every rendered brief carries, whatever the egress mode and credential
-# state: asserting on a conditional sentence is how this check first reported a false negative.
-( cd "$CK" && capture codex-mock-brief $MOAT exec -- sh -c 'grep -m1 "disposable Linux container" /root/.codex/AGENTS.md' )
-kill "$RESP_PID" 2>/dev/null
-# The other half of --effort: a second boot of the same environment, same stub, same model, only
-# the level changed. The record is a separate file so the two turns cannot be confused, and the
-# endpoint is passed again because state records the previous one. What is asserted is the
-# REQUEST the provider received, not the config moat says it wrote — a later boot of this
-# environment (exec, verify) re-renders config.toml from that boot's flags, with no effort in it.
-RESP_PORT_LOW=5598
-rm -f "$WORK/responses-requests-low.jsonl"
-node "$REPO/stub/mock-responses.mjs" --port "$RESP_PORT_LOW" --script "$REPO/test/scripts/responses-basic.json" \
-  --record "$WORK/responses-requests-low.jsonl" > "$WORK/mock-responses-low.log" 2>&1 &
-RESP_PID_LOW=$!
-sleep 1
-( cd "$CK" && capture codex-mock-run-low $MOAT run --effort low --model deepseek-flash --credential-env MOAT_MOCK_CREDENTIAL \
-  --base-url "http://127.0.0.1:$RESP_PORT_LOW/v1" "Make the failing test pass." )
-kill "$RESP_PID_LOW" 2>/dev/null
-PINNED_SHA=$( cd "$REPO" && node -e 'import("./bundle/codex.ts").then(m => console.log(m.CATALOG_INSTRUCTIONS_SHA256))' )
-BRIEF_IN_REQUEST=$(python3 - "$WORK/responses-requests.jsonl" <<'PY'
-import json, sys
-rows = [json.loads(l) for l in open(sys.argv[1])]
-print("yes" if any("disposable Linux container" in (r.get("body") or "") for r in rows) else "no")
-PY
-)
-REQS=$(wc -l < "$WORK/responses-requests.jsonl" 2>/dev/null || echo 0)
-# The catalog's three claims, read from what the provider received (and from the CLI's own output
-# for the notice, which never reaches the wire). The pre-catalog control was measured on this
-# fixture: the notice was present, the advertised tools included web_search, and the wire carried
-# no reasoning.effort for either level. Each of these can therefore fail.
-EFFORT_OK=0
-python3 - "$WORK/responses-requests.jsonl" "$WORK/responses-requests-low.jsonl" "$PINNED_SHA" <<'PY' | tee -a "$EVIDENCE/extras.txt" || EFFORT_OK=1
-import hashlib, json, sys
-pinned = sys.argv[3]
-def rows(path):
-    return [json.loads(l) for l in open(path)]
-high, low = rows(sys.argv[1]), rows(sys.argv[2])
-def efforts(rs):
-    return sorted({(r.get("reasoning") or {}).get("effort") for r in rs if r.get("reasoning")})
-tools = sorted({t for r in high + low for t in (r.get("tools") or [])})
-shas = sorted({hashlib.sha256((r.get("instructions") or "").encode()).hexdigest() for r in high + low})
-print("effort high record : requests", len(high), "reasoning", efforts(high))
-print("effort low record  : requests", len(low), "reasoning", efforts(low))
-print("tools advertised   :", tools)
-print("instructions sha256:", shas)
-ok = (
-    efforts(high) == ["high"]
-    and efforts(low) == ["low"]
-    and "web_search" not in tools
-    and shas == [pinned]
-)
-sys.exit(0 if ok else 1)
-PY
-if grep -q "a + b" "$EVIDENCE/codex-mock-fix.txt" \
-   && grep -q "fix: sum adds" "$EVIDENCE/codex-mock-fix.txt" \
-   && grep -qE "pass +npm test" "$EVIDENCE/codex-mock-verify.txt" \
-   && ! grep -qE "FAIL +npm test" "$EVIDENCE/codex-mock-verify.txt" \
-   && grep -q "fetched .*refs/moat/" "$EVIDENCE/codex-mock-fetch.txt" \
-   && grep -q "src/sum.js" "$EVIDENCE/codex-mock-run.txt" \
-   && grep -q "disposable Linux container" "$EVIDENCE/codex-mock-brief.out" \
-   && [ "$BRIEF_IN_REQUEST" = "yes" ] \
-   && [ "$REQS" -ge 2 ] \
-   && [ "$EFFORT_OK" = "0" ] \
-   && ! grep -q "Model metadata for" "$EVIDENCE/codex-mock-run.txt" \
-   && ! grep -q "Model metadata for" "$EVIDENCE/codex-mock-run-low.txt"; then
-  echo "codex: a keyless turn fixes the fixture, the checks pass, the commit fetches, and moat's brief reached the model ($REQS model requests)" | tee -a "$EVIDENCE/extras.txt"
-  pass "codex" "the catalog removed the metadata notice, disabled web_search, and --effort high/low reached the wire as asked (see the record lines above)"
-else
-  fail "codex" "no fix, or the brief did not reach the model (requests=$REQS, brief_in_request=$BRIEF_IN_REQUEST, effort_ok=$EFFORT_OK)"
-fi
-( cd "$CK" && $MOAT destroy --yes >/dev/null 2>&1 )
 
 section "AL. the default runtime opens a live TUI"
-# The interactive surface of the codex runtime is Codex's own TUI on a pty inside the box.
-# This allocates a real pty, runs moat with no arguments, and requires that the TUI was
-# reached (not the help text), drew a screen and stayed up, and that leaving it left the
-# sandbox running. Keyless: no model call is needed to answer any of that.
-echo "the default runtime's interactive surface, driven through a real pty" | tee -a "$EVIDENCE/extras.txt"
-python3 "$REPO/test/codex-tui.py" 2>&1 | scrub > "$EVIDENCE/codex-tui.txt"
+python3 "$REPO/test/pi-tui.py" "$WORK/pi-tui" 2>&1 | scrub > "$EVIDENCE/pi-tui.txt"
 TUI_RC=$?
-tail -6 "$EVIDENCE/codex-tui.txt" | tee -a "$EVIDENCE/extras.txt"
-if [ "$TUI_RC" = "0" ] && grep -q "codex tui: the default runtime opens a live TUI" "$EVIDENCE/codex-tui.txt"; then
-  pass "codex tui" "moat reaches a live TUI, and leaving it leaves the sandbox running"
+tail -6 "$EVIDENCE/pi-tui.txt" | tee -a "$EVIDENCE/extras.txt"
+if [ "$TUI_RC" = "0" ] && grep -q "pi tui: the default runtime opens a live TUI" "$EVIDENCE/pi-tui.txt"; then
+  pass "pi tui" "moat reaches Pi's TUI, and leaving it leaves the sandbox running"
 else
-  fail "codex tui" "moat did not reach a live TUI (exit $TUI_RC)"
+  fail "pi tui" "moat did not reach a live TUI (exit $TUI_RC)"
 fi
-( cd "$WORK/codex-tui" && $MOAT destroy --yes >/dev/null 2>&1 )
+( cd "$WORK/pi-tui" && $MOAT destroy --yes >/dev/null 2>&1 )
 
 section "AM. a partial accept that breaks the project's check is refused, not written"
 # The one failure the review exists to prevent, and the one it used to admit to: take the change
@@ -1280,111 +1133,7 @@ else
 fi
 ( cd "$AM" && $MOAT destroy --yes >/dev/null 2>&1 )
 
-section "AN. the second runtime runs a turn end to end, keyless"
-# Phase 2's payoff: `moat run` under `--runtime claude`, against the keyless Messages stub. The
-# assertions are on the *provider's* view (what the stub recorded) and on what the agent's own
-# stream says happened, rather than on moat's account of either.
-AN="$WORK/claude-runtime"
-AN_PORT="${AN_PORT:-5612}"
-rm -rf "$AN"; mkdir -p "$AN"
-(
-  cd "$AN"
-  git init -q -b main .
-  git config user.email a@b
-  git config user.name t
-  printf '{"name":"claude-runtime","scripts":{"test":"true"}}\n' > package.json
-  git add -A && git commit -qm base
-)
-: > "$WORK/anthropic-record.jsonl"
-setsid node "$REPO/stub/mock-anthropic.mjs" --port "$AN_PORT" --record "$WORK/anthropic-record.jsonl" \
-  --command "sh -c 'echo ci-changed > notes.txt && echo stub-tool-ran && git add -A && git -c user.email=a@b -c user.name=a commit -qm ci'" \
-  > "$WORK/anthropic-stub.log" 2>&1 < /dev/null &
-AN_STUB=$!
-sleep 1.2
-# The provider is on the host's loopback, so the box gets the host's network namespace — the same
-# reason moat chooses `open` for a loopback endpoint by itself.
-( cd "$AN" && $MOAT up --quiet --runtime claude --credential "$CREDENTIAL" \
-    --base-url "http://127.0.0.1:$AN_PORT" --model claude-opus-5 --no-detect --profile node --egress open ) > "$WORK/claude-up.log" 2>&1
-AN_UP=$?
-# Every boot re-mints the credential from the host — state.json keeps a fingerprint and never the
-# value — so the runs need the source too, not only the `up` above. They used to omit it, and the
-# section passed only where the host happened to carry a key of its own (`DEEPSEEK_API_KEY`, or
-# `~/.moat/credentials.json`): measured, the committed capture records fingerprint
-# `sha256:34c4e933b47c1fb3` while this section's own value is `sha256:7726b438889c7f57`, so what the
-# run injected was never the credential this test passes in. On a host with no ambient key the box
-# logs `Not logged in · Please run /login`, nothing reaches the stub, and the section fails. Codex
-# tolerates a keyless custom endpoint, which is why the acceptance suite never noticed the shape;
-# Claude Code does not.
-#
-# `--credential` and not `--credential-env`: this script re-points `MOAT_MOCK_CREDENTIAL` at the
-# Responses stub further up, so naming the value here keeps the section's credential its own
-# instead of silently inheriting whatever that export happens to hold.
-( cd "$AN" && $MOAT run "run the check" --quiet --credential "$CREDENTIAL" ) > "$WORK/claude-run.log" 2>&1
-AN_RUN=$?
-# And a ceiling stops one mid-turn: the stub reports 160 tokens on its first request, so a limit of
-# 100 has to kill the box before the second request is paid for. The control above (no ceiling) is
-# what makes this a measurement rather than a claim.
-( cd "$AN" && $MOAT run "run the check" --quiet --max-tokens 100 --credential "$CREDENTIAL" ) > "$WORK/claude-ceiling.log" 2>&1
-AN_CEIL=$?
-# The machine-readable review: `moat take` fetches the agent's branch, classifies the three trees
-# and runs the project's own checks, and `--json` is the same decision in a shape a pipeline reads.
-( cd "$AN" && $MOAT take --json < /dev/null ) > "$WORK/claude-review.json" 2> "$WORK/claude-take.log"
-AN_TAKE=$?
-AN_JSON=$(python3 -c "
-import json
-d=json.load(open('$WORK/claude-review.json'))
-paths=[r['path'] for r in (d.get('reviewed') or [])]
-checks=d.get('checks') or {}
-print('yes' if d.get('treeUntouched') is True and 'notes.txt' in paths and checks.get('ok') is True else 'no')
-" 2>/dev/null || echo no)
-AN_REQS=$(grep -c '/v1/messages' "$WORK/anthropic-record.jsonl" 2>/dev/null || echo 0)
-# The credential has to reach the runtime under the name *it* reads, not moat's: Claude Code reads
-# ANTHROPIC_API_KEY, and the stub records the header the provider actually received.
-AN_KEY=$(python3 -c "
-import json
-ok='no'
-for line in open('$WORK/anthropic-record.jsonl'):
-    d=json.loads(line)
-    if str(d.get('path','')).startswith('/v1/messages') and d.get('apiKey'):
-        ok='yes'
-print(ok)
-" 2>/dev/null || echo no)
-kill $AN_STUB 2>/dev/null
-{
-  echo "--- \$ moat up --runtime claude   (a second runtime, provisioned and booted)"
-  grep -E "runtime|prov" "$WORK/claude-up.log" | head -4
-  echo "--- \$ moat run \"run the check\"   (a turn through the Claude runtime)"
-  cat "$WORK/claude-run.log"
-  echo "--- \$ moat run \"run the check\" --max-tokens 100   (a ceiling, mid-turn)"
-  tail -4 "$WORK/claude-ceiling.log"
-  echo "--- \$ moat take --json   (the review, machine-readable)"
-  echo "treeUntouched + notes.txt in the classification + checks ok: $AN_JSON"
-  python3 -c "
-import json
-d=json.load(open('$WORK/claude-review.json'))
-print('  branch:', d.get('branch'), '| commits:', d.get('commits'), '| treeUntouched:', d.get('treeUntouched'))
-for r in (d.get('reviewed') or []): print(f\"  {r['verdict']:8} {r['path']} ({r['kind']})\")
-print('  checks:', (d.get('checks') or {}).get('summary'))
-" 2>/dev/null
-  echo "--- the provider's own record ---"
-  echo "requests to /v1/messages: $AN_REQS    credential reached the runtime: $AN_KEY"
-} | scrub | tee -a "$EVIDENCE/extras.txt" > "$EVIDENCE/claude-runtime.txt"
-
-if [ "$AN_UP" = "0" ] \
-   && [ "$AN_RUN" = "0" ] \
-   && grep -q "stub-tool-ran" "$WORK/claude-run.log" \
-   && [ "$AN_REQS" -ge 2 ] \
-   && [ "$AN_KEY" = "yes" ] \
-   && [ "$AN_CEIL" = "1" ] \
-   && grep -q "reached its token ceiling" "$WORK/claude-ceiling.log" \
-   && grep -qi "sandbox was killed" "$WORK/claude-ceiling.log" \
-   && [ "$AN_TAKE" = "0" ] \
-   && [ "$AN_JSON" = "yes" ]; then
-  pass "claude runtime" "a turn ran, a ceiling killed one mid-turn, and take --json reported the review machine-readably"
-else
-  fail "claude runtime" "up=$AN_UP run=$AN_RUN reqs=$AN_REQS key=$AN_KEY ceiling=$AN_CEIL take=$AN_TAKE json=$AN_JSON"
-fi
-( cd "$AN" && $MOAT destroy --yes >/dev/null 2>&1 )
+# AN's turn ceiling and machine-readable take checks are covered by e2e-pi.sh.
 section "AO. the container backend runs a turn, on a host that has a container runtime"
 # The second backend, end to end. It needs a container runtime the CI runner does not have, so the
 # section *skips with a reason* rather than pretending — the same shape as the sandbox suites that
@@ -1407,7 +1156,7 @@ if ! command -v podman >/dev/null 2>&1 || ! podman info >/dev/null 2>&1; then
     echo "  the backend is exercised by test/unit/backend.test.ts everywhere, and end to end"
     echo "  wherever a runtime exists; docs/PORTABILITY.md §3 has the readings taken on one."
   } | scrub | tee -a "$EVIDENCE/extras.txt" > "$EVIDENCE/container-backend.txt"
-  pass "container backend" "no container runtime here, so the end-to-end half is skipped"
+  printf '  skip  container backend — no usable runtime; no Pi container turn was tested\n'
 else
   # The DEFAULT egress (filtered), deliberately: `--egress isolated` skips the ruleset, and the
   # first version of this section used it — so the section passed while the default path failed at

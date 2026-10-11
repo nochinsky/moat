@@ -38,7 +38,6 @@ export const SPEC: Spec = {
   "credential-ttl": "string",
   "no-credential": "boolean",
   egress: "string",
-  runtime: "string",
   "egress-allow": "string",
   "egress-proxy": "boolean",
   fresh: "boolean",
@@ -102,11 +101,11 @@ const UP_FLAGS: readonly string[] = [
   "no-follow",
   "profile",
   "refresh",
-  "runtime",
   "show-output",
   "sync",
   "timeout",
   "upstream",
+  "wire-api",
   "yes",
 ]
 

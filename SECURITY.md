@@ -33,8 +33,10 @@ Anything that breaks a promise `docs/SPEC.md` makes. The ones that matter most:
 These are deliberate, and `docs/SPEC.md` §1.2 and `docs/VERIFICATION.md`'s closing table describe
 each one, including what it costs you:
 
-- **The agent can read your project and the key.** It has to, to do its job. moat is not a
-  confidentiality boundary and never claims to be one.
+- **The agent and its extensions can read your project and the key.** Pi, copied extensions,
+  tools and MCP processes execute inside the box with those privileges. Moat is not a
+  confidentiality boundary and never claims to be one. Importing a project extension on the
+  host would, however, be a host-side execution vulnerability.
 - **The egress allowlist is a policy, not a jail.** The sandbox owns its network namespace, so
   root inside it can flush the ruleset. moat re-applies it on every boot and `moat doctor`
   re-measures it, which is detection on the next run rather than prevention.
@@ -42,6 +44,11 @@ each one, including what it costs you:
   send things is not the same as stopping it, and the docs say so in those words.
 - **Isolation is Linux namespaces, not a virtual machine.** A kernel bug is a sandbox escape;
   that is what the planned v1 microVM is for.
+- **Custom extension workflow is not a universal spending or approval guarantee.** An extension
+  can block on UI input, save a key when explicitly asked, or make unreported requests. Do not
+  import host Pi auth/config or put keys into project settings; use provider-side spend limits.
+- **There are no moat-managed CPU, memory or disk quotas.** An agent can exhaust resources the
+  host shares; namespace isolation does not supply resource accounting by itself.
 - **The copy-out credential scan has bounds.** It compares against the values the host holds at
   fetch time, searches the most recent 50 commits, and skips files above a size limit. Each bound
   is named when it is reached.

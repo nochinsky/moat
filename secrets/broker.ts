@@ -200,9 +200,10 @@ export function credentialRiskNotice(
 export function scanRootfsForCredential(rootfs: string, value: string): string[] {
   if (!value) return []
   const candidates = [
-    // Where Codex would keep an auth file if it ever wrote one; moat tells it to read the key
-    // from the environment, so finding anything here is already unexpected.
+    // Pi sessions/auth and legacy runtime directories: upgrades preserve existing rootfs data.
+    "root/.pi",
     "root/.codex",
+    "root/.claude",
     "root/.config",
     "root/.cache",
     "var/log/moat",
@@ -252,7 +253,7 @@ export function mint(opts: MintOptions): MintedCredential | null {
     source: found.source,
     baseUrl,
     model,
-    modelId: model.includes("/") ? model.split("/").slice(1).join("/") : model,
+    modelId: model.startsWith(providerID + "/") ? model.slice(providerID.length + 1) : model,
     scopes: credential.scopes ?? ["model:invoke"],
   }
 }
@@ -300,7 +301,7 @@ export function doctorInjectedVarNames(opts: {
   /** The names the boot would inject the credential under, from `credentialVarNames`. */
   credentialVars?: readonly string[]
 }): string[] {
-  const names = ["MOAT_PROVIDER_BASE_URL", "MOAT_MODEL_ID", "MOAT_MODEL"]
+  const names = ["MOAT_PROVIDER_BASE_URL", "MOAT_MODEL_ID", "MOAT_MODEL", "MOAT_REASONING_EFFORT"]
   if (!opts.credential) return names
   names.push(...INJECTED_ENV_NAMES)
   if (opts.credentialVars && opts.credentialVars.length > 0) names.push(...opts.credentialVars)

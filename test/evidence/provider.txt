@@ -20,37 +20,67 @@ providers moat can be pointed at with --provider, or --base-url for one it does 
   --env-var names the host variable holding the key. The value is never written to disk.
 
 --- the config in the box ---
-model = "mock-model"
-model_provider = "acme"
-approval_policy = "never"
-sandbox_mode = "danger-full-access"
-preferred_auth_method = "apikey"
-forced_login_method = "api"
-model_catalog_json = "/root/.codex/models.json"
-web_search = "disabled"
-
-[model_providers.acme]
-name = "acme"
-base_url = "http://127.0.0.1:5687/v1"
-env_key = "ACME_API_KEY"
-wire_api = "responses"
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
+{
+  "defaultProvider": "acme",
+  "defaultModel": "mock-model",
+  "defaultThinkingLevel": "high",
+  "enabledModels": [
+    "acme/mock-model"
+  ],
+  "defaultProjectTrust": "always",
+  "cacheWarming": "off",
+  "enableInstallTelemetry": false
+}
+{
+  "providers": {
+    "acme": {
+      "baseUrl": "http://127.0.0.1:5687/v1",
+      "api": "openai-responses",
+      "apiKey": "$MOAT_INJECTED_CREDENTIAL",
+      "authHeader": true,
+      "models": [
+        {
+          "id": "mock-model",
+          "name": "mock-model",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          }
+        }
+      ]
+    }
+  }
+}
   pass  the provider block
   pass  the base URL
-  pass  env_key
+  pass  apiKey
   pass  the rendered config
   pass  the model
   pass  the model catalog
 
 --- the turn ---
 Fixed src/sum.js so the test passes, and committed it.
-  17280 tokens  1 tool
+  17280 tokens  cost unknown  1 tool
   pass  what the provider received
   pass  the credential in the image
+[moat] boot: mounts are up, network next
+[moat] boot: entering the sandbox
 # tests 1
 # pass 1
 # fail 0
   pass  the task
 
-provider evidence written to /home/user/Projects/moat/test/evidence/provider.txt
+provider evidence written to /home/ektor/Projects/moat/test/evidence/provider.txt
 
 checks passed: 9, failed: 0

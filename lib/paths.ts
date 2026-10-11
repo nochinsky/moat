@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { CODEX_VERSION, CLAUDE_VERSION, SLIRP4NETNS_VERSION } from "./pins.ts"
+import { PI_LOCK_SHA256, PI_VERSION, SLIRP4NETNS_VERSION } from "./pins.ts"
 
 /** Root of all moat state. Overridable for tests so they never touch the real store. */
 export function moatHome(): string {
@@ -162,14 +162,9 @@ export function slirpCachePath(): string {
   return path.join(cacheDir(), "net", `slirp4netns-${SLIRP4NETNS_VERSION}`)
 }
 
-/** Host-side cache of a Codex CLI binary, keyed by version + platform package. */
-export function codexCachePath(triple: string): string {
-  return path.join(cacheDir(), "codex", CODEX_VERSION, triple, "codex")
-}
-
-/** Host-side cache of a Claude Code CLI binary, keyed by version + platform. */
-export function claudeCachePath(triple: string): string {
-  return path.join(cacheDir(), "claude", CLAUDE_VERSION, triple, "claude")
+/** Verified Pi tarballs, keyed by the complete dependency graph. No executable host SDK. */
+export function piCachePath(): string {
+  return path.join(cacheDir(), "pi", PI_VERSION, PI_LOCK_SHA256)
 }
 
 /**

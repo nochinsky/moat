@@ -4,8 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
 
-import { installCodexFiles } from "../../bundle/codex.ts"
-import { renderModelCatalog } from "../../bundle/model-catalog.ts"
+import { installPiFiles } from "../../bundle/pi.ts"
 import { DEEPSEEK, checkProviderID, customEndpoint } from "../../lib/provider.ts"
 import { providerCredentialCandidates, validateStoredProvider } from "../../lib/providers.ts"
 import { resolveProvider } from "../../lib/resolve-provider.ts"
@@ -89,15 +88,14 @@ test("the credential lookup follows the provider, and still finds moat's own nam
   }
 })
 
-test("installCodexFiles refuses a literal key in the config, the brief or the catalog", (t) => {
+test("installPiFiles refuses a literal key in the config, the brief or the catalog", (t) => {
   // The tripwire has to cover the new config shape: the provider block is now rendered from
   // configuration, so the `env_key` line and the `base_url` are the places a user's mistake
   // could paste a key into. Every text that goes into the box is checked, and the catalog is a
   // text it writes now rather than a vendored file.
   const root = tempRoot(t)
-  const catalog = renderModelCatalog({ model: "m" })
-  const clean = { config: 'model = "m"\n', brief: "the brief\n", catalog }
-  installCodexFiles(root, clean)
+  const clean = { config: '{}\n', brief: "the brief\n", catalog: '{"providers":{}}\n' }
+  installPiFiles(root, clean)
 
   const keys = [
     "sk-abcdefghijklmnopqrstuvwx", // OpenAI / Anthropic / DeepSeek
@@ -112,24 +110,24 @@ test("installCodexFiles refuses a literal key in the config, the brief or the ca
     // In the config: as a base_url, which is where a user pasting an endpoint with a key in it
     // would land, and as the model id.
     assert.throws(
-      () => installCodexFiles(root, { ...clean, config: `base_url = "https://x/${key}"\n` }),
+      () => installPiFiles(root, { ...clean, config: `{"url":"https://x/${key}"}\n` }),
       /literal API key/,
       "config with " + key.slice(0, 8),
     )
     assert.throws(
-      () => installCodexFiles(root, { ...clean, brief: `here is the key: ${key}\n` }),
+      () => installPiFiles(root, { ...clean, brief: `here is the key: ${key}\n` }),
       /literal API key/,
       "brief with " + key.slice(0, 8),
     )
     assert.throws(
-      () => installCodexFiles(root, { ...clean, catalog: `{"models":[{"slug":"${key}"}]}` }),
+      () => installPiFiles(root, { ...clean, catalog: `{"providers":{"id":{"apiKey":"${key}"}}}` }),
       /literal API key/,
       "catalog with " + key.slice(0, 8),
     )
   }
   // A clean write still works after all those refusals, so the guard is not simply stuck.
-  installCodexFiles(root, clean)
-  assert.equal(fs.readFileSync(path.join(root, "root/.codex/config.toml"), "utf8"), clean.config)
+  installPiFiles(root, clean)
+  assert.equal(fs.readFileSync(path.join(root, "root/.pi/agent/settings.json"), "utf8"), clean.config)
 })
 
 test("--no-credential leaves a box with nothing stealable, for any provider", () => {
@@ -162,12 +160,12 @@ test("the rootfs sweep finds a key for any provider, and only when it is really 
   // other provider.
   const root = tempRoot(t)
   const rootfs = path.join(root, "rootfs")
-  fs.mkdirSync(path.join(rootfs, "root/.codex"), { recursive: true })
+  fs.mkdirSync(path.join(rootfs, "root/.pi/agent"), { recursive: true })
   fs.mkdirSync(path.join(rootfs, "var/log/moat"), { recursive: true })
   const value = "acme-secret-value-8f3a1c9d2e"
   assert.deepEqual(scanRootfsForCredential(rootfs, value), [], "nothing there yet")
 
-  fs.writeFileSync(path.join(rootfs, "root/.codex/auth.json"), `{"key":"${value}"}`)
+  fs.writeFileSync(path.join(rootfs, "root/.pi/agent/auth.json"), `{"key":"${value}"}`)
   const found = scanRootfsForCredential(rootfs, value)
   assert.equal(found.length, 1)
   assert.match(found[0]!, /auth\.json$/)

@@ -4,19 +4,19 @@
 --- stdout ---
 --- stderr ---
 no project manifest found; booting with the base image only (see `moat profiles`)
-→ provisioning sandbox image (alpine 3.21.4 + codex 0.155.1)
-→ provisioning from the cached image alpine-3.21.4-5fcd2d224a5c.tar.gz
-✓ image provisioned in 1.21s (extract cached image 1.09s)
+→ provisioning sandbox image (alpine 3.21.4 + pi 1.1.0)
+→ provisioning from the cached image alpine-3.21.4-5b699c2eab48.tar.gz
+✓ image provisioned in 901ms (extract cached image 804ms)
 → copy-in: git clone --no-hardlinks
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 5ea85862e8d72055
-model: deepseek/deepseek-flash (context 1M, out 384k)
-agent branch: moat-session-2026-09-22-22-34
-→ sandbox booted (pid 325513); the codex runtime has no server to wait for
-✓ sandbox up, cold start 1.71s (image built)
+model: deepseek/deepseek-flash (context 1M, out 393k)
+agent branch: moat-session-2026-10-11-18-58
+→ sandbox booted (pid 62997); Pi runs inside the box, with no server
+✓ sandbox up, cold start 1.65s (image built)
 
   project    /home/user/moat-demo/egress-default
   env        /home/user/.moat/envs/2a1bb9cb2696
-  runtime    codex (deepseek/deepseek-flash): `moat` opens its TUI
+  runtime    pi (deepseek/deepseek-flash): `moat` opens its TUI
   workspace  /work (inside the sandbox)
 
   next: moat         open a session here and tell it what to do

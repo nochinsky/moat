@@ -31,6 +31,8 @@ export type BackendId = "unshare" | "container"
 export type BootPlan = {
   command: string
   args: string[]
+  /** Host runtime environment; only explicitly named vars reach the box. */
+  clientEnv?: NodeJS.ProcessEnv
   /**
    * True when moat must start its own userspace datapath for this boot.
    *
@@ -141,13 +143,9 @@ export function containerStop(envId: string): boolean {
 
 export type ContainerPlanOptions = {
   /**
-   * A stable name, for the long-running box only.
-   *
-   * Ephemeral boots must NOT be named: moat runs them *alongside* the box by design — a task, a
-   * check, `moat exec` and `moat doctor` each take their own boot of the same rootfs — so a name
-   * derived from the environment id collides with the keepalive. Measured: the second one failed
-   * with "the container name `moat-<id>` is already in use", which surfaced as podman's exit code
-   * 125 in the middle of a task.
+   * Stable for the keepalive, unique per invocation for ephemeral boots. Reusing the keepalive's
+   * name collided with concurrent checks/tasks (podman exit 125); leaving tasks unnamed made
+   * killing their client insufficient to stop the container at a budget/credential deadline.
    */
   name?: string
   egress?: EgressMode
@@ -171,10 +169,16 @@ export function containerPlan(p: EnvPaths, innerScript: string, opts: ContainerP
   // first made the options that followed part of the command — measured, crun reported
   // "executable file `--env` not found in $PATH". The order below is the contract.
   const args = ["run", "--rm", ...(opts.name ? ["--name", opts.name] : []), ...networkArgs(opts.egress)]
+  const clientEnv = { ...process.env }
+  const credential = opts.env?.MOAT_INJECTED_CREDENTIAL
   for (const [key, value] of Object.entries(opts.env ?? {})) {
     if (value === undefined) continue
-    args.push("--env", `${key}=${value}`)
+    if (credential !== undefined && value === credential) {
+      // Podman copies a named variable from its environment. Never put the key into argv.
+      clientEnv[key] = value
+      args.push("--env", key)
+    } else args.push("--env", `${key}=${value}`)
   }
   args.push("--rootfs", p.rootfs, "/bin/sh", inner)
-  return { command: runtime.command, args, needsSlirp: false, label: runtime.command }
+  return { command: runtime.command, args, clientEnv, needsSlirp: false, label: runtime.command }
 }
