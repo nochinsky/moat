@@ -76,10 +76,12 @@ provider-side credential/effort/brief delivery, immutable host files after fetch
 terminal escape stripping, API failure reporting, a request-stopping token ceiling, long-stream
 accounting beyond diagnostic capture, ephemeral credential expiry and keyless Chat Completions. The pty check measures Pi's actual model screen, not just an escape byte.
 
-No real paid model turn is part of the migration's keyless gate. `test/pi-live.sh` is the separate,
-bounded real-DeepSeek gate; until its current capture exists, paid-provider Pi behavior is unverified.
-Native provider-specific protocols,
-arbitrary extensions/packages/MCP servers and their billing behavior are not universally validated.
+The separate bounded real-DeepSeek gate now passes with the current Pi CLI (`test/evidence/pi-live.txt`):
+a genuinely broken fixture is fixed and committed, fresh checks pass, and review leaves host files
+and HEAD unchanged. Reported usage is present; its estimated cost is not an invoice measurement.
+This validates a small default-model Responses task, not every protocol/model or long-task quality.
+Native provider-specific protocols, arbitrary extensions/packages/MCP servers and their billing
+behavior are not universally validated.
 A Pi cold-cache startup benchmark and container-backend Pi turn are not implied by the namespace
 suite. Historical runtime and cold-start measurements are preserved, not relabeled as Pi readings.
 

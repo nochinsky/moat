@@ -21,7 +21,7 @@ their own policies or UI waits. The sandbox is not a confidentiality or resource
 | Pi TUI | `pi tui: the default runtime opens a live TUI` | `python3 test/pi-tui.py` |
 | published-env upgrade | `pi legacy: published Codex environment upgraded in place; work, refs, baseline and installed state preserved` | `bash test/pi-legacy.sh` |
 | installed package | `pi package: installed compiled CLI, pinned lock assets, stale-output cleanup and real sandbox demo passed` | `bash test/pi-package.sh` |
-| Pi live DeepSeek (paid) | _no capture is committed for this one — run it and read the output_ | `bash test/pi-live.sh` |
+| Pi live DeepSeek (paid) | `pi live: bounded real DeepSeek task, tools, reported usage, verification and read-only review passed` | `bash test/pi-live.sh` |
 | extras | `checks passed: 49, failed: 0` | `bash test/e2e-extras.sh` |
 | egress | `egress checks passed` | `bash test/e2e-egress.sh` |
 | provider | `checks passed: 9, failed: 0` | `bash test/e2e-provider.sh` |
@@ -43,7 +43,7 @@ its own evidence.
 | --- | --- |
 | Production microVM backend and Pi inside a microVM | `MICROVM.md` contains separate historical KVM measurements. No microVM backend or Pi microVM task is implemented/claimed by this migration. |
 | Provider-side credential revocation, scoped keys and aggregate spend caps | Local TTL enforcement is not provider revocation. Per-boot spend-capped tokens and aggregate session/day budgets are not implemented. |
-| Live Pi provider behavior and model quality | Pi's migration gate is keyless. Historical DeepSeek live turns above used retired harnesses; no paid-provider Pi turn or quality benchmark is implied by them. |
+| Broad live-provider behavior and model quality | The current Pi CLI passes one bounded real DeepSeek Responses task (`pi-live.txt`), with tools, fresh verification and read-only review. That does not validate every protocol/model, long-task quality or a quality benchmark. Historical live turns used retired harnesses. |
 | Non-DeepSeek providers | Explicit named-provider configuration and Pi model/auth/effort delivery are checked at a compatible stub. Responses and Chat Completions are supported; native Anthropic/Google protocols and another hosted provider with a real key are not validated by those tests. |
 | The `countUnfetched` / host-drift logic under adversarial git states | §AB and §AC cover multiple branches, tags, an already-fetched ref, a non-git host, a detached host HEAD and a detached sandbox HEAD; a *rebased* sandbox branch, and commits that survive only in the sandbox reflog after a `reset --hard`, are still not staged. |
 | The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |

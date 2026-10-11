@@ -5,8 +5,8 @@
 Current moat runs Pi inside the sandbox. The retired Codex/Claude captures below remain historical
 measurements, **not evidence that the current harness has passed a live paid-provider test**.
 The current suite outputs are in `test/evidence/pi-summary.txt`, `pi-tui.txt`, `pi-legacy.txt`,
-`pi-package.txt`, `provider.txt`, `demo.txt`, `review.txt`, `egress.txt` and `extras.txt`; the trust generator reads
-those verdicts rather than carrying a hand-maintained test count.
+`pi-package.txt`, `pi-live.txt`, `provider.txt`, `demo.txt`, `review.txt`, `egress.txt` and `extras.txt`;
+the trust generator reads those verdicts rather than carrying a hand-maintained test count.
 
 ```sh
 npm run typecheck
@@ -25,10 +25,14 @@ npm pack
 bash test/pi-live.sh
 ```
 
-The bounded Pi live gate writes `test/evidence/pi-live.txt` only after a credential is available.
-It uses the real default DeepSeek model, tools, reported usage, fresh project verification and a
-read-only review. An absent capture is not a pass; older `live-session.txt` readings remain history.
-It is not a quality benchmark or proof of universal spending limits.
+The bounded Pi live gate passed against the real default `deepseek-flash` model using the current
+Pi CLI. `test/evidence/pi-live.txt` records successful tool execution, reported usage, independent
+in-box project verification and a committed fix fetched/reviewed with host HEAD/files unchanged.
+The fixture genuinely fails before the turn. Limits are 180 seconds, 30000 reported tokens and
+$0.10 reported cost; its estimated cost is not an invoice check. Only a scrubbed projection is
+committed, not the key or raw provider/tool conversation. Older `live-session.txt` readings remain
+history. This small Responses integration check is not a quality benchmark, a live test of every
+protocol/provider or proof of universal spending limits.
 
 The Pi acceptance drives the real pinned CLI through a deterministic local endpoint. It checks
 shell/edit/commit work, project hook and custom-tool execution inside the box, provider-side
@@ -2260,7 +2264,7 @@ Listed so that absence is not mistaken for success.
 | --- | --- |
 | Production microVM backend and Pi inside a microVM | `MICROVM.md` contains separate historical KVM measurements. No microVM backend or Pi microVM task is implemented/claimed by this migration. |
 | Provider-side credential revocation, scoped keys and aggregate spend caps | Local TTL enforcement is not provider revocation. Per-boot spend-capped tokens and aggregate session/day budgets are not implemented. |
-| Live Pi provider behavior and model quality | Pi's migration gate is keyless. Historical DeepSeek live turns above used retired harnesses; no paid-provider Pi turn or quality benchmark is implied by them. |
+| Broad live-provider behavior and model quality | The current Pi CLI passes one bounded real DeepSeek Responses task (`pi-live.txt`), with tools, fresh verification and read-only review. That does not validate every protocol/model, long-task quality or a quality benchmark. Historical live turns used retired harnesses. |
 | Non-DeepSeek providers | Explicit named-provider configuration and Pi model/auth/effort delivery are checked at a compatible stub. Responses and Chat Completions are supported; native Anthropic/Google protocols and another hosted provider with a real key are not validated by those tests. |
 | The `countUnfetched` / host-drift logic under adversarial git states | §AB and §AC cover multiple branches, tags, an already-fetched ref, a non-git host, a detached host HEAD and a detached sandbox HEAD; a *rebased* sandbox branch, and commits that survive only in the sandbox reflog after a `reset --hard`, are still not staged. |
 | The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |

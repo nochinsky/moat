@@ -1,0 +1,11 @@
+current Pi live smoke: deepseek/deepseek-flash
+limits: 180s per turn, 30000 reported tokens, $0.10 reported cost; provider-side cap still required
+pass: the unchanged fixture genuinely fails before the turn
+task exit: 0; reported code: 0
+models: deepseek/deepseek-flash
+completed tools: 6
+usage: {"input":3926,"cached":16000,"output":461,"reasoning":8}
+reported cost: $0.000918
+pass: a fresh in-box npm test verifies the fix independently
+pass: a new sandbox commit was fetched and reviewed; host HEAD and files remain unchanged
+pi live: bounded real DeepSeek task, tools, reported usage, verification and read-only review passed

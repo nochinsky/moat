@@ -17,7 +17,6 @@ and does not impose CPU, memory or disk quotas.
 
 > **Pi is the only harness from 0.1.0 onward.** Earlier npm releases use the retired harnesses.
 > Existing environments upgrade in place, preserving sandbox work. There is no `--runtime` selector.
-> If 0.1.0 is not yet available on npm, use the checkout instructions below.
 
 ## Try it without a key
 

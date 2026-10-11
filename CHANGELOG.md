@@ -27,7 +27,8 @@
   post-stat growth. These regression checks are not a comprehensive security audit.
 - In-place repair and an actual published-0.0.3 environment upgrade test, preserving work,
   branches, the recorded baseline and installed state.
-- Real Pi CLI acceptance, TUI, installed-tarball and bounded live-provider smoke-test entrypoints.
+- Real Pi CLI acceptance, TUI and installed-tarball gates. The bounded real DeepSeek Responses
+  smoke test passes, including tools, reported usage, independent checks and read-only review.
 - Updated contracts, customization documentation, generated trust page and release checks.
 - Fixed the composite CI action's nonexistent relative script path and incorrect review output.
   Its declared shell entrypoint and produced JSON are now exercised by a regression test.
