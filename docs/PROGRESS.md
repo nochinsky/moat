@@ -2,9 +2,11 @@
 
 moat now uses **Pi only**. The owner explicitly chose to replace both Codex and Claude Code rather
 than add another runtime. The sandbox/copy/review architecture is retained; harness customization
-belongs to Pi inside the box. **0.1.0 is the Pi-only release candidate**, with matching package and
-root-lock versions. A tag is not publication; check the release workflow and npm registry before
-calling it released. 0.0.x packages use the previous harnesses.
+belongs to Pi inside the box. **0.1.0 is published on npm as `moat-sandbox` and is the `latest`
+dist-tag**, from `v0.1.0` / commit `88e9bda095668b29667d845dbc52c2d0ef820138`.
+The [publication workflow](https://github.com/nochinsky/moat/actions/runs/38170437304) succeeded;
+registry installation, signatures/provenance and an actual sandbox demo pass (`pi-published.txt`).
+0.0.x packages use the previous harnesses.
 
 `AGENTS.md` and [`SPEC.md`](SPEC.md) are the contracts. [`PI.md`](PI.md) explains customization.
 [`VERIFICATION.md`](VERIFICATION.md) distinguishes current captures from historical measurements;
@@ -46,6 +48,8 @@ calling it released. 0.0.x packages use the previous harnesses.
 * The composite CI action now resolves the real script and returns the produced `review.json`.
   Its declared shell body is exercised, not just the script it was meant to call. The hosted-CI
   namespace probe now creates its mount target so capable runners are not falsely skipped.
+  The release commit's real hosted Ubuntu 22.04/24.04 namespace suites pass; `ci-hosted.txt`
+  checks uploaded acceptance/extras/egress captures, superseding the old blanket CI limitation.
 * Release notes, supported-platform requirements and a bounded current-Pi provider smoke gate
   are documented. The tag workflow checks and publishes the same compiled tarball.
 
@@ -110,5 +114,8 @@ A release is an explicit matching package version and `v*` tag. The release work
 tests and publishes with GitHub OIDC provenance, without a stored npm token. Do not reuse an
 already-published version. Pi's manifest and dependency lock must be present in the compiled
 package under `dist/bundle/pi-runtime/`; source files under `test/` are not runtime assets.
+Post-publication checks are reproduced with `bash test/pi-published.sh` and
+`bash test/ci-hosted.sh 38170437071`. The release tag is immutable; subsequent documentation and
+registry/CI evidence updates on main do not change the already-published package.
 [`RELEASE.md`](RELEASE.md) defines local gates, version/tag handling and publication confirmation;
 [`../CHANGELOG.md`](../CHANGELOG.md) records the 0.1.0 migration.

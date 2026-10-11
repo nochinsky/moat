@@ -2,7 +2,8 @@ name: moat
 description: >-
   Run a coding agent unattended in a disposable Linux sandbox and produce a reviewable diff
   without the agent ever touching the working tree. Requires a host with unprivileged user
-  namespaces — a self-hosted runner, not a GitHub-hosted one (see docs/CI.md).
+  namespaces; current capable hosted Ubuntu and self-hosted Linux runners are measured
+  (see docs/CI.md).
 author: nochinsky
 
 inputs:

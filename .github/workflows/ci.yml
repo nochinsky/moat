@@ -29,8 +29,8 @@ jobs:
       # nobody chose carefully; what matters is that the gap is visible, and the gap is
       # real: `sandbox/isolation.ts` is exercised by `moat doctor` and the e2e suites,
       # and `cmd/main.ts` is the CLI, which only a booting sandbox can test. Those are
-      # measured by `bash test/e2e-*.sh` on a host that can create user namespaces,
-      # which GitHub's runners cannot (see the `sandbox` job below).
+      # measured by `bash test/e2e-*.sh` on a host that can create user namespaces.
+      # The sandbox job probes actual runner capability; absence is never a pass.
       - name: unit test coverage (reported, not gated)
         run: npm run coverage
       - name: build (plain JS into dist/, for consumers who want it)

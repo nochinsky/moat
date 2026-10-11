@@ -1,0 +1,6 @@
+hosted CI run: 38170437071
+source commit: 88e9bda095668b29667d845dbc52c2d0ef820138
+URL: https://github.com/nochinsky/moat/actions/runs/38170437071
+ubuntu-22.04: acceptance (pi runtime): all criteria passed; checks passed: 50, failed: 0; egress checks passed
+ubuntu-24.04: acceptance (pi runtime): all criteria passed; checks passed: 50, failed: 0; egress checks passed
+ci hosted: real Pi acceptance, extras and egress passed on ubuntu-22.04 and ubuntu-24.04; uploaded captures checked

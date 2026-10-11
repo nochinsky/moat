@@ -52,8 +52,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
 
       # The same gate the repository uses. A release that cannot pass its own unit tests must not
-      # reach the registry; the sandbox suites stay out because GitHub's runners cannot create
-      # user namespaces (see ci.yml).
+      # reach the registry. This publication job uses local sandbox evidence plus main CI's
+      # capability-gated sandbox suites; it does not count them as having run in this job.
       - run: npm run typecheck
       - run: npm run test:unit
       - run: bash test/ci-entrypoint.test.sh

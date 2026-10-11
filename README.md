@@ -155,9 +155,10 @@ bash test/pi-live.sh                 # bounded current-Pi provider smoke test
 Development runs TypeScript directly through Node's type stripping. `npm run build` is for the
 published tarball: it ships compiled `dist/` because Node cannot strip types inside `node_modules`.
 
-Run sandbox suites **sequentially** on a host that supports user namespaces. GitHub-hosted runners
-cannot run them; absence is reported, not counted as a pass. Suites write committed evidence under
-`test/evidence/`; regenerate it rather than editing it.
+Run sandbox suites **sequentially** on a host that supports user namespaces. The current hosted
+Ubuntu 22.04/24.04 CI runs pass them after the workflow's capability setup/probe; other runner
+policies may refuse namespaces. Absence is reported, not counted as a pass. See [`docs/CI.md`](docs/CI.md).
+Suites write committed evidence under `test/evidence/`; regenerate it rather than editing it.
 
 ## Read more
 
@@ -166,7 +167,7 @@ cannot run them; absence is reported, not counted as a pass. Suites write commit
 - [`docs/PI.md`](docs/PI.md) / [`docs/SEAM.md`](docs/SEAM.md): customization and the host/agent boundary.
 - [`docs/PROGRESS.md`](docs/PROGRESS.md): status and open work.
 - [`docs/RELEASE.md`](docs/RELEASE.md) / [`CHANGELOG.md`](CHANGELOG.md): release gates and migration notes.
-- [`docs/CI.md`](docs/CI.md): unattended tasks on self-hosted runners.
+- [`docs/CI.md`](docs/CI.md): unattended tasks on capable hosted or self-hosted Linux runners.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) / [`AGENTS.md`](AGENTS.md): contributing and load-bearing constraints.
 - [`SECURITY.md`](SECURITY.md): private vulnerability reporting and documented non-goals.
 

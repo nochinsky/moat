@@ -67,9 +67,9 @@ before pushing. Only push the tag once the owner has authorized publication and 
 ## Publication and confirmation
 
 The tag workflow runs typecheck/unit/CI-entrypoint/trust checks, builds and checks the packed assets,
-and publishes **the checked tarball** with provenance. GitHub-hosted runners cannot rerun the
-sandbox gates; local evidence is still required. Trusted publishing uses GitHub OIDC, not a stored
-npm token. The configured npm trusted publisher is `nochinsky/moat`, workflow `release.yml`.
+and publishes **the checked tarball** with provenance. This tag workflow does not rerun the
+sandbox gates; main CI does when its actual capability probe succeeds. Local TUI/upgrade/package/
+live evidence is still required. Trusted publishing uses GitHub OIDC, not a stored npm token. The configured npm trusted publisher is `nochinsky/moat`, workflow `release.yml`.
 
 ```bash
 gh run list --workflow release.yml --limit 3
@@ -81,4 +81,10 @@ npm view moat-sandbox dist-tags --json
 Confirm both the workflow conclusion and npm's version/dist-tag. A successful push is not a
 successful publish. If publication fails, diagnose the workflow first; do not request an npm token
 or silently fall back to local publication. An already-published version needs a new version/tag,
-not a retry under the same version.
+not a retry under the same version. After publication, verify the actual registry package too:
+
+```bash
+bash test/pi-published.sh   # registry install, signatures/provenance and an in-box demo
+```
+
+Its capture is `test/evidence/pi-published.txt`; this is distinct from a local tarball test.

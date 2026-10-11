@@ -117,7 +117,7 @@ docs/            SPEC (the contract), VERIFICATION (the evidence),
                  the project up next; read it before AGENTS.md if you are that), TRUST
                  (generated from the evidence — the
                  verified/not-verified page), CI (running moat in a pipeline, and why a
-                 GitHub-hosted runner cannot), PROGRESS (where things
+                 runner capability must be measured), PROGRESS (where things
                  stand), archive/ (the build journal and the finished phase
                  program — history, not instructions)
 ```
@@ -199,11 +199,13 @@ bash test/pi-live.sh     # bounded real DeepSeek gate; key already in the launch
 Raw output lands in `test/evidence/`, which is committed and quoted by
 `docs/VERIFICATION.md`. Regenerate it by running the suites; do not hand-edit it.
 
-**CI cannot run the sandbox suite.** GitHub's hosted runners cannot create unprivileged
-user namespaces: `max_user_namespaces` is fine and AppArmor can be lifted, but `unshare`
-is killed by the runner's own confinement. The workflow reports that as a warning rather
-than pretending a suite ran. Run the suites locally before pushing anything that touches
-`sandbox/`.
+**CI capability is measured, not inferred from the runner brand.** The 0.1.0 release commit's
+hosted Ubuntu 22.04/24.04 jobs passed real Pi acceptance, extras and egress; uploaded captures
+are checked by `test/ci-hosted.sh` and recorded in `test/evidence/ci-hosted.txt`. This supersedes
+the old blanket "hosted runners cannot" claim. The workflow creates its probe mount target and
+lifts AppArmor's userns restriction when present; other policies may still refuse. A skip is not
+a pass, and local isolation/TUI/upgrade/package/live gates remain required before release.
+See `docs/CI.md`. Run relevant suites locally before pushing changes to `sandbox/`.
 
 ## Traps
 

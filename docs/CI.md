@@ -1,84 +1,93 @@
 # Running moat in CI
 
-The `moat` action runs one unattended task in the sandbox and writes a review, so a pipeline can let
-an agent loose on real work and hand a human a classified diff instead of an unexpected commit.
+The `moat` action runs one unattended task in the sandbox and writes a review. It does not apply
+changes or open a pull request. **The requirement is usable Linux user namespaces, not a particular
+runner brand.** Probe the actual host; never fall back to running the agent on the host.
+
+## Current hosted-runner evidence
+
+The 0.1.0 release commit passed the real Pi acceptance, extras and egress suites on GitHub-hosted
+**Ubuntu 22.04 and Ubuntu 24.04**. The run is
+[`38170437071`](https://github.com/nochinsky/moat/actions/runs/38170437071), source commit
+`88e9bda095668b29667d845dbc52c2d0ef820138`. `test/evidence/ci-hosted.txt` is generated from its job
+results **and the uploaded suite captures**, not only green job labels:
+
+```bash
+bash test/ci-hosted.sh 38170437071
+```
+
+Older captures reported unavailable namespaces, and earlier docs generalized that to all hosted
+runners. The workflow probe also had a defect: its tmpfs mount target did not exist, so a capable
+runner could be falsely skipped. The probe now uses a unique existing directory. These current
+passing runs supersede the blanket limitation; they do not promise that every future runner,
+organization policy or kernel configuration will allow namespaces.
+
+The repository workflow lifts `kernel.apparmor_restrict_unprivileged_userns` when present, then
+probes actual namespace/mount capability. A workflow without that permission may still be refused.
+A self-hosted Linux runner is another option, not a universal requirement. macOS and native Windows
+remain unsupported by this release.
+
+## Example
 
 ```yaml
 jobs:
   agent:
-    # Self-hosted: see "GitHub-hosted runners cannot run this" below.
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-24.04  # or a capable self-hosted Linux runner
     steps:
       - uses: actions/checkout@v5
-      - uses: nochinsky/moat/.github/actions/moat@main
+      - name: Allow user namespaces where AppArmor restricts them
+        run: |
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - uses: nochinsky/moat/.github/actions/moat@v0.1.0
         with:
-          task: Fix the failing tests in src/.
-          moat-args: --profile node --max-tokens 200000
+          task: Fix the failing tests in src/ and commit the fix.
+          moat-args: --profile node --timeout 180 --max-tokens 30000 --max-cost 0.10
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 ```
 
-The action uploads the output directory as a `moat-review` artifact: the doctor report, the task's
-own log, and `review.json` — `moat take --json`, the three-way classification plus the project's own
-checks. [`SPEC.md` §4](SPEC.md#4-review-and-apply) describes the review contract.
+Use a provider-scoped credential with a low provider-side spend cap. The streamed limits monitor
+reported usage for one task, not every request an extension might make or an aggregate daily budget.
+The agent can read the injected key and project. A pipeline should still review the result.
 
-## GitHub-hosted runners cannot run this
-
-Not a caveat, a measurement, taken in this repository's own CI. On `ubuntu-latest`:
-
-```
-host capability probe:
-  "userns": false,
-  "unprivileged user namespaces are unavailable: `unshare --user --map-root-user` could not
-   mount a tmpfs. moat has no host fallback, so it cannot run here."
-
-sandbox end-to-end (ubuntu-24.04):
-  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-  kernel.apparmor_restrict_unprivileged_userns = 0     ← lifted, and unshare is still killed
-```
-
-moat isolates with `unshare` + `mount` + `chroot` and **has no host fallback by design**
-(`docs/SPEC.md` §§2.3 and 7.1). A runner that cannot create unprivileged user namespaces cannot run
-it, and lifting AppArmor is not enough because the runner's own confinement kills `unshare`
-afterwards. macOS and native Windows are not supported by this release. `docs/PORTABILITY.md` retains the
-older backend experiments; they are not evidence that current Pi works on a hosted runner or Mac.
+The action uploads a `moat-review` artifact: the doctor report, task log and `review.json`.
+[`SPEC.md` §4](SPEC.md#4-review-and-apply) describes the review contract. Its `review` output points
+to that JSON file.
 
 ## What the entrypoint does
 
-`scripts/ci/run-task.sh` is the whole action; the YAML only calls it, because a composite action is
-YAML nobody can run locally and this has two branches that both have to be provable.
+`scripts/ci/run-task.sh` is the entrypoint; the composite YAML invokes it.
 
-1. **`moat doctor --json` first.** If `host.userns` is not `true`, it prints the doctor's own
-   `host.problems` — the real reason — and exits **2** without running anything. A host that cannot
-   sandbox should fail saying so, not fail later with something that reads like a moat bug.
-2. **`moat run "<task>"`** — the turn, unattended, in the box. Its log is captured and its exit code
-   is the run's.
-3. **`moat take --json --quiet`** — fetch the agent's branch, classify the three trees, and run the
-   project's own checks. The human summary in the log is **derived from that JSON**, not parsed out
-   of the CLI's prose (SPEC §4). **Read-only**: nothing reaches the working tree, which is why a CI run can
-   produce a review without the host project being touched (SPEC §4).
+1. **`moat doctor --json` first.** If the command fails or `host.userns` is not `true`, refuse with
+   the doctor's reason and exit **2** before the task. No host-agent fallback.
+2. **`moat run "<task>"`.** Run unattended in the box, with stdin closed and captured logs.
+3. **`moat take --json --quiet`.** Fetch a review ref, classify the trees and run the project's
+   checks. The summary is derived from JSON. The host working tree is not written.
 
 | exit | meaning |
 | --- | --- |
-| 0 | the task ran and the review was written |
+| 0 | the task ran and a review was written; inspect its check verdict before accepting |
 | 1 | the task failed, or the review could not be produced |
-| 2 | this host cannot sandbox, or no task was named — nothing was run |
+| 2 | the host cannot sandbox or no task was named; nothing was run |
 
-## What it deliberately does not do
+## What it does not do
 
-* **It does not `moat apply`.** A review is not a decision; writing the agent's work onto a branch in
-  CI would be the "automatic apply" the whole design avoids. A workflow that wants the change adds
-  its own `moat apply` step, on a branch it chose.
-* **It does not open a pull request.** That is a policy question about a repository, not a property
-  of the sandbox, and the action stops at the artifact.
-* **It does not make a hosted runner work.** Nothing here can; it makes the failure honest.
+- **No `moat apply`.** Writing accepted changes is a separate explicit workflow decision.
+- **No automatic pull request.** The action stops at a review artifact.
+- **No workaround for an incapable runner.** It reports a refusal rather than relaxing isolation.
+- **No universal hosted-runner guarantee.** The current passing configurations are evidence,
+  not a promise about every image or future kernel policy.
 
-## Testing the entrypoint
+## Tests and release gates
 
-`test/ci-entrypoint.test.sh` runs both branches with a fake `moat` on `PATH`, so it needs no user
-namespaces and **does** run on a hosted runner — `ci.yml` runs it in the `checks` job for exactly
-that reason. It asserts the refusal, the happy path, a failed task, a failed review, and an empty
-task, and it was proved to bite by deleting the user-namespace gate (two checks fail).
-`test/unit/ci-action.test.ts` additionally executes the action's declared shell body with a fake CLI,
-so a nonexistent relative entrypoint or a nonexistent review output fails before release.
-The actual task still uses the real sandbox; these fake-CLI checks do not validate a model turn.
+`test/ci-entrypoint.test.sh` exercises refusal, success, failed task/review and empty-task paths
+with a fake CLI; it needs no namespaces. `test/unit/ci-action.test.ts` executes the declared shell
+body and validates the JSON output path, and checks that the namespace probe receives an existing
+mount target. Restoring either old action path/output or the missing-target probe fails the guard.
+
+The real sandbox work is measured separately by the namespace suites and the uploaded artifacts.
+TUI, old-environment upgrade, installed-package and real-provider gates are still run locally before
+release. The tag publication workflow checks type/unit/trust/package assets; the main CI workflow
+runs sandbox suites **only when the capability probe succeeds**. A skipped suite is not a pass.

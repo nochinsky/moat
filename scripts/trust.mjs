@@ -48,6 +48,8 @@ const SUITES = [
   { name: "published-env upgrade", command: "bash test/pi-legacy.sh", evidence: "pi-legacy.txt", pattern: /^pi legacy: .*/m },
   { name: "installed package", command: "bash test/pi-package.sh", evidence: "pi-package.txt", pattern: /^pi package: .*/m },
   { name: "Pi live DeepSeek (paid)", command: "bash test/pi-live.sh", evidence: "pi-live.txt", pattern: /^pi live: .*/m },
+  { name: "published registry package", command: "bash test/pi-published.sh", evidence: "pi-published.txt", pattern: /^pi published: .*/m },
+  { name: "hosted CI sandbox evidence", command: "bash test/ci-hosted.sh <run-id>", evidence: "ci-hosted.txt", pattern: /^ci hosted: .*/m },
   { name: "extras", command: "bash test/e2e-extras.sh", evidence: "extras.txt", pattern: /^checks passed: .*/m },
   { name: "egress", command: "bash test/e2e-egress.sh", evidence: "egress.txt", pattern: /^egress checks passed.*/m },
   { name: "provider", command: "bash test/e2e-provider.sh", evidence: "provider.txt", pattern: /^checks passed: .*/m },
@@ -129,10 +131,10 @@ export function renderTrust() {
   }
   lines.push("")
   lines.push(
-    "Every sandbox suite must be run on a host with unprivileged user namespaces, which GitHub's",
+    "Sandbox suites require usable user namespaces. Current hosted Ubuntu CI passes after capability",
   )
   lines.push(
-    "runners cannot provide — see [`CI.md`](CI.md). The captures above are committed in",
+    "setup/probing; other runners may refuse — see [`CI.md`](CI.md). Captures are committed in",
   )
   lines.push("`test/evidence/` and quoted by [`VERIFICATION.md`](VERIFICATION.md).")
   lines.push("")

@@ -22,6 +22,8 @@ their own policies or UI waits. The sandbox is not a confidentiality or resource
 | published-env upgrade | `pi legacy: published Codex environment upgraded in place; work, refs, baseline and installed state preserved` | `bash test/pi-legacy.sh` |
 | installed package | `pi package: installed compiled CLI, pinned lock assets, stale-output cleanup and real sandbox demo passed` | `bash test/pi-package.sh` |
 | Pi live DeepSeek (paid) | `pi live: bounded real DeepSeek task, tools, reported usage, verification and read-only review passed` | `bash test/pi-live.sh` |
+| published registry package | `pi published: registry install, signatures/provenance, compiled assets and real sandbox demo passed` | `bash test/pi-published.sh` |
+| hosted CI sandbox evidence | `ci hosted: real Pi acceptance, extras and egress passed on ubuntu-22.04 and ubuntu-24.04; uploaded captures checked` | `bash test/ci-hosted.sh <run-id>` |
 | extras | `checks passed: 49, failed: 0` | `bash test/e2e-extras.sh` |
 | egress | `egress checks passed` | `bash test/e2e-egress.sh` |
 | provider | `checks passed: 9, failed: 0` | `bash test/e2e-provider.sh` |
@@ -29,8 +31,8 @@ their own policies or UI waits. The sandbox is not a confidentiality or resource
 | review | `checks passed: 21, failed: 0` | `bash test/e2e-review.sh` |
 | CI entrypoint | Needs no user namespaces, so unlike the sandbox suites it runs on a hosted runner too. | `bash test/ci-entrypoint.test.sh` |
 
-Every sandbox suite must be run on a host with unprivileged user namespaces, which GitHub's
-runners cannot provide — see [`CI.md`](CI.md). The captures above are committed in
+Sandbox suites require usable user namespaces. Current hosted Ubuntu CI passes after capability
+setup/probing; other runners may refuse — see [`CI.md`](CI.md). Captures are committed in
 `test/evidence/` and quoted by [`VERIFICATION.md`](VERIFICATION.md).
 
 ## What is **not** verified

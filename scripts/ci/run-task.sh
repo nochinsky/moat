@@ -6,13 +6,10 @@
 # action is YAML nobody can run locally, and this has two branches that both have to be provable —
 # "this host can sandbox, run the task" and "this host cannot, say why and stop".
 #
-# **GitHub-hosted runners cannot run this.** Measured in this repository's own CI: on
-# `ubuntu-latest`, `moat doctor --json` reports `"userns": false` with
-# "unprivileged user namespaces are unavailable: `unshare --user --map-root-user` could not mount a
-# tmpfs", and lifting AppArmor (`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`)
-# does not change it, because the runner's own confinement kills `unshare`. So this is for a
-# **self-hosted** runner, or any Linux host where `bash test/portability-spike.sh` section 2 says
-# MEASURED. `docs/CI.md` has the evidence and `docs/PORTABILITY.md` the analysis.
+# Probe the actual host, not its runner brand. Older CI readings were refusals; the 0.1.0
+# hosted Ubuntu 22.04/24.04 runs pass real namespace suites after capability setup/probing.
+# Other kernel/organization policies may still refuse. No runner gets a host-agent fallback.
+# `docs/CI.md` and `test/evidence/ci-hosted.txt` record the current measurements.
 #
 # Environment (the action's inputs land here):
 #   MOAT            how to invoke the CLI            (default: npx -y moat-sandbox)
@@ -72,8 +69,8 @@ if [ "$userns" != "yes" ]; then
   say "moat-ci: this host cannot run the sandbox (userns=$userns). Nothing was run."
   say ""
   say "  moat has no host fallback: it isolates with unshare + mount + chroot and refuses"
-  say "  without unprivileged user namespaces. GitHub-hosted runners are in this category —"
-  say "  see docs/CI.md — so this needs a self-hosted runner. To check a host:"
+  say "  without unprivileged user namespaces. Enable them where policy permits, or use a"
+  say "  capable Linux runner — see docs/CI.md. To check a host:"
   say "      bash test/portability-spike.sh"
   say ""
   node -e '

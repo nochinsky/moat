@@ -250,8 +250,9 @@ claim a proxied boot where the selected backend/egress mode cannot carry one.
 
 [`VERIFICATION.md`](VERIFICATION.md) and its closing **Not verified** table distinguish captured
 success from absence of a test. [`TRUST.md`](TRUST.md) is generated from suite outputs. Run the
-sandbox suites locally before changing isolation; GitHub-hosted runners cannot supply the required
-user namespaces. Never hand-edit captured evidence.
+sandbox suites locally before changing isolation. Current hosted Ubuntu CI runs pass the namespace
+suites after capability setup; other runners may refuse, and a skip is not a pass. `CI.md` records
+the measured configurations. Never hand-edit captured evidence.
 
 There are no moat-managed CPU/memory/disk quotas, provider-side scoped credentials, aggregate spend
 caps, a microVM backend, a universal curated tool list, a proof that an accepted subset is correct,

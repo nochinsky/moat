@@ -50,7 +50,11 @@ must all survive. It does not relabel an old rootfs as new or assert only on the
 
 Pi's manifest/dependency lock ship beside the compiled installer. A local tarball install checks
 both shipped assets, stale-adapter output cleanup and the compiled CLI's real sandbox demo
-(`test/pi-package.sh`); this is not a hosted npm release. Egress regression
+(`test/pi-package.sh`); this alone is not a hosted npm release. The actual 0.1.0 publication workflow
+[passed](https://github.com/nochinsky/moat/actions/runs/38170437304), and `test/pi-published.sh`
+checks the registry artifact's version, signatures/provenance, compiled graph/assets and real
+in-box demo. `test/evidence/pi-published.txt` records that distinct post-publication test.
+Egress regression
 exposed a readiness race: a visible veth let short commands exit before the peer/listener was ready.
 The boot now waits for actual connectivity and the egress suite is rerun, not waived as unrelated.
 
@@ -71,8 +75,12 @@ exist relative to `.github/actions/moat`, and its output named `review.txt` inst
 it failed before both fixes and passes after. This checks action plumbing, not model behavior.
 The hosted-CI namespace probe also lacked its mount target, which could falsely skip capable
 runners. It now creates a unique target; the declared probe is tested with a fake `unshare` that
-accepts only a real directory. Restoring the old probe fails that test. This does not establish
-that GitHub-hosted runners allow namespaces.
+accepts only a real directory. Restoring the old probe fails that test. The actual release-commit
+[hosted CI run](https://github.com/nochinsky/moat/actions/runs/38170437071) then passed real Pi
+acceptance, extras and egress on Ubuntu 22.04/24.04. `test/ci-hosted.sh` checks both step execution
+and the uploaded suite verdicts, generating `test/evidence/ci-hosted.txt`. This supersedes the old
+blanket hosted-runner limitation, not every possible kernel/organization policy. `CI.md` names the
+setup and the capability check. A skipped suite on another runner remains a skip, not a pass.
 The tag workflow checks the compiled package graph/assets and publishes that checked tarball.
 
 Read the **Not verified** table at the end before interpreting any historical capture below.

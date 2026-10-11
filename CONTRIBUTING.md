@@ -38,7 +38,8 @@ your test fail, say so in the pull request rather than shipping it.
 touching copy-in, copy-out, apply, snapshots or state. `bash test/e2e-pi.sh` for the Pi
 harness, config, extensions or event parser; `python3 test/pi-tui.py` for interactive boot. `bash test/e2e-egress.sh` for network policy.
 `bash test/e2e-review.sh` for `moat apply`'s classification and partial accepts. They need user
-namespaces, so they cannot run in CI; run them locally and say what you saw.
+namespaces; current hosted Ubuntu CI runs pass them after capability setup, while other runners
+may refuse. Run relevant local gates too and say what you saw; a skipped CI suite is not a pass.
 
 **Evidence, by running the suites.** `test/evidence/` is committed and quoted by
 `docs/VERIFICATION.md`. Never hand-edit it.
