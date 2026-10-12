@@ -34,7 +34,7 @@ export async function probeHost(): Promise<Doctor> {
   const notes: string[] = []
 
   const linux = process.platform === "linux"
-  if (!linux) problems.push(`unsupported platform ${process.platform}: moat is Linux-only (WSL2 via the container path)`)
+  if (!linux) problems.push(`unsupported platform ${process.platform}: moat supports Linux x86-64, including WSL2 with usable namespaces`)
 
   let virt = "none"
   try {
@@ -92,8 +92,8 @@ export async function probeHost(): Promise<Doctor> {
   }
   notes.push(
     kvm
-      ? "/dev/kvm usable: the v1 microVM path is available on this host"
-      : `no usable /dev/kvm (${kvmDetail}): v1 microVM unavailable here; the v0 container path is the supported mode`,
+      ? "/dev/kvm is accessible; moat has no production microVM backend (see docs/MICROVM.md for the separate spike)"
+      : `no usable /dev/kvm (${kvmDetail}); KVM is not required by moat's default namespace backend`,
   )
 
   // Device-node creation is impossible in an unprivileged user namespace; we

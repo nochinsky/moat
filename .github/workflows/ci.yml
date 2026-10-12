@@ -95,12 +95,23 @@ jobs:
       - name: acceptance suite, keyless (Pi against the compatible API stub)
         if: steps.userns.outputs.available == 'true'
         run: bash test/e2e-pi.sh
+      - name: unborn Git copy-in (real Pi task and read-only review)
+        if: steps.userns.outputs.available == 'true'
+        run: bash test/pi-unborn.sh
+      - name: Pi customization (package, MCP, resume and headless policy)
+        if: steps.userns.outputs.available == 'true'
+        run: bash test/pi-customization.sh
       - name: secondary suite (snapshots, apply, credential expiry)
         if: steps.userns.outputs.available == 'true'
         run: bash test/e2e-extras.sh
       - name: egress suite (own namespace, slirp datapath, closed loopback, allowlist)
         if: steps.userns.outputs.available == 'true'
         run: bash test/e2e-egress.sh
+      # These runners have rootless Podman. Require a real Pi loop and cleanup:
+      # an unavailable runtime exits 77 here and fails, rather than counting a skip.
+      - name: Pi container acceptance (task, limits and cleanup)
+        if: steps.userns.outputs.available == 'true'
+        run: bash test/pi-container.sh
       - name: upload evidence
         if: always() && steps.userns.outputs.available == 'true'
         uses: actions/upload-artifact@v5

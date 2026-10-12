@@ -232,5 +232,5 @@ const server = http.createServer((req, res) => {
   })
 })
 server.listen(port, host, () => {
-  console.log("[mock-responses] listening on http://127.0.0.1:" + port + "/v1/responses (" + turns.length + " scripted turn(s))")
+  console.log("[mock-responses] listening on http://" + host + ":" + server.address().port + "/v1/responses (" + turns.length + " scripted turn(s))")
 })

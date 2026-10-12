@@ -1,0 +1,5 @@
+pass: dependency installation, local Pi package, explicit skill, MCP search/resource and committed fix ran inside the box
+pass: down/up retained the package and session; explicit Pi resume kept context and expanded a package prompt template
+pass: the extension denied a UI-dependent headless call before MCP dispatch; the stdio server was reaped
+pass: read-only fetch/review left host files and HEAD unchanged; dependencies and MCP witnesses never appeared on the host
+pi-customization: all criteria passed (local package, stdio MCP, skills/prompts, resume, headless policy)

@@ -29,7 +29,9 @@ export { SANITIZED_GIT_ENV }
  * `git clone` only reproduces *committed* state, so the uncommitted working
  * tree is reproduced on top, using git itself: `git diff --binary HEAD` for
  * tracked modifications and deletions, and `ls-files -o --exclude-standard`
- * for untracked files. Driving it through git (rather than rsync) is what makes
+ * for untracked files. With unborn HEAD there is no patch base: copy both cached
+ * and untracked paths from the working tree, not from the index. Driving it
+ * through git (rather than rsync) is what makes
  * deletes, renames, symlinks and binaries come out right.
  *
  * Non-git directories fall back to rsync (as specified) and are then given a
@@ -82,7 +84,7 @@ export async function hostState(projectDir: string): Promise<string> {
     return `tree:${hashTree(projectDir).digest}`
   }
   const head = (
-    await run("git", ["-C", projectDir, "rev-parse", "HEAD"], { env: SANITIZED_GIT_ENV, allowFailure: true })
+    await run("git", ["-C", projectDir, "rev-parse", "--verify", "--quiet", "HEAD"], { env: SANITIZED_GIT_ENV, allowFailure: true })
   ).stdout.trim()
   const status = (
     await runRaw("git", ["-C", projectDir, "status", "--porcelain", "-z"], { env: SANITIZED_GIT_ENV, allowFailure: true })
@@ -93,12 +95,17 @@ export async function hostState(projectDir: string): Promise<string> {
   // re-encoding corrupts it. Hashing the bytes also keeps the fingerprint
   // independent of git's text escaping. (Binary *files* are base85 in the diff;
   // latin-1 *text* is not.)
+  // Diff indexed working files against the empty tree when HEAD is unborn. Comparing
+  // against literal HEAD fails and would miss edits to staged files before the first commit.
+  const diffBase = head || (await run("git", ["-C", projectDir, "hash-object", "-t", "tree", "--stdin"], {
+    env: SANITIZED_GIT_ENV, input: "",
+  })).stdout.trim()
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "moat-hoststate-"))
   const patch = path.join(scratch, "worktree.patch")
   try {
     await run(
       "git",
-      ["-C", projectDir, "diff", "--binary", "--no-ext-diff", `--output=${patch}`, "HEAD"],
+      ["-C", projectDir, "diff", "--binary", "--no-ext-diff", `--output=${patch}`, diffBase],
       { env: SANITIZED_GIT_ENV, allowFailure: true },
     )
     const bytes = fs.existsSync(patch) ? fs.readFileSync(patch) : Buffer.alloc(0)
@@ -250,35 +257,47 @@ async function cloneGit(p: EnvPaths, quiet = false): Promise<string[]> {
   if (!quiet) log.step("copy-in: git clone --no-hardlinks")
   await run("git", ["clone", "--no-hardlinks", "--quiet", p.projectDir, p.work], { env: SANITIZED_GIT_ENV })
 
-  // Reproduce the uncommitted working tree exactly. The patch goes through a
-  // file for the same reason the baseline archive does: string capture is lossy
-  // for bytes that are not valid UTF-8.
-  const patch = path.join(p.dir, "runtime", "worktree.patch")
-  fs.mkdirSync(path.dirname(patch), { recursive: true })
-  await run("git", ["-C", p.projectDir, "diff", "--binary", "--no-ext-diff", `--output=${patch}`, "HEAD"], {
-    env: SANITIZED_GIT_ENV,
-    allowFailure: true,
-  })
-  if (fs.existsSync(patch) && fs.statSync(patch).size > 0) {
-    const applied = await sandboxGit(p.work, ["apply", "--whitespace=nowarn", patch], { allowFailure: true })
-    if (applied.code !== 0) {
-      log.warn(`could not replay uncommitted tracked changes: ${applied.stderr.trim()}`)
+  const head = await sandboxGit(p.work, ["rev-parse", "--verify", "--quiet", "HEAD"], { allowFailure: true })
+  const unborn = head.code !== 0
+  if (!unborn) {
+    // Reproduce tracked changes against the committed clone. A file pipeline retains
+    // non-UTF-8 content; decoding a patch as a string can silently corrupt it.
+    const patch = path.join(p.dir, "runtime", "worktree.patch")
+    fs.mkdirSync(path.dirname(patch), { recursive: true })
+    await run("git", ["-C", p.projectDir, "diff", "--binary", "--no-ext-diff", `--output=${patch}`, "HEAD"], {
+      env: SANITIZED_GIT_ENV,
+      allowFailure: true,
+    })
+    if (fs.existsSync(patch) && fs.statSync(patch).size > 0) {
+      const applied = await sandboxGit(p.work, ["apply", "--whitespace=nowarn", patch], { allowFailure: true })
+      if (applied.code !== 0) log.warn(`could not replay uncommitted tracked changes: ${applied.stderr.trim()}`)
     }
+    fs.rmSync(patch, { force: true })
   }
-  fs.rmSync(patch, { force: true })
 
-  const untracked = await run(
+  // An empty clone has no indexed files. Include the host's cached paths too, but
+  // copy their current working bytes (including post-stage edits), not their staged blobs.
+  // Ignored untracked files remain excluded; force-added ignored files still travel.
+  const listed = await run(
     "git",
-    ["-C", p.projectDir, "ls-files", "-o", "--exclude-standard", "-z"],
+    ["-C", p.projectDir, "ls-files", ...(unborn ? ["--cached"] : []), "-o", "--exclude-standard", "-z"],
     { env: SANITIZED_GIT_ENV },
   )
-  const names = untracked.stdout.split("\0").filter((name) => name.length > 0)
+  const names = [...new Set(listed.stdout.split("\0").filter((name) => name.length > 0))]
   const skipped = new Set<string>()
   for (const name of names) {
     const from = path.join(p.projectDir, name)
     const to = path.join(p.work, name)
     fs.mkdirSync(path.dirname(to), { recursive: true })
-    const stat = fs.lstatSync(from)
+    let stat: fs.Stats
+    try {
+      stat = fs.lstatSync(from)
+    } catch (error) {
+      // A cached path can have been deleted after staging. Absence is the working
+      // tree state to reproduce, not a missing-file copy failure.
+      if (unborn && (error as NodeJS.ErrnoException).code === "ENOENT") continue
+      throw error
+    }
     if (stat.isSymbolicLink()) {
       fs.rmSync(to, { force: true })
       fs.symlinkSync(fs.readlinkSync(from), to)
@@ -289,7 +308,7 @@ async function cloneGit(p: EnvPaths, quiet = false): Promise<string[]> {
       skipped.add(`${name} (${kindOf(stat)})`)
     }
   }
-  if (names.length > 0) log.debug(`copied ${names.length} untracked file(s)`)
+  if (names.length > 0) log.debug(`copied working files from ${names.length} ${unborn ? "cached/untracked" : "untracked"} path(s)`)
   for (const item of await findUncopiedPaths(p.projectDir)) skipped.add(item)
   return [...skipped].sort()
 }
@@ -314,8 +333,8 @@ async function finalize(p: EnvPaths, transport: "git" | "rsync", skippedFromCopy
   let untrackedFiles = 0
 
   if (transport === "git") {
-    head = (await sandboxGit(p.work, ["rev-parse", "HEAD"], { allowFailure: true })).stdout.trim() || null
-    branch = (await sandboxGit(p.work, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFailure: true })).stdout.trim() || null
+    head = (await sandboxGit(p.work, ["rev-parse", "--verify", "--quiet", "HEAD"], { allowFailure: true })).stdout.trim() || null
+    branch = (await sandboxGit(p.work, ["symbolic-ref", "--quiet", "--short", "HEAD"], { allowFailure: true })).stdout.trim() || (head ? "HEAD" : null)
     const status = await sandboxGit(p.work, ["status", "--porcelain", "-z"], { allowFailure: true })
     const entries = status.stdout.split("\0").filter((line) => line.length > 0)
     dirty = entries.length > 0
@@ -340,8 +359,8 @@ async function finalize(p: EnvPaths, transport: "git" | "rsync", skippedFromCopy
 }
 
 /**
- * Record the exact state moat copied, as a commit, without touching the working
- * tree or the index.
+ * Record committed state as the comparison baseline, without touching the working
+ * tree or the index. No host HEAD means an empty baseline, not a dirty-tree snapshot.
  *
  * This is the "base" of the three-way merge that makes applying safe: with it,
  * moat can tell a file the user changed from a file the agent changed, and merge
@@ -389,12 +408,9 @@ export async function recordBaseline(p: EnvPaths): Promise<string | null> {
   // comparison can see it. The working tree still travels with the copy-in unchanged, so the
   // agent sees the user's work; only what counts as "before" changes.
   const head = await sandboxGit(p.work, ["rev-parse", "--verify", "--quiet", "HEAD"], { env, allowFailure: true })
-  await sandboxGit(p.work, ["read-tree", "HEAD"], { env, allowFailure: true })
-  if (head.code !== 0 || head.stdout.trim().length === 0) {
-    // No HEAD: a repository with no commit yet. There is nothing to record as "before", so the
-    // tree is the baseline, which is what the old code did for every case.
-    await sandboxGit(p.work, ["add", "-A"], { env })
-  }
+  // The copied files are user work even before the first commit. Recording them
+  // here would turn an agent's competing addition into a silent overwrite.
+  await sandboxGit(p.work, ["read-tree", head.code === 0 ? "HEAD" : "--empty"], { env })
   const tree = await sandboxGit(p.work, ["write-tree"], { env, allowFailure: true })
   if (tree.code !== 0) return null
   const commit = await sandboxGit(p.work, ["commit-tree", tree.stdout.trim(), "-m", "moat: state copied from the host"], {

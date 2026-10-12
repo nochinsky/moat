@@ -138,32 +138,75 @@ test("a file you edited and the agent rewrote is a conflict, not a silent overwr
   )
 })
 
-test("a repository with no commits yet loses its working tree on copy-in, which is a known trap", async (t) => {
-  // **This documents a real limitation, not a behaviour worth keeping.** `copy-in` on a git
-  // project is `git clone --no-hardlinks`, and cloning a repository whose HEAD is unborn copies
-  // the commits -- of which there are none -- and no working tree. So a project someone has
-  // `git init`-ed, filled with files and not committed to arrives in the sandbox *empty*, with no
-  // warning. Measured here rather than assumed:
+test("unborn copy-in carries staged and untracked working bytes without changing the host or baseline", async (t) => {
   const root = withTempHome(t)
   const host = path.join(root, "project")
   fs.mkdirSync(host, { recursive: true })
   git(host, "init", "-q", "-b", "main")
-  fs.writeFileSync(path.join(host, "a.txt"), "no commit yet\n")
-  git(host, "add", "-A")
+  fs.writeFileSync(path.join(host, ".gitignore"), "ignored*\n")
+  fs.writeFileSync(path.join(host, "a.txt"), "staged bytes\n")
+  fs.writeFileSync(path.join(host, "removed.txt"), "staged, then removed\n")
+  fs.writeFileSync(path.join(host, "ignored-tracked.txt"), "tracked despite the ignore rule\n")
+  git(host, "add", ".gitignore", "a.txt", "removed.txt")
+  git(host, "add", "-f", "ignored-tracked.txt")
+  fs.writeFileSync(path.join(host, "a.txt"), "actual working bytes\n")
+  fs.unlinkSync(path.join(host, "removed.txt"))
+  fs.writeFileSync(path.join(host, "ignored-untracked.txt"), "do not copy\n")
+  const oddName = "spaces  and\nnewline.bin"
+  const binary = Buffer.from([0, 0xff, 0x80, 13, 10])
+  fs.writeFileSync(path.join(host, oddName), binary, { mode: 0o755 })
+  fs.symlinkSync("a.txt", path.join(host, "link"))
+  const index = fs.readFileSync(path.join(host, ".git/index"))
+  const status = git(host, "status", "--porcelain", "-z")
 
   const p = envPaths(host)
-  await copyIn(p)
-  assert.deepEqual(fs.readdirSync(p.work), [".git"], "the sandbox copy has the repository and none of the files")
+  const result = await copyIn(p)
+  assert.equal(result.head, null, "no literal HEAD is reported as a commit")
+  assert.equal(result.branch, "main")
+  assert.equal(result.dirty, true)
+  assert.equal(fs.readFileSync(path.join(p.work, "a.txt"), "utf8"), "actual working bytes\n")
+  assert.equal(fs.readFileSync(path.join(p.work, "ignored-tracked.txt"), "utf8"), "tracked despite the ignore rule\n")
+  assert.deepEqual(fs.readFileSync(path.join(p.work, oddName)), binary)
+  assert.equal(fs.statSync(path.join(p.work, oddName)).mode & 0o777, 0o755)
+  assert.equal(fs.readlinkSync(path.join(p.work, "link")), "a.txt")
+  assert.equal(fs.existsSync(path.join(p.work, "removed.txt")), false)
+  assert.equal(fs.existsSync(path.join(p.work, "ignored-untracked.txt")), false)
+  assert.notEqual(fs.statSync(path.join(p.work, "a.txt")).ino, fs.statSync(path.join(host, "a.txt")).ino)
 
-  // The baseline recorded for that copy is the empty tree, which is the honest answer to "what
-  // was this project before anyone touched it" when there is no commit. Both facts are asserted
-  // so a future fix has to update this test deliberately rather than silently.
   await ensureSandboxRepo(p)
+  // Also pin the no-HEAD branch with real sandbox index entries. A missing HEAD must not
+  // become an excuse to add the copied dirty tree to the baseline again.
+  git(p.work, "add", "-A")
+  const sandboxIndex = fs.readFileSync(path.join(p.work, ".git/index"))
   const baseline = await recordBaseline(p)
   assert.ok(baseline)
-  assert.equal(git(p.work, "ls-tree", "-r", "--name-only", baseline), "", "the baseline is empty")
-  // If this trap is ever fixed (by committing, or by falling back to rsync when HEAD is unborn),
-  // the first assertion above is the one that changes.
+  assert.equal(git(p.work, "ls-tree", "-r", "--name-only", baseline), "", "the baseline is empty, not the copied dirty tree")
+  assert.deepEqual(fs.readFileSync(path.join(p.work, ".git/index")), sandboxIndex)
+  assert.deepEqual(fs.readFileSync(path.join(host, ".git/index")), index)
+  assert.equal(git(host, "status", "--porcelain", "-z"), status)
+  assert.equal(git(host, "rev-list", "--all"), "", "copy-in created no host commit or ref")
+})
+
+test("unborn copy-in keeps user work distinct from the agent's competing addition", async (t) => {
+  const root = withTempHome(t)
+  const host = path.join(root, "project")
+  fs.mkdirSync(host, { recursive: true })
+  git(host, "init", "-q", "-b", "main")
+  fs.writeFileSync(path.join(host, "mine.txt"), "my first uncommitted file\n")
+  git(host, "add", "mine.txt")
+  const p = envPaths(host)
+  await copyIn(p)
+  await ensureSandboxRepo(p)
+  assert.ok(await recordBaseline(p))
+  fs.writeFileSync(path.join(p.work, "mine.txt"), "agent rewrote my first file\n")
+  fs.writeFileSync(path.join(p.work, "agent.txt"), "agent's separate addition\n")
+  git(p.work, "add", "-A")
+  git(p.work, "-c", "user.email=agent@example.com", "-c", "user.name=agent", "commit", "-qm", "agent: work")
+  const plan = await planApply(p)
+  assert.deepEqual(planVerdict(plan).map(row => `${row.path}=${row.verdict}`).sort(), ["agent.txt=agent", "mine.txt=conflict"])
+  assert.deepEqual((await applyPlan(p, plan)).skipped, ["mine.txt"])
+  assert.equal(fs.readFileSync(path.join(host, "mine.txt"), "utf8"), "my first uncommitted file\n")
+  assert.equal(fs.readFileSync(path.join(host, "agent.txt"), "utf8"), "agent's separate addition\n")
 })
 
 test("a sandbox with no repository has no baseline to record, and that is not an error", async (t) => {

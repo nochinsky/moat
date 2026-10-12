@@ -1,0 +1,13 @@
+{
+  "name": "moat-pi-workflow-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": { "picomatch": "4.0.3" },
+  "peerDependencies": { "@earendil-works/pi-coding-agent": "*", "typebox": "*" },
+  "pi": {
+    "extensions": ["./extension.js"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  }
+}

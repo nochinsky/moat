@@ -1,0 +1,3 @@
+pass: staged and untracked working files, symlink and executable reached /work; unborn metadata and empty baseline are truthful
+pass: Pi made its first commit and checks passed; review identified competing additions without touching host files, index or unborn HEAD
+pi-unborn: all criteria passed (working copy, empty baseline, real task, explicit read-only review)

@@ -65,6 +65,21 @@ test("copy-in reproduces a modified non-UTF-8 text file byte for byte", (t) => {
   })()
 })
 
+test("unborn drift detection notices working-byte edits after staging", async (t) => {
+  const f = fixture(t)
+  git(f.host, "checkout", "--orphan", "unborn")
+  fs.writeFileSync(path.join(f.host, "latin.txt"), latin(0xe9))
+  git(f.host, "add", "latin.txt")
+  fs.writeFileSync(path.join(f.host, "latin.txt"), latin(0x80))
+  const status = git(f.host, "status", "--porcelain", "-z")
+  const before = await hostState(f.host)
+  fs.writeFileSync(path.join(f.host, "latin.txt"), latin(0xff))
+  const after = await hostState(f.host)
+  assert.equal(git(f.host, "status", "--porcelain", "-z"), status)
+  assert.notEqual(before, after, "same staged status but different working bytes must register drift")
+  assert.match(after, /^git::/, "an unborn HEAD is empty metadata, not the literal word HEAD")
+})
+
 test("drift detection is sensitive to a byte-only change", (t) => {
   const f = fixture(t)
 
