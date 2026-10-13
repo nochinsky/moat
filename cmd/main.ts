@@ -1134,7 +1134,7 @@ ${command}
   if (fs.existsSync(path.join(paths.work, ".git"))) {
     // The sandbox repository is agent-controlled: its config, hooks and
     // attributes are neutralized for the duration of every host-side git call.
-    baseBranch = (await sandboxGit(paths.work, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFailure: true })).stdout.trim() || null
+    baseBranch = (await sandboxGit(paths.work, ["symbolic-ref", "--quiet", "--short", "HEAD"], { allowFailure: true })).stdout.trim() || null
     const created = await sandboxGit(paths.work, ["checkout", "-q", "-B", branch], { allowFailure: true })
     if (created.code === 0) log.info(`agent branch: ${branch}`)
     else log.warn(`could not create ${branch} inside the sandbox; the agent will use the current branch`)
@@ -2518,7 +2518,7 @@ async function cmdDoctor(argv: string[]): Promise<number> {
     log.info(`  chroot     ${host.chroot ?? "MISSING"}`)
     log.info(`  user ns    ${host.userns ? log.green("available") : log.red("unavailable")}`)
     log.info(`  pid ns     ${host.pidns ? log.green("available") : log.red("unavailable")}`)
-    log.info(`  /dev/kvm   ${host.kvm ? "present" : "absent (v1 microVM path unavailable here)"}`)
+    log.info(`  /dev/kvm   ${host.kvm ? "accessible" : "not usable"} (not required by the namespace backend)`)
     // Which backends this host could boot, so `--backend container` is a choice made with the
     // facts rather than discovered at a refusal. The container runtime is not required — the
     // default backend needs nothing but unshare — so this is a note, not a check.

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -30,7 +31,19 @@ function hostFixture(t: TestContext, kvm: boolean) {
     else process.env.PATH = previousPath
     fs.rmSync(root, { recursive: true, force: true })
   })
+  return root
 }
+
+test("the human doctor row does not label inaccessible KVM absent or advertise v1", t => {
+  const root = hostFixture(t, false)
+  const result = spawnSync(process.execPath, [path.resolve(import.meta.dirname, "../../cmd/main.ts"), "doctor"], {
+    encoding: "utf8", env: { ...process.env, MOAT_HOME: path.join(root, "moat"), NO_COLOR: "1" },
+    cwd: root,
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stderr, /\/dev\/kvm\s+(accessible|not usable) \(not required by the namespace backend\)/)
+  assert.doesNotMatch(result.stderr, /v1 microVM path|\/dev\/kvm\s+absent/)
+})
 
 test("WSL2 with namespaces is a default-backend host, not a container-only host", async t => {
   hostFixture(t, false)

@@ -187,6 +187,28 @@ test("unborn copy-in carries staged and untracked working bytes without changing
   assert.equal(git(host, "rev-list", "--all"), "", "copy-in created no host commit or ref")
 })
 
+test("unborn cached paths do not read through a replaced parent symlink", async (t) => {
+  const root = withTempHome(t)
+  const host = path.join(root, "project")
+  const outside = path.join(root, "outside")
+  fs.mkdirSync(path.join(host, "replaced", "nested"), { recursive: true })
+  fs.mkdirSync(path.join(outside, "nested"), { recursive: true })
+  git(host, "init", "-q", "-b", "main")
+  fs.writeFileSync(path.join(host, "replaced/nested/file.txt"), "staged project file\n")
+  git(host, "add", "-A")
+  fs.rmSync(path.join(host, "replaced"), { recursive: true })
+  fs.writeFileSync(path.join(outside, "nested/file.txt"), "host file outside the project\n")
+  fs.symlinkSync(outside, path.join(host, "replaced"))
+  const copy = fs.copyFileSync
+  t.mock.method(fs, "copyFileSync", (from: fs.PathLike, to: fs.PathLike, flags?: number) => {
+    assert.notEqual(String(from), path.join(host, "replaced/nested/file.txt"), "a stale index entry must not open bytes outside the working project")
+    copy(from, to, flags)
+  })
+  const p = envPaths(host)
+  await copyIn(p)
+  assert.equal(fs.readlinkSync(path.join(p.work, "replaced")), outside, "copy the current symlink itself, never its target")
+})
+
 test("unborn copy-in keeps user work distinct from the agent's competing addition", async (t) => {
   const root = withTempHome(t)
   const host = path.join(root, "project")

@@ -25,6 +25,10 @@ pi_run up "${MOAT[@]}" up --quiet --json --no-detect --model mock-model --base-u
 node - "$WORK/up.out" <<'JS'
 const assert=require('node:assert/strict'); const r=JSON.parse(require('fs').readFileSync(process.argv[2])); assert.equal(r.copyIn.head,null); assert.equal(r.copyIn.branch,'main'); assert.equal(r.copyIn.dirty,true); assert.ok(r.copyIn.files>0)
 JS
+pi_run status "${MOAT[@]}" status --quiet --json
+node - "$WORK/status.out" <<'JS'
+const fs=require('fs'), assert=require('node:assert/strict');const r=JSON.parse(fs.readFileSync(process.argv[2]));const state=JSON.parse(fs.readFileSync(r.envDir+'/state.json'));assert.equal(state.baseBranch,'main')
+JS
 pi_run baseline "${MOAT[@]}" exec -- sh -c 'test -z "$(git -C /work ls-tree -r --name-only refs/moat/baseline)" && cmp /work/mine.txt /work/link && test -x /work/executable.sh && printf "\\000\\377\\200\\r\\n" | cmp - /work/binary.bin'
 pi_say 'pass: staged and untracked working files, symlink and executable reached /work; unborn metadata and empty baseline are truthful'
 pi_run task "${MOAT[@]}" run --quiet --json --timeout 30 --max-tokens 20000 --no-credential 'fix addition, make a competing note edit and commit inside the box'

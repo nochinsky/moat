@@ -253,6 +253,23 @@ async function ignoredPaths(projectDir: string, paths: string[]): Promise<Set<st
   return new Set(result.stdout.split("\0").filter((name) => name.length > 0))
 }
 
+/** Stale cached paths beneath a replaced/deleted directory are not working files. */
+function hasWorkingParents(root: string, name: string): boolean {
+  let parent = root
+  for (const segment of name.split("/").slice(0, -1)) {
+    parent = path.join(parent, segment)
+    try {
+      // lstat is deliberate: following a host symlink here would copy a file outside
+      // the project instead of carrying the current symlink into the sandbox.
+      if (!fs.lstatSync(parent).isDirectory()) return false
+    } catch (error) {
+      if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return false
+      throw error
+    }
+  }
+  return true
+}
+
 async function cloneGit(p: EnvPaths, quiet = false): Promise<string[]> {
   if (!quiet) log.step("copy-in: git clone --no-hardlinks")
   await run("git", ["clone", "--no-hardlinks", "--quiet", p.projectDir, p.work], { env: SANITIZED_GIT_ENV })
@@ -286,9 +303,9 @@ async function cloneGit(p: EnvPaths, quiet = false): Promise<string[]> {
   const names = [...new Set(listed.stdout.split("\0").filter((name) => name.length > 0))]
   const skipped = new Set<string>()
   for (const name of names) {
+    if (unborn && !hasWorkingParents(p.projectDir, name)) continue
     const from = path.join(p.projectDir, name)
     const to = path.join(p.work, name)
-    fs.mkdirSync(path.dirname(to), { recursive: true })
     let stat: fs.Stats
     try {
       stat = fs.lstatSync(from)
@@ -298,6 +315,7 @@ async function cloneGit(p: EnvPaths, quiet = false): Promise<string[]> {
       if (unborn && (error as NodeJS.ErrnoException).code === "ENOENT") continue
       throw error
     }
+    if (stat.isFile() || stat.isSymbolicLink()) fs.mkdirSync(path.dirname(to), { recursive: true })
     if (stat.isSymbolicLink()) {
       fs.rmSync(to, { force: true })
       fs.symlinkSync(fs.readlinkSync(from), to)

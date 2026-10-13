@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Suites to run (push/PR always runs all)
+        type: choice
+        default: all
+        options: [all, pi-compatibility]
 
 jobs:
   checks:
@@ -93,7 +99,7 @@ jobs:
       - name: model catalog (network)
         run: ./cmd/main.ts models deepseek
       - name: acceptance suite, keyless (Pi against the compatible API stub)
-        if: steps.userns.outputs.available == 'true'
+        if: steps.userns.outputs.available == 'true' && inputs.scope != 'pi-compatibility'
         run: bash test/e2e-pi.sh
       - name: unborn Git copy-in (real Pi task and read-only review)
         if: steps.userns.outputs.available == 'true'
@@ -102,10 +108,10 @@ jobs:
         if: steps.userns.outputs.available == 'true'
         run: bash test/pi-customization.sh
       - name: secondary suite (snapshots, apply, credential expiry)
-        if: steps.userns.outputs.available == 'true'
+        if: steps.userns.outputs.available == 'true' && inputs.scope != 'pi-compatibility'
         run: bash test/e2e-extras.sh
       - name: egress suite (own namespace, slirp datapath, closed loopback, allowlist)
-        if: steps.userns.outputs.available == 'true'
+        if: steps.userns.outputs.available == 'true' && inputs.scope != 'pi-compatibility'
         run: bash test/e2e-egress.sh
       # These runners have rootless Podman. Require a real Pi loop and cleanup:
       # an unavailable runtime exits 77 here and fails, rather than counting a skip.

@@ -55,7 +55,13 @@ pi_stub "$WORK/task.json" 0.0.0.0
 pi_run up "${MOAT[@]}" up --quiet --backend container --egress filtered --no-detect --model mock-model --base-url "http://$HOST_IP:$PORT/v1" --credential-env MOAT_CONTAINER_TEST_KEY
 pi_run rules "${MOAT[@]}" exec -- sh -c 'nft list ruleset | grep "policy drop"; id -u'
 grep -q 'policy drop' "$WORK/rules.out"; grep -qx '0' "$WORK/rules.out"
-pi_run task "${MOAT[@]}" run --quiet --json --timeout 60 --max-tokens 30000 --credential-env MOAT_CONTAINER_TEST_KEY 'fix the failing project and commit'
+pi_say 'pass: filtered container boot applied its default-deny ruleset and commands ran as uid 0'
+pi_run filteredDown "${MOAT[@]}" down --quiet
+assert_no_containers
+# The scripted provider is a host-local service. Use the explicit open/loopback
+# mode rather than weakening the default container network to reach the fixture.
+# Filtered boot/checks above and the real Pi loop below are separate measurements.
+pi_run task "${MOAT[@]}" run --quiet --json --no-detect --egress open --base-url "http://127.0.0.1:$PORT/v1" --timeout 60 --max-tokens 30000 --credential-env MOAT_CONTAINER_TEST_KEY 'fix the failing project and commit'
 node - "$WORK/task.out" <<'JS'
 const fs=require('fs'), assert=require('node:assert/strict');const r=JSON.parse(fs.readFileSync(process.argv[2]));assert.equal(r.code,0);assert.ok(r.tools.some(t=>t.kind==='bash'&&t.exitCode===0));assert.ok(r.usage.input+r.usage.cached+r.usage.output>0)
 JS
@@ -66,7 +72,7 @@ node - "$WORK/take.out" <<'JS'
 const r=JSON.parse(require('fs').readFileSync(process.argv[2])); if(r.treeUntouched!==true||r.checks.ok!==true||!r.reviewed.some(x=>x.path==='sum.js'))process.exit(1)
 JS
 test "$(pi_hash)" = "$BEFORE"; test "$(git rev-parse HEAD)" = "$HEAD_BEFORE"
-pi_say 'pass: real Pi shell/edit/commit task and project checks ran under filtered Podman; receiving endpoint observed credential and usage; review left host HEAD/files unchanged'
+pi_say 'pass: real Pi shell/edit/commit task and project checks ran under Podman with an explicit open loopback endpoint; receiving endpoint observed credential and usage; review left host HEAD/files unchanged'
 # Concurrent ephemeral boots may coexist with the keepalive and each other.
 "${MOAT[@]}" exec -- sh -c 'echo one; timeout 30 sh -c "while [ ! -e /opt/moat-concurrent-release ]; do sleep .1; done"' > "$WORK/one.out" 2> "$WORK/one.err" & ONE=$!
 "${MOAT[@]}" exec -- sh -c 'echo two; timeout 30 sh -c "while [ ! -e /opt/moat-concurrent-release ]; do sleep .1; done"' > "$WORK/two.out" 2> "$WORK/two.err" & TWO=$!
@@ -86,7 +92,7 @@ pi_say 'pass: concurrent ephemeral containers had independent names and left onl
 printf '{"turns":[{"tool":{"command":"sleep 25; printf leak > /opt/moat-budget-survived"}},{"text":"must not make this second request"}]}\n' > "$WORK/budget.json"
 pi_stub "$WORK/budget.json" 0.0.0.0
 set +e
-pi_run budget "${MOAT[@]}" run --quiet --json --timeout 30 --max-tokens 100 --base-url "http://$HOST_IP:$PORT/v1" --credential-env MOAT_CONTAINER_TEST_KEY 'stop at the reported usage ceiling'
+pi_run budget "${MOAT[@]}" run --quiet --json --timeout 30 --max-tokens 100 --base-url "http://127.0.0.1:$PORT/v1" --no-detect --credential-env MOAT_CONTAINER_TEST_KEY 'stop at the reported usage ceiling'
 RC=$?
 set -e
 test "$RC" != 0
@@ -99,7 +105,7 @@ pi_say 'pass: usage ceiling stopped the containerized Pi before its next request
 printf '{"turns":[{"tool":{"command":"printf started > /opt/moat-timeout-started; sleep 25; printf leak > /opt/moat-timeout-survived"}},{"text":"must not finish"}]}\n' > "$WORK/timeout.json"
 pi_stub "$WORK/timeout.json" 0.0.0.0
 set +e
-pi_run timeout "${MOAT[@]}" run --quiet --json --timeout 10 --base-url "http://$HOST_IP:$PORT/v1" --credential-env MOAT_CONTAINER_TEST_KEY 'run a tool past the timeout'
+pi_run timeout "${MOAT[@]}" run --quiet --json --timeout 10 --base-url "http://127.0.0.1:$PORT/v1" --no-detect --credential-env MOAT_CONTAINER_TEST_KEY 'run a tool past the timeout'
 RC=$?
 set -e
 test "$RC" != 0
@@ -115,7 +121,7 @@ assert_no_containers
 printf '{"turns":[{"delayMs":30000,"text":"expired credential must not finish"}]}\n' > "$WORK/expiry.json"
 pi_stub "$WORK/expiry.json" 0.0.0.0
 set +e
-pi_run expiry "${MOAT[@]}" run --quiet --json --timeout 40 --credential-ttl 10s --base-url "http://$HOST_IP:$PORT/v1" --credential-env MOAT_CONTAINER_TEST_KEY 'wait past credential expiry'
+pi_run expiry "${MOAT[@]}" run --quiet --json --timeout 40 --credential-ttl 10s --base-url "http://127.0.0.1:$PORT/v1" --no-detect --credential-env MOAT_CONTAINER_TEST_KEY 'wait past credential expiry'
 RC=$?
 set -e
 test "$RC" != 0
@@ -128,7 +134,7 @@ assert_no_containers
 pi_say 'pass: credential deadline stopped an in-flight model request and removed both expired keepalive and ephemeral container'
 printf '{"turns":[{"text":"Keyless container request finished."}]}\n' > "$WORK/keyless.json"
 pi_stub "$WORK/keyless.json" 0.0.0.0
-pi_run keyless "${MOAT[@]}" run --quiet --json --timeout 30 --no-credential --base-url "http://$HOST_IP:$PORT/v1" 'use a genuinely keyless endpoint'
+pi_run keyless "${MOAT[@]}" run --quiet --json --timeout 30 --no-credential --no-detect --base-url "http://127.0.0.1:$PORT/v1" 'use a genuinely keyless endpoint'
 node - "$WORK/keyless.out" <<'JS'
 const r=JSON.parse(require('fs').readFileSync(process.argv[2]));if(r.code!==0)process.exit(1)
 JS
@@ -138,4 +144,4 @@ pi_run finaldown "${MOAT[@]}" down --quiet
 assert_no_containers
 test "$(pi_hash)" = "$BEFORE"; test "$(git rev-parse HEAD)" = "$HEAD_BEFORE"
 pi_say 'pass: keyless receiving endpoint saw no Authorization header; final down left no fixture containers'
-pi_say 'pi-container: all criteria passed (real Pi task, filtered network, budgets, timeout, expiry, keyless auth, cleanup)'
+pi_say 'pi-container: all criteria passed (filtered boot, open-loopback Pi task, budgets, timeout, expiry, keyless auth, cleanup)'
