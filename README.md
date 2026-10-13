@@ -124,8 +124,9 @@ MCP servers may need in-box installation and additional network destinations. Se
 - **Namespaces share the host kernel and resources.** A microVM backend and resource quotas are
   not implemented. This is not a promise against kernel exploits or resource exhaustion.
 - **`--backend container` is explicit rootless podman support.** It still uses a copied project.
-  The current Pi integration has not yet been validated with a real container turn; the default
-  namespace backend has. Choosing it does not make macOS or native Windows supported.
+  Hosted Ubuntu 22.04/24.04 pass real Pi task/budget/timeout/expiry/cleanup checks with an explicit
+  open/loopback stub, plus separate filtered boot/checks. External filtered/proxied Pi container
+  turns are not measured. Choosing it does not make macOS or native Windows supported.
 
 The [`verification limits`](docs/VERIFICATION.md#not-verified) are part of the product, not fine
 print. Read them before choosing how much to trust the box.

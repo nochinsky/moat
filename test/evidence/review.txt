@@ -52,12 +52,12 @@ line 31: the agent changed this too
   pass  the classification
 
 --- moat take: the same review, before anything is decided ---
-→ copy-out: git fetch /tmp/moat-release-fixtures.xgaPBR/review-gate/home/envs/6e245d9718d2/rootfs/work +refs/heads/moat-session-2026-10-11-18-57:refs/moat/moat-session-2026-10-11-18-57
+→ copy-out: git fetch /home/user/.moat-followup-gates.m5NJGR/review/review-gate/home/envs/e76391677858/rootfs/work +refs/heads/moat-session-2026-10-13-01-27:refs/moat/moat-session-2026-10-13-01-27
 ! copy-out: fetch: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
 
-moat-session-2026-10-11-18-57  2 commit(s), ee7676e17506
-  ee7676e175  agent: two changes, 28 lines apart
-  a161cac929  the project as it was
+moat-session-2026-10-13-01-27  2 commit(s), c137c6c054da
+  c137c6c054  agent: two changes, 28 lines apart
+  509cdb9d12  the project as it was
 
  notes.txt | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
@@ -95,10 +95,10 @@ moat-session-2026-10-11-18-57  2 commit(s), ee7676e17506
 
 
   your working tree is untouched
-  review:  git log refs/moat/moat-session-2026-10-11-18-57
+  review:  git log refs/moat/moat-session-2026-10-13-01-27
   accept:  moat apply   (three-way merge into your tree)
-           moat apply moat-session-2026-10-11-18-57 --checkout   (or switch to the agent's branch)
-  reject:  git update-ref -d refs/moat/moat-session-2026-10-11-18-57
+           moat apply moat-session-2026-10-13-01-27 --checkout   (or switch to the agent's branch)
+  reject:  git update-ref -d refs/moat/moat-session-2026-10-13-01-27
   pass  take's review
   pass  take writes nothing
 
@@ -136,7 +136,7 @@ moat-session-2026-10-11-18-57  2 commit(s), ee7676e17506
       + line 34
 
 ! coherence not checked: no test, lint or typecheck command found for this project
-✓ applied 1 change(s) to /tmp/moat-release-fixtures.xgaPBR/review-gate/project, 1 of them partially (1 hunk(s) accepted)
+✓ applied 1 change(s) to /home/user/.moat-followup-gates.m5NJGR/review/review-gate/project, 1 of them partially (1 hunk(s) accepted)
   pass  the partial accept
   pass  the accepted hunk
   pass  the rejected hunk
@@ -167,7 +167,7 @@ moat-session-2026-10-11-18-57  2 commit(s), ee7676e17506
       + line 5
       + line 6
 
-✓ applied 1 change(s) to /tmp/moat-release-fixtures.xgaPBR/review-gate/project
+✓ applied 1 change(s) to /home/user/.moat-followup-gates.m5NJGR/review/review-gate/project
   pass  the second accept
   pass  convergence
 
@@ -196,7 +196,7 @@ moat-session-2026-10-11-18-57  2 commit(s), ee7676e17506
       + the agent wrote this too
 
 ! coherence not checked: no test, lint or typecheck command found for this project
-✓ applied 1 change(s) to /tmp/moat-release-fixtures.xgaPBR/review-gate/project
+✓ applied 1 change(s) to /home/user/.moat-followup-gates.m5NJGR/review/review-gate/project
   pass  the pending changes
   pass  the unselected change
   pass  the named change

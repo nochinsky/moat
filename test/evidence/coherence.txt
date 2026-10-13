@@ -23,7 +23,7 @@ $ npm run test
 
 [moat] exit 1
 
-  FAIL  npm test                 0.2s
+  FAIL  npm test                 0.1s
       [moat] boot: waiting for the datapath
       [moat] boot: entering the sandbox
       $ npm run test
@@ -50,5 +50,5 @@ $ npm run test
       + #!/bin/sh
       + grep -q "^2$" config.txt
 
-✓ applied 1 change(s) to /tmp/moat-release-fixtures.xgaPBR/coherence
+✓ applied 1 change(s) to /home/user/.moat-followup-gates.m5NJGR/extras/coherence
 --- exit 0   config.txt after = 2

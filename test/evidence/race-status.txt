@@ -2,6 +2,6 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-project      /tmp/moat-release-fixtures.xgaPBR/race
-env          /home/user/.moat/envs/65f267fc03bd
-status       booting (pid 65960, 0s in)
+project      /home/user/.moat-followup-gates.m5NJGR/extras/race
+env          /home/user/.moat/envs/cf6d42dcc63e
+status       booting (pid 28526, 0s in)

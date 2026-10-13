@@ -120,9 +120,11 @@ export async function startProxyNetns(
       try {
         holderNetns = fs.readlinkSync(`/proc/${pid}/ns/net`)
         holderPid = pid
-        break
+        // The shell publishes its pid before exec/unshare. Its old namespace is
+        // visible during that window too: wait for the distinct one, not just a pid.
+        if (holderNetns !== boxNetns) break
       } catch {
-        // The pid is written before the namespace exists: keep polling rather than guess.
+        // The holder may not be observable yet: keep polling rather than guess.
       }
     }
     await new Promise((resolve) => setTimeout(resolve, 25))

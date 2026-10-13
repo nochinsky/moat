@@ -3,7 +3,7 @@
 # an explicit skip locally; the hosted CI step requires this suite to run/pass.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if ! command -v podman >/dev/null || ! podman info >/dev/null 2>&1; then
+if ! command -v podman >/dev/null || ! podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null | grep -qx true; then
   printf 'pi-container: SKIPPED (usable rootless Podman required; no container Pi turn was tested)\n' | tee "$REPO/test/evidence/pi-container.txt"
   exit 77
 fi

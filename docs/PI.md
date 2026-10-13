@@ -78,9 +78,53 @@ The package manager and executable code stay inside the sandbox. Installed work/
 in `.pi/settings.json`: moat regenerates its global settings on every boot. Additional package,
 MCP or provider destinations may need `--egress-allow`; the proxy also supports explicit ports.
 Host-local executable/config paths in `.pi` will not work inside the box: use project-relative
-paths or install the dependencies there.
+paths or install the dependencies there. **A local directory package is referenced, not npm-installed**;
+install its dependencies inside the box explicitly. For a local package with a lockfile:
+
+```sh
+moat exec -- npm ci --prefix ./my-pi-package --ignore-scripts --legacy-peer-deps
+```
+
+This avoids installing a second physical Pi through peer dependencies. Keep its declaration
+project-local: global managed settings are rewritten.
+
+### A measured MCP workflow
+
+`bash test/pi-customization.sh` runs a local Pi package and a real stdio MCP documentation server
+inside the box against the scripted model endpoint. Its npm dependency is installed there, then
+`pi install --local` registers the package. The model calls the MCP search tool and reads a resource,
+uses a package skill and commits a verified fix. After down/up, an explicit Pi CLI session resume
+retains its context and expands a package prompt template. Host files/HEAD remain unchanged after
+read-only review; the host canary is absent and the stdio server is reaped.
+
+For a small project server, direct exposure makes its tools available on the first request:
+
+```json
+{
+  "mcpServers": {
+    "docs": {
+      "command": "node",
+      "args": ["tools/docs-server.mjs"],
+      "exposure": "direct",
+      "timeout": 30
+    }
+  }
+}
+```
+
+The default MCP exposure is `codemode`, not direct declaration; choose it deliberately and install
+server dependencies in the box. This test covers a local stdio server, not remote MCP OAuth or
+arbitrary npm/git packages. The fixture's permission extension blocks a UI-dependent call when
+`ctx.hasUI` is false rather than hanging or approving it. **That is the extension's policy, not a
+universal moat guard**. Other extensions can still wait indefinitely until a task deadline stops them.
+A direct Pi invocation through `moat exec` also needs its own model/auth-hook options; it is not a
+monitored `moat run` and does not inherit the broker's task budget or credential injection.
 
 ## Providers and credentials
+
+The owner's next approved direction is native Pi providers, first-use provider selection and
+explicit sandbox-local subscription login; see [`PI-PROVIDERS.md`](PI-PROVIDERS.md). That design
+is not implemented yet. The following describes current behavior.
 
 DeepSeek is still the default, not whatever provider happens to have a key in your host environment.
 Other compatible endpoints are explicit:

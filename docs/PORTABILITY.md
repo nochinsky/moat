@@ -1,7 +1,10 @@
 # Portability: what is measured, what a container backend would cost, and what is not measured
 
 > **Historical backend measurements:** agent turns below used retired harnesses. Current Pi is
-> tested on Linux x86-64/WSL2 with the namespace backend; a current-Pi container turn is unverified.
+> tested on Linux x86-64/WSL2 with the namespace backend. Hosted Ubuntu 22.04/24.04 also pass
+> current Pi container task/limits/cleanup against an explicit open/loopback stub, plus separate
+> filtered boot/checks (`pi-compatibility-hosted.txt`). External/proxied container turns remain
+> unmeasured; the older runtime/cold-start captures below are still historical.
 > macOS, native Windows and ARM are not supported by 0.1.0. See [`VERIFICATION.md`](VERIFICATION.md#not-verified).
 
 Phase 4's question is whether moat should escape Linux. Invariant 7 ("no container runtime, no

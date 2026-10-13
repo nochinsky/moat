@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — focused Pi follow-up
+
+### Fixed
+
+- Copy-in for Git repositories with no commits now retains indexed and untracked working files,
+  post-stage edits, symlinks, executable modes and binary bytes. Deleted cached paths and replaced
+  parent directories do not copy stale/outside files. The baseline remains empty, preserving
+  conflicting-addition review rather than silently overwriting the user's initial work.
+- Unborn commit/branch metadata is reported truthfully; host HEAD/index are not modified.
+- Proxy boot waits for the holder's distinct network namespace, not only its published pid;
+  the existing deadline and same-namespace refusal remain.
+- Doctor messages no longer call WSL2 container-only or suggest that accessible KVM means a
+  production microVM backend exists.
+
+### Validation
+
+- A real unborn-project Pi task and read-only review, with host files/index/HEAD unchanged.
+- A representative local Pi package with an in-box dependency, stdio MCP tools/resources,
+  explicit skills/prompts, persistent CLI session resume and a fail-closed headless approval policy.
+- Added rootless-Podman Pi task, budget, timeout, credential-expiry, keyless-auth and cleanup gates
+  to both hosted Ubuntu jobs; both passed in run `38331376464`. Default filtered boot/checks are
+  separate from the real Pi task's explicit open/loopback stub. Runtime absence exits 77, not a
+  pass; uploaded captures are checked separately by `test/pi-compatibility-hosted.sh`.
+
+No new package version or release tag is implied by this section. Broad plugin compatibility,
+resource quotas, aggregate budgets and a production microVM backend remain out of scope.
+
 ## 0.1.0 — Pi-only harness
 
 ### Breaking changes

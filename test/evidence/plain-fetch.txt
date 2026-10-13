@@ -2,5 +2,5 @@
 --- exit 1
 --- stdout ---
 --- stderr ---
-✗ /tmp/moat-release-fixtures.xgaPBR/plain is not a git repository; there is nowhere to fetch into.
+✗ /home/user/.moat-followup-gates.m5NJGR/extras/plain is not a git repository; there is nowhere to fetch into.
   moat apply merges the sandbox's work into this directory without one.

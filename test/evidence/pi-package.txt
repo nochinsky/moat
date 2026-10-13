@@ -6,12 +6,17 @@
 > moat-sandbox@0.1.0 build
 > node scripts/clean-build.mjs && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs
 
+npm notice
+npm notice New major version of npm available! 11.19.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
 moat 0.1.0 (pi 1.1.0, alpine 3.21.4)
 packaged installer resolved 121 digest-pinned Linux packages
 
 moat demo three-way attribution, on a real sandbox, with no API key
 
-→ building a project in /tmp/moat-demo-project-XOBA7Y
+→ building a project in /tmp/moat-demo-project-11x3WU
 → booting a real sandbox (the runtime, the tools and the filesystem are all inside it)
 → the agent is working in the copy, not in your directory
 → fetching the agent's one ref (nothing has touched your files)
@@ -26,7 +31,7 @@ moat demo three-way attribution, on a real sandbox, with no API key
   touch them and there is nothing to decide. moat only reports what it has to merge.
 → applying the changes you accepted (the conflict is left alone)
 
-  host project /tmp/moat-demo-project-XOBA7Y
+  host project /tmp/moat-demo-project-11x3WU
   digest before any of this   591ad68830b02a5eb9a1a2fc457bec45e75c06371c7eacde1e86713142262f5e
   digest after the agent      591ad68830b02a5eb9a1a2fc457bec45e75c06371c7eacde1e86713142262f5e
     identical: nothing reached your tree until you said so
@@ -39,8 +44,8 @@ moat demo three-way attribution, on a real sandbox, with no API key
   applied 1 change(s); skipped 1: notes.txt
   your notes.txt is exactly as you left it: moat does not write a file you both changed
 
-  build 0.0s  hash before 0.0s  up 1.1s  turn 5.0s  fetch 0.1s  plan 0.0s  apply 0.0s  hash after 0.0s
-  total 6.2s (warm cache; a cold one downloads the image first)
+  build 0.0s  hash before 0.0s  up 1.1s  turn 3.3s  fetch 0.1s  plan 0.0s  apply 0.0s  hash after 0.0s
+  total 4.5s (warm cache; a cold one downloads the image first)
   the scratch project was removed; --keep leaves it in place
 
 

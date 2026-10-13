@@ -3,5 +3,5 @@
 --- stdout ---
 [moat] boot: mounts are up, network next
 [moat] boot: entering the sandbox
-0db9639704d95428d48f01ab2527e5ebfd7f8fbd
+9a2c3c251df6547cb4c300e3d1f344c37c773951
 --- stderr ---

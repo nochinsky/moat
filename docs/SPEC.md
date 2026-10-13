@@ -147,9 +147,12 @@ The interactive TUI deliberately controls its attached terminal.
 Git projects use `git clone --no-hardlinks`, plus working-tree changes/untracked files. The agent
 sees the user's dirty work, but `refs/moat/baseline` records the host **HEAD commit**, not a commit
 of that dirty tree. Otherwise an agent could overwrite pre-existing user work as a plain update.
-With no HEAD, the baseline is the empty tree. Unborn repositories currently have a known copy-in
-limitation: clone brings no initial working tree. Non-git projects use the existing copy fallback
-and sandbox repository. Non-UTF-8 filenames are refused explicitly rather than silently dropped.
+With no HEAD, the baseline is the empty tree. Unborn repositories carry both indexed and untracked
+working files, including post-stage edits, symlinks, executable modes and binary bytes; ignored
+untracked files remain excluded. Cached paths deleted or replaced by a parent symlink do not pull
+in stale/outside files. Copy-in creates no host commit and preserves the host index; it does not
+promise to reproduce staging in the sandbox. Non-git projects use the existing copy fallback and
+sandbox repository. Non-UTF-8 filenames are refused explicitly rather than silently dropped.
 
 Host drift is compared against recorded host state. All host-side Git calls against the
 agent-controlled repository use `sandboxGit`: execution-capable config, worktree config and

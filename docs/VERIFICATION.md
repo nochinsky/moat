@@ -5,13 +5,17 @@
 Current moat runs Pi inside the sandbox. The retired Codex/Claude captures below remain historical
 measurements, **not evidence that the current harness has passed a live paid-provider test**.
 The current suite outputs are in `test/evidence/pi-summary.txt`, `pi-tui.txt`, `pi-legacy.txt`,
-`pi-package.txt`, `pi-live.txt`, `provider.txt`, `demo.txt`, `review.txt`, `egress.txt` and `extras.txt`;
+`pi-package.txt`, `pi-live.txt`, `pi-unborn.txt`, `pi-customization.txt`,
+`pi-compatibility-hosted.txt`, `provider.txt`, `demo.txt`, `review.txt`, `egress.txt` and `extras.txt`;
 the trust generator reads those verdicts rather than carrying a hand-maintained test count.
 
 ```sh
 npm run typecheck
 npm run test:unit
 bash test/e2e-pi.sh
+bash test/pi-unborn.sh
+bash test/pi-customization.sh
+bash test/pi-container.sh  # requires usable Podman; missing runtime exits 77
 python3 test/pi-tui.py
 bash test/pi-legacy.sh
 bash test/pi-package.sh
@@ -83,6 +87,36 @@ blanket hosted-runner limitation, not every possible kernel/organization policy.
 setup and the capability check. A skipped suite on another runner remains a skip, not a pass.
 The tag workflow checks the compiled package graph/assets and publishes that checked tarball.
 
+### Focused Pi follow-up
+
+`test/pi-unborn.sh` boots a project with staged/untracked initial files, then runs a real Pi fix,
+check and first commit. The baseline is the empty tree. Read-only review identifies the user's
+and agent's competing additions; host files, index and unborn HEAD remain unchanged. Unit
+controls also cover post-stage edits, binary bytes, ignored paths, deleted cached paths and a
+cached path whose parent became a symlink: that must not read an outside host file.
+
+`test/pi-customization.sh` installs an npm dependency and a local Pi package **inside the box**,
+then runs actual stdio MCP tool/resource calls, an explicit skill and a verified committed fix.
+Down/up retains the package/session, and explicit CLI resume keeps context and expands a package
+prompt. Host canaries are absent, the server is reaped, and read-only review leaves host files/HEAD
+unchanged. Its permission extension fails closed on a UI-dependent headless call; disabling that
+hook fails the gate. This measures one representative workflow, not every MCP/package ecosystem.
+
+The hosted compatibility run
+[`38331376464`](https://github.com/nochinsky/moat/actions/runs/38331376464) passed all three focused
+suites on Ubuntu 22.04 and 24.04. `test/pi-compatibility-hosted.sh` checks the executed steps **and**
+uploaded captures; a skipped step or failed/missing verdict cannot generate passing evidence.
+`pi-compatibility-hosted.txt` records the real rootless-Podman Pi shell/edit/commit task, receiving-end
+credential/keyless headers, concurrent ephemeral names, usage ceilings, tool timeout, credential
+expiry and cleanup. **The model fixture uses explicit open/loopback networking.** Default filtered
+container boot/rules/checks are tested separately, not mislabeled as a filtered model turn to a
+remote service. No container runtime was available on the local WSL host.
+
+Serial revalidation exposed a separate proxy-holder readiness race: the holder writes its pid
+*before* `exec unshare`, so reading its namespace immediately can still see the box's namespace.
+Boot now waits, within the existing deadline, for a distinct namespace. The before-fix unit
+regression reproduces the failure; the same-namespace refusal remains intact.
+
 Read the **Not verified** table at the end before interpreting any historical capture below.
 
 ## Historical measurements before Pi
@@ -119,8 +153,10 @@ host
              the host's device nodes (rw: a device is an interface, not a file). No host *data* is mounted.
 ```
 
-`kvm=no` means `v1` is untestable on this machine, which is why it is out of
-scope here. WSL2 is supported via the container path only.
+The quoted KVM/container wording is historical and was inaccurate as guidance. **WSL2 works
+with moat's default namespace backend**, as the actual captures here demonstrate; KVM is not
+required. An accessible `/dev/kvm` is a device probe, not evidence of a production microVM backend.
+The current doctor messages and `test/unit/host-report.test.ts` keep those distinctions explicit.
 
 **On the model.** The acceptance criteria below were produced with a deterministic
 local model stub, because this host had no provider credentials at the time:
@@ -2234,7 +2270,7 @@ cover, still goes through. The check is a floor, not a proof, and the decision r
 
 | # | requirement | status |
 | --- | --- | --- |
-| 1 | Linux-first, no Windows, WSL2 via the container path | **met**: Linux-only guard; the boot path is `unshare`/`mount`/`chroot` |
+| 1 | Linux-first, including WSL2 with usable namespaces | **met**: Linux-only guard; the boot path is `unshare`/`mount`/`chroot`, not a WSL2-only container requirement |
 | 2 | sandbox is the default and only mode | **met**: `moat up` refuses to run without user namespaces; there is no host mode |
 | 3 | no approval prompts, no deny rules | **met**: moat renders `approval_policy = "never"` and `sandbox_mode = "danger-full-access"` on every boot; there is no prompt to answer and no second sandbox to trip |
 | 4 | curated, bundled tool set: exactly what the bundle declares | **NOT met, and no longer attempted** (see below) |
@@ -2277,15 +2313,16 @@ Listed so that absence is not mistaken for success.
 | The `countUnfetched` / host-drift logic under adversarial git states | §AB and §AC cover multiple branches, tags, an already-fetched ref, a non-git host, a detached host HEAD and a detached sandbox HEAD; a *rebased* sandbox branch, and commits that survive only in the sandbox reflog after a `reset --hard`, are still not staged. |
 | The `browser`, `db`, `java`, `go`, `rust`, `cc` and `net` profiles | package names were resolved against the real Alpine 3.21 indexes, and the `node`/`python` profiles were installed and exercised end to end. The others were not installed here, to keep the suite under five minutes. |
 | Cost figures against an invoice, and universal spend caps | Prices are applied to Pi's reported normalized usage, not checked against a bill. Peak-boundary work is priced at one rate; cache writes use the input rate. Extensions can make unreported requests or change models. No aggregate session/boot/day budget or provider-side cap is enforced. |
-| Arbitrary Pi extensions, packages, skills and MCP servers | A project hook and model-invoked custom tool run inside the real box. That does not prove every plugin compatible or safe: network/dependencies, interactive approval policies and unreported model calls remain the extension author's responsibility. No host plugins/auth are imported. |
-| Pi's interactive workflows beyond the pty gate | `test/pi-tui.py` reaches the model screen, stays interactive and leaves the keepalive running. Session resume/tree navigation, arbitrary custom UI and every keybinding are Pi's own and are not comprehensively automated here. |
+| Arbitrary Pi extensions, packages, skills and MCP servers | `pi-customization.txt` exercises one local package, in-box npm dependency, stdio MCP search/resources, skills/prompts, CLI resume and a headless approval policy, with host canaries absent and server cleanup checked. Remote MCP HTTP/OAuth, arbitrary npm/git packages and every extension's policy/billing behavior remain unverified. No host plugins/auth are imported. |
+| Pi's interactive workflows beyond the pty gate | `test/pi-tui.py` reaches the model screen, stays interactive and leaves the keepalive running. Explicit CLI session resume after down/up is separately tested by `pi-customization.sh`; interactive session-picker/tree navigation, arbitrary custom UI and every keybinding are not comprehensively automated here. |
 | Exfiltration through an allowed channel | §L verifies that the allowlist admits the provider and refuses an arbitrary address, and that the host's loopback is unreachable on both routes. It does not attempt to push data out *through* an allowlisted address or over DNS, both of which remain possible by construction. |
 | Behaviour under host reboot / kernel upgrade with a live env | the environment is designed to survive (`state.json` reconciles a stale PID against the live process table), and §AE covers a box killed out of band and a stale recorded identity, but a real reboot (with the kernel's own pid reuse) was not staged. |
+| Doctor rootfs stores on a separately mounted `/tmp` | On this WSL host, an isolated temporary home under the `/tmp` tmpfs produced a mount-root-relative root field and a conservative false refusal as a suspicious host-data mount. Serial gates use a temporary home on the normal home filesystem. This alternative store layout needs a mount-identity-aware diagnostic; it is not evidence of a host-data bind. |
 | Project file names that are not valid UTF-8 | refused with the offending bytes before anything is copied (`assertAddressableNames`, `test/unit/fs-names.test.ts`, extras §Q). Byte paths through every host-side walk do not exist yet, so such a project cannot be sandboxed at all: a refusal, not support, and not a silent drop. |
 | What the copy-out credential scan cannot see | it compares against the values the host holds at fetch/apply time (`DEEPSEEK_API_KEY`, `MOAT_CREDENTIAL`, the credential store) and searches the commits a fetch brought in (the most recent 50) or the files an apply plan would write (up to 64 MiB each). A key rotated since the boot, a secret the agent obtained somewhere else, older commits and larger files are outside it: each bound is named when it is reached (extras §AB, `test/unit/leak-scan.test.ts`). A file that does not match is not a claim that it is clean. |
 | Pi performance and long-task quality relative to retired harnesses | There is no current cold-cache benchmark or live A/B task suite. Older startup/cost captures are history, not Pi measurements. |
 | Whether a partially accepted subset of a change is coherent | **partly.** `moat apply` runs the project's own checks against exactly the accepted subset before writing, so a subset that breaks a *declared* check is refused, and extras §AM is that end to end. What is **not** verified: a project with no detectable check (the run warns instead), and a subset that is wrong in a way the project's checks do not cover — the review has no cross-file reasoning and moat has no model of what the project means. The check is the project's own floor, not a proof of intent. |
 | A merge's hunks as an exhaustive description of the merge | a `both` path is presented as the hunks between your file and the merged bytes, so the review shows what would change in your copy. A conflict between the *two sides'* intentions that the three-way merge resolved silently is not surfaced as such: it arrives as an ordinary hunk, and the review does not say that the merge chose one side. |
 | Harness interchangeability and ACP | Historical ACP measurements were not adopted. Current moat is Pi-only, CLI-driven; Node/npm are now base packages. No host-side agent SDK, extra runtime selector or ACP permission protocol is implemented. |
-| Pi under the container backend, a comprehensive security audit and resource exhaustion | The namespace backend is the migration's exercised path. Container Pi turns depend on a usable runtime; skipped tests are named. Namespaces share the host kernel, and moat has no CPU/memory/disk quotas. Keyless acceptance is neither a full audit nor a resource-containment proof. |
+| Container Pi to external providers, a comprehensive security audit and resource exhaustion | Hosted `pi-container.sh` passes real Pi tasks/limits/cleanup with an explicit open/loopback stub, plus separate default filtered boot/checks. A filtered Pi turn to a real external provider or proxied container turn is not measured. Namespaces share the host kernel and there are no CPU/memory/disk quotas; keyless acceptance is not a full audit or resource-containment proof. |
 

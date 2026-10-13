@@ -3,9 +3,9 @@
 --- stdout ---
 [moat] boot: mounts are up, network next
 [moat] boot: entering the sandbox
-ae5f482 work on a detached HEAD
-b366d28 moat: state copied from the host
-6b666be base
+41ec93b work on a detached HEAD
+7152274 moat: state copied from the host
+9c61e9e base
 --- detached.txt ---
 /work/detached.txt
 --- stderr ---

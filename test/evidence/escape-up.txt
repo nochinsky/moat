@@ -2,15 +2,15 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 1.00s (extract cached image 899ms)
+✓ image provisioned in 997ms (extract cached image 894ms)
 ✓ copy-in via git: 2 files, 0.2 KiB, digest b27d5e7ef3c1a586
 model: deepseek/deepseek-flash (context 1M, out 393k)
-agent branch: moat-session-2026-10-11-19-00
+agent branch: moat-session-2026-10-13-01-30
 checks: npm run test
 ✓ sandbox up, cold start 1.24s (image built)
 
-  project    /tmp/moat-release-fixtures.xgaPBR/escape-check
-  env        /home/user/.moat/envs/31b19872c401
+  project    /home/user/.moat-followup-gates.m5NJGR/extras/escape-check
+  env        /home/user/.moat/envs/0b3fac86dd3b
   runtime    pi (deepseek/deepseek-flash): `moat` opens its TUI
   workspace  /work (inside the sandbox)
 

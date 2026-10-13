@@ -2,15 +2,15 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ image provisioned in 903ms (extract cached image 810ms)
+✓ image provisioned in 885ms (extract cached image 796ms)
 ✓ copy-in via git: 1 files, 0.0 KiB, digest 6bdc92b0668ce66c
 model: moat/mock-model
 ! no credential injected, so requests to http://127.0.0.1:5599/v1 will carry no Authorization header. If that endpoint needs one, set DEEPSEEK_API_KEY or pass --credential-env NAME (or --credential VALUE).
-agent branch: moat-session-2026-10-11-19-00
-✓ sandbox up, cold start 1.13s (image built)
+agent branch: moat-session-2026-10-13-01-29
+✓ sandbox up, cold start 1.12s (image built)
 
-  project    /tmp/moat-release-fixtures.xgaPBR/killed
-  env        /home/user/.moat/envs/e7c3db9491d9
+  project    /home/user/.moat-followup-gates.m5NJGR/extras/killed
+  env        /home/user/.moat/envs/2f26fc81144f
   runtime    pi (moat/mock-model): `moat` opens its TUI
   workspace  /work (inside the sandbox)
 

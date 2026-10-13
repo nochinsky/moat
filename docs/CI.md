@@ -27,6 +27,23 @@ probes actual namespace/mount capability. A workflow without that permission may
 A self-hosted Linux runner is another option, not a universal requirement. macOS and native Windows
 remain unsupported by this release.
 
+## Focused compatibility evidence
+
+The follow-up run [`38331376464`](https://github.com/nochinsky/moat/actions/runs/38331376464)
+passes the unborn-project, local package/stdio MCP/session-resume and real Pi container-task suites
+on both hosted Ubuntu versions. Validate the actual captures with:
+
+```sh
+bash test/pi-compatibility-hosted.sh 38331376464
+```
+
+The container fixture checks default filtered boot/rules separately from its real Pi task using an
+explicit open/loopback model stub. It includes budget stops, tool timeout, credential expiry and
+container removal. Missing/unusable Podman exits 77; CI does not accept that as success.
+A manual dispatch with `scope=pi-compatibility` runs just these focused sandbox suites plus the
+build/unit job; it does not establish new acceptance/extras/egress evidence. Pushes and PRs always
+run the full suites. Existing 0.1.0 release evidence above remains distinct.
+
 ## Example
 
 ```yaml

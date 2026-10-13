@@ -80,6 +80,16 @@ test("container unavailability exits 77, not zero or a passing capture", t => {
   assert.doesNotMatch(result.stdout, /all criteria passed/)
 })
 
+test("an available rootful Podman is not rootless-container evidence", t => {
+  const f = fixture(t)
+  const script = path.join(f.root, "test/pi-container.sh")
+  fs.copyFileSync(path.join(ROOT, "test/pi-container.sh"), script)
+  fs.writeFileSync(path.join(f.root, "bin/podman"), "#!/bin/sh\nprintf 'false\\n'\n", { mode: 0o755 })
+  const result = spawnSync("bash", [script], { encoding: "utf8", env: { ...process.env, PATH: `${f.root}/bin:${process.env.PATH}` } })
+  assert.equal(result.status, 77, result.stderr)
+  assert.match(result.stdout, /SKIPPED/)
+})
+
 test("both hosted OS jobs enforce the focused Pi compatibility suites", () => {
   const workflow = fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8")
   for (const [index, name] of STEPS.entries()) {

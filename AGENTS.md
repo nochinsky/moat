@@ -357,7 +357,9 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   so expiry stops the agent, not only the separate keepalive. Containers get unique per-invocation
   names and explicit removal: killing a podman client alone can leave its box running. The container
   plan forwards credential names through its process environment, never credential values in argv;
-  this plan is unit-tested, but a Pi container turn remains unverified on this host.
+  this plan is unit-tested. Hosted Ubuntu 22.04/24.04 run real Pi task/limits/cleanup against an
+  explicit open/loopback stub, plus separate filtered boot/checks (`test/pi-container.sh`);
+  local runtime absence and external/proxied container-provider turns remain named gaps.
 * The credential deadline is the credential's **own timestamp**, not the boot's start. The
   host passes `MOAT_CREDENTIAL_EXPIRES_EPOCH`, and the entry script checks it before
   spawning the agent (an already-dead credential must not start one) and then sleeps the
@@ -610,6 +612,11 @@ Things that cost real time. Each of these was hit and diagnosed once already.
   Supporting them means Buffer paths through every host-side walk (hashing, the
   untracked-file pass, apply's tree reads); that does not exist yet, and pretending
   otherwise would drop files silently.
+* **The proxy holder's pid precedes its new namespace.** Its shell writes the pid before
+  `exec unshare --net`; a readable `/proc/<pid>/ns/net` can still be the box's old namespace.
+  Wait for a distinct namespace within the existing deadline, not just a visible pid, and keep
+  refusing a holder that remains in the box's namespace. `test/unit/proxy-netns-ready.test.ts`
+  reproduces the publication window; serial Pi acceptance exposed it.
 * **A proxied boot has no `tap0` and no default route**, deliberately: the box's namespace holds
   `lo` and the link to the proxy, and nothing else. Any code that assumes a datapath — a readiness
   wait for the tap, a helper that dials an address directly, a probe that resolves a name in the box
@@ -745,10 +752,14 @@ Use the Pi rules above and `docs/PI.md` for current runtime work.
   `applied 2 change(s); skipped 0`. The working tree still travels with the copy-in unchanged, so
   the agent sees your work; only what counts as "before" changed. With no HEAD (a repository
   nobody has committed to) the baseline is the empty tree, and `test/unit/baseline-content.test.ts`
-  holds all of it. Related trap, same file: **`copy-in` of a repository with no commits yet copies
-  no working tree at all** — `git clone` of an unborn HEAD brings the repository and none of the
-  files — so such a project arrives in the sandbox empty and nothing says so. That one is
-  documented by a test rather than fixed.
+  holds all of it. Related trap, same file: **an unborn clone brings no indexed working files**.
+  `cloneGit` therefore copies cached paths as well as untracked ones from their current working
+  bytes. Deleted cached paths and paths beneath a replaced parent directory are absent work,
+  not a reason to follow a host symlink and read outside the project. `recordBaseline` must use
+  `read-tree --empty` when HEAD is absent, never `add -A`: after fixing the copy, the old fallback
+  would fold the user's initial files into the baseline and silently overwrite a competing
+  addition. The unit regressions and `test/pi-unborn.sh` pin the copy, empty baseline, host
+  index/HEAD preservation and conflicting-addition review.
 * **A spend ceiling is enforced on the stream, and `abortWhen` is where it lives.**
   `--max-tokens`/`--max-cost` (`cmd/main.ts:ceilingBreach`) are checked *while* a turn runs, by
   incrementally consuming stdout with **the same normalizer the footer uses** — one parser, one

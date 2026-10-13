@@ -20,7 +20,12 @@ registry installation, signatures/provenance and an actual sandbox demo pass (`p
 * Sandbox-local Pi settings/model definitions/global brief, rewritten through the rootfs guard
   each boot. Credentials remain environment-only; no host Pi configuration/auth is imported.
 * Project-local extensions, skills, prompts, settings and package declarations are Pi's
-  customization surface, copied with the project and executed inside the sandbox.
+  customization surface, copied with the project and executed inside the sandbox. A representative
+  local package/stdio MCP workflow is now exercised, including dependency installation, resources,
+  explicit skills/prompts, CLI session resume and a fail-closed headless approval policy.
+* Unborn Git projects retain staged/untracked working files with an empty baseline; copy-in does
+  not create a host commit or alter the host index. Doctor wording no longer describes WSL2 as
+  container-only or accessible KVM as a shipped microVM backend.
 * Pi's own TUI on a pty; JSON-mode tasks with normalized tool rows, messages, errors and usage.
   A failed Pi response returns nonzero even when Pi's process returns zero.
 * Reported-usage ceilings use the same parser as the footer; budgeted tasks run headless.
@@ -40,7 +45,9 @@ registry installation, signatures/provenance and an actual sandbox demo pass (`p
   if the file grows. FIFOs/devices are refused without blocking the host.
 * Credential expiry bounds ephemeral tasks/TUIs through a host-owned timer as well as the keepalive.
   Container plans avoid credential values in argv and give ephemeral boots unique names for removal;
-  actual Pi container execution is still unverified here.
+  actual Pi task/limits/cleanup now pass on both hosted Ubuntu versions with an explicit
+  open/loopback stub. Default filtered container boot/checks are measured separately; external
+  filtered/proxied provider turns and a locally usable container runtime remain unmeasured.
 * A pre-existing backend unit fixture that deleted shared `~/.moat/envs` is isolated to a temp
   `MOAT_HOME`, with a containment assertion before filesystem operations.
 * A proxy readiness race exposed during regression testing is fixed: a visible veth is not a
@@ -61,6 +68,10 @@ Current Pi migration checks are reproduced with:
 npm run typecheck
 npm run test:unit
 bash test/e2e-pi.sh
+bash test/pi-unborn.sh
+bash test/pi-customization.sh
+# Requires usable rootless Podman; exit 77 is a skip, not a pass:
+bash test/pi-container.sh
 python3 test/pi-tui.py
 bash test/pi-legacy.sh
 bash test/pi-package.sh
@@ -86,8 +97,17 @@ and HEAD unchanged. Reported usage is present; its estimated cost is not an invo
 This validates a small default-model Responses task, not every protocol/model or long-task quality.
 Native provider-specific protocols, arbitrary extensions/packages/MCP servers and their billing
 behavior are not universally validated.
-A Pi cold-cache startup benchmark and container-backend Pi turn are not implied by the namespace
-suite. Historical runtime and cold-start measurements are preserved, not relabeled as Pi readings.
+The hosted Pi container/package/MCP captures are checked by `test/pi-compatibility-hosted.sh`;
+they are not inferred from namespace results. A Pi cold-cache startup benchmark remains absent.
+Historical runtime and cold-start measurements are preserved, not relabeled as Pi readings.
+
+## Next approved direction
+
+The owner requested Pi-native providers, provider selection on first use instead of a DeepSeek
+default, and supported subscription authentication. Implementation has not started in the focused
+follow-up. [`PI-PROVIDERS.md`](PI-PROVIDERS.md) records the explicit-choice, sandbox-local login,
+no-host-auth-import design and required local-stub tests. Current provider behavior below is not
+relabelled as full native support.
 
 ## Open decisions and limitations
 
@@ -99,8 +119,8 @@ suite. Historical runtime and cold-start measurements are preserved, not relabel
   it reports usage. Cache writes are currently priced as input, not at a separate write rate.
 * **Resource isolation:** namespaces share the host kernel; no moat-managed CPU/memory/disk quotas.
   The microVM path has historical measurements, not a production backend.
-* **Project integration:** accepted-subset checks test coherence, not intent/correctness. Unborn Git
-  copy-in and non-UTF-8 path support retain their documented limitations.
+* **Project integration:** accepted-subset checks test coherence, not intent/correctness.
+  Non-UTF-8 path support retains its documented limitation.
 * **Customization compatibility:** installed package state and network/tool dependencies must be
   available inside the box. Offline startup does not silently install missing packages. Extensions
   can add approval dialogs or UI waits; unattended workflows must be designed accordingly.

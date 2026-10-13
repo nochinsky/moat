@@ -2,12 +2,12 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-→ copy-out: git fetch /home/user/.moat/envs/53c439ccc8a4/rootfs/work +refs/heads/keep:refs/moat/keep
+→ copy-out: git fetch /home/user/.moat/envs/ad8b545a8cdd/rootfs/work +refs/heads/keep:refs/moat/keep
 ! copy-out: fetch: no credential value on this host to compare against, so the files just copied were NOT searched for a leaked key
-✓ fetched keep -> refs/moat/keep (ae5f4825cacb)
-  2 commit(s) reachable, HEAD 6b666be22da0 -> 6b666be22da0
-    ae5f4825cacb  work on a detached HEAD
-    6b666be22da0  base
+✓ fetched keep -> refs/moat/keep (41ec93b3ac16)
+  2 commit(s) reachable, HEAD 9c61e9edad14 -> 9c61e9edad14
+    41ec93b3ac16  work on a detached HEAD
+    9c61e9edad14  base
 
   the host working tree was recomputed and is byte-identical
   inspect with:  git log refs/moat/keep

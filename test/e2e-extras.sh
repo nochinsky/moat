@@ -1134,11 +1134,11 @@ fi
 ( cd "$AM" && $MOAT destroy --yes >/dev/null 2>&1 )
 
 # AN's turn ceiling and machine-readable take checks are covered by e2e-pi.sh.
-section "AO. the container backend runs a turn, on a host that has a container runtime"
-# The second backend, end to end. It needs a container runtime the CI runner does not have, so the
-# section *skips with a reason* rather than pretending — the same shape as the sandbox suites that
-# cannot run on GitHub's runners. What is asserted is the lifecycle: a boot, a check inside it, and
-# that `down` leaves nothing behind. That last one is the defect this section exists for: killing
+section "AO. the container backend boots and checks, on a host with a usable runtime"
+# This section checks boot/verify/down, not Pi's model/tool loop. The separate
+# test/pi-container.sh exercises that loop and its stop/cleanup paths on the hosted
+# runners, which have Podman; local runtime absence remains an explicit skip.
+# That last lifecycle check is the defect this section exists for: killing
 # the `podman run` client left the container running while state.json said stopped.
 AO="$WORK/container-backend"
 rm -rf "$AO"; mkdir -p "$AO"

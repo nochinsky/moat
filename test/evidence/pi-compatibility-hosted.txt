@@ -1,0 +1,38 @@
+hosted compatibility run: 38331376464
+source commit: 01c8d50a78c740042324fdd2f5e670c9ebe14da3
+URL: https://github.com/nochinsky/moat/actions/runs/38331376464
+--- ubuntu-22.04
+pass: staged and untracked working files, symlink and executable reached /work; unborn metadata and empty baseline are truthful
+pass: Pi made its first commit and checks passed; review identified competing additions without touching host files, index or unborn HEAD
+pi-unborn: all criteria passed (working copy, empty baseline, real task, explicit read-only review)
+pass: dependency installation, local Pi package, explicit skill, MCP search/resource and committed fix ran inside the box
+pass: down/up retained the package and session; explicit Pi resume kept context and expanded a package prompt template
+pass: the extension denied a UI-dependent headless call before MCP dispatch; the stdio server was reaped
+pass: read-only fetch/review left host files and HEAD unchanged; dependencies and MCP witnesses never appeared on the host
+pi-customization: all criteria passed (local package, stdio MCP, skills/prompts, resume, headless policy)
+pass: filtered container boot applied its default-deny ruleset and commands ran as uid 0
+pass: real Pi shell/edit/commit task and project checks ran under Podman with an explicit open loopback endpoint; receiving endpoint observed credential and usage; review left host HEAD/files unchanged
+pass: concurrent ephemeral containers had independent names and left only the keepalive
+pass: usage ceiling stopped the containerized Pi before its next request and removed its ephemeral container
+pass: timeout killed a running Pi tool and removed its ephemeral container, preserving the keepalive
+pass: credential deadline stopped an in-flight model request and removed both expired keepalive and ephemeral container
+pass: keyless receiving endpoint saw no Authorization header; final down left no fixture containers
+pi-container: all criteria passed (filtered boot, open-loopback Pi task, budgets, timeout, expiry, keyless auth, cleanup)
+--- ubuntu-24.04
+pass: staged and untracked working files, symlink and executable reached /work; unborn metadata and empty baseline are truthful
+pass: Pi made its first commit and checks passed; review identified competing additions without touching host files, index or unborn HEAD
+pi-unborn: all criteria passed (working copy, empty baseline, real task, explicit read-only review)
+pass: dependency installation, local Pi package, explicit skill, MCP search/resource and committed fix ran inside the box
+pass: down/up retained the package and session; explicit Pi resume kept context and expanded a package prompt template
+pass: the extension denied a UI-dependent headless call before MCP dispatch; the stdio server was reaped
+pass: read-only fetch/review left host files and HEAD unchanged; dependencies and MCP witnesses never appeared on the host
+pi-customization: all criteria passed (local package, stdio MCP, skills/prompts, resume, headless policy)
+pass: filtered container boot applied its default-deny ruleset and commands ran as uid 0
+pass: real Pi shell/edit/commit task and project checks ran under Podman with an explicit open loopback endpoint; receiving endpoint observed credential and usage; review left host HEAD/files unchanged
+pass: concurrent ephemeral containers had independent names and left only the keepalive
+pass: usage ceiling stopped the containerized Pi before its next request and removed its ephemeral container
+pass: timeout killed a running Pi tool and removed its ephemeral container, preserving the keepalive
+pass: credential deadline stopped an in-flight model request and removed both expired keepalive and ephemeral container
+pass: keyless receiving endpoint saw no Authorization header; final down left no fixture containers
+pi-container: all criteria passed (filtered boot, open-loopback Pi task, budgets, timeout, expiry, keyless auth, cleanup)
+pi compatibility hosted: unborn copy-in, MCP/package workflow and real Pi container task/limits/cleanup passed on ubuntu-22.04 and ubuntu-24.04; uploaded captures checked

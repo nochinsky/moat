@@ -2,4 +2,4 @@
 --- exit 0
 --- stdout ---
 --- stderr ---
-✓ snapshot before-extras (79.0 MiB) -> /home/user/.moat/envs/9a1031ce3457/snapshots/before-extras.tar.gz
+✓ snapshot before-extras (79.0 MiB) -> /home/user/.moat/envs/e36f5b47384d/snapshots/before-extras.tar.gz
